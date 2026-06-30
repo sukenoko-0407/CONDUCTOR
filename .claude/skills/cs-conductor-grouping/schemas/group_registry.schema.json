@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grouping group_registry",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["group_id", "group_label", "group_type", "group_source", "definition", "compound_count", "wet_count", "virtual_count", "quality"],
+    "properties": {
+      "group_id": {"type": "string", "pattern": "^GRP_[A-Z]+_[0-9]{3,}$"},
+      "group_label": {"type": "string"},
+      "group_type": {"type": "string"},
+      "group_source": {"type": "string"},
+      "source_column": {"type": ["string", "null"]},
+      "activity_blind": {"type": "boolean"},
+      "definition": {"type": "object"},
+      "compound_count": {"type": "integer", "minimum": 0},
+      "wet_count": {"type": "integer", "minimum": 0},
+      "virtual_count": {"type": "integer", "minimum": 0},
+      "quality": {"type": "object"}
+    },
+    "additionalProperties": true
+  }
+}

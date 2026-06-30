@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grouping manifest",
+  "type": "object",
+  "required": ["skill_name", "skill_version", "input_file", "detected_columns", "outputs", "warnings", "created_at"],
+  "properties": {
+    "skill_name": {"const": "grouping"},
+    "skill_version": {"type": "string"},
+    "input_file": {"type": "string"},
+    "detected_columns": {"type": "object"},
+    "config_file": {"type": ["string", "null"]},
+    "outputs": {"type": "array", "items": {"type": "string"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "created_at": {"type": "string"}
+  },
+  "additionalProperties": true
+}

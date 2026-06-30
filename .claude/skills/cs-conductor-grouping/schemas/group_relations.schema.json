@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grouping group_relations",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["relation_id", "source_group_id", "target_group_id", "relation_type", "metrics"],
+    "properties": {
+      "relation_id": {"type": "string"},
+      "source_group_id": {"type": "string"},
+      "target_group_id": {"type": "string"},
+      "relation_type": {"enum": ["overlaps_with", "subset_of", "similar_core_to", "derived_from", "meta_group_of", "same_source_as"]},
+      "metrics": {"type": "object"}
+    },
+    "additionalProperties": true
+  }
+}

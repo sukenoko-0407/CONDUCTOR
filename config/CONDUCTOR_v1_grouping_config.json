@@ -1,0 +1,59 @@
+{
+  "group_filters": {
+    "min_compound_count": 5,
+    "apply_to_sources": ["*"],
+    "write_filter_report": true
+  },
+  "description_inputs": {
+    "enabled": true,
+    "base_dir": "descriptions",
+    "subdir": null,
+    "file_glob": "*.csv",
+    "skip_files": ["errors.csv", "run_metadata.csv"]
+  },
+  "relations": {
+    "min_jaccard": 0.5,
+    "max_relations": 5000
+  },
+  "group_builders": {
+    "mcs_group_builder": {
+      "enabled": true,
+      "max_mcs_sample_compounds": 1000,
+      "max_mcs_pair_count": 1000,
+      "candidate_top_n": 50,
+      "candidate_min_pair_count": 10,
+      "min_mcs_heavy_atoms": 8,
+      "selection_mode": "intersection",
+      "timeout_seconds_per_pair": 2
+    },
+    "brics_recap_fragment_builder": {
+      "enabled": true,
+      "min_fragment_compound_count": 3,
+      "min_fragment_heavy_atoms": 4,
+      "max_fragments_per_method": 200
+    },
+    "similarity_group_builder": {
+      "enabled": true,
+      "methods": ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected_components"],
+      "min_cluster_size": 2
+    },
+    "descriptor_clustering_builder": {
+      "enabled": true,
+      "methods": ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected_components"],
+      "min_compounds": 3,
+      "min_cluster_size": 2,
+      "scaling": "standard",
+      "similarity_metric": "cosine"
+    },
+    "meta_group_builder": {
+      "enabled": true,
+      "max_meta_groups": 20
+    }
+  },
+  "outputs": {
+    "base_dir": "groups",
+    "subdir": null,
+    "write_context_aliases": false,
+    "write_graph_packet": true
+  }
+}

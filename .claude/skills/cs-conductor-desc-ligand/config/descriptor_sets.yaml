@@ -1,0 +1,114 @@
+global:
+  n_bits_default: 2048
+  id_column: null
+  smiles_column: null
+  include_invalid_rows: true
+  canonicalize_smiles: true
+
+sets:
+  L01:
+    name: rdkit_0d_1d_2d
+    enabled_by_default: true
+    output: L01_rdkit_0d_1d_2d.csv
+    requires_3d: false
+  L02:
+    name: ecfp4_bit
+    enabled_by_default: true
+    output: L02_ecfp4_bit.csv
+    requires_3d: false
+    params:
+      radius: 2
+      n_bits: 2048
+      use_features: false
+      vector_type: bit
+  L03:
+    name: ecfp4_count
+    enabled_by_default: true
+    output: L03_ecfp4_count.csv
+    requires_3d: false
+    params:
+      radius: 2
+      n_bits: 2048
+      use_features: false
+      vector_type: count
+  L04:
+    name: ecfp6_bit
+    enabled_by_default: true
+    output: L04_ecfp6_bit.csv
+    requires_3d: false
+    params:
+      radius: 3
+      n_bits: 2048
+      use_features: false
+      vector_type: bit
+  L05:
+    name: ecfp6_count
+    enabled_by_default: true
+    output: L05_ecfp6_count.csv
+    requires_3d: false
+    params:
+      radius: 3
+      n_bits: 2048
+      use_features: false
+      vector_type: count
+  L06:
+    name: fcfp4_bit
+    enabled_by_default: true
+    output: L06_fcfp4_bit.csv
+    requires_3d: false
+    params:
+      radius: 2
+      n_bits: 2048
+      use_features: true
+      vector_type: bit
+  L07:
+    name: fcfp4_count
+    enabled_by_default: true
+    output: L07_fcfp4_count.csv
+    requires_3d: false
+    params:
+      radius: 2
+      n_bits: 2048
+      use_features: true
+      vector_type: count
+  L08:
+    name: maccs_keys
+    enabled_by_default: true
+    output: L08_maccs_keys.csv
+    requires_3d: false
+  L09:
+    name: atom_pair
+    enabled_by_default: true
+    output: L09_atom_pair.csv
+    requires_3d: false
+    params:
+      n_bits: 2048
+      vector_type: count
+  L10:
+    name: topological_torsion
+    enabled_by_default: true
+    output: L10_topological_torsion.csv
+    requires_3d: false
+    params:
+      n_bits: 2048
+      vector_type: count
+  L11:
+    name: rdkit_fragment_counts
+    enabled_by_default: true
+    output: L11_rdkit_fragment_counts.csv
+    requires_3d: false
+  L14:
+    name: rdkit_3d_descriptors
+    enabled_by_default: false
+    output: L14_rdkit_3d_descriptors.csv
+    requires_3d: true
+  L15:
+    name: usr_usrcat
+    enabled_by_default: false
+    output: L15_usr_usrcat.csv
+    requires_3d: true
+  L16:
+    name: shape_basic
+    enabled_by_default: false
+    output: L16_shape_basic.csv
+    requires_3d: true

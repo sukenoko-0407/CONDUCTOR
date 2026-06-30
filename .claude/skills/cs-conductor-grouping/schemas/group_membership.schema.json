@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grouping group_membership rows",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["group_id", "compound_id", "membership_source", "membership_reason"],
+    "properties": {
+      "group_id": {"type": "string"},
+      "compound_id": {"type": "string"},
+      "membership_source": {"type": "string"},
+      "membership_reason": {"type": "string"}
+    },
+    "additionalProperties": true
+  }
+}

@@ -1,0 +1,200 @@
+{
+  "column_detection": {
+    "ask_user_when_ambiguous": true,
+    "min_smiles_valid_ratio": 0.85
+  },
+  "input_validation": {
+    "require_non_missing_ids": true,
+    "require_unique_ids": true
+  },
+  "description_inputs": {
+    "enabled": true,
+    "base_dir": "descriptions",
+    "subdir": null,
+    "file_glob": "*.csv",
+    "skip_files": ["errors.csv", "run_metadata.csv"]
+  },
+  "input_columns": {
+    "id_column": null,
+    "smiles_column": null,
+    "is_virtual_column": null,
+    "grouping_columns": []
+  },
+  "relations": {
+    "min_jaccard": 0.5,
+    "max_relations": 5000
+  },
+  "group_filters": {
+    "min_compound_count": 5,
+    "apply_to_sources": ["*"],
+    "write_filter_report": true
+  },
+  "group_builders": {
+    "human_group_builder": {
+      "enabled": true
+    },
+    "murcko_group_builder": {
+      "enabled": true,
+      "priority": "reference"
+    },
+    "mcs_group_builder": {
+      "enabled": true,
+      "include_virtual_in_mcs_mining": false,
+      "sampling_strategy": "random_wet_first",
+      "max_mcs_sample_compounds": 1000,
+      "max_mcs_pair_count": 1000,
+      "random_seed": 42,
+      "candidate_top_n": 50,
+      "candidate_min_pair_count": 10,
+      "selection_mode": "intersection",
+      "min_mcs_heavy_atoms": 8,
+      "min_mcs_fraction_of_smaller_molecule": 0.4,
+      "min_unique_wet_compounds": 5,
+      "min_pair_count": 3,
+      "timeout_seconds_per_pair": 2,
+      "ringMatchesRingOnly": true,
+      "completeRingsOnly": true,
+      "matchValences": true,
+      "deduplicate_substructure_cores": false,
+      "support_similarity_for_pruning": 0.9,
+      "write_mcs_diagnostics": true,
+      "write_mcs_figures": true,
+      "parameter_sweep": {
+        "enabled": true,
+        "top_n_values": [10, 20, 50, 100, 200],
+        "min_pair_count_values": [3, 5, 10, 20, 50, 100],
+        "min_heavy_atoms_values": [6, 8, 10, 12, 15, 20]
+      }
+    },
+    "brics_recap_fragment_builder": {
+      "enabled": true,
+      "min_fragment_compound_count": 3,
+      "min_fragment_heavy_atoms": 4,
+      "max_fragments_per_method": 200,
+      "include_single_atom_fragments": false,
+      "write_fragment_diagnostics": true
+    },
+    "similarity_group_builder": {
+      "enabled": true,
+      "fingerprint": "morgan",
+      "radius": 2,
+      "n_bits": 2048,
+      "method": "butina",
+      "methods": ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected_components"],
+      "similarity_threshold": 0.7,
+      "similarity_thresholds": {
+        "butina": 0.7,
+        "hierarchical": 0.7,
+        "dbscan": 0.7,
+        "connected_components": 0.7
+      },
+      "parameter_sweeps": {
+        "butina": {
+          "similarity_thresholds": [0.6, 0.7, 0.8]
+        },
+        "hierarchical": {
+          "similarity_thresholds": [0.6, 0.7, 0.8],
+          "linkages": ["average"]
+        },
+        "dbscan": {
+          "similarity_thresholds": [0.6, 0.7, 0.8],
+          "min_samples": [3, 5]
+        },
+        "louvain": {
+          "resolutions": [0.5, 1.0, 1.5],
+          "graph_modes": ["top_k_weighted_graph"],
+          "top_k_neighbors": [10, 20]
+        },
+        "leiden": {
+          "resolutions": [0.5, 1.0, 1.5],
+          "graph_modes": ["top_k_weighted_graph"],
+          "top_k_neighbors": [10, 20]
+        },
+        "connected_components": {
+          "similarity_thresholds": [0.6, 0.7, 0.8]
+        }
+      },
+      "graph_construction": {
+        "louvain": {
+          "graph_mode": "top_k_weighted_graph",
+          "top_k_neighbors": 20,
+          "use_similarity_threshold": false
+        },
+        "leiden": {
+          "graph_mode": "top_k_weighted_graph",
+          "top_k_neighbors": 20,
+          "use_similarity_threshold": false
+        }
+      },
+      "min_cluster_size": 2,
+      "dbscan_min_samples": 3,
+      "hierarchical_linkage": "average",
+      "louvain_resolution": 1.0,
+      "leiden_resolution": 1.0,
+      "leiden_partition_type": "RBConfigurationVertexPartition",
+      "max_hierarchical_compounds": 3000,
+      "max_dbscan_compounds": 3000,
+      "max_louvain_compounds": 10000,
+      "max_leiden_compounds": 10000,
+      "write_similarity_diagnostics": true,
+      "write_similarity_figures": true
+    },
+    "descriptor_clustering_builder": {
+      "enabled": true,
+      "methods": ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected_components"],
+      "scaling": "standard",
+      "similarity_metric": "cosine",
+      "min_compounds": 3,
+      "min_cluster_size": 2,
+      "drop_constant_features": true,
+      "missing_value_strategy": "median_impute",
+      "random_seed": 42,
+      "leiden_partition_type": "RBConfigurationVertexPartition",
+      "max_hierarchical_compounds": 3000,
+      "max_dbscan_compounds": 3000,
+      "max_louvain_compounds": 10000,
+      "max_leiden_compounds": 10000,
+      "write_descriptor_diagnostics": true,
+      "parameter_sweeps": {
+        "butina": {
+          "similarity_thresholds": [0.6, 0.7, 0.8]
+        },
+        "hierarchical": {
+          "similarity_thresholds": [0.6, 0.7, 0.8],
+          "linkages": ["average"]
+        },
+        "dbscan": {
+          "similarity_thresholds": [0.6, 0.7, 0.8],
+          "min_samples": [3, 5]
+        },
+        "louvain": {
+          "resolutions": [0.5, 1.0, 1.5],
+          "graph_modes": ["top_k_weighted_graph"],
+          "top_k_neighbors": [10, 20]
+        },
+        "leiden": {
+          "resolutions": [0.5, 1.0, 1.5],
+          "graph_modes": ["top_k_weighted_graph"],
+          "top_k_neighbors": [10, 20]
+        },
+        "connected_components": {
+          "similarity_thresholds": [0.6, 0.7, 0.8]
+        }
+      }
+    },
+    "meta_group_builder": {
+      "enabled": true,
+      "max_meta_groups": 20
+    },
+    "auto_rgroup_group_builder": {
+      "enabled": false,
+      "status": "experimental"
+    }
+  },
+  "outputs": {
+    "base_dir": "groups",
+    "subdir": null,
+    "write_context_aliases": false,
+    "write_graph_packet": true
+  }
+}

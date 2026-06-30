@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grouping selected_groups",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["selected_group_id", "selection_reason", "priority", "enabled_for_downstream"],
+    "properties": {
+      "selected_group_id": {"type": "string"},
+      "selection_reason": {"type": "array", "items": {"type": "string"}},
+      "priority": {"enum": ["high", "medium", "low", "reference"]},
+      "enabled_for_downstream": {"type": "boolean"}
+    },
+    "additionalProperties": true
+  }
+}
