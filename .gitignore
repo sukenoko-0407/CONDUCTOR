@@ -3,6 +3,7 @@ outputs/*
 !outputs/.gitkeep
 descriptions/
 groups/
+analysis/
 __pycache__/
 .pytest_cache/
 *.pyc

@@ -1,0 +1,98 @@
+{
+  "property": {
+    "column": null,
+    "auto_detect": true,
+    "preferred_names": ["pIC50", "PIC50", "pActivity", "activity", "Activity", "score", "Score"]
+  },
+  "knn": {
+    "k": 10,
+    "include_self_in_local_variance": true
+  },
+  "sali": {
+    "epsilon": 1e-6,
+    "use_knn_edges_only": true
+  },
+  "description_inputs": {
+    "enabled": true,
+    "base_dir": "descriptions",
+    "subdir": null,
+    "file_glob": "*.csv",
+    "skip_files": ["errors.csv", "run_metadata.csv"]
+  },
+  "representations": {
+    "L01_rdkit_0d_1d_2d": {
+      "match": "L01_rdkit_0d_1d_2d.csv",
+      "metric": "standardized_euclidean",
+      "scaling": "standard"
+    },
+    "L02_ecfp4_bit": {
+      "match": "L02_ecfp4_bit.csv",
+      "metric": "tanimoto",
+      "scaling": "none"
+    },
+    "L03_ecfp4_count": {
+      "match": "L03_ecfp4_count.csv",
+      "metric": "cosine",
+      "scaling": "none"
+    },
+    "L04_ecfp6_bit": {
+      "match": "L04_ecfp6_bit.csv",
+      "metric": "tanimoto",
+      "scaling": "none"
+    },
+    "L05_ecfp6_count": {
+      "match": "L05_ecfp6_count.csv",
+      "metric": "cosine",
+      "scaling": "none"
+    },
+    "L06_fcfp4_bit": {
+      "match": "L06_fcfp4_bit.csv",
+      "metric": "tanimoto",
+      "scaling": "none"
+    },
+    "L07_fcfp4_count": {
+      "match": "L07_fcfp4_count.csv",
+      "metric": "cosine",
+      "scaling": "none"
+    },
+    "L08_maccs_keys": {
+      "match": "L08_maccs_keys.csv",
+      "metric": "tanimoto",
+      "scaling": "none"
+    },
+    "L09_atom_pair": {
+      "match": "L09_atom_pair.csv",
+      "metric": "cosine",
+      "scaling": "none"
+    },
+    "L10_topological_torsion": {
+      "match": "L10_topological_torsion.csv",
+      "metric": "cosine",
+      "scaling": "none"
+    },
+    "L11_rdkit_fragment_counts": {
+      "match": "L11_rdkit_fragment_counts.csv",
+      "metric": "cosine",
+      "scaling": "none"
+    }
+  },
+  "feature_processing": {
+    "drop_constant_features": true,
+    "missing_value_strategy": "median_impute"
+  },
+  "property_stratification": {
+    "enabled": false,
+    "quantiles": [0.2, 0.8],
+    "labels": ["low", "middle", "high"]
+  },
+  "figures": {
+    "enabled": true,
+    "format": "png",
+    "dpi": 160,
+    "max_points_per_plot": 20000
+  },
+  "outputs": {
+    "base_dir": "analysis",
+    "subdir": null
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "property": {
+    "column": null,
+    "auto_detect": true,
+    "preferred_names": ["pIC50", "PIC50", "pActivity", "activity", "Activity", "score", "Score"],
+    "higher_is_better": true
+  },
+  "activity_bins": {
+    "mode": "quantile",
+    "high_quantile": 0.8,
+    "low_quantile": 0.2
+  },
+  "group_inputs": {
+    "base_dir": "groups",
+    "subdir": null,
+    "membership_matrix": "group_membership_matrix.csv",
+    "registry": "group_registry.json",
+    "relations": "group_relations.json"
+  },
+  "structural_diversity": {
+    "enabled": true,
+    "descriptor_base_dir": "descriptions",
+    "descriptor_subdir": null,
+    "ecfp4_bit_file": "L02_ecfp4_bit.csv",
+    "max_exact_pair_count": 200000,
+    "sample_pair_count": 200000,
+    "random_seed": 42
+  },
+  "statistics": {
+    "enabled": true,
+    "fdr_method": "benjamini_hochberg"
+  },
+  "filters": {
+    "min_group_size": 5,
+    "max_group_fraction": 0.95
+  },
+  "overlap": {
+    "enabled": true,
+    "jaccard_threshold": 0.8,
+    "top_n_for_heatmap": 50
+  },
+  "ranking": {
+    "top_n_report": 30,
+    "redundancy_penalty_enabled": true,
+    "redundancy_penalty": 5.0
+  },
+  "figures": {
+    "enabled": true,
+    "format": "png",
+    "dpi": 160,
+    "max_groups_per_plot": 80
+  },
+  "outputs": {
+    "base_dir": "analysis",
+    "subdir": null
+  }
+}
