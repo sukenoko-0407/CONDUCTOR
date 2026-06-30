@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CONDUCTOR v2 Skill Overview</title>
+  <style>
+    :root {
+      --ink: #172026;
+      --muted: #65717a;
+      --line: #d8e0e5;
+      --panel: #f7f9fa;
+      --accent: #176b87;
+      --accent-2: #8b5e34;
+      --good: #2f7d5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Yu Gothic", "Meiryo", Arial, sans-serif;
+      color: var(--ink);
+      background: #ffffff;
+      line-height: 1.6;
+    }
+    header {
+      padding: 48px 7vw 34px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #f4f8fa 0%, #ffffff 100%);
+    }
+    main { padding: 34px 7vw 56px; }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(30px, 5vw, 54px);
+      letter-spacing: 0;
+      line-height: 1.08;
+    }
+    h2 {
+      margin: 48px 0 16px;
+      font-size: 26px;
+      border-left: 5px solid var(--accent);
+      padding-left: 12px;
+    }
+    h3 {
+      margin: 0 0 8px;
+      font-size: 19px;
+    }
+    p { margin: 0 0 12px; }
+    .lead {
+      max-width: 900px;
+      font-size: 18px;
+      color: var(--muted);
+    }
+    .tagline {
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 18px;
+    }
+    .card strong { color: var(--accent); }
+    .small { color: var(--muted); font-size: 14px; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .step {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 15px;
+      min-height: 128px;
+    }
+    .step .num {
+      display: inline-block;
+      color: white;
+      background: var(--accent);
+      border-radius: 999px;
+      width: 28px;
+      height: 28px;
+      line-height: 28px;
+      text-align: center;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .metric .value {
+      font-size: 25px;
+      font-weight: 800;
+      color: var(--good);
+      display: block;
+      line-height: 1.2;
+    }
+    figure {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      overflow: hidden;
+    }
+    figure img {
+      width: 100%;
+      display: block;
+      background: #fff;
+    }
+    figcaption {
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid var(--line);
+    }
+    ul {
+      margin: 8px 0 0 20px;
+      padding: 0;
+    }
+    code {
+      background: #eef3f5;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.95em;
+    }
+    .note {
+      border-left: 4px solid var(--accent-2);
+      background: #fbf7f1;
+      padding: 14px 16px;
+      margin-top: 16px;
+      border-radius: 0 8px 8px 0;
+    }
+    footer {
+      padding: 24px 7vw;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+      font-size: 13px;
+    }
+    @media (max-width: 900px) {
+      .grid, .grid.two, .flow, .metric-strip {
+        grid-template-columns: 1fr;
+      }
+      header, main, footer { padding-left: 22px; padding-right: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="tagline">CONDUCTOR v2</div>
+    <h1>Skill Overview Report</h1>
+    <p class="lead">
+      CONDUCTORは、化合物CSVを出発点として、記述子化、グループ化、解析までをつなぐClaude Code用Skill群です。
+      このレポートは各機能が何をするものかを短く説明し、JAKサンプルデータでの出力例を示します。
+    </p>
+  </header>
+
+  <main>
+    <section>
+      <h2>全体像</h2>
+      <div class="flow">
+        <div class="step">
+          <span class="num">1</span>
+          <h3>Desc</h3>
+          <p>SMILESからRDKit記述子やfingerprintを作成します。</p>
+          <p class="small">Output: <code>descriptions/&lt;dataset&gt;/</code></p>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <h3>Grouping</h3>
+          <p>構造、fragment、MCS、descriptor clusteringから化合物Groupを作成します。</p>
+          <p class="small">Output: <code>groups/&lt;dataset&gt;/</code></p>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <h3>Analysis Phase1</h3>
+          <p>各descriptor表現空間がpropertyをどれだけ滑らかに表すかを評価します。</p>
+          <p class="small">Output: <code>analysis/&lt;dataset&gt;/structure_activity_landscape/</code></p>
+        </div>
+        <div class="step">
+          <span class="num">4</span>
+          <h3>Analysis Phase2</h3>
+          <p>Groupごとに、活性傾向、構造多様性、解釈価値を評価します。</p>
+          <p class="small">Output: <code>analysis/&lt;dataset&gt;/group_insight/</code></p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>3つの主要機能</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>1. Desc Skill</h3>
+          <p><strong>化合物をベクトル表現に変換</strong>します。</p>
+          <ul>
+            <li>RDKit 2D descriptors</li>
+            <li>ECFP/FCFP fingerprints</li>
+            <li>MACCS, AtomPair, TopologicalTorsion</li>
+            <li>RDKit fragment counts</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>2. Grouping Skill</h3>
+          <p><strong>化合物を複数の観点でGroup化</strong>します。</p>
+          <ul>
+            <li>Murcko, MCS, BRICS/RECAP</li>
+            <li>Butina, hierarchical, DBSCAN</li>
+            <li>Louvain, Leiden, connected components</li>
+            <li>最終成果物は0/1 membership matrix</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>3. Analysis Skills</h3>
+          <p><strong>表現とGroupの有用性を評価</strong>します。</p>
+          <ul>
+            <li>Phase1: Structure-Activity Landscape</li>
+            <li>Phase2: Group Insight Analysis</li>
+            <li>活性一貫性、濃縮、構造多様性を評価</li>
+            <li>人が見るための図とreportを生成</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>JAKサンプルでの実行例</h2>
+      <div class="metric-strip">
+        <div class="metric">
+          <span class="value">231</span>
+          input compounds
+        </div>
+        <div class="metric">
+          <span class="value">11</span>
+          descriptor CSVs
+        </div>
+        <div class="metric">
+          <span class="value">2601</span>
+          accepted groups
+        </div>
+        <div class="metric">
+          <span class="value">2553</span>
+          analyzed insight groups
+        </div>
+      </div>
+      <p class="note">
+        JAKサンプルでは、DescがL01-L11のdescriptor CSVを作成し、Groupingが2601個のGroupを作成しました。
+        Analysis Phase1では表現空間の比較を行い、Phase2ではGroupごとの活性傾向と構造多様性を評価しました。
+      </p>
+    </section>
+
+    <section>
+      <h2>Phase1: 表現空間の比較</h2>
+      <div class="grid two">
+        <figure>
+          <img src="analysis/chemble_jak2/structure_activity_landscape/figures/primary_representation_comparison.png" alt="Primary representation comparison">
+          <figcaption>各descriptor表現を、近傍化合物のproperty一貫性で比較します。JAK例ではAtomPair系の表現が上位でした。</figcaption>
+        </figure>
+        <figure>
+          <img src="analysis/chemble_jak2/structure_activity_landscape/figures/local_variance_vs_local_property.png" alt="Local variance vs local property">
+          <figcaption>活性値の領域ごとに、近傍propertyのばらつきがどの程度あるかを確認します。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>Grouping: Group作成の例</h2>
+      <div class="grid two">
+        <figure>
+          <img src="groups/chemble_jak2/figures/similarity_method_comparison.png" alt="Similarity method comparison">
+          <figcaption>複数のクラスタリング手法・パラメータでGroupを作成します。</figcaption>
+        </figure>
+        <figure>
+          <img src="groups/chemble_jak2/figures/mcs_parameter_heatmap.png" alt="MCS parameter heatmap">
+          <figcaption>MCS由来のGroupは、共有構造コアの候補として解釈しやすいGroupを提供します。</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section>
+      <h2>Phase2: Group Insight</h2>
+      <div class="grid two">
+        <figure>
+          <img src="analysis/chemble_jak2/group_insight/figures/high_activity_vs_ecfp4_tanimoto.png" alt="High activity vs ECFP4 Tanimoto">
+          <figcaption>高活性が濃縮している一方で、ECFP4 Tanimoto平均が低いGroupを探します。左上に近い点ほど、構造的に多様なのに活性が揃った候補です。</figcaption>
+        </figure>
+        <figure>
+          <img src="analysis/chemble_jak2/group_insight/figures/top_group_property_distributions.png" alt="Top group property distributions">
+          <figcaption>上位Groupのproperty分布を確認し、少数の外れ値だけでrankされていないかを見ます。</figcaption>
+        </figure>
+      </div>
+      <div class="note">
+        Phase2は、単に「活性が高いGroup」を探すだけではありません。
+        「活性が高く、Group内で一貫しており、必要に応じて構造的には多様」という、解釈価値の高い候補を優先します。
+      </div>
+    </section>
+
+    <section>
+      <h2>使い分け</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>表現を増やしたい</h3>
+          <p>Descを拡張し、<code>descriptions/</code>に新しいCSV表現を追加します。</p>
+        </div>
+        <div class="card">
+          <h3>Groupを増やしたい</h3>
+          <p>Grouping configで手法やパラメータを調整し、<code>groups/</code>を再生成します。</p>
+        </div>
+        <div class="card">
+          <h3>解釈候補を探したい</h3>
+          <p>Analysis Phase1/2で、表現空間とGroup Insightを確認します。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    CONDUCTOR v2 Skill Overview - Example figures are from the local JAK test outputs in this repository.
+  </footer>
+</body>
+</html>
