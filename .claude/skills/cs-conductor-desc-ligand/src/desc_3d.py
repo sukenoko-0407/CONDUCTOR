@@ -7,11 +7,14 @@ from rdkit.Chem import Descriptors3D, rdMolDescriptors
 
 
 def get_3d_mol(mol):
-    """Use externally supplied gen_3d_conformer and return an RDKit Mol with a conformer."""
+    """Generate or load an RDKit Mol with a 3D conformer."""
     try:
-        from gen_3d_conf import gen_3d_conformer
+        from .gen_3d_conf import gen_3d_conformer
     except ImportError as exc:
-        raise RuntimeError("gen_3d_conf.gen_3d_conformer is required for 3D descriptors.") from exc
+        try:
+            from gen_3d_conf import gen_3d_conformer
+        except ImportError:
+            raise RuntimeError("src.gen_3d_conf.gen_3d_conformer is required for 3D descriptors.") from exc
 
     result = gen_3d_conformer(mol)
     if isinstance(result, tuple):
@@ -39,6 +42,7 @@ def calc_rdkit_3d_descriptors(mol3d) -> dict:
         "PMI1",
         "PMI2",
         "PMI3",
+        "PBF",
         "RadiusOfGyration",
         "SpherocityIndex",
     ]

@@ -112,3 +112,288 @@ sets:
     enabled_by_default: false
     output: L16_shape_basic.csv
     requires_3d: true
+  L17:
+    name: mordred_2d
+    category: mordred_descriptor
+    enabled_by_default: false
+    output: L17_mordred_2d.csv
+    requires_3d: false
+  L18:
+    name: mordred_3d
+    category: mordred_descriptor
+    enabled_by_default: false
+    output: L18_mordred_3d.csv
+    requires_3d: true
+  L19:
+    name: rdkit_path_fingerprint
+    category: rdkit_fingerprint
+    enabled_by_default: false
+    output: L19_rdkit_path_fingerprint.csv
+    requires_3d: false
+    metric_recommendation: tanimoto
+    params:
+      n_bits: 2048
+  L20:
+    name: rdkit_pattern_fingerprint
+    category: rdkit_fingerprint
+    enabled_by_default: false
+    output: L20_rdkit_pattern_fingerprint.csv
+    requires_3d: false
+    metric_recommendation: tanimoto
+    params:
+      n_bits: 2048
+  L21:
+    name: rdkit_layered_fingerprint
+    category: rdkit_fingerprint
+    enabled_by_default: false
+    output: L21_rdkit_layered_fingerprint.csv
+    requires_3d: false
+    metric_recommendation: tanimoto
+    params:
+      n_bits: 2048
+  L22:
+    name: avalon_fingerprint
+    category: rdkit_fingerprint
+    enabled_by_default: false
+    output: L22_avalon_fingerprint.csv
+    requires_3d: false
+    metric_recommendation: tanimoto
+    params:
+      n_bits: 2048
+      vector_type: bit
+  L23:
+    name: chiral_morgan_fingerprint
+    category: rdkit_fingerprint
+    enabled_by_default: false
+    output: L23_chiral_morgan_fingerprint.csv
+    requires_3d: false
+    metric_recommendation: tanimoto
+    params:
+      radius: 2
+      n_bits: 2048
+  L24:
+    name: gobbi_pharm2d_folded_bit
+    category: rdkit_fingerprint
+    enabled_by_default: false
+    output: L24_gobbi_pharm2d_folded_bit.csv
+    requires_3d: false
+    metric_recommendation: tanimoto
+    params:
+      n_bits: 2048
+  L25:
+    name: gobbi_pharm2d_svd
+    category: rdkit_reduced_fingerprint
+    enabled_by_default: false
+    output: L25_gobbi_pharm2d_svd.csv
+    requires_3d: false
+    metric_recommendation: cosine
+    params:
+      target_dim: 1024
+      min_dim: 32
+      max_dim: 1024
+      random_seed: 61453
+  L30:
+    name: chemberta_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L30_chemberta_embedding.csv
+    requires_3d: false
+    loader: huggingface_transformers
+    model_dir: null
+    metric_recommendation: cosine
+    params:
+      pooling: mean_last_hidden_state
+      max_length: 256
+      batch_size: 32
+  L31:
+    name: molformer_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L31_molformer_embedding.csv
+    requires_3d: false
+    loader: huggingface_transformers_trust_remote_code
+    model_dir: null
+    metric_recommendation: cosine
+    params:
+      pooling: cls
+      max_length: 256
+      batch_size: 32
+  L32:
+    name: grover_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L32_grover_embedding.csv
+    requires_3d: false
+    loader: grover_local
+    model_dir: null
+    metric_recommendation: cosine
+  L33:
+    name: unimol_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L33_unimol_embedding.csv
+    requires_3d: true
+    loader: unimol_local
+    model_dir: null
+    metric_recommendation: cosine
+  L34:
+    name: smi_ted_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L34_smi_ted_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L35:
+    name: smi_ssed_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L35_smi_ssed_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L36:
+    name: selfies_ted_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L36_selfies_ted_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L37:
+    name: megamolbart_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L37_megamolbart_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L38:
+    name: chemformer_molbart_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L38_chemformer_molbart_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L39:
+    name: cddd_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L39_cddd_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L40:
+    name: molbert_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L40_molbert_embedding.csv
+    requires_3d: false
+    loader: huggingface_transformers
+    model_dir: null
+    metric_recommendation: cosine
+    params:
+      pooling: mean_last_hidden_state
+      max_length: 256
+      batch_size: 32
+  L41:
+    name: selformer_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L41_selformer_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L42:
+    name: smiles_transformer_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L42_smiles_transformer_embedding.csv
+    requires_3d: false
+    loader: generic_torch_sequence
+    model_dir: null
+    metric_recommendation: cosine
+    params:
+      pooling: mean_last_hidden_state
+      max_length: 256
+      batch_size: 32
+  L43:
+    name: mol2vec_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L43_mol2vec_embedding.csv
+    requires_3d: false
+    loader: mol2vec_local
+    model_dir: null
+    metric_recommendation: cosine
+  L44:
+    name: kpgt_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L44_kpgt_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L45:
+    name: mole_bert_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L45_mole_bert_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L46:
+    name: molclr_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L46_molclr_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L47:
+    name: mole_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L47_mole_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L48:
+    name: r_mat_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L48_r_mat_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L49:
+    name: multimodal_molecule_text_embedding
+    category: pretrained_embedding
+    enabled_by_default: false
+    output: L49_multimodal_molecule_text_embedding.csv
+    requires_3d: false
+    loader: local_custom
+    model_dir: null
+    metric_recommendation: cosine
+  L60:
+    name: tblite_xtb_singlepoint
+    category: quantum_chemistry
+    enabled_by_default: false
+    output: L60_tblite_xtb_singlepoint.csv
+    requires_3d: true
+    metric_recommendation: euclidean
+    params:
+      method: GFN2-xTB

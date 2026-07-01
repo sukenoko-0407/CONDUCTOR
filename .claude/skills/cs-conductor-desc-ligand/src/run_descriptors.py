@@ -12,8 +12,19 @@ import pandas as pd
 from .column_infer import infer_columns
 from .desc_2d import calc_rdkit_2d_descriptors, calc_rdkit_fragment_counts
 from .desc_3d import calc_rdkit_3d_descriptors, calc_shape_basic, calc_usr_usrcat, get_3d_mol
+from .desc_mordred import calc_mordred_2d, calc_mordred_3d
+from .desc_quantum_tblite import calc_tblite_xtb_singlepoint
+from .embeddings.pretrained import compute_pretrained_embedding_set
 from .fp_keys import calc_atom_pair_fp, calc_maccs_keys, calc_topological_torsion_fp
 from .fp_morgan import calc_morgan_fingerprint
+from .fp_pharm2d import calc_gobbi_pharm2d_folded_bit, compute_gobbi_pharm2d_svd_set
+from .fp_rdkit_extra import (
+    calc_avalon_fingerprint,
+    calc_chiral_morgan_fingerprint,
+    calc_rdkit_layered_fingerprint,
+    calc_rdkit_path_fingerprint,
+    calc_rdkit_pattern_fingerprint,
+)
 from .io_utils import ensure_output_dir, read_input_csv, write_descriptor_csv, write_error_report, write_run_metadata
 from .mol_utils import prepare_molecule_table, require_rdkit
 
@@ -30,6 +41,8 @@ except ImportError:  # pragma: no cover
 
 DEFAULT_2D_SETS = [f"L{i:02d}" for i in range(1, 12)]
 THREED_SETS = ["L14", "L15", "L16"]
+BATCH_SETS = {"L25"}
+EMBEDDING_SETS = {f"L{i:02d}" for i in range(30, 60)}
 
 
 def repo_root() -> Path:
@@ -52,6 +65,16 @@ def _default_config() -> dict[str, Any]:
         "L14": {"name": "rdkit_3d_descriptors", "enabled_by_default": False, "output": "L14_rdkit_3d_descriptors.csv", "requires_3d": True},
         "L15": {"name": "usr_usrcat", "enabled_by_default": False, "output": "L15_usr_usrcat.csv", "requires_3d": True},
         "L16": {"name": "shape_basic", "enabled_by_default": False, "output": "L16_shape_basic.csv", "requires_3d": True},
+        "L17": {"name": "mordred_2d", "enabled_by_default": False, "output": "L17_mordred_2d.csv", "requires_3d": False},
+        "L18": {"name": "mordred_3d", "enabled_by_default": False, "output": "L18_mordred_3d.csv", "requires_3d": True},
+        "L19": {"name": "rdkit_path_fingerprint", "enabled_by_default": False, "output": "L19_rdkit_path_fingerprint.csv", "requires_3d": False, "params": {"n_bits": 2048}},
+        "L20": {"name": "rdkit_pattern_fingerprint", "enabled_by_default": False, "output": "L20_rdkit_pattern_fingerprint.csv", "requires_3d": False, "params": {"n_bits": 2048}},
+        "L21": {"name": "rdkit_layered_fingerprint", "enabled_by_default": False, "output": "L21_rdkit_layered_fingerprint.csv", "requires_3d": False, "params": {"n_bits": 2048}},
+        "L22": {"name": "avalon_fingerprint", "enabled_by_default": False, "output": "L22_avalon_fingerprint.csv", "requires_3d": False, "params": {"n_bits": 2048, "vector_type": "bit"}},
+        "L23": {"name": "chiral_morgan_fingerprint", "enabled_by_default": False, "output": "L23_chiral_morgan_fingerprint.csv", "requires_3d": False, "params": {"radius": 2, "n_bits": 2048}},
+        "L24": {"name": "gobbi_pharm2d_folded_bit", "enabled_by_default": False, "output": "L24_gobbi_pharm2d_folded_bit.csv", "requires_3d": False, "params": {"n_bits": 2048}},
+        "L25": {"name": "gobbi_pharm2d_svd", "enabled_by_default": False, "output": "L25_gobbi_pharm2d_svd.csv", "requires_3d": False, "params": {"target_dim": 1024, "min_dim": 32, "max_dim": 1024, "random_seed": 61453}},
+        "L60": {"name": "tblite_xtb_singlepoint", "enabled_by_default": False, "output": "L60_tblite_xtb_singlepoint.csv", "requires_3d": True, "params": {"method": "GFN2-xTB"}},
     }
     return {"global": {"n_bits_default": 2048, "include_invalid_rows": True}, "sets": sets}
 
@@ -65,15 +88,45 @@ def load_config(path: str | None) -> dict[str, Any]:
     return _default_config()
 
 
+def apply_model_registry(config: dict[str, Any], path: str | None) -> None:
+    if not path or yaml is None:
+        return
+    registry_path = Path(path)
+    if not registry_path.exists():
+        return
+    with registry_path.open("r", encoding="utf-8") as handle:
+        registry = yaml.safe_load(handle) or {}
+    models = registry.get("models") or {}
+    for set_id, override in models.items():
+        set_id = str(set_id).strip().upper()
+        if set_id not in config["sets"] or not isinstance(override, dict):
+            continue
+        override = dict(override)
+        params = override.pop("params", None)
+        override = {key: value for key, value in override.items() if value is not None}
+        config["sets"][set_id].update(override)
+        if params:
+            current_params = dict(config["sets"][set_id].get("params") or {})
+            current_params.update({key: value for key, value in params.items() if value is not None})
+            config["sets"][set_id]["params"] = current_params
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate RDKit ligand descriptor CSV files.")
     parser.add_argument("--input", required=True, help="Input CSV containing compound IDs and SMILES.")
     parser.add_argument("--output-dir", default=None, help="Directory for output CSV files. Defaults to descriptions/<input_csv_stem>.")
     parser.add_argument("--config", default="config/descriptor_sets.yaml", help="Descriptor set YAML config.")
+    parser.add_argument("--model-registry", default="config/model_registry.yaml", help="Optional local pretrained model registry YAML.")
     parser.add_argument("--id-col", default=None, help="Explicit compound ID column.")
     parser.add_argument("--smiles-col", default=None, help="Explicit SMILES column.")
     parser.add_argument("--sets", default=None, help="Comma-separated descriptor set IDs, e.g. L01,L02.")
     parser.add_argument("--enable-3d", action="store_true", help="Allow L14-L16 3D descriptor sets.")
+    parser.add_argument(
+        "--model-dir",
+        action="append",
+        default=[],
+        help="Override local pretrained model directory as SET_ID=PATH, e.g. L30=C:\\models\\ChemBERTa.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Show inferred columns and planned outputs without writing descriptors.")
     parser.add_argument("--n-bits", type=int, default=None, help="Override fingerprint bit length where applicable.")
     parser.add_argument("--include-invalid-rows", action=argparse.BooleanOptionalAction, default=True)
@@ -98,6 +151,20 @@ def select_sets(config: dict[str, Any], requested: str | None, enable_3d: bool) 
     if blocked:
         raise ValueError(f"3D descriptor sets require --enable-3d: {','.join(blocked)}")
     return selected
+
+
+def apply_model_dir_overrides(config: dict[str, Any], overrides: list[str]) -> None:
+    for override in overrides:
+        if "=" not in override:
+            raise ValueError(f"--model-dir must be formatted as SET_ID=PATH: {override}")
+        set_id, model_dir = override.split("=", 1)
+        set_id = set_id.strip().upper()
+        model_dir = model_dir.strip().strip('"')
+        if not set_id or not model_dir:
+            raise ValueError(f"--model-dir must be formatted as SET_ID=PATH: {override}")
+        if set_id not in config["sets"]:
+            raise ValueError(f"--model-dir references unknown descriptor set: {set_id}")
+        config["sets"][set_id]["model_dir"] = model_dir
 
 
 def _prefix_for_set(set_id: str) -> str:
@@ -133,6 +200,24 @@ def _calculator_for_set(set_id: str, spec: dict[str, Any]) -> Callable:
         return lambda mol: calc_usr_usrcat(get_3d_mol(mol))
     if set_id == "L16":
         return lambda mol: calc_shape_basic(get_3d_mol(mol))
+    if set_id == "L17":
+        return calc_mordred_2d
+    if set_id == "L18":
+        return lambda mol: calc_mordred_3d(get_3d_mol(mol))
+    if set_id == "L19":
+        return lambda mol: calc_rdkit_path_fingerprint(mol, **params)
+    if set_id == "L20":
+        return lambda mol: calc_rdkit_pattern_fingerprint(mol, **params)
+    if set_id == "L21":
+        return lambda mol: calc_rdkit_layered_fingerprint(mol, **params)
+    if set_id == "L22":
+        return lambda mol: calc_avalon_fingerprint(mol, **params)
+    if set_id == "L23":
+        return lambda mol: calc_chiral_morgan_fingerprint(mol, **params)
+    if set_id == "L24":
+        return lambda mol: calc_gobbi_pharm2d_folded_bit(mol, **params)
+    if set_id == "L60":
+        return lambda mol: calc_tblite_xtb_singlepoint(mol, **params)
     raise ValueError(f"No calculator implemented for {set_id}")
 
 
@@ -188,6 +273,14 @@ def compute_set(mol_table: pd.DataFrame, set_id: str, spec: dict[str, Any]) -> t
     return df[common + feature_cols], errors
 
 
+def compute_descriptor_set(mol_table: pd.DataFrame, set_id: str, spec: dict[str, Any]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    if set_id == "L25":
+        return compute_gobbi_pharm2d_svd_set(mol_table, set_id, spec)
+    if set_id in EMBEDDING_SETS:
+        return compute_pretrained_embedding_set(mol_table, set_id, spec)
+    return compute_set(mol_table, set_id, spec)
+
+
 def _validate_columns(df: pd.DataFrame, id_col: str | None, smiles_col: str | None) -> None:
     if smiles_col is None:
         raise ValueError("SMILES column could not be inferred. Specify --smiles-col.")
@@ -222,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.output_dir is None:
         args.output_dir = str(repo_root() / "descriptions" / Path(args.input).stem)
     config = load_config(args.config)
+    apply_model_registry(config, args.model_registry)
     df = read_input_csv(args.input)
     inferred = infer_columns(df)
     id_col = args.id_col or config.get("global", {}).get("id_column") or inferred["id_col"]
@@ -229,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
     _validate_columns(df, id_col, smiles_col)
 
     selected_sets = select_sets(config, args.sets, args.enable_3d)
+    apply_model_dir_overrides(config, args.model_dir)
     if args.n_bits:
         for set_id in selected_sets:
             params = config["sets"][set_id].setdefault("params", {})
@@ -246,19 +341,25 @@ def main(argv: list[str] | None = None) -> int:
     all_errors: list[dict[str, Any]] = []
     outputs: dict[str, str] = {}
     failed_by_set: dict[str, int] = {}
+    feature_dimensions: dict[str, int] = {}
+    descriptor_metadata: dict[str, Any] = {}
 
     for set_id in selected_sets:
         spec = config["sets"][set_id]
         output_path = Path(args.output_dir, spec["output"])
         if output_path.exists() and not args.overwrite:
             raise FileExistsError(f"Output exists; use --overwrite to replace it: {output_path}")
-        descriptor_df, errors = compute_set(mol_table, set_id, spec)
+        descriptor_df, errors = compute_descriptor_set(mol_table, set_id, spec)
         if not args.include_invalid_rows:
             descriptor_df = descriptor_df[descriptor_df["mol_parse_ok"]].copy()
         write_descriptor_csv(descriptor_df, str(output_path))
         all_errors.extend(errors)
         outputs[set_id] = spec["output"]
         failed_by_set[set_id] = len(errors)
+        common = {"compound_id", "canonical_smiles", "mol_parse_ok", "descriptor_error"}
+        feature_dimensions[set_id] = len([col for col in descriptor_df.columns if col not in common])
+        if descriptor_df.attrs.get("descriptor_metadata"):
+            descriptor_metadata[set_id] = descriptor_df.attrs["descriptor_metadata"]
 
     write_error_report(all_errors, args.output_dir)
     duplicate_ids = int(mol_table["compound_id"].duplicated().sum())
@@ -274,6 +375,8 @@ def main(argv: list[str] | None = None) -> int:
         "n_duplicate_compound_ids": duplicate_ids,
         "descriptor_sets": selected_sets,
         "outputs": outputs,
+        "feature_dimensions": feature_dimensions,
+        "descriptor_metadata": descriptor_metadata,
         "errors": failed_by_set,
         "column_inference": inferred,
         "argv": sys.argv[1:] if argv is None else argv,

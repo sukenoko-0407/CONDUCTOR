@@ -1,0 +1,65 @@
+models:
+  L30:
+    name: chemberta_embedding
+    model_dir: null
+    params:
+      pooling: mean_last_hidden_state
+      max_length: 256
+      batch_size: 32
+  L31:
+    name: molformer_embedding
+    model_dir: null
+  L32:
+    name: grover_embedding
+    model_dir: null
+  L33:
+    name: unimol_embedding
+    model_dir: null
+  L34:
+    name: smi_ted_embedding
+    model_dir: null
+  L35:
+    name: smi_ssed_embedding
+    model_dir: null
+  L36:
+    name: selfies_ted_embedding
+    model_dir: null
+  L37:
+    name: megamolbart_embedding
+    model_dir: null
+  L38:
+    name: chemformer_molbart_embedding
+    model_dir: null
+  L39:
+    name: cddd_embedding
+    model_dir: null
+  L40:
+    name: molbert_embedding
+    model_dir: null
+  L41:
+    name: selformer_embedding
+    model_dir: null
+  L42:
+    name: smiles_transformer_embedding
+    model_dir: null
+  L43:
+    name: mol2vec_embedding
+    model_dir: null
+  L44:
+    name: kpgt_embedding
+    model_dir: null
+  L45:
+    name: mole_bert_embedding
+    model_dir: null
+  L46:
+    name: molclr_embedding
+    model_dir: null
+  L47:
+    name: mole_embedding
+    model_dir: null
+  L48:
+    name: r_mat_embedding
+    model_dir: null
+  L49:
+    name: multimodal_molecule_text_embedding
+    model_dir: null
