@@ -12,9 +12,15 @@ models:
   L32:
     name: grover_embedding
     model_dir: null
+    params:
+      command: null
   L33:
     name: unimol_embedding
     model_dir: null
+    params:
+      data_type: molecule
+      remove_hs: false
+      use_cuda: false
   L34:
     name: smi_ted_embedding
     model_dir: null
@@ -24,6 +30,8 @@ models:
   L36:
     name: selfies_ted_embedding
     model_dir: null
+    params:
+      input_format: selfies
   L37:
     name: megamolbart_embedding
     model_dir: null
@@ -39,12 +47,17 @@ models:
   L41:
     name: selformer_embedding
     model_dir: null
+    params:
+      input_format: selfies
   L42:
     name: smiles_transformer_embedding
     model_dir: null
   L43:
     name: mol2vec_embedding
     model_dir: null
+    params:
+      radius: 1
+      binary: false
   L44:
     name: kpgt_embedding
     model_dir: null

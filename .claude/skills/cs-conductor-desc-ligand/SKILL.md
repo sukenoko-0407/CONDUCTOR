@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-desc-ligand
-description: Generate RDKit ligand-only descriptors and fingerprints from CSV files, with automatic ID/SMILES column inference and split descriptor CSV outputs under descriptions per input CSV stem. Use when the user asks Claude Code to calculate RDKit molecular descriptors, Morgan/ECFP/FCFP fingerprints, MACCS/AtomPair/Torsion fingerprints, RDKit fragment-count descriptors, or low-cost RDKit 3D ligand descriptors with ETKDG/MMFF conformer generation.
+description: Generate ligand-only descriptors, fingerprints, and optional pretrained embeddings from CSV files, with automatic ID/SMILES column inference and split descriptor CSV outputs under descriptions per input CSV stem. Use when the user asks Claude Code to calculate RDKit molecular descriptors, Morgan/ECFP/FCFP fingerprints, MACCS/AtomPair/Torsion fingerprints, RDKit fragment-count descriptors, Mordred descriptors, 2D pharmacophore fingerprints, pretrained ligand embeddings, or low-cost RDKit 3D ligand descriptors with ETKDG/MMFF conformer generation.
 allowed-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, LS
 ---
 
@@ -104,6 +104,26 @@ uv run python -m src.run_descriptors \
 
 For repeated use, put local model paths in `config/model_registry.yaml`. Command-line `--model-dir` overrides the registry for that run.
 
+Pretrained model paths and adapter settings:
+
+```yaml
+models:
+  L30:
+    model_dir: C:\path\to\ChemBERTa-100M-MLM
+  L32:
+    model_dir: C:\path\to\GROVER
+    params:
+      command: "python C:\path\to\grover_embed.py --input {input_csv} --output {output_csv} --checkpoint {model_dir}"
+  L37:
+    model_dir: C:\path\to\MegaMolBART
+    params:
+      adapter_path: conductor_embedding_adapter.py
+```
+
+`local_custom` sets load `conductor_embedding_adapter.py` or `adapter.py` from `model_dir`. The adapter must expose `embed_molecules(records, model_dir, params)` or `embed_smiles(smiles, model_dir, params)` and return vectors, a DataFrame, or `{vectors, metadata}`. `external_command` sets write an input CSV with `compound_id,canonical_smiles` and expect `{output_csv}` to contain `compound_id` plus numeric feature columns.
+
+Optional embedding dependencies are loader-specific: Hugging Face loaders require `torch` and `transformers`; SELFIES input requires `selfies`; `unimol_local` requires `unimol_tools`; `mol2vec_local` requires `mol2vec` and `gensim`.
+
 ## Descriptor Sets
 
 - L01: RDKit 0D/1D/2D descriptors
@@ -129,7 +149,7 @@ For repeated use, put local model paths in `config/model_registry.yaml`. Command
 - L23: chiral Morgan fingerprint, optional
 - L24: Gobbi 2D pharmacophore folded bit fingerprint, optional
 - L25: Gobbi 2D pharmacophore TruncatedSVD representation, optional and dataset-specific
-- L30-L49: pretrained embedding adapters, optional and require local model directories
+- L30-L49: pretrained embedding adapters, optional; use Hugging Face local models, SELFIES conversion, `local_custom`, `external_command`, `unimol_local`, or `mol2vec_local` as configured
 - L60: tblite/xTB single-point descriptors, optional, requires `--enable-3d` and `tblite-python`
 
 L12 and L13 are intentionally not emitted in CONDUCTOR_v1. Murcko, BRICS, and RECAP grouping belong to `cs-conductor-grouping`.

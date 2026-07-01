@@ -224,9 +224,11 @@ sets:
     enabled_by_default: false
     output: L32_grover_embedding.csv
     requires_3d: false
-    loader: grover_local
+    loader: external_command
     model_dir: null
     metric_recommendation: cosine
+    params:
+      command: null
   L33:
     name: unimol_embedding
     category: pretrained_embedding
@@ -236,33 +238,50 @@ sets:
     loader: unimol_local
     model_dir: null
     metric_recommendation: cosine
+    params:
+      data_type: molecule
+      remove_hs: false
+      use_cuda: false
   L34:
     name: smi_ted_embedding
     category: pretrained_embedding
     enabled_by_default: false
     output: L34_smi_ted_embedding.csv
     requires_3d: false
-    loader: local_custom
+    loader: huggingface_transformers_trust_remote_code
     model_dir: null
     metric_recommendation: cosine
+    params:
+      pooling: mean_last_hidden_state
+      max_length: 256
+      batch_size: 32
   L35:
     name: smi_ssed_embedding
     category: pretrained_embedding
     enabled_by_default: false
     output: L35_smi_ssed_embedding.csv
     requires_3d: false
-    loader: local_custom
+    loader: huggingface_transformers_trust_remote_code
     model_dir: null
     metric_recommendation: cosine
+    params:
+      pooling: mean_last_hidden_state
+      max_length: 256
+      batch_size: 32
   L36:
     name: selfies_ted_embedding
     category: pretrained_embedding
     enabled_by_default: false
     output: L36_selfies_ted_embedding.csv
     requires_3d: false
-    loader: local_custom
+    loader: huggingface_transformers
     model_dir: null
     metric_recommendation: cosine
+    params:
+      input_format: selfies
+      pooling: mean_last_hidden_state
+      max_length: 256
+      batch_size: 32
   L37:
     name: megamolbart_embedding
     category: pretrained_embedding
@@ -296,13 +315,9 @@ sets:
     enabled_by_default: false
     output: L40_molbert_embedding.csv
     requires_3d: false
-    loader: huggingface_transformers
+    loader: local_custom
     model_dir: null
     metric_recommendation: cosine
-    params:
-      pooling: mean_last_hidden_state
-      max_length: 256
-      batch_size: 32
   L41:
     name: selformer_embedding
     category: pretrained_embedding
@@ -312,19 +327,17 @@ sets:
     loader: local_custom
     model_dir: null
     metric_recommendation: cosine
+    params:
+      input_format: selfies
   L42:
     name: smiles_transformer_embedding
     category: pretrained_embedding
     enabled_by_default: false
     output: L42_smiles_transformer_embedding.csv
     requires_3d: false
-    loader: generic_torch_sequence
+    loader: local_custom
     model_dir: null
     metric_recommendation: cosine
-    params:
-      pooling: mean_last_hidden_state
-      max_length: 256
-      batch_size: 32
   L43:
     name: mol2vec_embedding
     category: pretrained_embedding
@@ -334,6 +347,9 @@ sets:
     loader: mol2vec_local
     model_dir: null
     metric_recommendation: cosine
+    params:
+      radius: 1
+      binary: false
   L44:
     name: kpgt_embedding
     category: pretrained_embedding
