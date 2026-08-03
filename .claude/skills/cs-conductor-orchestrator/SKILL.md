@@ -17,16 +17,19 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 1. Build or verify the Catalog with `scripts/build_catalog.py`.
 2. Initialize one run per endpoint with a required `higher_is_better` direction and human-specified parallel limit.
-3. Create a broad-shallow plan from capabilities marked `default_wide_shallow` and applicable to available inputs.
-4. Add dependency edges before execution.
+3. Create the mandatory `representative-family-wide-v1` plan from capabilities marked `default_wide_shallow`. Preserve every declared Description, Grouping, and Operator axis, including the 3D Description axis.
+4. Expand each dependent capability only across its explicit `wide_shallow_sources`; add dependency edges and `input_bindings` before execution. Never bind a downstream node to the first Description or Grouping merely because it was created first.
+   - For `grouping_kind=direct_structure`, pass the run SMILES input and never substitute a Description artifact.
+   - For `grouping_kind=description_vector`, pass exactly the artifact from `input_bindings.description`; never pass raw SMILES or let the Clustering Skill generate a fingerprint internally.
 5. If a Catalog capability exposes `variants`, choose one explicitly. Keep the same capability ID, create a separate node for each compared variant, and store CLI destinations in the node's `parameters` using `state_manager.py add --parameters-json`. Do not represent a variant as an unplanned argument change.
 6. Use `scripts/state_manager.py runnable` to find nodes whose dependencies and approval requirements are satisfied.
 7. Mark each selected node `running` with `state_manager.py start`; this enforces the human-specified parallel limit.
-8. Invoke the Project Skill with `--conductor`, the State project, the same run ID, the reserved node ID, the prescribed output directory, and the exact node parameters. Never omit any of these CONDUCTOR context arguments.
+8. Invoke the Project Skill with `--conductor`, the State project, the same run ID, the reserved node ID, and the exact node `parameters`. The planned parameters already include node-specific `output_dir` and resolved upstream artifact arguments derived from `input_bindings`. Never omit or replace these CONDUCTOR context arguments.
 9. Record each schema-valid `execution_event.json` through `state_manager.py record`. State rejects events whose `configuration` does not match the planned parameter subset. If execution terminates without an event, use `state_manager.py fail` with the concrete error; a failed node is not automatically retried.
-10. Inspect evidence, contradictions, warnings, and representation independence. Add focused nodes when they can resolve a concrete uncertainty.
-11. Before a high/very-high cost node, or a normally medium-cost node made expensive by dataset scale, explain purpose, target, expected information, resources, and alternative; add it with `--require-approval` when necessary, wait for explicit human approval, then record it.
-12. Run Interpretation only after passing both positive and contradictory evidence, failures, and unexecuted relevant options.
+10. Complete a coverage audit with `state status`. Do not stop the initial pass because early results lack signal. Replace a failed/inapplicable axis where practical, or preserve its concrete skip rationale. Only then inspect evidence, contradictions, warnings, and representation independence and add focused nodes that can resolve a concrete uncertainty.
+11. Before a high/very-high cost node, or a normally medium-cost node made expensive by dataset scale, explain purpose, target, expected information, resources, and alternative; add it with `--require-approval` when necessary, wait for explicit human approval, then record it. The exception is a Catalog capability explicitly marked `approval_policy=preauthorized_initial`.
+    C002 MCS is the mandatory central direct-structure axis and carries that policy. Plan it in every initial profile and start it as soon as State reports it runnable; do not request run-specific approval or convert it into an optional deep dive.
+12. Run Interpretation only after every initial node is terminal and after passing both positive and contradictory evidence, failures, coverage gaps, and unexecuted relevant options. State enforces this gate.
 
 ## Environment
 
@@ -106,10 +109,15 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state fail \
 
 ## Planning principles
 
+- Treat the initial breadth profile as a required hint-discovery pass, not as an optional low-cost sample.
+- Preserve all Catalog-declared representative axes; 3D Description is mandatory in the initial profile.
+- Treat C002 MCS as a mandatory, preauthorized initial Grouping axis even though its cost class is `high`.
 - Prefer representation-family diversity over redundant variants during the first pass.
+- Preserve the boundary between direct SMILES Grouping and Description-vector Clustering; never recreate the retired SMILES-to-fingerprint clustering wrappers inside the workflow.
 - Use a non-default variant only when it can answer a stated question; represent every compared variant as a separate State node.
 - Do not make every possible Grouping × evaluation representation combination.
+- Do not claim absence of a useful signal until `wide_shallow_coverage` has been audited across Description, Grouping, and Operator.
 - Prefer nodes that can change the next decision.
 - Separate execution DAG, group relation graph, and evidence dependency graph.
-- Never infer approval from silence.
+- Never infer approval from silence. `preauthorized_initial` is a human-defined Catalog policy, not inferred approval.
 - Never modify molecular structures or endpoint units.

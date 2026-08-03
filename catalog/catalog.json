@@ -3,7 +3,7 @@
   "conductor_version": "4.0.0",
   "selection_managed_by": "human",
   "selection_path": "catalog/included_skills.json",
-  "generated_at": "2026-08-03T06:15:58.922183+00:00",
+  "generated_at": "2026-08-03T12:43:08.039574+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -28,7 +28,17 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "group_activity_profile",
+      "wide_shallow_sources": {
+        "grouping": [
+          "*"
+        ]
+      },
       "operator_id": "A001",
+      "default_parameters": {
+        "high_quantile": 0.8,
+        "low_quantile": 0.2
+      },
       "dependencies": [
         "grouping"
       ],
@@ -67,6 +77,7 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "endpoint_distribution",
       "operator_id": "A002",
       "dependencies": [],
       "input_contract": [
@@ -102,8 +113,12 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "pairwise_structure_space",
       "operator_id": "A003",
+      "default_parameters": {
+        "max_pairs": 200000
+      },
       "dependencies": [],
       "input_contract": [
         "endpoint_csv"
@@ -139,6 +154,13 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "descriptor_activity_association",
+      "wide_shallow_sources": {
+        "description": [
+          "D001",
+          "D013"
+        ]
+      },
       "operator_id": "A004",
       "dependencies": [
         "description"
@@ -178,7 +200,18 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "neighborhood_activity_consistency",
+      "wide_shallow_sources": {
+        "description": [
+          "D004",
+          "D007"
+        ]
+      },
       "operator_id": "A005",
+      "default_parameters": {
+        "k": 10,
+        "metric": "cosine"
+      },
       "dependencies": [
         "description"
       ],
@@ -217,7 +250,19 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "representation_specific_activity_cliffs",
+      "wide_shallow_sources": {
+        "description": [
+          "D002",
+          "D013",
+          "D017"
+        ]
+      },
       "operator_id": "A006",
+      "default_parameters": {
+        "k": 10,
+        "metric": "cosine"
+      },
       "dependencies": [
         "description"
       ],
@@ -256,7 +301,13 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "structure_activity_cliffs",
       "operator_id": "A007",
+      "default_parameters": {
+        "similarity_threshold": 0.8,
+        "activity_delta_threshold": 1.0,
+        "max_pairs": 200000
+      },
       "dependencies": [],
       "input_contract": [
         "endpoint_csv"
@@ -292,7 +343,17 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "group_activity_enrichment",
+      "wide_shallow_sources": {
+        "grouping": [
+          "*"
+        ]
+      },
       "operator_id": "A008",
+      "default_parameters": {
+        "high_quantile": 0.8,
+        "low_quantile": 0.2
+      },
       "dependencies": [
         "grouping"
       ],
@@ -330,7 +391,13 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "overlapping_group_structure",
+      "wide_shallow_sources": {
+        "grouping": [
+          "C003"
+        ]
+      },
       "operator_id": "A009",
       "dependencies": [
         "grouping"
@@ -369,8 +436,20 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "group_structural_diversity",
+      "wide_shallow_sources": {
+        "grouping": [
+          "C001",
+          "C002",
+          "C003",
+          "C006"
+        ]
+      },
       "operator_id": "A010",
+      "default_parameters": {
+        "max_pairs": 200000
+      },
       "dependencies": [
         "grouping"
       ],
@@ -393,8 +472,9 @@
       "display_name": "Murcko scaffold clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_rule",
-      "description": "Use when Claude Code needs to run Murcko scaffold clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds directly from SMILES by Murcko scaffold, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -409,10 +489,14 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "scaffold_rule",
       "clustering_id": "C001",
+      "default_parameters": {
+        "min_cluster_size": 3
+      },
       "dependencies": [],
       "input_contract": [
-        "csv_or_smiles"
+        "smiles_csv_or_inline_smiles"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -429,13 +513,15 @@
       "display_name": "MCS clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_rule",
-      "description": "Use when Claude Code needs to run MCS clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval.",
       "cost": {
         "class": "high",
-        "human_approval_required": true,
+        "human_approval_required": false,
         "hpc_profile": "cpu64"
       },
+      "approval_policy": "preauthorized_initial",
       "applicability": {
         "status": "experimental",
         "platforms": [
@@ -444,11 +530,17 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "maximum_common_substructure",
       "clustering_id": "C002",
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "max_pairs": 2000,
+        "max_core_groups": 100
+      },
       "dependencies": [],
       "input_contract": [
-        "csv_or_smiles"
+        "smiles_csv_or_inline_smiles"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -465,8 +557,9 @@
       "display_name": "BRICS fragment clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_rule",
-      "description": "Use when Claude Code needs to run BRICS fragment clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds directly from SMILES by shared BRICS fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -480,11 +573,15 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "fragment_decomposition",
       "clustering_id": "C003",
+      "default_parameters": {
+        "min_cluster_size": 3
+      },
       "dependencies": [],
       "input_contract": [
-        "csv_or_smiles"
+        "smiles_csv_or_inline_smiles"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -501,8 +598,9 @@
       "display_name": "RECAP fragment clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_rule",
-      "description": "Use when Claude Code needs to run RECAP fragment clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds directly from SMILES by shared RECAP fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -520,7 +618,7 @@
       "clustering_id": "C004",
       "dependencies": [],
       "input_contract": [
-        "csv_or_smiles"
+        "smiles_csv_or_inline_smiles"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -533,12 +631,13 @@
     {
       "schema_version": "1.0.0",
       "capability_id": "C005",
-      "skill_name": "cs-compute-clustering-structure-butina",
-      "display_name": "Structure Butina clustering",
+      "skill_name": "cs-compute-clustering-vector-butina",
+      "display_name": "Vector Butina clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_similarity",
-      "description": "Use when Claude Code needs to run Structure Butina clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply Butina clustering to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate fingerprints internally.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -553,28 +652,42 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_similarity_partition",
+      "wide_shallow_sources": {
+        "description": [
+          "D002"
+        ]
+      },
       "clustering_id": "C005",
-      "dependencies": [],
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "jaccard",
+        "similarity_threshold": 0.55
+      },
+      "dependencies": [
+        "description"
+      ],
       "input_contract": [
-        "csv_or_smiles"
+        "description_vector_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
         "summary": "cluster_summary.csv"
       },
       "implementation": {
-        "algorithm": "structure_butina"
+        "algorithm": "vector_butina"
       }
     },
     {
       "schema_version": "1.0.0",
       "capability_id": "C006",
-      "skill_name": "cs-compute-clustering-structure-hierarchical",
-      "display_name": "Structure hierarchical clustering",
+      "skill_name": "cs-compute-clustering-vector-hierarchical",
+      "display_name": "Vector hierarchical clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_similarity",
-      "description": "Use when Claude Code needs to run Structure hierarchical clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply hierarchical clustering to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -588,29 +701,45 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_hierarchical",
+      "wide_shallow_sources": {
+        "description": [
+          "D001",
+          "D013",
+          "D017"
+        ]
+      },
       "clustering_id": "C006",
-      "dependencies": [],
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "cosine",
+        "distance_threshold": 0.7
+      },
+      "dependencies": [
+        "description"
+      ],
       "input_contract": [
-        "csv_or_smiles"
+        "description_vector_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
         "summary": "cluster_summary.csv"
       },
       "implementation": {
-        "algorithm": "structure_hierarchical"
+        "algorithm": "vector_hierarchical"
       }
     },
     {
       "schema_version": "1.0.0",
       "capability_id": "C007",
-      "skill_name": "cs-compute-clustering-structure-dbscan",
-      "display_name": "Structure DBSCAN clustering",
+      "skill_name": "cs-compute-clustering-vector-dbscan",
+      "display_name": "Vector DBSCAN clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_similarity",
-      "description": "Use when Claude Code needs to run Structure DBSCAN clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply DBSCAN to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -624,29 +753,44 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_density_clustering",
+      "wide_shallow_sources": {
+        "description": [
+          "D001"
+        ]
+      },
       "clustering_id": "C007",
-      "dependencies": [],
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "cosine",
+        "eps": 0.5,
+        "min_samples": 3
+      },
+      "dependencies": [
+        "description"
+      ],
       "input_contract": [
-        "csv_or_smiles"
+        "description_vector_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
         "summary": "cluster_summary.csv"
       },
       "implementation": {
-        "algorithm": "structure_dbscan"
+        "algorithm": "vector_dbscan"
       }
     },
     {
       "schema_version": "1.0.0",
       "capability_id": "C008",
-      "skill_name": "cs-compute-clustering-structure-louvain",
-      "display_name": "Structure Louvain clustering",
+      "skill_name": "cs-compute-clustering-vector-louvain",
+      "display_name": "Vector Louvain clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_similarity",
-      "description": "Use when Claude Code needs to run Structure Louvain clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply Louvain community detection to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -662,27 +806,30 @@
       },
       "default_wide_shallow": false,
       "clustering_id": "C008",
-      "dependencies": [],
+      "dependencies": [
+        "description"
+      ],
       "input_contract": [
-        "csv_or_smiles"
+        "description_vector_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
         "summary": "cluster_summary.csv"
       },
       "implementation": {
-        "algorithm": "structure_louvain"
+        "algorithm": "vector_louvain"
       }
     },
     {
       "schema_version": "1.0.0",
       "capability_id": "C009",
-      "skill_name": "cs-compute-clustering-structure-leiden",
-      "display_name": "Structure Leiden clustering",
+      "skill_name": "cs-compute-clustering-vector-leiden",
+      "display_name": "Vector Leiden clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_similarity",
-      "description": "Use when Claude Code needs to run Structure Leiden clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply Leiden community detection to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -696,29 +843,45 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_graph_community",
+      "wide_shallow_sources": {
+        "description": [
+          "D002"
+        ]
+      },
       "clustering_id": "C009",
-      "dependencies": [],
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "jaccard",
+        "similarity_threshold": 0.55,
+        "resolution": 1.0,
+        "random_seed": 61453
+      },
+      "dependencies": [
+        "description"
+      ],
       "input_contract": [
-        "csv_or_smiles"
+        "description_vector_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
         "summary": "cluster_summary.csv"
       },
       "implementation": {
-        "algorithm": "structure_leiden"
+        "algorithm": "vector_leiden"
       }
     },
     {
       "schema_version": "1.0.0",
       "capability_id": "C010",
-      "skill_name": "cs-compute-clustering-structure-connected-components",
-      "display_name": "Structure connected-component clustering",
+      "skill_name": "cs-compute-clustering-vector-connected-components",
+      "display_name": "Vector connected-component clustering",
       "version": "4.0.0",
       "stage": "grouping",
-      "family": "structure_similarity",
-      "description": "Use when Claude Code needs to run Structure connected-component clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to form connected components from a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -734,237 +897,11 @@
       },
       "default_wide_shallow": false,
       "clustering_id": "C010",
-      "dependencies": [],
-      "input_contract": [
-        "csv_or_smiles"
-      ],
-      "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv"
-      },
-      "implementation": {
-        "algorithm": "structure_connected_components"
-      }
-    },
-    {
-      "schema_version": "1.0.0",
-      "capability_id": "C011",
-      "skill_name": "cs-compute-clustering-vector-butina",
-      "display_name": "Vector Butina clustering",
-      "version": "4.0.0",
-      "stage": "grouping",
-      "family": "vector",
-      "description": "Use when Claude Code needs to run Vector Butina clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": false,
-      "clustering_id": "C011",
       "dependencies": [
         "description"
       ],
       "input_contract": [
-        "description_csv"
-      ],
-      "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv"
-      },
-      "implementation": {
-        "algorithm": "vector_butina"
-      }
-    },
-    {
-      "schema_version": "1.0.0",
-      "capability_id": "C012",
-      "skill_name": "cs-compute-clustering-vector-hierarchical",
-      "display_name": "Vector hierarchical clustering",
-      "version": "4.0.0",
-      "stage": "grouping",
-      "family": "vector",
-      "description": "Use when Claude Code needs to run Vector hierarchical clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": true,
-      "clustering_id": "C012",
-      "dependencies": [
-        "description"
-      ],
-      "input_contract": [
-        "description_csv"
-      ],
-      "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv"
-      },
-      "implementation": {
-        "algorithm": "vector_hierarchical"
-      }
-    },
-    {
-      "schema_version": "1.0.0",
-      "capability_id": "C013",
-      "skill_name": "cs-compute-clustering-vector-dbscan",
-      "display_name": "Vector DBSCAN clustering",
-      "version": "4.0.0",
-      "stage": "grouping",
-      "family": "vector",
-      "description": "Use when Claude Code needs to run Vector DBSCAN clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": false,
-      "clustering_id": "C013",
-      "dependencies": [
-        "description"
-      ],
-      "input_contract": [
-        "description_csv"
-      ],
-      "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv"
-      },
-      "implementation": {
-        "algorithm": "vector_dbscan"
-      }
-    },
-    {
-      "schema_version": "1.0.0",
-      "capability_id": "C014",
-      "skill_name": "cs-compute-clustering-vector-louvain",
-      "display_name": "Vector Louvain clustering",
-      "version": "4.0.0",
-      "stage": "grouping",
-      "family": "vector",
-      "description": "Use when Claude Code needs to run Vector Louvain clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": false,
-      "clustering_id": "C014",
-      "dependencies": [
-        "description"
-      ],
-      "input_contract": [
-        "description_csv"
-      ],
-      "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv"
-      },
-      "implementation": {
-        "algorithm": "vector_louvain"
-      }
-    },
-    {
-      "schema_version": "1.0.0",
-      "capability_id": "C015",
-      "skill_name": "cs-compute-clustering-vector-leiden",
-      "display_name": "Vector Leiden clustering",
-      "version": "4.0.0",
-      "stage": "grouping",
-      "family": "vector",
-      "description": "Use when Claude Code needs to run Vector Leiden clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": false,
-      "clustering_id": "C015",
-      "dependencies": [
-        "description"
-      ],
-      "input_contract": [
-        "description_csv"
-      ],
-      "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv"
-      },
-      "implementation": {
-        "algorithm": "vector_leiden"
-      }
-    },
-    {
-      "schema_version": "1.0.0",
-      "capability_id": "C016",
-      "skill_name": "cs-compute-clustering-vector-connected-components",
-      "display_name": "Vector connected-component clustering",
-      "version": "4.0.0",
-      "stage": "grouping",
-      "family": "vector",
-      "description": "Use when Claude Code needs to run Vector connected-component clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": false,
-      "clustering_id": "C016",
-      "dependencies": [
-        "description"
-      ],
-      "input_contract": [
-        "description_csv"
+        "description_vector_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -976,12 +913,13 @@
     },
     {
       "schema_version": "1.0.0",
-      "capability_id": "C017",
+      "capability_id": "C011",
       "skill_name": "cs-compute-clustering-categorical",
       "display_name": "Categorical-column clustering",
       "version": "4.0.0",
       "stage": "grouping",
       "family": "human_context",
+      "grouping_kind": "categorical",
       "description": "Use when Claude Code needs to run Categorical-column clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
       "cost": {
         "class": "low",
@@ -997,7 +935,8 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": false,
-      "clustering_id": "C017",
+      "wide_shallow_axis": "assay_context_groups",
+      "clustering_id": "C011",
       "dependencies": [],
       "input_contract": [
         "categorical_csv"
@@ -1012,12 +951,13 @@
     },
     {
       "schema_version": "1.0.0",
-      "capability_id": "C018",
+      "capability_id": "C012",
       "skill_name": "cs-compute-clustering-meta-overlap",
       "display_name": "Overlap-based meta clustering",
       "version": "4.0.0",
       "stage": "grouping",
       "family": "meta",
+      "grouping_kind": "meta",
       "description": "Use when Claude Code needs to run Overlap-based meta clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
       "cost": {
         "class": "medium",
@@ -1033,7 +973,7 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": false,
-      "clustering_id": "C018",
+      "clustering_id": "C012",
       "dependencies": [
         "grouping"
       ],
@@ -1071,6 +1011,7 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "physicochemical_2d",
       "representation_id": "D001",
       "dependencies": [],
       "input_contract": [
@@ -1106,6 +1047,7 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "wide_shallow_axis": "local_circular_graph",
       "representation_id": "D002",
       "dependencies": [],
       "input_contract": [
@@ -1160,7 +1102,8 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "curated_substructure_keys",
       "representation_id": "D003",
       "dependencies": [],
       "input_contract": [
@@ -1195,8 +1138,12 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "topological_atom_pairs",
       "representation_id": "D004",
+      "default_parameters": {
+        "n_bits": 2048
+      },
       "dependencies": [],
       "input_contract": [
         "csv_or_smiles"
@@ -1300,8 +1247,12 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "topological_paths",
       "representation_id": "D007",
+      "default_parameters": {
+        "n_bits": 2048
+      },
       "dependencies": [],
       "input_contract": [
         "csv_or_smiles"
@@ -1475,8 +1426,13 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "shape_and_3d_pharmacophore",
       "representation_id": "D013",
+      "default_parameters": {
+        "num_confs": 20,
+        "random_seed": 61453
+      },
       "dependencies": [],
       "input_contract": [
         "csv_or_smiles"
@@ -1615,7 +1571,8 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "pharmacophore_2d",
       "representation_id": "D017",
       "dependencies": [],
       "input_contract": [
@@ -1737,7 +1694,7 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
+      "default_wide_shallow": false,
       "interpretation_id": "I001",
       "dependencies": [
         "evidence"

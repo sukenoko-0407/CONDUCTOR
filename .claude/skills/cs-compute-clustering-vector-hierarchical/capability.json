@@ -1,12 +1,13 @@
 {
   "schema_version": "1.0.0",
-  "capability_id": "C012",
+  "capability_id": "C006",
   "skill_name": "cs-compute-clustering-vector-hierarchical",
   "display_name": "Vector hierarchical clustering",
   "version": "4.0.0",
   "stage": "grouping",
-  "family": "vector",
-  "description": "Use when Claude Code needs to run Vector hierarchical clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "family": "description_vector",
+  "grouping_kind": "description_vector",
+  "description": "Use when Claude Code needs to apply hierarchical clustering to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -21,12 +22,25 @@
     "molecule_standardization": "out_of_scope"
   },
   "default_wide_shallow": true,
-  "clustering_id": "C012",
+  "wide_shallow_axis": "vector_hierarchical",
+  "wide_shallow_sources": {
+    "description": [
+      "D001",
+      "D013",
+      "D017"
+    ]
+  },
+  "clustering_id": "C006",
+  "default_parameters": {
+    "min_cluster_size": 3,
+    "metric": "cosine",
+    "distance_threshold": 0.7
+  },
   "dependencies": [
     "description"
   ],
   "input_contract": [
-    "description_csv"
+    "description_vector_csv"
   ],
   "output": {
     "membership": "cluster_membership.csv",

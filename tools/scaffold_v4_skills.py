@@ -16,64 +16,98 @@ SCHEMAS = ROOT / "schemas"
 DESCRIPTIONS = [
     ("D001", "cs-compute-description-rdkit-2d", "RDKit 2D descriptors", "rdkit_2d", "physicochemical", "low", "stable", True),
     ("D002", "cs-compute-description-morgan", "Morgan fingerprint (optional chirality)", "morgan", "2d_fingerprint", "low", "stable", True),
-    ("D003", "cs-compute-description-maccs", "MACCS keys", "maccs", "2d_fingerprint", "low", "stable", False),
-    ("D004", "cs-compute-description-atom-pair", "Hashed atom-pair fingerprint", "atom_pair", "2d_fingerprint", "low", "stable", False),
+    ("D003", "cs-compute-description-maccs", "MACCS keys", "maccs", "2d_fingerprint", "low", "stable", True),
+    ("D004", "cs-compute-description-atom-pair", "Hashed atom-pair fingerprint", "atom_pair", "2d_fingerprint", "low", "stable", True),
     ("D005", "cs-compute-description-topological-torsion", "Hashed topological-torsion fingerprint", "topological_torsion", "2d_fingerprint", "low", "stable", False),
     ("D006", "cs-compute-description-rdkit-fragment", "RDKit fragment counts", "rdkit_fragment", "substructure", "low", "stable", False),
-    ("D007", "cs-compute-description-rdkit-path-fingerprint", "RDKit path fingerprint", "rdkit_path", "2d_fingerprint", "low", "stable", False),
+    ("D007", "cs-compute-description-rdkit-path-fingerprint", "RDKit path fingerprint", "rdkit_path", "2d_fingerprint", "low", "stable", True),
     ("D008", "cs-compute-description-rdkit-pattern-fingerprint", "RDKit pattern fingerprint", "rdkit_pattern", "substructure", "low", "stable", False),
     ("D009", "cs-compute-description-rdkit-layered-fingerprint", "RDKit layered fingerprint", "rdkit_layered", "2d_fingerprint", "low", "stable", False),
     ("D010", "cs-compute-description-avalon-fingerprint", "Avalon fingerprint", "avalon", "2d_fingerprint", "low", "stable", False),
     ("D012", "cs-compute-description-rdkit-3d", "RDKit 3D descriptors", "rdkit_3d", "3d_shape", "medium", "stable", False),
-    ("D013", "cs-compute-description-usr-usrcat", "USR and USRCAT", "usr_usrcat", "3d_shape", "medium", "stable", False),
+    ("D013", "cs-compute-description-usr-usrcat", "USR and USRCAT", "usr_usrcat", "3d_shape", "medium", "stable", True),
     ("D014", "cs-compute-description-shape", "Basic 3D shape descriptors", "shape", "3d_shape", "medium", "stable", False),
     ("D015", "cs-compute-description-mordred-2d", "Mordred 2D descriptors", "mordred_2d", "physicochemical", "medium", "experimental", False),
     ("D016", "cs-compute-description-mordred-3d", "Mordred 3D descriptors", "mordred_3d", "3d_shape", "high", "experimental", False),
-    ("D017", "cs-compute-description-gobbi-pharm2d", "Gobbi 2D pharmacophore fingerprint (optional SVD)", "gobbi_pharm2d", "pharmacophore", "medium", "stable", False),
+    ("D017", "cs-compute-description-gobbi-pharm2d", "Gobbi 2D pharmacophore fingerprint (optional SVD)", "gobbi_pharm2d", "pharmacophore", "medium", "stable", True),
     ("D019", "cs-compute-description-pretrained-embedding", "Local pretrained molecular embedding", "pretrained_embedding", "pretrained_embedding", "high", "experimental", False),
     ("D020", "cs-compute-description-tblite-xtb", "GFN2-xTB single-point descriptors", "tblite_xtb", "quantum", "very_high", "experimental", False),
 ]
 
 
 CLUSTERINGS = [
-    ("C001", "cs-compute-clustering-structure-murcko", "Murcko scaffold clustering", "structure_murcko", "structure_rule", "low", "stable", True),
-    ("C002", "cs-compute-clustering-structure-mcs", "MCS clustering", "structure_mcs", "structure_rule", "high", "experimental", False),
-    ("C003", "cs-compute-clustering-structure-brics", "BRICS fragment clustering", "structure_brics", "structure_rule", "medium", "stable", False),
-    ("C004", "cs-compute-clustering-structure-recap", "RECAP fragment clustering", "structure_recap", "structure_rule", "medium", "stable", False),
-    ("C005", "cs-compute-clustering-structure-butina", "Structure Butina clustering", "structure_butina", "structure_similarity", "medium", "stable", True),
-    ("C006", "cs-compute-clustering-structure-hierarchical", "Structure hierarchical clustering", "structure_hierarchical", "structure_similarity", "medium", "stable", False),
-    ("C007", "cs-compute-clustering-structure-dbscan", "Structure DBSCAN clustering", "structure_dbscan", "structure_similarity", "medium", "stable", False),
-    ("C008", "cs-compute-clustering-structure-louvain", "Structure Louvain clustering", "structure_louvain", "structure_similarity", "medium", "stable", False),
-    ("C009", "cs-compute-clustering-structure-leiden", "Structure Leiden clustering", "structure_leiden", "structure_similarity", "medium", "stable", False),
-    ("C010", "cs-compute-clustering-structure-connected-components", "Structure connected-component clustering", "structure_connected_components", "structure_similarity", "medium", "stable", False),
-    ("C011", "cs-compute-clustering-vector-butina", "Vector Butina clustering", "vector_butina", "vector", "medium", "stable", False),
-    ("C012", "cs-compute-clustering-vector-hierarchical", "Vector hierarchical clustering", "vector_hierarchical", "vector", "medium", "stable", True),
-    ("C013", "cs-compute-clustering-vector-dbscan", "Vector DBSCAN clustering", "vector_dbscan", "vector", "medium", "stable", False),
-    ("C014", "cs-compute-clustering-vector-louvain", "Vector Louvain clustering", "vector_louvain", "vector", "medium", "stable", False),
-    ("C015", "cs-compute-clustering-vector-leiden", "Vector Leiden clustering", "vector_leiden", "vector", "medium", "stable", False),
-    ("C016", "cs-compute-clustering-vector-connected-components", "Vector connected-component clustering", "vector_connected_components", "vector", "medium", "stable", False),
-    ("C017", "cs-compute-clustering-categorical", "Categorical-column clustering", "categorical", "human_context", "low", "stable", False),
-    ("C018", "cs-compute-clustering-meta-overlap", "Overlap-based meta clustering", "meta_overlap", "meta", "medium", "experimental", False),
+    ("C001", "cs-compute-clustering-structure-murcko", "Murcko scaffold clustering", "structure_murcko", "direct_structure", "low", "stable", True),
+    ("C002", "cs-compute-clustering-structure-mcs", "MCS clustering", "structure_mcs", "direct_structure", "high", "experimental", True),
+    ("C003", "cs-compute-clustering-structure-brics", "BRICS fragment clustering", "structure_brics", "direct_structure", "medium", "stable", True),
+    ("C004", "cs-compute-clustering-structure-recap", "RECAP fragment clustering", "structure_recap", "direct_structure", "medium", "stable", False),
+    ("C005", "cs-compute-clustering-vector-butina", "Vector Butina clustering", "vector_butina", "description_vector", "medium", "stable", True),
+    ("C006", "cs-compute-clustering-vector-hierarchical", "Vector hierarchical clustering", "vector_hierarchical", "description_vector", "medium", "stable", True),
+    ("C007", "cs-compute-clustering-vector-dbscan", "Vector DBSCAN clustering", "vector_dbscan", "description_vector", "medium", "stable", True),
+    ("C008", "cs-compute-clustering-vector-louvain", "Vector Louvain clustering", "vector_louvain", "description_vector", "medium", "stable", False),
+    ("C009", "cs-compute-clustering-vector-leiden", "Vector Leiden clustering", "vector_leiden", "description_vector", "medium", "stable", True),
+    ("C010", "cs-compute-clustering-vector-connected-components", "Vector connected-component clustering", "vector_connected_components", "description_vector", "medium", "stable", False),
+    ("C011", "cs-compute-clustering-categorical", "Categorical-column clustering", "categorical", "human_context", "low", "stable", False),
+    ("C012", "cs-compute-clustering-meta-overlap", "Overlap-based meta clustering", "meta_overlap", "meta", "medium", "experimental", False),
 ]
 
 
 OPERATORS = [
     ("A001", "cs-analysis-group-profile", "Group profile", "group_profile", "group_profile", "low", "stable", True, ["grouping"]),
     ("A002", "cs-analysis-activity-distribution", "Activity distribution", "activity_distribution", "property_profile", "low", "stable", True, []),
-    ("A003", "cs-analysis-pairwise-structure-similarity", "Pairwise structure similarity", "pairwise_structure_similarity", "feature_space", "medium", "stable", False, []),
+    ("A003", "cs-analysis-pairwise-structure-similarity", "Pairwise structure similarity", "pairwise_structure_similarity", "feature_space", "medium", "stable", True, []),
     ("A004", "cs-analysis-descriptor-activity-correlation", "Descriptor-activity correlation", "descriptor_activity_correlation", "interpretable_association", "low", "stable", True, ["description"]),
     ("A005", "cs-analysis-knn-activity-consistency", "kNN activity consistency", "knn_activity_consistency", "feature_space", "medium", "stable", True, ["description"]),
     ("A006", "cs-analysis-sali", "Structure-activity landscape index", "sali", "landscape", "medium", "stable", True, ["description"]),
     ("A007", "cs-analysis-activity-cliff", "Activity cliff detection", "activity_cliff", "landscape", "medium", "stable", True, []),
     ("A008", "cs-analysis-group-enrichment", "Group activity enrichment", "group_enrichment", "group_profile", "low", "stable", True, ["grouping"]),
-    ("A009", "cs-analysis-group-overlap", "Group overlap", "group_overlap", "group_quality", "low", "stable", False, ["grouping"]),
-    ("A010", "cs-analysis-group-structural-diversity", "Group structural diversity", "group_structural_diversity", "group_quality", "medium", "stable", False, ["grouping"]),
+    ("A009", "cs-analysis-group-overlap", "Group overlap", "group_overlap", "group_quality", "low", "stable", True, ["grouping"]),
+    ("A010", "cs-analysis-group-structural-diversity", "Group structural diversity", "group_structural_diversity", "group_quality", "medium", "stable", True, ["grouping"]),
 ]
+
+
+WIDE_PROFILE: dict[str, dict[str, Any]] = {
+    "D001": {"wide_shallow_axis": "physicochemical_2d"},
+    "D002": {"wide_shallow_axis": "local_circular_graph"},
+    "D003": {"wide_shallow_axis": "curated_substructure_keys"},
+    "D004": {"wide_shallow_axis": "topological_atom_pairs", "default_parameters": {"n_bits": 2048}},
+    "D007": {"wide_shallow_axis": "topological_paths", "default_parameters": {"n_bits": 2048}},
+    "D013": {"wide_shallow_axis": "shape_and_3d_pharmacophore", "default_parameters": {"num_confs": 20, "random_seed": 61453}},
+    "D017": {"wide_shallow_axis": "pharmacophore_2d"},
+    "C001": {"wide_shallow_axis": "scaffold_rule", "default_parameters": {"min_cluster_size": 3}},
+    "C002": {"wide_shallow_axis": "maximum_common_substructure", "default_parameters": {"min_cluster_size": 3, "max_pairs": 2000, "max_core_groups": 100}},
+    "C003": {"wide_shallow_axis": "fragment_decomposition", "default_parameters": {"min_cluster_size": 3}},
+    "C005": {"wide_shallow_axis": "vector_similarity_partition", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "jaccard", "similarity_threshold": 0.55}},
+    "C006": {"wide_shallow_axis": "vector_hierarchical", "wide_shallow_sources": {"description": ["D001", "D013", "D017"]}, "default_parameters": {"min_cluster_size": 3, "metric": "cosine", "distance_threshold": 0.7}},
+    "C007": {"wide_shallow_axis": "vector_density_clustering", "wide_shallow_sources": {"description": ["D001"]}, "default_parameters": {"min_cluster_size": 3, "metric": "cosine", "eps": 0.5, "min_samples": 3}},
+    "C009": {"wide_shallow_axis": "vector_graph_community", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "jaccard", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
+    "C011": {"wide_shallow_axis": "assay_context_groups"},
+    "A001": {"wide_shallow_axis": "group_activity_profile", "wide_shallow_sources": {"grouping": ["*"]}, "default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
+    "A002": {"wide_shallow_axis": "endpoint_distribution"},
+    "A003": {"wide_shallow_axis": "pairwise_structure_space", "default_parameters": {"max_pairs": 200000}},
+    "A004": {"wide_shallow_axis": "descriptor_activity_association", "wide_shallow_sources": {"description": ["D001", "D013"]}},
+    "A005": {"wide_shallow_axis": "neighborhood_activity_consistency", "wide_shallow_sources": {"description": ["D004", "D007"]}, "default_parameters": {"k": 10, "metric": "cosine"}},
+    "A006": {"wide_shallow_axis": "representation_specific_activity_cliffs", "wide_shallow_sources": {"description": ["D002", "D013", "D017"]}, "default_parameters": {"k": 10, "metric": "cosine"}},
+    "A007": {"wide_shallow_axis": "structure_activity_cliffs", "default_parameters": {"similarity_threshold": 0.8, "activity_delta_threshold": 1.0, "max_pairs": 200000}},
+    "A008": {"wide_shallow_axis": "group_activity_enrichment", "wide_shallow_sources": {"grouping": ["*"]}, "default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
+    "A009": {"wide_shallow_axis": "overlapping_group_structure", "wide_shallow_sources": {"grouping": ["C003"]}},
+    "A010": {"wide_shallow_axis": "group_structural_diversity", "wide_shallow_sources": {"grouping": ["C001", "C002", "C003", "C006"]}, "default_parameters": {"max_pairs": 200000}},
+}
 
 
 def dump_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def apply_wide_profile(capability: dict[str, Any]) -> None:
+    profile = WIDE_PROFILE.get(capability["capability_id"])
+    if not profile:
+        return
+    defaults = dict(capability.get("default_parameters") or {})
+    defaults.update(profile.get("default_parameters") or {})
+    capability.update({key: value for key, value in profile.items() if key != "default_parameters"})
+    if defaults:
+        capability["default_parameters"] = defaults
 
 
 def pixi_manifest(name: str, kind: str, algorithm: str) -> str:
@@ -207,6 +241,11 @@ raise SystemExit(subprocess.call(command, env=runtime_env))
 def skill_md(capability: dict[str, Any], kind: str) -> str:
     name = capability["skill_name"]
     display = capability["display_name"]
+    boundary_extra = ""
+    if capability.get("approval_policy") == "preauthorized_initial":
+        approval_boundary = "- このcapabilityはCatalogで`approval_policy=preauthorized_initial`とされた必須初手であり、`high` costでもrunごとの人間承認を待たない。人間指定の並列上限とStateの実行制御には従う。"
+    else:
+        approval_boundary = "- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。"
     if kind == "description":
         purpose = f"CSVまたは1件以上のSMILESから{display}を計算する。"
         inputs = "`--input CSV`または反復可能な`--smiles`を使う。CSVではcompound ID列とSMILES列を推定するが、曖昧なら`--id-column`と`--smiles-column`を指定する。個別SMILESへIDを与える場合は`--compound-id`を同じ回数指定する。"
@@ -239,15 +278,19 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
         conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
         output_contract = f'''- 通常モード: `results/description/<input>/<skill>/<run-id>/`へ`{capability["output"]["basename"]}.csv`（または`--format parquet`）だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/description/<skill>/`へ主成果物、`description_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/description/<skill>/<node-id-safe>/`へ主成果物、`description_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     elif kind == "clustering":
-        purpose = f"{display}を単独実行し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。"
         algorithm = capability["implementation"]["algorithm"]
         if algorithm.startswith("structure_"):
-            inputs = "compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う。列が曖昧なら`--id-column`と`--smiles-column`を指定する。"
+            purpose = f"SMILESを{display}により直接group化し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。"
+            inputs = "compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う。Description CSVを入力とせず、fingerprint vectorを内部生成して距離clusteringへ置き換えない。列が曖昧なら`--id-column`と`--smiles-column`を指定する。"
+            boundary_extra = "- Description vectorを入力とせず、SMILESを宣言された構造規則で直接処理する。\n"
         elif algorithm.startswith("vector_"):
-            inputs = "compound IDと数値featureを持つDescription CSVを使う。SMILES列やstatus列はfeatureから自動除外する。"
+            purpose = f"Description Skillが生成した数値vectorへ{display}を適用し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。"
+            inputs = "compound IDと数値featureを持つDescription CSVを必須入力とする。raw SMILESは受け付けず、fingerprintやdescriptorを内部生成しない。SMILES列やstatus列はfeatureから除外し、Description値がない行は未割当として保持する。"
+            boundary_extra = "- raw SMILESからDescriptionを内部生成しない。先に適切なDescription Skillを実行する。\n"
         else:
+            purpose = f"{display}を単独実行し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。"
             inputs = "algorithmに対応するmembershipまたはcategorical CSVを使う。"
         base_args = "--input compounds.csv"
         if capability["implementation"]["algorithm"] == "categorical":
@@ -258,7 +301,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             inputs = "long形式の`cluster_id,compound_id`またはIDとgroup列を持つwide形式のmembership CSVを使う。long形式ではoverlapを表す同一compound IDの反復を許可する。"
         clustering_options = {
             "structure_murcko": "`--min-cluster-size`未満のscaffold groupを出力しない。",
-            "structure_mcs": "`--min-cluster-size`、`--max-pairs`、`--max-core-groups`で探索量を制限する。高コストのため人間承認後に実行する。",
+            "structure_mcs": "`--min-cluster-size`、`--max-pairs`、`--max-core-groups`で探索量を制限する。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。",
             "structure_brics": "`--min-cluster-size`未満のfragment groupを出力しない。",
             "structure_recap": "`--min-cluster-size`未満のfragment groupを出力しない。",
             "categorical": "`--columns`を必須とし、`--min-cluster-size`未満のgroupを出力しない。",
@@ -266,7 +309,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         }
         if algorithm.startswith(("structure_", "vector_")) and algorithm.split("_", 1)[1] not in {"murcko", "mcs", "brics", "recap"}:
             method = algorithm.split("_", 1)[1]
-            source_options = "`--radius`と`--n-bits`を指定できる。" if algorithm.startswith("structure_") else "`--metric`を指定できる。"
+            source_options = "`--metric`を指定できる。`--metric jaccard`は0/1のbinary Descriptionだけに使う。"
             method_options = {
                 "butina": "`--similarity-threshold`でcluster cutoffを指定する。",
                 "hierarchical": "`--n-clusters`または`--distance-threshold`で切断条件を指定する。",
@@ -281,7 +324,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
         conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
         output_contract = '''- 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`と`cluster_summary.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/<node-id-safe>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     elif kind == "analysis":
         purpose = f"{display}を実行し、客観的な数値結果とCONDUCTOR evidenceを生成する。"
         extra = ""
@@ -311,14 +354,14 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         }
         option_guidance = analysis_options[operator]
         output_contract = f'''- 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`{capability["output"]["filename"]}`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/`へ主成果物、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     else:
         purpose = "複数Operator evidenceを統合し、agent向けJSONと人間向けMarkdown/HTMLを生成する。"
         inputs = "`--evidence`または`--evidence-dir`で一つ以上のevidence JSONを指定する。"
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --evidence-dir path/to/evidence --run-id general-001'
         conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --evidence-dir results/CONDUCTOR/PROJECT/RUN_ID/analysis --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
         output_contract = '''- 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へ`interpretation.json`、`interpretation.md`、`interpretation.html`を生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/`へ同じ三成果物とschema検証済み`execution_event.json`を生成する。'''
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/<node-id-safe>/`へ同じ三成果物とschema検証済み`execution_event.json`を生成する。'''
         option_guidance = "`--evidence`は反復可能で、`--evidence-dir`も反復可能である。異なるrun IDのevidenceは混在させない。"
     return f'''---
 name: {name}
@@ -363,6 +406,8 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 {output_contract}
 
+`<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
+
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
 
 ## Environment
@@ -387,11 +432,11 @@ CONDUCTOR利用が明示されていない場合はこちらを使う。
 
 ## Boundaries
 
-- 最終的なSAR機序を断定しない。
+{boundary_extra}- 最終的なSAR機序を断定しない。
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
-- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+{approval_boundary}
 '''
 
 
@@ -435,16 +480,18 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             constraints.append("入力SMILESからconformerを生成するため、結果と計算時間は3D生成条件の影響を受ける。")
         if approval:
             constraints.append("高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。")
+        elif capability.get("approval_policy") == "preauthorized_initial":
+            constraints.append("高コストだが、CONDUCTOR v4の必須初手として方針上事前許可されており、runごとの人間承認は不要。人間指定の並列上限には従う。")
         primary_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}"
     elif kind == "clustering":
         algorithm = capability["implementation"]["algorithm"]
         if algorithm.startswith("structure_"):
-            purpose = f"compound IDとSMILESから{display}を実行し、cluster membershipとsummaryを生成する。"
-            scenes = "化学構造に基づくseries分割、scaffold/fragment解析、または類似性groupの作成。"
+            purpose = f"compound IDとSMILESを{display}で直接group化し、cluster membershipとsummaryを生成する。"
+            scenes = "SMILESを直接扱うseries分割やscaffold/fragment解析を行い、Description vector由来のClusteringと比較する場合。"
             general_args = "--input compounds.csv"
         elif algorithm.startswith("vector_"):
-            purpose = f"数値Descriptionから{display}を実行し、cluster membershipとsummaryを生成する。"
-            scenes = "descriptor、fingerprint、embedding空間で化合物をgroup化し、構造based Groupingと比較する場合。"
+            purpose = f"Description Skillが生成した数値vectorへ{display}を適用し、cluster membershipとsummaryを生成する。"
+            scenes = "descriptor、fingerprint、embedding空間で化合物をgroup化し、SMILESを直接扱う構造Groupingと比較する場合。"
             general_args = "--input description.csv"
         elif algorithm == "categorical":
             purpose = "CSVのカテゴリ列からgroupを作り、cluster membershipとsummaryを生成する。"
@@ -456,8 +503,10 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             general_args = "--input cluster_membership.csv"
         constraints = ["一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。"]
         if algorithm.startswith("structure_"):
+            constraints.append("Description vectorは入力にせず、fingerprint生成を内部に隠した距離clusteringも行わない。")
             constraints.append("invalid SMILESは未割当として保持する。分子標準化は行わない。")
         if algorithm.startswith("vector_"):
+            constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。0/1 vectorでのみJaccard距離を利用できる。")
             constraints.append("結果は入力feature、距離metric、thresholdまたはcluster数に依存する。")
         if approval:
             constraints.append("高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。")
@@ -608,21 +657,39 @@ def main() -> int:
                     {"id": "svd", "cli": "--reduction svd --svd-dim 256", "description": "Fit TruncatedSVD to the run cohort's raw Gobbi Pharm2D signature matrix."},
                 ],
             })
+        apply_wide_profile(capability)
         created += create_skill(capability, "description", TEMPLATES / "description_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
     for identifier, name, display, algorithm, family, cost, status, wide in CLUSTERINGS:
         capability = base_capability(identifier, name, display, "grouping", family, cost, status, wide)
-        dependency = ["description"] if algorithm.startswith("vector_") else (["grouping"] if algorithm == "meta_overlap" else [])
-        input_contract = ["description_csv"] if algorithm.startswith("vector_") else (["group_membership_csv"] if algorithm == "meta_overlap" else (["categorical_csv"] if algorithm == "categorical" else ["csv_or_smiles"]))
-        capability.update({"clustering_id": identifier, "dependencies": dependency, "input_contract": input_contract, "output": {"membership": "cluster_membership.csv", "summary": "cluster_summary.csv"}, "implementation": {"algorithm": algorithm}})
+        if identifier == "C002":
+            capability["cost"]["human_approval_required"] = False
+            capability["approval_policy"] = "preauthorized_initial"
+        if algorithm.startswith("structure_"):
+            grouping_kind, dependency, input_contract = "direct_structure", [], ["smiles_csv_or_inline_smiles"]
+            description = f"Group compounds directly from SMILES with {display}, without generating a hidden descriptor vector."
+        elif algorithm.startswith("vector_"):
+            grouping_kind, dependency, input_contract = "description_vector", ["description"], ["description_vector_csv"]
+            description = f"Apply {display} to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally."
+        elif algorithm == "meta_overlap":
+            grouping_kind, dependency, input_contract = "meta", ["grouping"], ["group_membership_csv"]
+            description = capability["description"]
+        else:
+            grouping_kind, dependency, input_contract = "categorical", [], ["categorical_csv"]
+            description = capability["description"]
+        capability.update({"grouping_kind": grouping_kind, "description": description, "clustering_id": identifier, "dependencies": dependency, "input_contract": input_contract, "output": {"membership": "cluster_membership.csv", "summary": "cluster_summary.csv"}, "implementation": {"algorithm": algorithm}})
+        if identifier == "C002":
+            capability["description"] = "Group compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval."
+        apply_wide_profile(capability)
         created += create_skill(capability, "clustering", TEMPLATES / "clustering_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
     for identifier, name, display, operator, family, cost, status, wide, dependencies in OPERATORS:
         capability = base_capability(identifier, name, display, "analysis", family, cost, status, wide)
         capability.update({"operator_id": identifier, "dependencies": dependencies, "input_contract": ["endpoint_csv", *dependencies], "output": {"filename": f"{identifier}_{operator}.csv", "evidence": "evidence.json"}, "implementation": {"operator": operator}})
+        apply_wide_profile(capability)
         created += create_skill(capability, "analysis", TEMPLATES / "operator_run.py", ["execution_event.schema.json", "evidence.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
-    interpretation = base_capability("I001", "cs-analysis-interpret-evidence", "SAR evidence interpretation", "interpretation", "evidence_integration", "low", "stable", True)
+    interpretation = base_capability("I001", "cs-analysis-interpret-evidence", "SAR evidence interpretation", "interpretation", "evidence_integration", "low", "stable", False)
     interpretation.update({"interpretation_id": "I001", "dependencies": ["evidence"], "input_contract": ["evidence_json"], "output": {"json": "interpretation.json", "markdown": "interpretation.md", "html": "interpretation.html"}, "implementation": {"purpose": "evidence_interpretation"}})
     created += create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "evidence.schema.json"], args.force)
     included.append(interpretation["skill_name"])

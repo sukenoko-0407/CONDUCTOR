@@ -20,8 +20,20 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
-  "default_wide_shallow": false,
+  "default_wide_shallow": true,
+  "wide_shallow_axis": "group_structural_diversity",
+  "wide_shallow_sources": {
+    "grouping": [
+      "C001",
+      "C002",
+      "C003",
+      "C006"
+    ]
+  },
   "operator_id": "A010",
+  "default_parameters": {
+    "max_pairs": 200000
+  },
   "dependencies": [
     "grouping"
   ],

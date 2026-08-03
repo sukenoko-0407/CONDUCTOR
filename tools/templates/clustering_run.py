@@ -99,11 +99,8 @@ def parse_args() -> argparse.Namespace:
     if algorithm == "structure_mcs":
         parser.add_argument("--max-pairs", type=int, default=2000)
         parser.add_argument("--max-core-groups", type=int, default=100)
-    if algorithm.startswith("structure_") and algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
-        parser.add_argument("--n-bits", type=int, default=2048)
-        parser.add_argument("--radius", type=int, default=2)
     if algorithm.startswith("vector_"):
-        parser.add_argument("--metric", choices=["cosine", "euclidean", "manhattan"], default="cosine")
+        parser.add_argument("--metric", choices=["cosine", "euclidean", "manhattan", "jaccard"], default="cosine")
     method = algorithm.split("_", 1)[1] if algorithm.startswith(("structure_", "vector_")) else ("connected_components" if algorithm == "meta_overlap" else None)
     if method in {"butina", "louvain", "leiden", "connected_components"}:
         parser.add_argument("--similarity-threshold", type=float, default=0.55)
@@ -123,11 +120,9 @@ def parse_args() -> argparse.Namespace:
             parser.error("--conductor requires --project, --run-id, and --node-id")
     elif args.project or args.node_id:
         parser.error("--project and --node-id are valid only with --conductor")
-    for name in ("min_cluster_size", "n_bits", "max_pairs", "max_core_groups", "min_samples", "n_clusters"):
+    for name in ("min_cluster_size", "max_pairs", "max_core_groups", "min_samples", "n_clusters"):
         if hasattr(args, name) and getattr(args, name) is not None and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
-    if hasattr(args, "radius") and args.radius < 0:
-        parser.error("--radius must be >= 0")
     for name in ("distance_threshold", "eps", "resolution"):
         if hasattr(args, name) and getattr(args, name) <= 0:
             parser.error(f"--{name.replace('_', '-')} must be > 0")
@@ -193,7 +188,7 @@ def default_output(args: argparse.Namespace, source_name: str, run_id: str) -> P
         return Path(args.output_dir)
     root = find_workspace() / "results"
     if args.conductor:
-        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "grouping" / CAPABILITY["skill_name"]
+        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "grouping" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-")
     return root / "clustering" / source_name / CAPABILITY["skill_name"] / run_id
 
 
@@ -272,21 +267,6 @@ def rule_groups(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, a
     raise ValueError(f"Unsupported rule grouping: {algorithm}")
 
 
-def structure_distances(mols: list[Any], args: argparse.Namespace) -> tuple[list[int], np.ndarray, np.ndarray]:
-    from rdkit import DataStructs
-    from rdkit.Chem import rdFingerprintGenerator
-    valid_positions = [i for i, mol in enumerate(mols) if mol is not None]
-    generator = rdFingerprintGenerator.GetMorganGenerator(radius=args.radius, fpSize=args.n_bits)
-    fps = [generator.GetFingerprint(mols[i]) for i in valid_positions]
-    count = len(fps)
-    similarity = np.eye(count, dtype=float)
-    for i in range(count):
-        values = DataStructs.BulkTanimotoSimilarity(fps[i], fps[i + 1 :])
-        for offset, value in enumerate(values, start=i + 1):
-            similarity[i, offset] = similarity[offset, i] = float(value)
-    return valid_positions, 1.0 - similarity, similarity
-
-
 def vector_distances(df: pd.DataFrame, args: argparse.Namespace) -> tuple[list[int], np.ndarray, np.ndarray, list[str]]:
     from sklearn.impute import SimpleImputer
     from sklearn.metrics import pairwise_distances
@@ -295,11 +275,32 @@ def vector_distances(df: pd.DataFrame, args: argparse.Namespace) -> tuple[list[i
     features = [column for column in df.columns if column not in excluded and pd.api.types.is_numeric_dtype(df[column])]
     if not features:
         raise ValueError("No numeric feature columns were found")
-    matrix = SimpleImputer(strategy="median").fit_transform(df[features])
-    matrix = StandardScaler().fit_transform(matrix)
-    distance = pairwise_distances(matrix, metric=args.metric)
-    similarity = 1.0 - distance if args.metric == "cosine" else 1.0 / (1.0 + distance)
-    return list(range(len(df))), distance, similarity, features
+    valid_mask = df[features].notna().any(axis=1)
+    if "mol_parse_ok" in df.columns:
+        parse_ok = df["mol_parse_ok"].map(lambda value: str(value).strip().lower() in {"true", "1", "yes"})
+        valid_mask &= parse_ok
+    positions = np.flatnonzero(valid_mask.to_numpy()).tolist()
+    if not positions:
+        empty = np.zeros((0, 0), dtype=float)
+        return [], empty, empty, features
+    features = [column for column in features if df.iloc[positions][column].notna().any()]
+    if not features:
+        raise ValueError("No usable numeric feature columns were found")
+    values = df.iloc[positions][features]
+    if args.metric == "jaccard":
+        observed = values.to_numpy(dtype=float)
+        finite = observed[np.isfinite(observed)]
+        if finite.size and not np.isin(finite, [0.0, 1.0]).all():
+            raise ValueError("Jaccard metric requires a binary Description vector containing only 0/1 values")
+        matrix = SimpleImputer(strategy="constant", fill_value=0).fit_transform(values).astype(bool)
+        distance = pairwise_distances(matrix, metric="jaccard")
+        similarity = 1.0 - distance
+    else:
+        matrix = SimpleImputer(strategy="median").fit_transform(values)
+        matrix = StandardScaler().fit_transform(matrix)
+        distance = pairwise_distances(matrix, metric=args.metric)
+        similarity = 1.0 - distance if args.metric == "cosine" else 1.0 / (1.0 + distance)
+    return positions, distance, similarity, features
 
 
 def labels_from_method(distance: np.ndarray, similarity: np.ndarray, args: argparse.Namespace, method: str) -> np.ndarray:
@@ -417,15 +418,9 @@ def run() -> int:
     if algorithm.startswith("structure_"):
         base, mols, parse_warnings = structure_table(df, args)
         warnings.extend(parse_warnings)
-        if algorithm in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
-            groups, details = rule_groups(base, mols, args, algorithm)
-        else:
-            positions, distance, similarity = structure_distances(mols, args)
-            method = algorithm.removeprefix("structure_")
-            labels = labels_from_method(distance, similarity, args, method)
-            ids = [str(base.iloc[position]["compound_id"]) for position in positions]
-            groups = labeled_groups(ids, labels, args.min_cluster_size)
-            details = {"fingerprint": "Morgan", "radius": args.radius, "n_bits": args.n_bits, "method": method}
+        if algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
+            raise ValueError(f"Unsupported direct-structure grouping algorithm: {algorithm}")
+        groups, details = rule_groups(base, mols, args, algorithm)
     elif algorithm.startswith("vector_"):
         positions, distance, similarity, features = vector_distances(df, args)
         method = algorithm.removeprefix("vector_")
@@ -446,18 +441,35 @@ def run() -> int:
         registry.append({"group_id": group_id, "group_label": label, "grouping_capability_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "definition": details, "compound_count": len(members), "activity_blind": True})
         membership_rows.extend({"cluster_id": group_id, "compound_id": compound_id, "membership_value": 1.0, "membership_reason": label} for compound_id in sorted(members))
     assigned_ids = set().union(*groups.values()) if groups else set()
-    invalid_ids = {
-        str(base.iloc[position]["compound_id"])
-        for position, mol in enumerate(mols)
-        if algorithm.startswith("structure_") and mol is None
-    } if algorithm.startswith("structure_") else set()
     input_ids = set(df["compound_id"].astype(str))
+    if algorithm.startswith("structure_"):
+        invalid_ids = {
+            str(base.iloc[position]["compound_id"])
+            for position, mol in enumerate(mols)
+            if mol is None
+        }
+        missing_vector_ids: set[str] = set()
+    elif algorithm.startswith("vector_"):
+        invalid_ids = {
+            str(row["compound_id"])
+            for _, row in df.iterrows()
+            if "mol_parse_ok" in df.columns and str(row["mol_parse_ok"]).strip().lower() not in {"true", "1", "yes"}
+        }
+        valid_vector_ids = {str(df.iloc[position]["compound_id"]) for position in positions}
+        missing_vector_ids = input_ids - invalid_ids - valid_vector_ids
+    else:
+        invalid_ids = set()
+        missing_vector_ids = set()
     membership_rows.extend(
         {
             "cluster_id": "",
             "compound_id": compound_id,
             "membership_value": 0.0,
-            "membership_reason": "invalid_smiles" if compound_id in invalid_ids else "unassigned",
+            "membership_reason": (
+                "invalid_smiles" if compound_id in invalid_ids
+                else "missing_description_vector" if compound_id in missing_vector_ids
+                else "unassigned"
+            ),
         }
         for compound_id in sorted(input_ids - assigned_ids)
     )

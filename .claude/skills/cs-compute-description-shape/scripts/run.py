@@ -210,7 +210,7 @@ def output_dir(args: argparse.Namespace, source_name: str, run_id: str) -> Path:
     root = find_workspace() / "results"
     skill = CAPABILITY["skill_name"]
     if args.conductor:
-        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "description" / skill
+        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "description" / skill / str(args.node_id).replace(":", "-")
     return root / "description" / source_name / skill / run_id
 
 

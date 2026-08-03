@@ -172,7 +172,7 @@ def run() -> int:
     if args.output_dir:
         outdir = Path(args.output_dir)
     elif args.conductor:
-        outdir = find_workspace() / "results" / "CONDUCTOR" / args.project / run_id / "interpretation" / CAPABILITY["skill_name"]
+        outdir = find_workspace() / "results" / "CONDUCTOR" / args.project / run_id / "interpretation" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-")
     else:
         outdir = find_workspace() / "results" / "interpretation" / "standalone" / CAPABILITY["skill_name"] / run_id
     if outdir.exists() and any(outdir.iterdir()) and not args.overwrite:

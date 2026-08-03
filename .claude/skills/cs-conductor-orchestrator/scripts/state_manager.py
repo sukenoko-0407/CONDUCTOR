@@ -9,6 +9,7 @@ import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from itertools import product
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -99,6 +100,112 @@ def append_history(state: dict[str, Any], action: str, **details: Any) -> None:
     state["history"].append({"timestamp": utc_now(), "action": action, **details})
 
 
+def safe_node_segment(node_id: str) -> str:
+    return node_id.replace(":", "-")
+
+
+def primary_artifact_path(node: dict[str, Any], capability: dict[str, Any]) -> Path:
+    output = capability["output"]
+    if capability["stage"] == "description":
+        extension = "parquet" if node.get("parameters", {}).get("format") == "parquet" else "csv"
+        filename = f"{output['basename']}.{extension}"
+    elif capability["stage"] == "grouping":
+        filename = output["membership"]
+    elif capability["stage"] == "analysis":
+        filename = output["filename"]
+    elif capability["stage"] == "interpretation":
+        filename = output.get("json", "interpretation.json")
+    else:
+        raise ValueError(f"Capability does not produce a DAG artifact: {capability['capability_id']}")
+    return Path(node["output_dir"]) / filename
+
+
+def configure_node_io(
+    state: dict[str, Any],
+    node: dict[str, Any],
+    capability: dict[str, Any],
+    capabilities: dict[str, dict[str, Any]],
+    output_root: Path,
+    input_bindings: dict[str, str] | None = None,
+) -> None:
+    bindings = dict(input_bindings or {})
+    parameters = node["parameters"]
+    configured_output = parameters.get("output_dir")
+    output_dir = Path(configured_output) if configured_output else output_root / capability["stage"] / capability["skill_name"] / safe_node_segment(node["node_id"])
+    output_dir = output_dir.resolve()
+    node["output_dir"] = str(output_dir)
+    node["input_bindings"] = bindings
+    parameters["output_dir"] = str(output_dir)
+
+    stage = capability["stage"]
+    if stage == "description":
+        parameters.setdefault("input", state["run"]["input"])
+        parameters.setdefault("format", "csv")
+    elif stage == "grouping":
+        source_node_id = bindings.get("description") or bindings.get("grouping")
+        if source_node_id:
+            source_node = state_nodes(state)[source_node_id]
+            source_capability = capabilities[source_node["capability_id"]]
+            parameters.setdefault("input", str(primary_artifact_path(source_node, source_capability)))
+        else:
+            parameters.setdefault("input", state["run"]["input"])
+    elif stage == "analysis":
+        parameters.setdefault("input", state["run"]["input"])
+        parameters.setdefault("property_column", state["run"]["endpoint"])
+        parameters.setdefault("higher_is_better", state["run"]["higher_is_better"])
+        if "description" in bindings:
+            source_node = state_nodes(state)[bindings["description"]]
+            source_capability = capabilities[source_node["capability_id"]]
+            parameters.setdefault("description", str(primary_artifact_path(source_node, source_capability)))
+            parameters.setdefault("evaluation_representation", source_node["capability_id"])
+        if "grouping" in bindings:
+            source_node = state_nodes(state)[bindings["grouping"]]
+            source_capability = capabilities[source_node["capability_id"]]
+            parameters.setdefault("membership", str(primary_artifact_path(source_node, source_capability)))
+            parameters.setdefault("grouping_representation", source_node["capability_id"])
+        if capability["capability_id"] in {"A003", "A007", "A010"}:
+            parameters.setdefault("evaluation_representation", "internal_morgan_r2_2048")
+
+
+def nodes_for_wide_source(
+    state: dict[str, Any],
+    dependency_stage: str,
+    source_ids: list[str],
+) -> list[dict[str, Any]]:
+    candidates = [
+        node for node in state["execution_graph"]["nodes"]
+        if node["stage"] == dependency_stage and node.get("phase") == "wide_shallow"
+    ]
+    if "*" in source_ids:
+        return candidates
+    order = {capability_id: index for index, capability_id in enumerate(source_ids)}
+    return sorted(
+        (node for node in candidates if node["capability_id"] in order),
+        key=lambda node: (order[node["capability_id"]], node["node_id"]),
+    )
+
+
+def wide_shallow_summary(state: dict[str, Any]) -> dict[str, Any]:
+    wide_nodes = [node for node in state["execution_graph"]["nodes"] if node.get("phase") == "wide_shallow"]
+    stages: dict[str, Any] = {}
+    for stage in ["description", "grouping", "analysis"]:
+        stage_nodes = [node for node in wide_nodes if node["stage"] == stage]
+        axes: dict[str, dict[str, int]] = {}
+        for node in stage_nodes:
+            axis = node.get("coverage_axis") or node["capability_id"]
+            counts = axes.setdefault(axis, {})
+            counts[node["status"]] = counts.get(node["status"], 0) + 1
+        stages[stage] = {"node_count": len(stage_nodes), "axes": axes}
+    terminal = {"succeeded", "failed", "skipped"}
+    return {
+        "profile": "representative-family-wide-v1",
+        "node_count": len(wide_nodes),
+        "terminal": bool(wide_nodes) and all(node["status"] in terminal for node in wide_nodes),
+        "all_succeeded": bool(wide_nodes) and all(node["status"] == "succeeded" for node in wide_nodes),
+        "stages": stages,
+    }
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     workspace = find_workspace()
     input_path = Path(args.input).resolve()
@@ -107,12 +214,19 @@ def cmd_init(args: argparse.Namespace) -> int:
     with input_path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         header = reader.fieldnames or []
-        rows = list(reader) if args.assay_column else []
+        row_count = 0
+        assay_levels_seen: set[str] = set()
+        for row in reader:
+            row_count += 1
+            if args.assay_column:
+                value = str(row.get(args.assay_column, "")).strip()
+                if value:
+                    assay_levels_seen.add(value)
     if args.endpoint not in header:
         raise ValueError(f"Endpoint column not found: {args.endpoint}")
     if args.assay_column and args.assay_column not in header:
         raise ValueError(f"Assay column not found: {args.assay_column}")
-    assay_levels = sorted({str(row.get(args.assay_column, "")).strip() for row in rows if str(row.get(args.assay_column, "")).strip()}) if args.assay_column else []
+    assay_levels = sorted(assay_levels_seen)
     run_id = args.run_id or run_id_now()
     outdir = Path(args.output_dir) if args.output_dir else workspace / "results" / "CONDUCTOR" / args.project / run_id
     state_path = outdir / "state.json"
@@ -121,7 +235,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     state = {
         "schema_version": "1.0.0",
         "conductor_version": "4.0.0",
-        "run": {"run_id": run_id, "project": args.project, "input": str(input_path), "input_hash": file_hash(input_path), "endpoint": args.endpoint, "higher_is_better": args.higher_is_better, "parallel_limit": args.parallel_limit, "assay_column": args.assay_column, "assay_level_count": len(assay_levels), "created_at": utc_now()},
+        "run": {"run_id": run_id, "project": args.project, "input": str(input_path), "input_hash": file_hash(input_path), "endpoint": args.endpoint, "higher_is_better": args.higher_is_better, "parallel_limit": args.parallel_limit, "row_count": row_count, "assay_column": args.assay_column, "assay_level_count": len(assay_levels), "created_at": utc_now()},
         "execution_graph": {"nodes": [], "edges": []},
         "domain_graph": {"nodes": [], "edges": []},
         "evidence_graph": {"nodes": [], "edges": []},
@@ -140,13 +254,15 @@ def add_node(
     dependencies: list[str] | None = None,
     reason: str = "",
     parameters: dict[str, Any] | None = None,
+    phase: str = "deep_dive",
+    coverage_axis: str | None = None,
 ) -> dict[str, Any]:
     existing = [node for node in state["execution_graph"]["nodes"] if node["capability_id"] == capability["capability_id"]]
     node_id = f"{capability['capability_id']}:{len(existing) + 1:03d}"
     approval = "required" if capability["cost"].get("human_approval_required") else "not_required"
     selected_parameters = dict(capability.get("default_parameters") or {})
     selected_parameters.update(parameters or {})
-    node = {"node_id": node_id, "capability_id": capability["capability_id"], "skill_name": capability["skill_name"], "stage": capability["stage"], "status": "pending", "dependencies": dependencies or [], "human_approval": approval, "selection_reason": reason, "parameters": selected_parameters, "cost": capability["cost"], "artifacts": [], "warnings": []}
+    node = {"node_id": node_id, "capability_id": capability["capability_id"], "skill_name": capability["skill_name"], "stage": capability["stage"], "phase": phase, "coverage_axis": coverage_axis, "status": "pending", "dependencies": dependencies or [], "human_approval": approval, "selection_reason": reason, "parameters": selected_parameters, "cost": capability["cost"], "artifacts": [], "warnings": []}
     state["execution_graph"]["nodes"].append(node)
     for dependency in dependencies or []:
         state["execution_graph"]["edges"].append({"source": dependency, "target": node_id, "relation": "depends_on"})
@@ -160,45 +276,72 @@ def cmd_plan_wide(args: argparse.Namespace) -> int:
     capabilities = catalog_by_id(workspace)
     with state_lock(state_path):
         state = read_json(state_path)
-        existing = {node["capability_id"] for node in state["execution_graph"]["nodes"]}
         planned = []
-        description_nodes = [node["node_id"] for node in state["execution_graph"]["nodes"] if node["stage"] == "description"]
-        grouping_nodes = [node["node_id"] for node in state["execution_graph"]["nodes"] if node["stage"] == "grouping"]
         stage_order = {"description": 0, "grouping": 1, "analysis": 2, "interpretation": 3, "orchestration": 4}
         ordered_capabilities = sorted(
             capabilities.values(),
             key=lambda capability: (stage_order.get(capability["stage"], 99), capability["capability_id"]),
         )
         for capability in ordered_capabilities:
-            assay_grouping = capability["capability_id"] == "C017" and state["run"].get("assay_level_count", 0) > 1
-            if (not capability.get("default_wide_shallow") and not assay_grouping) or capability["capability_id"] in existing:
+            assay_grouping = (
+                capability.get("implementation", {}).get("algorithm") == "categorical"
+                and state["run"].get("assay_level_count", 0) > 1
+            )
+            if not capability.get("default_wide_shallow") and not assay_grouping:
                 continue
-            dependencies: list[str] = []
             required = capability.get("dependencies") or []
-            if "description" in required:
-                dependencies = description_nodes[:1]
-            elif "grouping" in required:
-                dependencies = grouping_nodes[:1]
-            elif "evidence" in required:
+            if "evidence" in required:
                 continue
-            reason = "Multiple assay conditions detected; plan assay-specific Grouping" if assay_grouping else "Catalog default_wide_shallow; broad representation-family coverage"
-            node = add_node(state, capability, dependencies, reason)
-            if assay_grouping:
-                node["parameters"] = {"columns": state["run"]["assay_column"]}
-            planned.append(node["node_id"])
-            if capability["stage"] == "description":
-                description_nodes.append(node["node_id"])
-            elif capability["stage"] == "grouping":
-                grouping_nodes.append(node["node_id"])
-        append_history(state, "wide_plan_created", node_ids=planned)
+            source_config = capability.get("wide_shallow_sources") or {}
+            source_sets: list[tuple[str, list[dict[str, Any]]]] = []
+            for dependency_stage in required:
+                source_ids = source_config.get(dependency_stage)
+                if not source_ids:
+                    raise ValueError(f"{capability['capability_id']}: wide-shallow source mapping is missing for {dependency_stage}")
+                source_nodes = nodes_for_wide_source(state, dependency_stage, source_ids)
+                if not source_nodes:
+                    raise ValueError(f"{capability['capability_id']}: no planned wide-shallow source node for {dependency_stage}={source_ids}")
+                source_sets.append((dependency_stage, source_nodes))
+            binding_sets = [dict()] if not source_sets else [
+                {source_sets[index][0]: source_node["node_id"] for index, source_node in enumerate(combination)}
+                for combination in product(*(nodes for _, nodes in source_sets))
+            ]
+            for bindings in binding_sets:
+                already_planned = next((
+                    node for node in state["execution_graph"]["nodes"]
+                    if node["capability_id"] == capability["capability_id"]
+                    and node.get("phase") == "wide_shallow"
+                    and (node.get("input_bindings") or {}) == bindings
+                ), None)
+                if already_planned:
+                    continue
+                parameters = {"columns": state["run"]["assay_column"]} if assay_grouping else {}
+                reason = "Multiple assay conditions detected; plan assay-specific Grouping" if assay_grouping else f"Initial broad coverage axis={capability.get('wide_shallow_axis')}; sources={bindings or 'run_input'}"
+                node = add_node(
+                    state, capability, list(bindings.values()), reason, parameters,
+                    phase="wide_shallow", coverage_axis=capability.get("wide_shallow_axis") or "assay_context_groups",
+                )
+                configure_node_io(state, node, capability, capabilities, state_path.parent, bindings)
+                planned.append(node["node_id"])
+        all_wide_nodes = [node for node in state["execution_graph"]["nodes"] if node.get("phase") == "wide_shallow"]
+        state["wide_shallow_plan"] = {
+            "profile": "representative-family-wide-v1",
+            "node_ids": [node["node_id"] for node in all_wide_nodes],
+            "required_axes": {
+                stage: sorted({node.get("coverage_axis") or node["capability_id"] for node in all_wide_nodes if node["stage"] == stage})
+                for stage in ["description", "grouping", "analysis"]
+            },
+        }
+        append_history(state, "wide_plan_created", node_ids=planned, profile="representative-family-wide-v1")
         write_state(state_path, state)
-    print(json.dumps({"planned_nodes": planned}, indent=2))
+    print(json.dumps({"planned_nodes": planned, "coverage": wide_shallow_summary(state)}, ensure_ascii=False, indent=2))
     return 0
 
 
 def cmd_add(args: argparse.Namespace) -> int:
     state_path = Path(args.state)
-    capability = catalog_by_id(find_workspace()).get(args.capability_id)
+    capabilities = catalog_by_id(find_workspace())
+    capability = capabilities.get(args.capability_id)
     if capability is None:
         raise ValueError(f"Capability is not in the human-curated Catalog: {args.capability_id}")
     if capability["stage"] == "orchestration":
@@ -215,13 +358,39 @@ def cmd_add(args: argparse.Namespace) -> int:
         unknown = [value for value in dependencies if value not in state_nodes(state)]
         if unknown:
             raise ValueError(f"Unknown dependency nodes: {unknown}")
+        dependency_nodes = [state_nodes(state)[node_id] for node_id in dependencies]
+        bindings: dict[str, str] = {}
+        for dependency_node in dependency_nodes:
+            bindings.setdefault(dependency_node["stage"], dependency_node["node_id"])
         node = add_node(state, capability, dependencies, args.reason or "Human or Orchestrator selected deep-dive", parameters)
+        configure_node_io(state, node, capability, capabilities, state_path.parent, bindings)
         if args.require_approval and node["human_approval"] == "not_required":
             node["human_approval"] = "required"
             append_history(state, "dynamic_approval_required", node_id=node["node_id"], reason=args.reason or "Dataset-scale or runtime-specific cost")
         write_state(state_path, state)
     print(json.dumps(node, ensure_ascii=False, indent=2))
     return 0
+
+
+def skip_blocked_descendants(state: dict[str, Any], source_node_id: str, reason: str) -> list[str]:
+    """Mark nodes that can no longer satisfy a dependency as terminal skips."""
+    skipped: list[str] = []
+    nodes = state_nodes(state)
+    frontier = [source_node_id]
+    while frontier:
+        source = frontier.pop()
+        for edge in state["execution_graph"]["edges"]:
+            if edge["source"] != source:
+                continue
+            target_id = edge["target"]
+            target = nodes[target_id]
+            if target["status"] in {"pending", "stale"}:
+                target["status"] = "skipped"
+                target["skip_reason"] = reason
+                target["finished_at"] = utc_now()
+                skipped.append(target_id)
+                frontier.append(target_id)
+    return skipped
 
 
 def cmd_approve(args: argparse.Namespace) -> int:
@@ -236,7 +405,12 @@ def cmd_approve(args: argparse.Namespace) -> int:
         node["human_approval"] = "approved" if args.approve else "rejected"
         if not args.approve:
             node["status"] = "skipped"
-        append_history(state, "approval_recorded", node_id=args.node_id, decision=node["human_approval"], rationale=args.rationale)
+            node["skip_reason"] = f"Human rejected required computation: {args.rationale}"
+            node["finished_at"] = utc_now()
+            skipped = skip_blocked_descendants(state, args.node_id, f"Required upstream node {args.node_id} was rejected")
+        else:
+            skipped = []
+        append_history(state, "approval_recorded", node_id=args.node_id, decision=node["human_approval"], rationale=args.rationale, downstream_skipped=skipped)
         write_state(state_path, state)
     return 0
 
@@ -244,6 +418,13 @@ def cmd_approve(args: argparse.Namespace) -> int:
 def node_readiness_error(state: dict[str, Any], node: dict[str, Any]) -> str | None:
     if node["human_approval"] in {"required", "rejected"}:
         return f"Node is not approved for execution: {node['node_id']}"
+    if node["stage"] == "interpretation":
+        unfinished_wide = [
+            item["node_id"] for item in state["execution_graph"]["nodes"]
+            if item.get("phase") == "wide_shallow" and item["status"] not in {"succeeded", "failed", "skipped"}
+        ]
+        if unfinished_wide:
+            return f"Wide-shallow coverage audit is not terminal: {unfinished_wide}"
     nodes = state_nodes(state)
     incomplete = [dependency for dependency in node["dependencies"] if nodes[dependency]["status"] != "succeeded"]
     if incomplete:
@@ -285,7 +466,8 @@ def cmd_fail(args: argparse.Namespace) -> int:
         node["status"] = "failed"
         node["finished_at"] = utc_now()
         node["error"] = args.reason
-        append_history(state, "node_failed", node_id=args.node_id, reason=args.reason)
+        skipped = skip_blocked_descendants(state, args.node_id, f"Required upstream node {args.node_id} failed")
+        append_history(state, "node_failed", node_id=args.node_id, reason=args.reason, downstream_skipped=skipped)
         write_state(state_path, state)
     return 0
 
@@ -394,10 +576,10 @@ def runnable_nodes(state: dict[str, Any]) -> list[dict[str, Any]]:
     for node in nodes.values():
         if node["status"] not in {"pending", "stale"}:
             continue
-        if node["human_approval"] in {"required", "rejected"}:
-            continue
-        if all(nodes[dependency]["status"] == "succeeded" for dependency in node["dependencies"]):
+        if node_readiness_error(state, node) is None:
             result.append(node)
+    stage_order = {"description": 0, "grouping": 1, "analysis": 2, "interpretation": 3}
+    result.sort(key=lambda node: (node.get("phase") != "wide_shallow", stage_order.get(node["stage"], 99), node["node_id"]))
     limit = int(state["run"]["parallel_limit"])
     running_count = sum(node["status"] == "running" for node in nodes.values())
     return result[:max(0, limit - running_count)]
@@ -414,7 +596,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     counts: dict[str, int] = {}
     for node in state["execution_graph"]["nodes"]:
         counts[node["status"]] = counts.get(node["status"], 0) + 1
-    print(json.dumps({"run": state["run"], "status_counts": counts, "runnable": [node["node_id"] for node in runnable_nodes(state)], "updated_at": state["updated_at"]}, ensure_ascii=False, indent=2))
+    print(json.dumps({"run": state["run"], "status_counts": counts, "runnable": [node["node_id"] for node in runnable_nodes(state)], "wide_shallow_coverage": wide_shallow_summary(state), "updated_at": state["updated_at"]}, ensure_ascii=False, indent=2))
     return 0
 
 

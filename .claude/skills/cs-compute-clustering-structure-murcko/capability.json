@@ -5,8 +5,9 @@
   "display_name": "Murcko scaffold clustering",
   "version": "4.0.0",
   "stage": "grouping",
-  "family": "structure_rule",
-  "description": "Use when Claude Code needs to run Murcko scaffold clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "family": "direct_structure",
+  "grouping_kind": "direct_structure",
+  "description": "Use when Claude Code needs to group compounds directly from SMILES by Murcko scaffold, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -21,10 +22,14 @@
     "molecule_standardization": "out_of_scope"
   },
   "default_wide_shallow": true,
+  "wide_shallow_axis": "scaffold_rule",
   "clustering_id": "C001",
+  "default_parameters": {
+    "min_cluster_size": 3
+  },
   "dependencies": [],
   "input_contract": [
-    "csv_or_smiles"
+    "smiles_csv_or_inline_smiles"
   ],
   "output": {
     "membership": "cluster_membership.csv",

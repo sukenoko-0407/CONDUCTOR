@@ -2,11 +2,11 @@
 
 ## SKILLの目的
 
-数値DescriptionからVector Louvain clusteringを実行し、cluster membershipとsummaryを生成する。
+Description Skillが生成した数値vectorへLouvain community detectionを適用し、cluster membershipとsummaryを生成する。
 
 ## 想定利用シーン
 
-descriptor、fingerprint、embedding空間で化合物をgroup化し、構造based Groupingと比較する場合。
+descriptor、fingerprint、embedding空間で化合物をgroup化し、SMILESを直接扱う構造Groupingと比較する場合。
 
 ## 環境構築
 
@@ -30,6 +30,7 @@ python .claude/skills/cs-compute-clustering-vector-louvain/scripts/launch.py --i
 ## 制約事項
 
 - 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
+- raw SMILESは入力にできず、Descriptionを内部生成しない。0/1 vectorでのみJaccard距離を利用できる。
 - 結果は入力feature、距離metric、thresholdまたはcluster数に依存する。
 
 ## 変更履歴

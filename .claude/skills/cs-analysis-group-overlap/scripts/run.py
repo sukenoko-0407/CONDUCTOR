@@ -220,7 +220,7 @@ def default_output(args: argparse.Namespace, run_id: str) -> Path:
     root = find_workspace() / "results"
     source_name = Path(args.input).stem
     if args.conductor:
-        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "analysis" / CAPABILITY["skill_name"]
+        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "analysis" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-")
     return root / "analysis" / source_name / CAPABILITY["skill_name"] / run_id
 
 

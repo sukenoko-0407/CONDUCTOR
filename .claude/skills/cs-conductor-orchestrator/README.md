@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-Catalog、Policy、run Stateを参照し、Description、Grouping、Operator、InterpretationをDAGとして計画・実行管理する。
+Catalog、Policy、run Stateを参照し、Description、Grouping、Operator、InterpretationをDAGとして計画・実行管理する。初手は3Dを含む代表family網羅profileを展開し、SMILES直接型GroupingとDescription-vector Clusteringを明確に分離する。
 
 ## 想定利用シーン
 
@@ -32,7 +32,9 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state init \
 
 - `catalog/included_skills.json`に人間が収載したSkillだけを使用する。
 - 1 runにつきendpointは一つとし、活性の向きを必須とする。
-- 高コスト処理は人間の明示承認前に実行しない。
+- 高コスト処理は原則として人間の明示承認前に実行しない。ただしCatalogで`preauthorized_initial`と明記されたC002 MCSは必須初手として承認待ちなしで実行する。
+- 初手の一部で信号が弱くても残りを打ち切らず、coverage audit後に深掘りへ進む。
+- vector ClusteringにはStateでbindingされたDescription artifactだけを渡し、raw SMILESからの内部fingerprint生成を許可しない。
 - 分子標準化、活性単位変換、pActivity変換は行わない。
 
 ## 変更履歴

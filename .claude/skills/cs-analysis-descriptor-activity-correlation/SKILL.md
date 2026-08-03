@@ -40,9 +40,11 @@ Descriptor-activity correlationを実行し、客観的な数値結果とCONDUCT
 ## Output contract
 
 - 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`A004_descriptor_activity_correlation.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/`へ主成果物、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
+
+`<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
 ## Environment
 

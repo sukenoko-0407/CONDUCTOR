@@ -40,9 +40,11 @@ CSVまたは1件以上のSMILESからHashed topological-torsion fingerprintを�
 ## Output contract
 
 - 通常モード: `results/description/<input>/<skill>/<run-id>/`へ`D005_topological_torsion.csv`（または`--format parquet`）だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/description/<skill>/`へ主成果物、`description_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/description/<skill>/<node-id-safe>/`へ主成果物、`description_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
+
+`<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
 ## Environment
 

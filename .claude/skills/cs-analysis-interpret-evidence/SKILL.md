@@ -40,9 +40,11 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Output contract
 
 - 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へ`interpretation.json`、`interpretation.md`、`interpretation.html`を生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/`へ同じ三成果物とschema検証済み`execution_event.json`を生成する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/<node-id-safe>/`へ同じ三成果物とschema検証済み`execution_event.json`を生成する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
+
+`<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
 ## Environment
 

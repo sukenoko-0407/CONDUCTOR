@@ -31,8 +31,35 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
     jsonschema.validate(value, schema)
     if value["skill_name"] != expected_name:
         raise ValueError(f"{expected_name}: metadata skill_name mismatch")
-    if value["cost"].get("class") in {"high", "very_high"} and not value["cost"].get("human_approval_required"):
-        raise ValueError(f"{expected_name}: high-cost capability must require human approval")
+    approval_policy = value.get("approval_policy", "standard")
+    high_cost = value["cost"].get("class") in {"high", "very_high"}
+    approval_required = bool(value["cost"].get("human_approval_required"))
+    if approval_policy == "preauthorized_initial":
+        if not high_cost or approval_required or not value.get("default_wide_shallow"):
+            raise ValueError(
+                f"{expected_name}: preauthorized_initial requires a high-cost, "
+                "approval-free default_wide_shallow capability"
+            )
+    elif high_cost and not approval_required:
+        raise ValueError(f"{expected_name}: high-cost capability must require human approval unless explicitly preauthorized")
+    if value["stage"] != "grouping":
+        return
+    kind = value.get("grouping_kind")
+    algorithm = value.get("implementation", {}).get("algorithm", "")
+    contracts = value.get("input_contract") or []
+    dependencies = value.get("dependencies") or []
+    if kind == "direct_structure":
+        if algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
+            raise ValueError(f"{expected_name}: direct_structure must use an explicit structure rule, decomposition, or MCS algorithm")
+        if contracts != ["smiles_csv_or_inline_smiles"] or dependencies:
+            raise ValueError(f"{expected_name}: direct_structure must consume SMILES directly and have no Description dependency")
+    elif kind == "description_vector":
+        if not algorithm.startswith("vector_"):
+            raise ValueError(f"{expected_name}: description_vector must use a vector_* implementation")
+        if contracts != ["description_vector_csv"] or dependencies != ["description"]:
+            raise ValueError(f"{expected_name}: description_vector must consume one Description vector artifact")
+    elif kind not in {"categorical", "meta"}:
+        raise ValueError(f"{expected_name}: grouping_kind is missing or unsupported")
 
 
 def render_markdown(catalog: dict[str, Any]) -> str:
@@ -41,12 +68,16 @@ def render_markdown(catalog: dict[str, Any]) -> str:
         entries = [entry for entry in catalog["capabilities"] if entry["stage"] == stage]
         if not entries:
             continue
-        lines.extend([f"## {stage.title()}", "", "| ID | Skill | Capability | Variants | Family | Cost | Status | Human approval |", "|---|---|---|---|---|---|---|---|"])
+        lines.extend([f"## {stage.title()}", "", "| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |", "|---|---|---|---|---|---|---|---|---|---|---|---|"])
         for entry in entries:
             variants = ", ".join(item["id"] for item in entry.get("variants") or []) or "-"
             if entry.get("default_variant"):
                 variants += f" (default: {entry['default_variant']})"
-            lines.append(f"| {entry['capability_id']} | `{entry['skill_name']}` | {entry['display_name']} | {variants} | {entry['family']} | {entry['cost']['class']} | {entry['applicability']['status']} | {entry['cost']['human_approval_required']} |")
+            axis = entry.get("wide_shallow_axis") or "-"
+            sources = "; ".join(f"{role}: {', '.join(values)}" for role, values in (entry.get("wide_shallow_sources") or {}).items()) or "-"
+            grouping_kind = entry.get("grouping_kind") or "-"
+            input_contract = ", ".join(entry.get("input_contract") or []) or "-"
+            lines.append(f"| {entry['capability_id']} | `{entry['skill_name']}` | {entry['display_name']} | {variants} | {entry['family']} | {grouping_kind} | {input_contract} | {axis} | {sources} | {entry['cost']['class']} | {entry['applicability']['status']} | {entry['cost']['human_approval_required']} |")
         lines.append("")
     return "\n".join(lines)
 
@@ -69,6 +100,26 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
     ids = [item["capability_id"] for item in capabilities]
     if len(ids) != len(set(ids)):
         raise ValueError("Capability IDs must be unique")
+    by_id = {item["capability_id"]: item for item in capabilities}
+    for capability in capabilities:
+        if not capability.get("default_wide_shallow"):
+            continue
+        if not capability.get("wide_shallow_axis"):
+            raise ValueError(f"{capability['capability_id']}: default wide-shallow capability requires wide_shallow_axis")
+        sources = capability.get("wide_shallow_sources") or {}
+        for dependency_stage in (stage for stage in capability.get("dependencies") or [] if stage != "evidence"):
+            if dependency_stage not in sources:
+                raise ValueError(f"{capability['capability_id']}: default wide-shallow dependency {dependency_stage} requires explicit wide_shallow_sources")
+            for source_id in sources[dependency_stage]:
+                if source_id == "*":
+                    continue
+                source = by_id.get(source_id)
+                if source is None:
+                    raise ValueError(f"{capability['capability_id']}: unknown wide-shallow source {source_id}")
+                if source["stage"] != dependency_stage:
+                    raise ValueError(f"{capability['capability_id']}: source {source_id} is not stage {dependency_stage}")
+                if not source.get("default_wide_shallow"):
+                    raise ValueError(f"{capability['capability_id']}: source {source_id} is not in the default wide-shallow plan")
     catalog = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "selection_managed_by": "human", "selection_path": "catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
     return catalog, render_markdown(catalog)
 

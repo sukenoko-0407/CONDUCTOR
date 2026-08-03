@@ -35,7 +35,7 @@ project=jak2、parallel_limit=8でCONDUCTOR v4解析を開始してください�
 広く浅い解析後、深掘り候補と承認が必要な計算を報告してください。
 ```
 
-OrchestratorはPolicy、Catalog、Stateを読み、allowlistに収載されたSkillだけでDAGを計画する。高コスト処理は自動実行せず、人間の明示承認を待つ。
+OrchestratorはPolicy、Catalog、Stateを読み、allowlistに収載されたSkillだけでDAGを計画する。初手の`representative-family-wide-v1`は、3Dを含むDescription 7 node、Grouping 9 node、Operator 35 nodeの計51 nodeを基本とする。GroupingはSMILES直接型3 nodeと、Description artifact入力型6 nodeから成る。assay条件が複数なら関連nodeを追加する。初期結果の一部に信号がなくても残りを打ち切らない。MCSは高コストでも必須初手として事前許可されており、Stateでrunnableになり次第、runごとの承認待ちなしで実行する。
 
 ## 3. Stateを手動操作する
 
@@ -66,7 +66,12 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state plan-wid
 
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state runnable \
   --state results/CONDUCTOR/jak2/<run_id>/state.json
+
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state status \
+  --state results/CONDUCTOR/jak2/<run_id>/state.json
 ```
+
+`status`の`wide_shallow_coverage`には、Description、Grouping、Operatorの軸別状態が表示される。「ヒントなし」と判断する前に、未実行、失敗、skipと代替の要否を確認する。
 
 Skill実行後は、Skillが返した`execution_event.json`をStateへ記録する。
 
@@ -78,8 +83,10 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state start \
 # 対応するSkillを実行した後
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state record \
   --state results/CONDUCTOR/jak2/<run_id>/state.json \
-  --event results/CONDUCTOR/jak2/<run_id>/description/<skill>/execution_event.json
+  --event results/CONDUCTOR/jak2/<run_id>/description/<skill>/D001-001/execution_event.json
 ```
+
+初手nodeは同じSkillを異なる上流sourceへ適用する場合がある。Stateの`input_bindings`、`parameters`、`output_dir`をそのまま使用し、最初に見つかったDescriptionやGrouping artifactへ置き換えない。特に`cs-compute-clustering-vector-*`へ元のSMILES CSVを渡さず、bindingされたDescription CSVを渡す。node固有directoryではnode IDの`:`を`-`へ変換する。
 
 同一algorithmのvariantを比較する場合はcapabilityを増やさず、parameterを持つ別nodeを追加する。JSON keyはCLIの内部名（hyphenをunderscoreへ変換）を使う。
 
@@ -111,17 +118,17 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state resume \
 
 ## 4. 高コストnodeの承認
 
-Catalogで`high`または`very_high`のSkill、およびデータ規模のため実行時に高コスト化したnodeは承認が必要である。Orchestratorの説明で目的、対象、期待情報、CPU/GPU、並列数、代替案を確認してから承認する。
+Catalogで`high`または`very_high`のSkill、およびデータ規模のため実行時に高コスト化したnodeは原則として承認が必要である。例外はCatalogで`approval_policy=preauthorized_initial`と明記されたC002 MCSであり、必須初手としてrunごとの承認を求めない。それ以外はOrchestratorの説明で目的、対象、期待情報、CPU/GPU、並列数、代替案を確認してから承認する。
 
 ```bash
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state approve \
   --state results/CONDUCTOR/jak2/<run_id>/state.json \
-  --node-id C002:001 \
+  --node-id D016:001 \
   --approve \
-  --rationale "対象groupを限定し、MCSで共通骨格仮説を検証する"
+  --rationale "Mordred 3D記述子で立体的な仮説を検証する"
 ```
 
-承認しない場合は`--reject`を使う。沈黙や過去runの承認を現在runの承認として扱わない。
+承認しない場合は`--reject`を使う。拒否されたnodeと、その出力だけに依存する未開始下流nodeは理由付き`skipped`となる。沈黙や過去runの承認を現在runの承認として扱わない。
 
 ## 5. Skillを一般用途で単独実行する
 
@@ -147,6 +154,23 @@ python .claude/skills/cs-compute-description-gobbi-pharm2d/scripts/launch.py \
 ```bash
 python .claude/skills/cs-compute-description-rdkit-2d/scripts/launch.py \
   --smiles "CCO" --smiles "c1ccccc1"
+```
+
+Groupingには入力契約が異なる二系統がある。Murcko、MCS、BRICS、RECAPはSMILESを直接処理する。
+
+```bash
+python .claude/skills/cs-compute-clustering-structure-murcko/scripts/launch.py \
+  --input compounds.csv
+```
+
+Butina、hierarchical、DBSCAN、Louvain、Leiden、connected-componentsはDescription Skillの数値CSVを処理する。raw SMILESを直接渡してはならない。binary fingerprintへJaccardを使う例:
+
+```bash
+python .claude/skills/cs-compute-description-morgan/scripts/launch.py \
+  --input compounds.csv --output-dir results/example/morgan
+
+python .claude/skills/cs-compute-clustering-vector-butina/scripts/launch.py \
+  --input results/example/morgan/D002_morgan.csv --metric jaccard
 ```
 
 一般利用はdefaultであり、`--conductor`、`--project`、`--node-id`を指定しない。Description、Clustering、Operatorは主成果物だけを出力する。既定出力は`results/description|clustering|analysis/...`であり、`--output-dir`が常に優先されるが、出力先を`results/CONDUCTOR/`配下にしてもモードは変わらない。

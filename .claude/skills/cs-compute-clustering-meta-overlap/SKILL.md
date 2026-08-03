@@ -40,9 +40,11 @@ long形式の`cluster_id,compound_id`またはIDとgroup列を持つwide形式�
 ## Output contract
 
 - 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`と`cluster_summary.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/<node-id-safe>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
+
+`<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
 ## Environment
 

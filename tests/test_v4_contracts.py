@@ -26,7 +26,7 @@ class RepositoryContractTests(unittest.TestCase):
             "## 変更履歴",
         ]
         skill_directories = sorted(path for path in SKILLS.iterdir() if path.is_dir())
-        self.assertEqual(48, len(skill_directories))
+        self.assertEqual(42, len(skill_directories))
         for skill in skill_directories:
             readme = skill / "README.md"
             self.assertTrue(readme.is_file(), skill.name)
@@ -44,7 +44,7 @@ class RepositoryContractTests(unittest.TestCase):
         selection = json.loads((ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
         capability_schema = json.loads((ROOT / "schemas" / "capability.schema.json").read_text(encoding="utf-8"))
         names = selection["included_skills"]
-        self.assertEqual(48, len(names))
+        self.assertEqual(42, len(names))
         self.assertEqual(len(names), len(set(names)))
         for name in names:
             skill = SKILLS / name
@@ -103,6 +103,8 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertNotIn('"--metadata"', runner, name)
                 self.assertIn("--conductor requires --project, --run-id, and --node-id", runner, name)
                 self.assertIn("--project and --node-id are valid only with --conductor", runner, name)
+                self.assertIn('str(args.node_id).replace(":", "-")', runner, name)
+                self.assertIn("<node-id-safe>", instructions, name)
                 self.assertIn("Algorithm-specific options", instructions, name)
             if capability["stage"] in {"description", "grouping", "analysis"}:
                 self.assertTrue((skill / "schemas" / "artifact_manifest.schema.json").is_file(), name)
@@ -115,12 +117,37 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertEqual(set(selected), set(catalog_names))
         ids = [entry["capability_id"] for entry in catalog["capabilities"]]
         self.assertEqual(len(ids), len(set(ids)))
-        for entry in catalog["capabilities"]:
-            if entry["cost"]["class"] in {"high", "very_high"}:
-                self.assertTrue(entry["cost"]["human_approval_required"])
         by_id = {entry["capability_id"]: entry for entry in catalog["capabilities"]}
+        preauthorized = []
+        for entry in catalog["capabilities"]:
+            if entry.get("approval_policy") == "preauthorized_initial":
+                preauthorized.append(entry["capability_id"])
+                self.assertIn(entry["cost"]["class"], {"high", "very_high"})
+                self.assertFalse(entry["cost"]["human_approval_required"])
+                self.assertTrue(entry["default_wide_shallow"])
+            elif entry["cost"]["class"] in {"high", "very_high"}:
+                self.assertTrue(entry["cost"]["human_approval_required"])
+        self.assertEqual(["C002"], preauthorized)
         self.assertEqual({"standard", "chiral"}, {item["id"] for item in by_id["D002"]["variants"]})
         self.assertEqual({"folded", "svd"}, {item["id"] for item in by_id["D017"]["variants"]})
+        self.assertEqual({"D001", "D002", "D003", "D004", "D007", "D013", "D017"}, {entry["capability_id"] for entry in catalog["capabilities"] if entry["stage"] == "description" and entry.get("default_wide_shallow")})
+        self.assertEqual({"C001", "C002", "C003", "C005", "C006", "C007", "C009"}, {entry["capability_id"] for entry in catalog["capabilities"] if entry["stage"] == "grouping" and entry.get("default_wide_shallow")})
+        self.assertEqual({f"A{index:03d}" for index in range(1, 11)}, {entry["capability_id"] for entry in catalog["capabilities"] if entry["stage"] == "analysis" and entry.get("default_wide_shallow")})
+        self.assertEqual({"description": ["D002"]}, by_id["C005"]["wide_shallow_sources"])
+        self.assertEqual({"description": ["D001", "D013", "D017"]}, by_id["C006"]["wide_shallow_sources"])
+        self.assertEqual({"description": ["D001"]}, by_id["C007"]["wide_shallow_sources"])
+        self.assertEqual({"description": ["D002"]}, by_id["C009"]["wide_shallow_sources"])
+        groupings = [entry for entry in catalog["capabilities"] if entry["stage"] == "grouping"]
+        self.assertEqual([f"C{index:03d}" for index in range(1, 13)], sorted(entry["capability_id"] for entry in groupings))
+        direct = [entry for entry in groupings if entry["grouping_kind"] == "direct_structure"]
+        vectors = [entry for entry in groupings if entry["grouping_kind"] == "description_vector"]
+        self.assertEqual(4, len(direct))
+        self.assertEqual(6, len(vectors))
+        self.assertTrue(all(entry["input_contract"] == ["smiles_csv_or_inline_smiles"] and not entry["dependencies"] for entry in direct))
+        self.assertTrue(all(entry["input_contract"] == ["description_vector_csv"] and entry["dependencies"] == ["description"] for entry in vectors))
+        self.assertTrue(all(entry["implementation"]["algorithm"] in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"} for entry in direct))
+        self.assertFalse(any((SKILLS / f"cs-compute-clustering-structure-{name}").exists() for name in ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected-components"]))
+        self.assertFalse(by_id["I001"]["default_wide_shallow"])
         self.assertNotIn("D011", by_id)
         self.assertNotIn("D018", by_id)
 
@@ -202,6 +229,46 @@ class RuntimeSmokeTests(unittest.TestCase):
                     self.assertNotIn(option, process.stdout)
 
     @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn") and __import__("importlib").util.find_spec("scipy"), "scikit-learn and SciPy are not installed")
+    def test_vector_clustering_requires_a_description_vector_and_supports_binary_jaccard(self) -> None:
+        runner = SKILLS / "cs-compute-clustering-vector-butina" / "scripts" / "run.py"
+        raw_smiles = subprocess.run(
+            [sys.executable, str(runner), "--smiles", "CCO"],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertNotEqual(0, raw_smiles.returncode)
+        self.assertIn("--input", raw_smiles.stderr)
+
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            description = temporary / "description.csv"
+            description.write_text(
+                "compound_id,mol_parse_ok,bit_0,bit_1,bit_2\n"
+                "A,True,1,0,1\nB,True,1,0,1\nC,True,0,1,0\nD,False,,,\n",
+                encoding="utf-8",
+            )
+            outdir = temporary / "grouping"
+            self.run_cli(
+                str(runner), "--input", str(description), "--metric", "jaccard",
+                "--similarity-threshold", "0.5", "--min-cluster-size", "1",
+                "--output-dir", str(outdir), "--run-id", "jaccard", "--overwrite",
+            )
+            with (outdir / "cluster_membership.csv").open(encoding="utf-8", newline="") as handle:
+                rows = list(DictReader(handle))
+            invalid = next(row for row in rows if row["compound_id"] == "D")
+            self.assertEqual("0.0", invalid["membership_value"])
+            self.assertEqual("invalid_smiles", invalid["membership_reason"])
+            self.assertFalse((outdir / "grouping_manifest.json").exists())
+
+            continuous = temporary / "continuous.csv"
+            continuous.write_text("compound_id,feature_1\nA,0.2\nB,0.8\n", encoding="utf-8")
+            rejected = subprocess.run(
+                [sys.executable, str(runner), "--input", str(continuous), "--metric", "jaccard", "--output-dir", str(temporary / "rejected")],
+                cwd=ROOT, text=True, capture_output=True,
+            )
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn("requires a binary Description vector", rejected.stderr)
+
+    @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn") and __import__("importlib").util.find_spec("scipy"), "scikit-learn and SciPy are not installed")
     def test_gobbi_pharm2d_svd_is_a_general_mode_variant(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             outdir = Path(directory) / "pharm2d-svd"
@@ -224,10 +291,11 @@ class RuntimeSmokeTests(unittest.TestCase):
             temporary = Path(directory)
             state_root = temporary / "state"
             state_path = state_root / "state.json"
-            outdir = temporary / "description"
             run_id = "variant_contract"
             self.run_cli(str(state_manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--project", "unit", "--parallel-limit", "1", "--run-id", run_id, "--output-dir", str(state_root))
             self.run_cli(str(state_manager), "add", "--state", str(state_path), "--capability-id", "D002", "--parameters-json", '{"include_chirality":true}', "--reason", "unit variant contract")
+            planned_state = json.loads(state_path.read_text(encoding="utf-8"))
+            outdir = Path(planned_state["execution_graph"]["nodes"][0]["output_dir"])
             self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", "D002:001")
             self.run_cli(str(runner), "--input", str(data), "--n-bits", "2048", "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "D002:001", "--overwrite")
             rejected = subprocess.run(
@@ -351,8 +419,11 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.run_cli(str(state_manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--assay-column", "assay", "--project", "unit", "--parallel-limit", "2", "--run-id", run_id, "--output-dir", str(state_root))
             self.run_cli(str(state_manager), "plan-wide", "--state", str(state_path))
             planned_state = json.loads(state_path.read_text(encoding="utf-8"))
-            assay_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "C017")
-            self.assertEqual({"columns": "assay"}, assay_node["parameters"])
+            assay_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "C011")
+            self.assertEqual("assay", assay_node["parameters"]["columns"])
+            self.assertEqual(str(data), assay_node["parameters"]["input"])
+            description_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "D001")
+            description = Path(description_node["output_dir"])
             self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", "D001:001")
             self.run_cli(str(SKILLS / "cs-compute-description-rdkit-2d" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(description), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "D001:001", "--overwrite")
             description_event = json.loads((description / "execution_event.json").read_text(encoding="utf-8"))

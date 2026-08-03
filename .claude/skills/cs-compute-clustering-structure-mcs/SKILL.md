@@ -1,6 +1,6 @@
 ---
 name: cs-compute-clustering-structure-mcs
-description: Use when Claude Code needs to run MCS clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment. General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
+description: Group compounds directly from SMILES with maximum common substructure（MCS）. Use for general clustering or an explicitly planned CONDUCTOR v4 structural Grouping node; this Skill does not consume Description vectors or hide a fingerprint-generation step.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
@@ -8,11 +8,11 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 ## Purpose
 
-MCS clusteringを単独実行し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。
+SMILESをmaximum common substructure（MCS）により直接group化し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。
 
 ## Input
 
-compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う。列が曖昧なら`--id-column`と`--smiles-column`を指定する。 分子標準化、活性単位変換、pActivity変換は行わない。
+compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う。Description CSVを入力とせず、fingerprint vectorを内部生成して距離clusteringへ置き換えない。列が曖昧なら`--id-column`と`--smiles-column`を指定する。分子標準化、活性単位変換、pActivity変換は行わない。
 
 ## Required workflow
 
@@ -24,7 +24,7 @@ compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う�
 
 ## Algorithm-specific options
 
-`--min-cluster-size`、`--max-pairs`、`--max-core-groups`で探索量を制限する。高コストのため人間承認後に実行する。
+`--min-cluster-size`、`--max-pairs`、`--max-core-groups`で探索量を制限する。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -40,9 +40,11 @@ compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う�
 ## Output contract
 
 - 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`と`cluster_summary.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/<node-id-safe>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
+
+`<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
 ## Environment
 
@@ -66,8 +68,9 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor
 
 ## Boundaries
 
+- Description vectorを入力とせず、SMILESを宣言された構造規則で直接処理する。
 - 最終的なSAR機序を断定しない。
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
-- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+- C002 MCSはCatalogで`approval_policy=preauthorized_initial`とされた必須初手であり、`high` costでもrunごとの人間承認を待たない。人間指定の並列上限とStateの実行制御には従う。

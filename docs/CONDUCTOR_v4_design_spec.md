@@ -22,9 +22,10 @@ SBDD実処理、MMP、新規化合物SMILES生成、人間フィードバック�
 6. Operatorは客観的evidenceを返し、最終解釈を行わない。
 7. 分子標準化、活性単位変換、pActivity変換は暗黙に行わない。
 8. 1 runは1 endpointを扱い、`higher_is_better`を必須とする。
-9. 高コスト計算は実行前に人間の承認を必要とする。
+9. 高コスト計算は原則として実行前に人間の承認を必要とする。人間管理Catalogで`preauthorized_initial`とされたC002 MCSは必須初手として例外とする。
 10. Catalog収載Skillは人間がallowlistで指定する。
 11. Skillは原則algorithm単位とする。同一algorithmで入力契約、依存環境、cost class、DAG stageが同じ差分は、追跡可能なCLI parameter variantとして一つのSkillへ統合できる。
+12. 初手は狭い最小計算ではなく、Description、Grouping、Operatorの代表情報軸を網羅する`representative-family-wide-v1` profileとする。3D Descriptionを必ず一種類含める。
 
 ## 3. リポジトリ構成
 
@@ -65,7 +66,7 @@ Skill名は小文字英数字とハイフンのみ、64文字未満とする。
 
 ## 5. 入力契約
 
-### 5.1 Descriptionおよびstructure Clustering
+### 5.1 Descriptionおよびdirect structure Grouping
 
 - `--input <csv>`または反復可能な`--smiles <smiles>`のどちらかを受ける。
 - CSVはID列とSMILES列を自動推定できる。曖昧な場合は明示指定する。
@@ -74,7 +75,17 @@ Skill名は小文字英数字とハイフンのみ、64文字未満とする。
 - invalid SMILESは主結果に保持し、計算値を欠損、警告を記録する。
 - 塩除去、中和、tautomer正規化、stereo正規化は行わない。
 
-### 5.2 Operator
+direct structure GroupingはMurcko、MCS、BRICS、RECAPに限定し、SMILESを宣言された構造規則で直接処理する。Morgan等のfingerprintを内部生成してButina、DBSCAN、graph clusteringへ渡す処理は含めない。
+
+### 5.2 Description-vector Clustering
+
+- compound IDと数値featureを持つDescription SkillのCSV artifactを`--input`で受ける。
+- raw SMILESおよび反復可能な`--smiles`は受け付けず、descriptorやfingerprintを内部生成しない。
+- CONDUCTORではStateの`input_bindings.description`で生成元Description nodeを一つ明示する。
+- `jaccard`は0/1のbinary vectorだけに許可し、連続値vectorにはcosine、euclideanまたはmanhattanを使う。
+- invalid SMILESまたはDescription値がない行はclusterへ代入せず、主結果に未割当として保持する。
+
+### 5.3 Operator
 
 - 元CSV、ID列、endpoint列、`higher_is_better`を受ける。
 - 必要に応じDescription artifact、Grouping membership、registryを明示入力する。
@@ -92,15 +103,15 @@ CONDUCTOR利用時:
 
 ```text
 results/CONDUCTOR/<project>/<run_id>/
-├── description/<skill_name>/
-├── grouping/<skill_name>/
-├── analysis/<skill_name>/
-├── interpretation/<skill_name>/
+├── description/<skill_name>/<node_id_safe>/
+├── grouping/<skill_name>/<node_id_safe>/
+├── analysis/<skill_name>/<node_id_safe>/
+├── interpretation/<skill_name>/<node_id_safe>/
 ├── events/
 └── state.json
 ```
 
-`--output-dir`は常に既定値より優先するが、モードを変更しない。通常モードはdefaultかつ主成果物だけを返す。CONDUCTORモードは明示的opt-inであり、`--conductor --project <project> --run-id <run_id> --node-id <node_id>`をすべて指定した場合だけ、manifest、warnings、evidenceまたはgroup registry、execution event、schema検証を追加する。通常モードでは`--project`と`--node-id`を受け付けない。
+`node_id_safe`はWindowsでも利用できるようnode IDの`:`を`-`へ置換する。`--output-dir`は常に既定値より優先するが、モードを変更しない。通常モードはdefaultかつ主成果物だけを返す。CONDUCTORモードは明示的opt-inであり、`--conductor --project <project> --run-id <run_id> --node-id <node_id>`をすべて指定した場合だけ、manifest、warnings、evidenceまたはgroup registry、execution event、schema検証を追加する。通常モードでは`--project`と`--node-id`を受け付けない。
 
 Agentはrepository名、Catalog収載、CONDUCTOR互換artifact、`results/CONDUCTOR/`形式の出力先だけを根拠にCONDUCTORモードを推測しない。ユーザーの明示依頼、OrchestratorからのDAG node実行、または既存runへの明示接続がなければ`--conductor`を省略する。意図が曖昧なら実行前に確認し、確認できなければ通常モードを選ぶ。
 
@@ -117,11 +128,13 @@ Agentはrepository名、Catalog収載、CONDUCTOR互換artifact、`results/CONDU
 
 旧L01-L60、旧group ID、旧CLI、旧出力パスとの互換性は持たない。
 
-D011（chiral Morgan）はD002の`--include-chirality`へ、D018（Gobbi Pharm2D SVD）はD017の`--reduction svd`へ統合した。既存IDを再利用して意味を変えないため、D011とD018は欠番として保持する。構造／vector clusteringのように入力契約または上流依存が異なるもの、Mordred 2D／3Dのようにcost classが異なるもの、異なる解析意味を持つOperatorは統合しない。
+D011（chiral Morgan）はD002の`--include-chirality`へ、D018（Gobbi Pharm2D SVD）はD017の`--reduction svd`へ統合した。既存IDを再利用して意味を変えないため、D011とD018は欠番として保持する。direct structure GroupingとDescription-vector Clusteringは入力契約と責務が異なるため統合しない。一方、SMILESからMorgan fingerprintを内部生成してvector algorithmへ渡していた旧`structure-butina`等の6ラッパーは責務が重複するためCatalogから除外し、現行C005～C010はDescription artifact入力のvector algorithmへ連番で割り当てる。
 
 ## 8. Catalog
 
 各Skillの`capability.json`をmetadata源とし、`catalog/included_skills.json`に人間が列挙したSkillだけを`catalog/catalog.json`へ収載する。Markdown版Catalogは機械Catalogから生成する。自動スキャンはallowlistを変更しない。
+
+初手profileへの参加は`default_wide_shallow`、担当軸は`wide_shallow_axis`、上流の限定組合せは`wide_shallow_sources`で宣言する。依存を持つ初手capabilityはsourceを明示し、Catalog builderはsourceの存在、stage、初手profile参加を検証する。`*`は初手で計画された当該stageの全nodeを意味する。
 
 ## 9. StateとDAG
 
@@ -133,14 +146,17 @@ Stateはrunごとに一つのJSONとし、次を保持する。
 - 入力hash、計画parameter、実行configuration、設定hash、上流artifact hash
 - 出力artifact、警告、開始・終了時刻
 - Orchestratorの選択理由と人間承認状態
+- `wide_shallow/deep_dive` phase、coverage axis、上流artifact binding、node固有output directory
 
-SkillはStateを直接更新せず、実行時の`configuration`を含むexecution eventを生成する。Orchestratorのローカルscriptが実行前にnodeを`running`へ遷移させ、project/run/node/capabilityと計画parameterをeventに照合して原子的にStateへ反映する。eventなしで異常終了した場合は専用のfailure遷移へ理由を記録する。上流hashが変化した場合、下流nodeと対応するdomain/evidence graph nodeを`stale`にする。
+SkillはStateを直接更新せず、実行時の`configuration`を含むexecution eventを生成する。Orchestratorのローカルscriptが実行前にnodeを`running`へ遷移させ、project/run/node/capabilityと計画parameterをeventに照合して原子的にStateへ反映する。eventなしで異常終了した場合は専用のfailure遷移へ理由を記録する。上流nodeが失敗または承認拒否で実行不能になった場合、そのnodeだけに依存する未開始下流nodeを理由付き`skipped`へ伝播する。上流hashが変化した場合、下流nodeと対応するdomain/evidence graph nodeを`stale`にする。
 
 実行DAG、group関係graph、evidence依存graphは別オブジェクトとして管理し、ID参照で接続する。
 
 ## 10. Orchestration
 
-Orchestratorは最初に低～中コストの表現と解析を広く実行し、以下を根拠に深掘り候補を選ぶ。
+Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。現profileはDescription 7 node、Grouping 9 node、Operator 35 nodeの計51 nodeを基本とし、assay条件が複数ならcategorical Groupingと対応Operatorを追加する。Descriptionには2D物性、circular graph、substructure、atom pair、path、2D pharmacophore、3D shape/pharmacophoreを含む。GroupingはSMILES直接型としてMurcko、事前許可済み必須初手MCS、BRICSを、Description-vector型としてButina、hierarchical、DBSCAN、Leidenを含む。vector ClusteringはD001、D002、D013、D017のうちCatalogで宣言されたartifactへ個別bindingする。Operatorは全10種を、意味のある上流sourceだけに接続する。
+
+初手はヒント発見のための網羅passであり、一部nodeで信号が弱いことを理由に残りを打ち切らない。Stateは`wide_shallow` nodeを`deep_dive`より優先し、初手がterminalになるまでInterpretationの開始を拒否する。coverage auditで必須軸の成功、失敗、代替、skip理由を確認してから、以下を根拠に深掘り候補を選ぶ。
 
 - effect sizeと統計的信頼性
 - 局所的不連続、activity cliff、例外
@@ -150,7 +166,7 @@ Orchestratorは最初に低～中コストの表現と解析を広く実行し�
 - 未解析の組合せと期待情報利得
 - 計算コストと利用可能資源
 
-高コストSkillは必ず人間の承認を得る。並列数も人間指定値を上限とする。想定HPC資源はCPU 64 core、またはNVIDIA A100 1枚とCPU 8 coreである。
+高コストSkillは原則として人間の承認を得る。Catalogで`approval_policy=preauthorized_initial`とされたC002 MCSだけはrunごとの承認を求めず、初手から実行する。並列数は人間指定値を上限とする。想定HPC資源はCPU 64 core、またはNVIDIA A100 1枚とCPU 8 coreである。
 
 ## 11. Interpretation
 

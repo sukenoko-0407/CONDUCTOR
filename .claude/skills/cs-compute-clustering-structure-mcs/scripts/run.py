@@ -99,9 +99,6 @@ def parse_args() -> argparse.Namespace:
     if algorithm == "structure_mcs":
         parser.add_argument("--max-pairs", type=int, default=2000)
         parser.add_argument("--max-core-groups", type=int, default=100)
-    if algorithm.startswith("structure_") and algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
-        parser.add_argument("--n-bits", type=int, default=2048)
-        parser.add_argument("--radius", type=int, default=2)
     if algorithm.startswith("vector_"):
         parser.add_argument("--metric", choices=["cosine", "euclidean", "manhattan"], default="cosine")
     method = algorithm.split("_", 1)[1] if algorithm.startswith(("structure_", "vector_")) else ("connected_components" if algorithm == "meta_overlap" else None)
@@ -123,11 +120,9 @@ def parse_args() -> argparse.Namespace:
             parser.error("--conductor requires --project, --run-id, and --node-id")
     elif args.project or args.node_id:
         parser.error("--project and --node-id are valid only with --conductor")
-    for name in ("min_cluster_size", "n_bits", "max_pairs", "max_core_groups", "min_samples", "n_clusters"):
+    for name in ("min_cluster_size", "max_pairs", "max_core_groups", "min_samples", "n_clusters"):
         if hasattr(args, name) and getattr(args, name) is not None and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
-    if hasattr(args, "radius") and args.radius < 0:
-        parser.error("--radius must be >= 0")
     for name in ("distance_threshold", "eps", "resolution"):
         if hasattr(args, name) and getattr(args, name) <= 0:
             parser.error(f"--{name.replace('_', '-')} must be > 0")
@@ -193,7 +188,7 @@ def default_output(args: argparse.Namespace, source_name: str, run_id: str) -> P
         return Path(args.output_dir)
     root = find_workspace() / "results"
     if args.conductor:
-        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "grouping" / CAPABILITY["skill_name"]
+        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "grouping" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-")
     return root / "clustering" / source_name / CAPABILITY["skill_name"] / run_id
 
 
@@ -270,21 +265,6 @@ def rule_groups(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, a
             groups[smarts] = members
         return groups, {"definition": "pair-seeded MCS", "evaluated_pair_limit": args.max_pairs}
     raise ValueError(f"Unsupported rule grouping: {algorithm}")
-
-
-def structure_distances(mols: list[Any], args: argparse.Namespace) -> tuple[list[int], np.ndarray, np.ndarray]:
-    from rdkit import DataStructs
-    from rdkit.Chem import rdFingerprintGenerator
-    valid_positions = [i for i, mol in enumerate(mols) if mol is not None]
-    generator = rdFingerprintGenerator.GetMorganGenerator(radius=args.radius, fpSize=args.n_bits)
-    fps = [generator.GetFingerprint(mols[i]) for i in valid_positions]
-    count = len(fps)
-    similarity = np.eye(count, dtype=float)
-    for i in range(count):
-        values = DataStructs.BulkTanimotoSimilarity(fps[i], fps[i + 1 :])
-        for offset, value in enumerate(values, start=i + 1):
-            similarity[i, offset] = similarity[offset, i] = float(value)
-    return valid_positions, 1.0 - similarity, similarity
 
 
 def vector_distances(df: pd.DataFrame, args: argparse.Namespace) -> tuple[list[int], np.ndarray, np.ndarray, list[str]]:
@@ -417,15 +397,9 @@ def run() -> int:
     if algorithm.startswith("structure_"):
         base, mols, parse_warnings = structure_table(df, args)
         warnings.extend(parse_warnings)
-        if algorithm in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
-            groups, details = rule_groups(base, mols, args, algorithm)
-        else:
-            positions, distance, similarity = structure_distances(mols, args)
-            method = algorithm.removeprefix("structure_")
-            labels = labels_from_method(distance, similarity, args, method)
-            ids = [str(base.iloc[position]["compound_id"]) for position in positions]
-            groups = labeled_groups(ids, labels, args.min_cluster_size)
-            details = {"fingerprint": "Morgan", "radius": args.radius, "n_bits": args.n_bits, "method": method}
+        if algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
+            raise ValueError(f"Unsupported direct-structure grouping algorithm: {algorithm}")
+        groups, details = rule_groups(base, mols, args, algorithm)
     elif algorithm.startswith("vector_"):
         positions, distance, similarity, features = vector_distances(df, args)
         method = algorithm.removeprefix("vector_")

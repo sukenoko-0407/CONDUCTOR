@@ -2,11 +2,11 @@
 
 ## SKILLの目的
 
-compound IDとSMILESからMCS clusteringを実行し、cluster membershipとsummaryを生成する。
+compound IDとSMILESをmaximum common substructure（MCS）で直接group化し、cluster membershipとsummaryを生成する。
 
 ## 想定利用シーン
 
-化学構造に基づくseries分割、scaffold/fragment解析、または類似性groupの作成。
+SMILESを直接扱うseries分割やscaffold/fragment解析を行い、Description vector由来のClusteringと比較する場合。
 
 ## 環境構築
 
@@ -30,8 +30,9 @@ python .claude/skills/cs-compute-clustering-structure-mcs/scripts/launch.py --in
 ## 制約事項
 
 - 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
+- Description vectorは入力にせず、fingerprint生成を内部に隠した距離clusteringも行わない。
 - invalid SMILESは未割当として保持する。分子標準化は行わない。
-- 高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。
+- C002は高コストだが、CONDUCTOR v4の必須初手として方針上事前許可されており、runごとの人間承認は不要。人間指定の並列上限には従う。
 
 ## 変更履歴
 

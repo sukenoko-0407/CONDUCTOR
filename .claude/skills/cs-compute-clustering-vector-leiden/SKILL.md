@@ -1,6 +1,6 @@
 ---
 name: cs-compute-clustering-vector-leiden
-description: Use when Claude Code needs to run Vector Leiden clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment. General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
+description: Apply Leiden community detection to a numeric vector CSV produced by a Description Skill. Use for general clustering or an explicitly planned CONDUCTOR v4 Grouping node; never use this Skill as a raw-SMILES shortcut because it does not generate descriptors internally.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
@@ -8,11 +8,11 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 ## Purpose
 
-Vector Leiden clusteringを単独実行し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。
+Description Skillが生成した数値vectorへLeiden community detectionを適用し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。
 
 ## Input
 
-compound IDと数値featureを持つDescription CSVを使う。SMILES列やstatus列はfeatureから自動除外する。 分子標準化、活性単位変換、pActivity変換は行わない。
+compound IDと数値featureを持つDescription CSVを必須入力とする。raw SMILESは受け付けず、fingerprintやdescriptorを内部生成しない。SMILES列やstatus列はfeatureから除外し、Description値がない行は未割当として保持する。分子標準化、活性単位変換、pActivity変換は行わない。
 
 ## Required workflow
 
@@ -25,6 +25,8 @@ compound IDと数値featureを持つDescription CSVを使う。SMILES列やstatu
 ## Algorithm-specific options
 
 `--min-cluster-size`未満のgroupを出力しない。`--metric`を指定できる。`--similarity-threshold`、`--resolution`、`--random-seed`を指定する。
+
+`--metric jaccard`は0/1のbinary Descriptionだけに使う。連続値Descriptionには`cosine`、`euclidean`または`manhattan`を使う。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -40,9 +42,11 @@ compound IDと数値featureを持つDescription CSVを使う。SMILES列やstatu
 ## Output contract
 
 - 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`と`cluster_summary.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/grouping/<skill>/<node-id-safe>/`へ通常成果物、`group_registry.json`、`grouping_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
+
+`<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
 ## Environment
 
@@ -66,6 +70,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor
 
 ## Boundaries
 
+- raw SMILESからDescriptionを内部生成しない。先に適切なDescription Skillを実行する。
 - 最終的なSAR機序を断定しない。
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。

@@ -2,77 +2,71 @@
 
 > この文書は`catalog/catalog.json`から生成される。収載対象は人間管理の`catalog/included_skills.json`で指定する。
 
-Generated: `2026-08-03T06:15:58.922183+00:00`
+Generated: `2026-08-03T12:43:08.039574+00:00`
 
 ## Description
 
-| ID | Skill | Capability | Variants | Family | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|
-| D001 | `cs-compute-description-rdkit-2d` | RDKit 2D descriptors | - | physicochemical | low | stable | False |
-| D002 | `cs-compute-description-morgan` | Morgan fingerprint (optional chirality) | standard, chiral (default: standard) | 2d_fingerprint | low | stable | False |
-| D003 | `cs-compute-description-maccs` | MACCS keys | - | 2d_fingerprint | low | stable | False |
-| D004 | `cs-compute-description-atom-pair` | Hashed atom-pair fingerprint | - | 2d_fingerprint | low | stable | False |
-| D005 | `cs-compute-description-topological-torsion` | Hashed topological-torsion fingerprint | - | 2d_fingerprint | low | stable | False |
-| D006 | `cs-compute-description-rdkit-fragment` | RDKit fragment counts | - | substructure | low | stable | False |
-| D007 | `cs-compute-description-rdkit-path-fingerprint` | RDKit path fingerprint | - | 2d_fingerprint | low | stable | False |
-| D008 | `cs-compute-description-rdkit-pattern-fingerprint` | RDKit pattern fingerprint | - | substructure | low | stable | False |
-| D009 | `cs-compute-description-rdkit-layered-fingerprint` | RDKit layered fingerprint | - | 2d_fingerprint | low | stable | False |
-| D010 | `cs-compute-description-avalon-fingerprint` | Avalon fingerprint | - | 2d_fingerprint | low | stable | False |
-| D012 | `cs-compute-description-rdkit-3d` | RDKit 3D descriptors | - | 3d_shape | medium | stable | False |
-| D013 | `cs-compute-description-usr-usrcat` | USR and USRCAT | - | 3d_shape | medium | stable | False |
-| D014 | `cs-compute-description-shape` | Basic 3D shape descriptors | - | 3d_shape | medium | stable | False |
-| D015 | `cs-compute-description-mordred-2d` | Mordred 2D descriptors | - | physicochemical | medium | experimental | False |
-| D016 | `cs-compute-description-mordred-3d` | Mordred 3D descriptors | - | 3d_shape | high | experimental | True |
-| D017 | `cs-compute-description-gobbi-pharm2d` | Gobbi 2D pharmacophore fingerprint (optional SVD) | folded, svd (default: folded) | pharmacophore | medium | stable | False |
-| D019 | `cs-compute-description-pretrained-embedding` | Local pretrained molecular embedding | - | pretrained_embedding | high | experimental | True |
-| D020 | `cs-compute-description-tblite-xtb` | GFN2-xTB single-point descriptors | - | quantum | very_high | experimental | True |
+| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| D001 | `cs-compute-description-rdkit-2d` | RDKit 2D descriptors | - | physicochemical | - | csv_or_smiles | physicochemical_2d | - | low | stable | False |
+| D002 | `cs-compute-description-morgan` | Morgan fingerprint (optional chirality) | standard, chiral (default: standard) | 2d_fingerprint | - | csv_or_smiles | local_circular_graph | - | low | stable | False |
+| D003 | `cs-compute-description-maccs` | MACCS keys | - | 2d_fingerprint | - | csv_or_smiles | curated_substructure_keys | - | low | stable | False |
+| D004 | `cs-compute-description-atom-pair` | Hashed atom-pair fingerprint | - | 2d_fingerprint | - | csv_or_smiles | topological_atom_pairs | - | low | stable | False |
+| D005 | `cs-compute-description-topological-torsion` | Hashed topological-torsion fingerprint | - | 2d_fingerprint | - | csv_or_smiles | - | - | low | stable | False |
+| D006 | `cs-compute-description-rdkit-fragment` | RDKit fragment counts | - | substructure | - | csv_or_smiles | - | - | low | stable | False |
+| D007 | `cs-compute-description-rdkit-path-fingerprint` | RDKit path fingerprint | - | 2d_fingerprint | - | csv_or_smiles | topological_paths | - | low | stable | False |
+| D008 | `cs-compute-description-rdkit-pattern-fingerprint` | RDKit pattern fingerprint | - | substructure | - | csv_or_smiles | - | - | low | stable | False |
+| D009 | `cs-compute-description-rdkit-layered-fingerprint` | RDKit layered fingerprint | - | 2d_fingerprint | - | csv_or_smiles | - | - | low | stable | False |
+| D010 | `cs-compute-description-avalon-fingerprint` | Avalon fingerprint | - | 2d_fingerprint | - | csv_or_smiles | - | - | low | stable | False |
+| D012 | `cs-compute-description-rdkit-3d` | RDKit 3D descriptors | - | 3d_shape | - | csv_or_smiles | - | - | medium | stable | False |
+| D013 | `cs-compute-description-usr-usrcat` | USR and USRCAT | - | 3d_shape | - | csv_or_smiles | shape_and_3d_pharmacophore | - | medium | stable | False |
+| D014 | `cs-compute-description-shape` | Basic 3D shape descriptors | - | 3d_shape | - | csv_or_smiles | - | - | medium | stable | False |
+| D015 | `cs-compute-description-mordred-2d` | Mordred 2D descriptors | - | physicochemical | - | csv_or_smiles | - | - | medium | experimental | False |
+| D016 | `cs-compute-description-mordred-3d` | Mordred 3D descriptors | - | 3d_shape | - | csv_or_smiles | - | - | high | experimental | True |
+| D017 | `cs-compute-description-gobbi-pharm2d` | Gobbi 2D pharmacophore fingerprint (optional SVD) | folded, svd (default: folded) | pharmacophore | - | csv_or_smiles | pharmacophore_2d | - | medium | stable | False |
+| D019 | `cs-compute-description-pretrained-embedding` | Local pretrained molecular embedding | - | pretrained_embedding | - | csv_or_smiles | - | - | high | experimental | True |
+| D020 | `cs-compute-description-tblite-xtb` | GFN2-xTB single-point descriptors | - | quantum | - | csv_or_smiles | - | - | very_high | experimental | True |
 
 ## Grouping
 
-| ID | Skill | Capability | Variants | Family | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|
-| C001 | `cs-compute-clustering-structure-murcko` | Murcko scaffold clustering | - | structure_rule | low | stable | False |
-| C002 | `cs-compute-clustering-structure-mcs` | MCS clustering | - | structure_rule | high | experimental | True |
-| C003 | `cs-compute-clustering-structure-brics` | BRICS fragment clustering | - | structure_rule | medium | stable | False |
-| C004 | `cs-compute-clustering-structure-recap` | RECAP fragment clustering | - | structure_rule | medium | stable | False |
-| C005 | `cs-compute-clustering-structure-butina` | Structure Butina clustering | - | structure_similarity | medium | stable | False |
-| C006 | `cs-compute-clustering-structure-hierarchical` | Structure hierarchical clustering | - | structure_similarity | medium | stable | False |
-| C007 | `cs-compute-clustering-structure-dbscan` | Structure DBSCAN clustering | - | structure_similarity | medium | stable | False |
-| C008 | `cs-compute-clustering-structure-louvain` | Structure Louvain clustering | - | structure_similarity | medium | stable | False |
-| C009 | `cs-compute-clustering-structure-leiden` | Structure Leiden clustering | - | structure_similarity | medium | stable | False |
-| C010 | `cs-compute-clustering-structure-connected-components` | Structure connected-component clustering | - | structure_similarity | medium | stable | False |
-| C011 | `cs-compute-clustering-vector-butina` | Vector Butina clustering | - | vector | medium | stable | False |
-| C012 | `cs-compute-clustering-vector-hierarchical` | Vector hierarchical clustering | - | vector | medium | stable | False |
-| C013 | `cs-compute-clustering-vector-dbscan` | Vector DBSCAN clustering | - | vector | medium | stable | False |
-| C014 | `cs-compute-clustering-vector-louvain` | Vector Louvain clustering | - | vector | medium | stable | False |
-| C015 | `cs-compute-clustering-vector-leiden` | Vector Leiden clustering | - | vector | medium | stable | False |
-| C016 | `cs-compute-clustering-vector-connected-components` | Vector connected-component clustering | - | vector | medium | stable | False |
-| C017 | `cs-compute-clustering-categorical` | Categorical-column clustering | - | human_context | low | stable | False |
-| C018 | `cs-compute-clustering-meta-overlap` | Overlap-based meta clustering | - | meta | medium | experimental | False |
+| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| C001 | `cs-compute-clustering-structure-murcko` | Murcko scaffold clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | scaffold_rule | - | low | stable | False |
+| C002 | `cs-compute-clustering-structure-mcs` | MCS clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | maximum_common_substructure | - | high | experimental | False |
+| C003 | `cs-compute-clustering-structure-brics` | BRICS fragment clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | fragment_decomposition | - | medium | stable | False |
+| C004 | `cs-compute-clustering-structure-recap` | RECAP fragment clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | - | - | medium | stable | False |
+| C005 | `cs-compute-clustering-vector-butina` | Vector Butina clustering | - | description_vector | description_vector | description_vector_csv | vector_similarity_partition | description: D002 | medium | stable | False |
+| C006 | `cs-compute-clustering-vector-hierarchical` | Vector hierarchical clustering | - | description_vector | description_vector | description_vector_csv | vector_hierarchical | description: D001, D013, D017 | medium | stable | False |
+| C007 | `cs-compute-clustering-vector-dbscan` | Vector DBSCAN clustering | - | description_vector | description_vector | description_vector_csv | vector_density_clustering | description: D001 | medium | stable | False |
+| C008 | `cs-compute-clustering-vector-louvain` | Vector Louvain clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
+| C009 | `cs-compute-clustering-vector-leiden` | Vector Leiden clustering | - | description_vector | description_vector | description_vector_csv | vector_graph_community | description: D002 | medium | stable | False |
+| C010 | `cs-compute-clustering-vector-connected-components` | Vector connected-component clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
+| C011 | `cs-compute-clustering-categorical` | Categorical-column clustering | - | human_context | categorical | categorical_csv | assay_context_groups | - | low | stable | False |
+| C012 | `cs-compute-clustering-meta-overlap` | Overlap-based meta clustering | - | meta | meta | group_membership_csv | - | - | medium | experimental | False |
 
 ## Analysis
 
-| ID | Skill | Capability | Variants | Family | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|
-| A001 | `cs-analysis-group-profile` | Group profile | - | group_profile | low | stable | False |
-| A002 | `cs-analysis-activity-distribution` | Activity distribution | - | property_profile | low | stable | False |
-| A003 | `cs-analysis-pairwise-structure-similarity` | Pairwise structure similarity | - | feature_space | medium | stable | False |
-| A004 | `cs-analysis-descriptor-activity-correlation` | Descriptor-activity correlation | - | interpretable_association | low | stable | False |
-| A005 | `cs-analysis-knn-activity-consistency` | kNN activity consistency | - | feature_space | medium | stable | False |
-| A006 | `cs-analysis-sali` | Structure-activity landscape index | - | landscape | medium | stable | False |
-| A007 | `cs-analysis-activity-cliff` | Activity cliff detection | - | landscape | medium | stable | False |
-| A008 | `cs-analysis-group-enrichment` | Group activity enrichment | - | group_profile | low | stable | False |
-| A009 | `cs-analysis-group-overlap` | Group overlap | - | group_quality | low | stable | False |
-| A010 | `cs-analysis-group-structural-diversity` | Group structural diversity | - | group_quality | medium | stable | False |
+| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| A001 | `cs-analysis-group-profile` | Group profile | - | group_profile | - | endpoint_csv, grouping | group_activity_profile | grouping: * | low | stable | False |
+| A002 | `cs-analysis-activity-distribution` | Activity distribution | - | property_profile | - | endpoint_csv | endpoint_distribution | - | low | stable | False |
+| A003 | `cs-analysis-pairwise-structure-similarity` | Pairwise structure similarity | - | feature_space | - | endpoint_csv | pairwise_structure_space | - | medium | stable | False |
+| A004 | `cs-analysis-descriptor-activity-correlation` | Descriptor-activity correlation | - | interpretable_association | - | endpoint_csv, description | descriptor_activity_association | description: D001, D013 | low | stable | False |
+| A005 | `cs-analysis-knn-activity-consistency` | kNN activity consistency | - | feature_space | - | endpoint_csv, description | neighborhood_activity_consistency | description: D004, D007 | medium | stable | False |
+| A006 | `cs-analysis-sali` | Structure-activity landscape index | - | landscape | - | endpoint_csv, description | representation_specific_activity_cliffs | description: D002, D013, D017 | medium | stable | False |
+| A007 | `cs-analysis-activity-cliff` | Activity cliff detection | - | landscape | - | endpoint_csv | structure_activity_cliffs | - | medium | stable | False |
+| A008 | `cs-analysis-group-enrichment` | Group activity enrichment | - | group_profile | - | endpoint_csv, grouping | group_activity_enrichment | grouping: * | low | stable | False |
+| A009 | `cs-analysis-group-overlap` | Group overlap | - | group_quality | - | endpoint_csv, grouping | overlapping_group_structure | grouping: C003 | low | stable | False |
+| A010 | `cs-analysis-group-structural-diversity` | Group structural diversity | - | group_quality | - | endpoint_csv, grouping | group_structural_diversity | grouping: C001, C002, C003, C006 | medium | stable | False |
 
 ## Interpretation
 
-| ID | Skill | Capability | Variants | Family | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|
-| I001 | `cs-analysis-interpret-evidence` | SAR evidence interpretation | - | evidence_integration | low | stable | False |
+| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| I001 | `cs-analysis-interpret-evidence` | SAR evidence interpretation | - | evidence_integration | - | evidence_json | - | - | low | stable | False |
 
 ## Orchestration
 
-| ID | Skill | Capability | Variants | Family | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|
-| O001 | `cs-conductor-orchestrator` | CONDUCTOR v4 Orchestrator | - | graph_orchestration | low | stable | False |
+| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| O001 | `cs-conductor-orchestrator` | CONDUCTOR v4 Orchestrator | - | graph_orchestration | - | catalog_json, policy_markdown, endpoint_csv | - | - | low | stable | False |

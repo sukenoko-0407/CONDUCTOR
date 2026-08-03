@@ -29,6 +29,7 @@
       "enum": ["description", "grouping", "analysis", "interpretation", "orchestration"]
     },
     "family": {"type": "string", "minLength": 1},
+    "grouping_kind": {"enum": ["direct_structure", "description_vector", "categorical", "meta"]},
     "description": {"type": "string", "minLength": 1, "maxLength": 1024},
     "cost": {
       "type": "object",
@@ -55,6 +56,18 @@
       "additionalProperties": true
     },
     "default_wide_shallow": {"type": "boolean"},
+    "approval_policy": {"enum": ["standard", "preauthorized_initial"]},
+    "wide_shallow_axis": {"type": "string", "minLength": 1},
+    "wide_shallow_sources": {
+      "type": "object",
+      "propertyNames": {"enum": ["description", "grouping", "evidence"]},
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string", "pattern": "^(\\*|[DCAIO][0-9]{3})$"},
+        "minItems": 1,
+        "uniqueItems": true
+      }
+    },
     "default_variant": {"type": "string", "minLength": 1},
     "default_parameters": {"type": "object"},
     "variants": {

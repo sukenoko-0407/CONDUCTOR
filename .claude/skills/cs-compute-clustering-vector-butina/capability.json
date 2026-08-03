@@ -1,12 +1,13 @@
 {
   "schema_version": "1.0.0",
-  "capability_id": "C011",
+  "capability_id": "C005",
   "skill_name": "cs-compute-clustering-vector-butina",
   "display_name": "Vector Butina clustering",
   "version": "4.0.0",
   "stage": "grouping",
-  "family": "vector",
-  "description": "Use when Claude Code needs to run Vector Butina clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "family": "description_vector",
+  "grouping_kind": "description_vector",
+  "description": "Use when Claude Code needs to apply Butina clustering to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate fingerprints internally.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -20,13 +21,24 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
-  "default_wide_shallow": false,
-  "clustering_id": "C011",
+  "default_wide_shallow": true,
+  "wide_shallow_axis": "vector_similarity_partition",
+  "wide_shallow_sources": {
+    "description": [
+      "D002"
+    ]
+  },
+  "clustering_id": "C005",
+  "default_parameters": {
+    "min_cluster_size": 3,
+    "metric": "jaccard",
+    "similarity_threshold": 0.55
+  },
   "dependencies": [
     "description"
   ],
   "input_contract": [
-    "description_csv"
+    "description_vector_csv"
   ],
   "output": {
     "membership": "cluster_membership.csv",

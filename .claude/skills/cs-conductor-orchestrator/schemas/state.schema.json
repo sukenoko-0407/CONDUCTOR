@@ -18,6 +18,7 @@
         "endpoint": {"type": "string"},
         "higher_is_better": {"type": "boolean"},
         "parallel_limit": {"type": "integer", "minimum": 1},
+        "row_count": {"type": "integer", "minimum": 0},
         "assay_column": {"type": ["string", "null"]},
         "assay_level_count": {"type": "integer", "minimum": 0},
         "created_at": {"type": "string", "format": "date-time"}
@@ -45,8 +46,15 @@
         "capability_id": {"type": "string"},
         "skill_name": {"type": "string"},
         "stage": {"enum": ["description", "grouping", "analysis", "interpretation"]},
+        "phase": {"enum": ["wide_shallow", "deep_dive"]},
+        "coverage_axis": {"type": ["string", "null"]},
         "status": {"enum": ["pending", "running", "succeeded", "failed", "skipped", "stale"]},
         "dependencies": {"type": "array", "items": {"type": "string"}},
+        "input_bindings": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
+        "output_dir": {"type": "string"},
         "parameters": {"type": "object"},
         "configuration": {"type": "object"},
         "human_approval": {"enum": ["not_required", "required", "approved", "rejected"]}

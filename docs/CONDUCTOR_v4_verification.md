@@ -10,12 +10,12 @@ Windows、Python 3.12.12の既存`.venv`で次を実行した。
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-結果: 20 tests passed。
+結果: 25 tests passed。
 
 確認範囲:
 
-- allowlist収載48 Skillの自己完結構成、命名、Linux/Windows Pixi platform
-- Catalogと人間管理allowlistの一致、capability ID一意性、高コスト承認属性
+- allowlist収載42 Skillの自己完結構成、命名、Linux/Windows Pixi platform
+- Catalogと人間管理allowlistの一致、capability ID一意性、高コスト承認属性、およびC002の`preauthorized_initial`例外
 - root JSON Schemaの構文
 - CSVと複数SMILES入力
 - Description、Clustering、Operator、Interpretationの通常モードがCONDUCTOR補助artifactを出さないこと
@@ -23,49 +23,59 @@ Windows、Python 3.12.12の既存`.venv`で次を実行した。
 - D001 → C001 → A002 → I001のCONDUCTOR artifact chain
 - execution eventがproject、run ID、node IDを持ち、State contextと照合されること
 - State dependency、承認gate、downstream traversal
+- `representative-family-wide-v1`がDescription 7、Grouping 9、Operator 35の計51 nodeへ展開され、3DのD013と承認不要の必須初手C002 MCSを含むこと
+- C005、C006、C007、C009、A001、A004、A006等がCatalog指定sourceへ個別bindingされ、vector Clusteringがrun元CSVや最初のDescriptionへ暗黙接続されないこと
+- direct structure Grouping 4 SkillがSMILES入力かつDescription非依存、Description-vector Clustering 6 SkillがDescription CSV入力かつDescription依存であること
+- 旧SMILES-to-Morgan clustering wrapper 6 Skillが現役directoryとallowlistに存在しないこと
+- 初手DAGの再計画がnodeを重複生成せず、node固有`<node-id-safe>`出力先が衝突しないこと
+- `wide_shallow` nodeが`deep_dive`より優先され、初手がterminalになるまでInterpretationを開始できないこと
 - manifest、evidence、execution event、InterpretationのJSON Schema検証
 - `chemble_jak2.csv`全231行のD001 regression
 - Orchestrator SubagentのSkill呼出し権限と人間確認権限
 - invalid SMILESのDescription／Grouping行保持と重複ID拒否
-- C018がoverlapを持つlong形式membershipの反復compound IDを受理すること
+- C012 meta-overlapがoverlapを持つlong形式membershipの反復compound IDを受理すること
+- binary DescriptionへのJaccard clustering、continuous vectorのJaccard拒否、raw SMILESのvector Skill入力拒否
+- 承認対象の高コストnodeの拒否または上流失敗時に、実行不能な下流nodeを理由付き`skipped`へ伝播すること
 - Stateの`start`による並列slot消費、`failed`の自動再試行抑止
 - 上流変更時のdomain/evidence graph node stale化
 - Morgan chiralityとGobbi Pharm2D SVDが統合Skillのparameter variantとして動作すること
 - Stateが計画と異なるvariant configurationを拒否すること
 - capability別`--help`が無関係なalgorithm optionを表示しないこと
-- 全48 Skillの人間向けREADMEが指定6 section、利用例、version 1.0.0の変更履歴を持ち、60行以内であること
+- 全42 Skillの人間向けREADMEが指定6 section、利用例、version 1.0.0の変更履歴を持ち、60行以内であること
 
 追加の静的確認:
 
 - `.claude`、`tools`、`tests`のPython 106 fileに対する書込みなし構文検査
-- 全48 Pixi manifestのTOML parse
+- 全42 Pixi manifestのTOML parse
 - 全Pixi manifestが`linux-64`と`win-64`を宣言
-- Catalog builderによる48 capability metadata検証
-- 全47個別実行Skillのmode文書、algorithm固有option、CLI guard、runner/template/schema完全一致
-- 全48 Skillの`--help`またはOrchestrator管理CLIのhelp成功
-- UTF-8 modeでSkill Creator validatorを実行し、全48 Skillが成功
+- Catalog builderによる42 capability metadata検証とGrouping taxonomy検証
+- 全41個別実行Skillのmode文書、algorithm固有option、CLI guard、runner/template/schema整合
+- 全41個別実行Skillと開発templateのCONDUCTOR既定出力が`<skill>/<node-id-safe>/`で一致すること
+- 全41実行Skillの`--help`およびOrchestrator管理CLIのhelp成功
+- UTF-8 modeでSkill Creator validatorを実行し、全42 Skillが成功
 
 ## 手動smoke test
 
-`tests/data/small_sar.csv`と`chemble_jak2.csv`を使用した。統合・CLI絞り込み後に、承認対象を除く43実行を再度横断smoke testした。
+`tests/data/small_sar.csv`と`chemble_jak2.csv`を使用した。Grouping整理後、実Description artifactを生成して現役Groupingを横断smoke testした。
 
 - Description: D001～D010、D012～D015、D017 folded、D017 SVD
-- Grouping: C001、C003～C018
+- Grouping: C001～C011を実Descriptionまたは元SMILES／カテゴリ入力で実行。C002 MCSは必須初手かつ承認不要であることをsmall SAR入力で確認。C012 meta-overlapはlong membership fixtureで実行
 - Operator: A001～A010
 - Interpretation: I001のJSON、Markdown、HTML生成、およびJSON編集後の再render
 - State: init、plan-wide、record、runnable、resume、入力・設定変更による下流stale化
+- State: 承認対象高コストnodeの承認拒否と上流failureによるblocked descendant skip伝播
 - domain graphへのgroup登録とevidence graphへのevidence依存登録
 - 一般モードでのMorgan chiral variantとGobbi Pharm2D SVD variant
 - CONDUCTOR Stateでのvariant parameter記録、event configuration照合、mismatch拒否
+- D002 Morgan整数bit CSVからC005/C008/C009/C010へJaccard入力し、D001連続値CSVからC006/C007へcosine入力するartifact chain
 
 ## 意図的に未実行の項目
 
-- C002 structure MCS: 高コスト
 - D016 Mordred 3D: 高コスト
 - D019 pretrained embedding: GPUおよびローカルmodel weightが必要
 - D020 tblite/xTB: 非常に高コスト
 
-上記はPolicyにより人間承認前に実行していない。実装、capability別CLI、manifest、Catalog収載、Pixi環境定義は静的検証対象に含めた。D011とD018はそれぞれD002、D017へ統合したため実行対象の欠落ではなく、IDを欠番として保持している。
+上記はPolicyにより人間承認前に実行していない。C002 MCSはこの対象から外し、承認不要の必須初手として実行検証した。実装、capability別CLI、manifest、Catalog収載、Pixi環境定義は静的検証対象に含めた。D011とD018はそれぞれD002、D017へ統合したため実行対象の欠落ではなく、IDを欠番として保持している。旧`structure-butina`等6 SkillはMorgan生成とvector Clusteringの責務重複を解消するため、`Archive/v4-retired-clustering-wrappers/`へ退避した。
 
 ## 環境に関する制約
 
