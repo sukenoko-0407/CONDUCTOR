@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=f"Run {CAPABILITY['skill_name']}.")
     operator = CAPABILITY["implementation"]["operator"]
     dependencies = set(CAPABILITY.get("dependencies") or [])
-    parser.set_defaults(description=None, membership=None, smiles_column=None, target_group=None)
+    parser.set_defaults(description=None, smiles_column=None)
     parser.add_argument("--input", required=True, help="Original CSV with compound ID and endpoint.")
     parser.add_argument("--property-column", required=True)
     parser.add_argument("--id-column")
@@ -86,14 +86,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--higher-is-better", action=argparse.BooleanOptionalAction, default=None)
     if "description" in dependencies:
         parser.add_argument("--description", required=True, help="Description CSV or Parquet.")
-    if "grouping" in dependencies:
-        parser.add_argument("--membership", required=True, help="Long or wide Grouping membership CSV.")
-    elif operator == "activity_distribution":
-        parser.add_argument("--membership", help="Optional long or wide Grouping membership CSV.")
-    if operator in {"group_profile", "activity_distribution"}:
-        parser.add_argument("--target-group")
+    parser.add_argument(
+        "--membership",
+        required="grouping" in dependencies,
+        help="Long or wide Grouping membership CSV. Optional for scoped reruns of otherwise global Operators.",
+    )
+    parser.add_argument("--target-group", help="Group used for a within-group or first between-group scope.")
+    parser.add_argument("--comparison-group", help="Second group used with --scope-mode between-groups.")
+    parser.add_argument("--scope-mode", choices=["global", "within-group", "between-groups"], default="global")
+    parser.add_argument(
+        "--reference-scope",
+        choices=["global", "local"],
+        default="global",
+        help="Fit non-Tanimoto Description preprocessing globally or inside the selected scope.",
+    )
     parser.add_argument("--grouping-representation")
     parser.add_argument("--evaluation-representation")
+    parser.add_argument("--scope-compound-set-hash", help="Canonical explicit-scope identity assigned by the Orchestrator.")
     parser.add_argument("--output-dir")
     parser.add_argument("--run-id")
     parser.add_argument("--project")
@@ -102,7 +111,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--overwrite", action="store_true")
     if operator in {"knn_activity_consistency", "sali"}:
         parser.add_argument("--k", type=int, default=10)
-        parser.add_argument("--metric", choices=["cosine", "euclidean", "manhattan", "tanimoto"], default="cosine")
+        parser.add_argument("--metric", choices=["auto", "cosine", "euclidean", "manhattan", "tanimoto"], default="auto")
     if operator in {"group_profile", "group_enrichment"}:
         parser.add_argument("--high-quantile", type=float, default=0.8)
         parser.add_argument("--low-quantile", type=float, default=0.2)
@@ -129,6 +138,23 @@ def parse_args() -> argparse.Namespace:
         parser.error("--low-quantile must be smaller than --high-quantile")
     if hasattr(args, "activity_delta_threshold") and args.activity_delta_threshold < 0:
         parser.error("--activity-delta-threshold must be >= 0")
+    if args.target_group and args.scope_mode == "global":
+        args.scope_mode = "within-group"
+    if operator == "group_overlap" and args.target_group:
+        parser.error("Group overlap compares multiple groups and does not accept --target-group")
+    if args.scope_mode != "global" and not args.membership:
+        parser.error("A local scope requires --membership")
+    if args.scope_mode == "within-group" and not args.target_group:
+        parser.error("--scope-mode within-group requires --target-group")
+    if args.scope_mode == "between-groups":
+        if operator not in {"pairwise_structure_similarity", "knn_activity_consistency", "sali", "activity_cliff"}:
+            parser.error("--scope-mode between-groups is supported only by pairwise, kNN, SALI, and activity-cliff Operators")
+        if not args.target_group or not args.comparison_group:
+            parser.error("--scope-mode between-groups requires --target-group and --comparison-group")
+        if args.target_group == args.comparison_group:
+            parser.error("--target-group and --comparison-group must differ")
+    elif args.comparison_group:
+        parser.error("--comparison-group is valid only with --scope-mode between-groups")
     return args
 
 
@@ -173,9 +199,13 @@ def load_property(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame,
     return original, table, id_column, smiles_column, file_hash(path), input_warnings
 
 
-def load_description(path_text: str | None, property_table: pd.DataFrame) -> tuple[pd.DataFrame | None, list[str]]:
+def load_description(
+    path_text: str | None,
+    property_table: pd.DataFrame,
+    reference_property_table: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame | None, list[str], pd.DataFrame | None]:
     if not path_text:
-        return None, []
+        return None, [], None
     path = Path(path_text)
     frame = pd.read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path)
     id_column = infer_column(list(frame.columns), "id")
@@ -186,8 +216,11 @@ def load_description(path_text: str | None, property_table: pd.DataFrame) -> tup
     frame["compound_id"] = frame["compound_id"].astype(str)
     excluded = {"compound_id", "input_smiles", "canonical_smiles", "mol_parse_ok", "description_error", "descriptor_error"}
     features = [column for column in frame.columns if column not in excluded and pd.api.types.is_numeric_dtype(frame[column])]
-    merged = property_table[["compound_id", "property_value"]].merge(frame[["compound_id", *features]], on="compound_id", how="inner")
-    return merged, features
+    selected_columns = ["compound_id", *features]
+    merged = property_table[["compound_id", "property_value"]].merge(frame[selected_columns], on="compound_id", how="inner")
+    reference_source = reference_property_table if reference_property_table is not None else property_table
+    reference = reference_source[["compound_id", "property_value"]].merge(frame[selected_columns], on="compound_id", how="inner")
+    return merged, features, reference
 
 
 def membership_sets(path_text: str | None, valid_ids: set[str]) -> dict[str, set[str]]:
@@ -212,6 +245,47 @@ def membership_sets(path_text: str | None, valid_ids: set[str]) -> dict[str, set
             mask = pd.to_numeric(frame[column], errors="coerce").fillna(0) > 0
             groups[str(column)] = set(ids[mask]) & valid_ids
     return {key: value for key, value in groups.items() if value}
+
+
+def apply_scope(
+    property_table: pd.DataFrame,
+    groups: dict[str, set[str]],
+    args: argparse.Namespace,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    all_ids = set(property_table["compound_id"].astype(str))
+    if args.scope_mode == "global":
+        selected_ids = all_ids
+    elif args.scope_mode == "within-group":
+        if args.target_group not in groups:
+            raise ValueError(f"Unknown target group: {args.target_group}")
+        selected_ids = groups[args.target_group]
+    else:
+        missing = [group_id for group_id in (args.target_group, args.comparison_group) if group_id not in groups]
+        if missing:
+            raise ValueError(f"Unknown group(s): {missing}")
+        selected_ids = groups[args.target_group] | groups[args.comparison_group]
+    scoped = property_table[property_table["compound_id"].isin(selected_ids)].copy()
+    if len(scoped) < 2:
+        raise ValueError("The selected scope must contain at least two numeric endpoint values")
+    total = max(1, len(property_table))
+    scope = {
+        "mode": args.scope_mode,
+        "target_group_id": args.target_group,
+        "comparison_group_id": args.comparison_group,
+        "sample_count": int(len(scoped)),
+        "sample_fraction": float(len(scoped) / total),
+        "compound_set_hash": value_hash(sorted(scoped["compound_id"].astype(str).tolist())),
+        "reference_scope": args.reference_scope,
+    }
+    if args.target_group in groups:
+        scope["target_group_size"] = len(groups[args.target_group])
+        scope["target_group_fraction"] = len(groups[args.target_group]) / total
+    if args.comparison_group in groups:
+        scope["comparison_group_size"] = len(groups[args.comparison_group])
+        scope["comparison_group_fraction"] = len(groups[args.comparison_group]) / total
+        overlap = groups[args.target_group] & groups[args.comparison_group]
+        scope["group_overlap_count"] = len(overlap)
+    return scoped, scope
 
 
 def default_output(args: argparse.Namespace, run_id: str) -> Path:
@@ -263,7 +337,8 @@ def group_enrichment(property_table: pd.DataFrame, groups: dict[str, set[str]], 
     property_table = property_table.assign(favorable=favorable.to_numpy())
     rows = []
     all_ids = set(property_table["compound_id"])
-    for group_id, members in groups.items():
+    selected_groups = {args.target_group: groups[args.target_group]} if args.target_group else groups
+    for group_id, members in selected_groups.items():
         in_group = property_table["compound_id"].isin(members)
         a = int((in_group & property_table["favorable"]).sum()); b = int((in_group & ~property_table["favorable"]).sum())
         c = int((~in_group & property_table["favorable"]).sum()); d = int((~in_group & ~property_table["favorable"]).sum())
@@ -275,7 +350,7 @@ def group_enrichment(property_table: pd.DataFrame, groups: dict[str, set[str]], 
     return result, {"group_count": len(result), "favorable_threshold": threshold}
 
 
-def pairwise_structure(property_table: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
+def pairwise_structure(property_table: pd.DataFrame, groups: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
     if "input_smiles" not in property_table.columns:
         raise ValueError("A SMILES column is required")
     from rdkit import Chem, DataStructs
@@ -292,9 +367,14 @@ def pairwise_structure(property_table: pd.DataFrame, args: argparse.Namespace) -
             continue
         ids.append(str(row.compound_id)); props.append(float(row.property_value)); fps.append(generator.GetFingerprint(mol))
     pair_rows = []
-    for pair_index, (i, j) in enumerate(combinations(range(len(ids)), 2)):
-        if pair_index >= args.max_pairs:
-            warnings.append(f"Pair enumeration capped at {args.max_pairs}")
+    for i, j in combinations(range(len(ids)), 2):
+        if args.scope_mode == "between-groups":
+            left_to_right = ids[i] in groups[args.target_group] and ids[j] in groups[args.comparison_group]
+            right_to_left = ids[j] in groups[args.target_group] and ids[i] in groups[args.comparison_group]
+            if not (left_to_right or right_to_left):
+                continue
+        if len(pair_rows) >= args.max_pairs:
+            warnings.append(f"Eligible pair enumeration capped at {args.max_pairs}")
             break
         similarity = float(DataStructs.TanimotoSimilarity(fps[i], fps[j]))
         pair_rows.append({"compound_id_a": ids[i], "compound_id_b": ids[j], "similarity": similarity, "distance": 1.0 - similarity, "property_a": props[i], "property_b": props[j], "abs_delta_property": abs(props[i] - props[j])})
@@ -302,14 +382,14 @@ def pairwise_structure(property_table: pd.DataFrame, args: argparse.Namespace) -
     return pd.DataFrame(pair_rows, columns=columns), np.asarray(props, dtype=float), warnings
 
 
-def pairwise_similarity_analysis(property_table: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
-    pairs, _, warnings = pairwise_structure(property_table, args)
+def pairwise_similarity_analysis(property_table: pd.DataFrame, groups: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
+    pairs, _, warnings = pairwise_structure(property_table, groups, args)
     summary = {"pair_count": len(pairs), "mean_similarity": float(pairs["similarity"].mean()) if len(pairs) else None, "median_similarity": float(pairs["similarity"].median()) if len(pairs) else None, "p90_similarity": float(pairs["similarity"].quantile(0.9)) if len(pairs) else None}
     return pairs, summary, warnings
 
 
-def activity_cliff(property_table: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
-    pairs, _, warnings = pairwise_structure(property_table, args)
+def activity_cliff(property_table: pd.DataFrame, groups: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
+    pairs, _, warnings = pairwise_structure(property_table, groups, args)
     cliffs = pairs[(pairs["similarity"] >= args.similarity_threshold) & (pairs["abs_delta_property"] >= args.activity_delta_threshold)].copy()
     if len(cliffs):
         cliffs["cliff_score"] = cliffs["abs_delta_property"] / np.maximum(1.0 - cliffs["similarity"], 1e-6)
@@ -317,7 +397,38 @@ def activity_cliff(property_table: pd.DataFrame, args: argparse.Namespace) -> tu
     return cliffs, {"pair_count": len(pairs), "cliff_count": len(cliffs), "cliff_density": len(cliffs) / max(1, len(pairs)), "similarity_threshold": args.similarity_threshold, "activity_delta_threshold": args.activity_delta_threshold}, warnings
 
 
-def description_matrix(description: pd.DataFrame | None, features: list[str], args: argparse.Namespace) -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray]:
+def resolve_metric(matrix: np.ndarray, features: list[str], args: argparse.Namespace) -> str:
+    requested = args.metric
+    representation = str(args.evaluation_representation or "").upper()
+    feature_names = [str(feature).lower() for feature in features]
+    is_morgan = representation == "D002" or any("morgan" in name for name in feature_names)
+    is_binary = bool(matrix.size) and bool(np.all((matrix == 0) | (matrix == 1)))
+    is_usr = representation == "D013" or any(name.startswith(("usr__", "usrcat__")) for name in feature_names)
+    is_latent = representation == "D019" or any("embedding" in name or "svd" in name for name in feature_names)
+    nonnegative_integer = bool(matrix.size) and bool(np.all(matrix >= 0) and np.allclose(matrix, np.round(matrix)))
+    sparse = bool(matrix.size) and float(np.count_nonzero(matrix)) / float(matrix.size) < 0.5
+
+    if requested == "auto":
+        if is_morgan or is_binary:
+            return "tanimoto"
+        if is_usr:
+            return "manhattan"
+        if is_latent or (nonnegative_integer and sparse):
+            return "cosine"
+        return "euclidean"
+    if is_morgan and requested != "tanimoto":
+        raise ValueError("Morgan representations require --metric tanimoto")
+    if requested == "tanimoto" and np.any(matrix < 0):
+        raise ValueError("--metric tanimoto requires non-negative Description values")
+    return requested
+
+
+def description_matrix(
+    description: pd.DataFrame | None,
+    features: list[str],
+    args: argparse.Namespace,
+    reference_description: pd.DataFrame | None = None,
+) -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray, str]:
     if description is None or not features:
         raise ValueError("--description with numeric features is required")
     if len(description) < 2:
@@ -325,38 +436,83 @@ def description_matrix(description: pd.DataFrame | None, features: list[str], ar
     from sklearn.impute import SimpleImputer
     from sklearn.metrics import pairwise_distances
     from sklearn.preprocessing import StandardScaler
-    matrix = SimpleImputer(strategy="median").fit_transform(description[features])
-    if args.metric not in {"tanimoto"}:
-        matrix = StandardScaler().fit_transform(matrix)
-    if args.metric == "tanimoto":
-        binary = matrix > 0
-        intersection = binary.astype(int) @ binary.astype(int).T
-        sums = binary.sum(axis=1)
-        union = sums[:, None] + sums[None, :] - intersection
-        distance = 1.0 - np.divide(intersection, union, out=np.zeros_like(intersection, dtype=float), where=union != 0)
+    fit_frame = reference_description if args.reference_scope == "global" and reference_description is not None else description
+    imputer = SimpleImputer(strategy="median").fit(fit_frame[features])
+    matrix = imputer.transform(description[features])
+    reference_matrix = imputer.transform(fit_frame[features])
+    resolved_metric = resolve_metric(matrix, features, args)
+    if resolved_metric != "tanimoto":
+        scaler = StandardScaler().fit(reference_matrix)
+        matrix = scaler.transform(matrix)
+    if resolved_metric == "tanimoto":
+        dot = matrix @ matrix.T
+        squared = np.sum(matrix * matrix, axis=1)
+        denominator = squared[:, None] + squared[None, :] - dot
+        similarity = np.divide(dot, denominator, out=np.zeros_like(dot, dtype=float), where=denominator > 0)
+        distance = 1.0 - np.clip(similarity, 0.0, 1.0)
+        np.fill_diagonal(distance, 0.0)
     else:
-        distance = pairwise_distances(matrix, metric=args.metric)
-    return description["compound_id"].astype(str).tolist(), description["property_value"].to_numpy(float), matrix, distance
+        distance = pairwise_distances(matrix, metric=resolved_metric)
+    return description["compound_id"].astype(str).tolist(), description["property_value"].to_numpy(float), matrix, distance, resolved_metric
 
 
-def knn_edges(description: pd.DataFrame | None, features: list[str], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]]:
-    ids, properties, _, distance = description_matrix(description, features, args)
+def knn_edges(
+    description: pd.DataFrame | None,
+    features: list[str],
+    groups: dict[str, set[str]],
+    args: argparse.Namespace,
+    reference_description: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    ids, properties, _, distance, resolved_metric = description_matrix(description, features, args, reference_description)
     effective_k = min(args.k, len(ids) - 1)
     rows = []
     for i in range(len(ids)):
-        neighbors = np.argsort(distance[i])[1 : effective_k + 1]
+        if args.scope_mode == "between-groups":
+            if ids[i] in groups[args.target_group]:
+                candidate_indices = [j for j, compound_id in enumerate(ids) if j != i and compound_id in groups[args.comparison_group]]
+            elif ids[i] in groups[args.comparison_group]:
+                candidate_indices = [j for j, compound_id in enumerate(ids) if j != i and compound_id in groups[args.target_group]]
+            else:
+                candidate_indices = []
+            neighbors = sorted(candidate_indices, key=lambda j: distance[i, j])[:effective_k]
+        else:
+            neighbors = [int(j) for j in np.argsort(distance[i]) if int(j) != i][:effective_k]
         for rank, j in enumerate(neighbors, start=1):
             rows.append({"compound_id": ids[i], "neighbor_id": ids[j], "neighbor_rank": rank, "distance": distance[i, j], "property_value": properties[i], "neighbor_property_value": properties[j], "abs_delta_property": abs(properties[i] - properties[j])})
     frame = pd.DataFrame(rows)
     corr = frame[["property_value", "neighbor_property_value"]].corr(method="spearman").iloc[0, 1] if len(frame) else np.nan
-    return frame, {"sample_count": len(ids), "effective_k": effective_k, "median_abs_delta_property": frame["abs_delta_property"].median() if len(frame) else np.nan, "neighbor_property_spearman": corr}
+    return frame, {"sample_count": len(ids), "effective_k": effective_k, "requested_metric": args.metric, "metric": resolved_metric, "reference_scope": args.reference_scope, "median_abs_delta_property": frame["abs_delta_property"].median() if len(frame) else np.nan, "neighbor_property_spearman": corr}
 
 
-def sali_analysis(description: pd.DataFrame | None, features: list[str], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]]:
-    frame, summary = knn_edges(description, features, args)
+def sali_analysis(
+    description: pd.DataFrame | None,
+    features: list[str],
+    groups: dict[str, set[str]],
+    args: argparse.Namespace,
+    reference_description: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    frame, summary = knn_edges(description, features, groups, args, reference_description)
     frame["sali"] = frame["abs_delta_property"] / np.maximum(frame["distance"], 1e-6)
-    summary.update({"median_sali": frame["sali"].median(), "p90_sali": frame["sali"].quantile(0.9), "p95_sali": frame["sali"].quantile(0.95)})
-    return frame.sort_values("sali", ascending=False), summary
+    frame = frame.sort_values("sali", ascending=False)
+    top_columns = ["compound_id", "neighbor_id", "neighbor_rank", "distance", "abs_delta_property", "sali"]
+    summary.update({
+        "landscape_scope": "directed_k_nearest_neighbor_edges",
+        "sali_definition": "abs_delta_property / max(distance, 1e-6)",
+        "mean_sali": frame["sali"].mean(),
+        "median_sali": frame["sali"].median(),
+        "p75_sali": frame["sali"].quantile(0.75),
+        "p90_sali": frame["sali"].quantile(0.9),
+        "p95_sali": frame["sali"].quantile(0.95),
+        "max_sali": frame["sali"].max(),
+        "near_zero_distance_edge_count": int((frame["distance"] <= 1e-6).sum()),
+        "top_sali_pairs": frame[top_columns].head(20).to_dict(orient="records"),
+        "interpretation_guidance": {
+            "high_upper_tail": "localized cliffs or steep regions that require chemical and assay-context explanation",
+            "low_center_and_upper_tail": "a comparatively smooth landscape in this representation, potentially consistent with good property organization",
+            "comparison_limit": "raw SALI scales are compared within the same endpoint scale and metric; use neighbor property deltas and ranks across different metrics",
+        },
+    })
+    return frame, summary
 
 
 def descriptor_correlation(description: pd.DataFrame | None, features: list[str]) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -394,16 +550,25 @@ def group_structural_diversity(property_table: pd.DataFrame, groups: dict[str, s
         raise ValueError("--membership is required")
     rows = []
     warnings: list[str] = []
-    for group_id, members in groups.items():
+    selected_groups = {args.target_group: groups[args.target_group]} if args.target_group else groups
+    for group_id, members in selected_groups.items():
         group_table = property_table[property_table["compound_id"].isin(members)]
-        pairs, _, pair_warnings = pairwise_structure(group_table, args)
+        pairs, _, pair_warnings = pairwise_structure(group_table, groups, args)
         warnings.extend(f"{group_id}: {warning}" for warning in pair_warnings)
         rows.append({"group_id": group_id, "sample_count": len(group_table), "pair_count": len(pairs), "mean_tanimoto": pairs["similarity"].mean() if len(pairs) else np.nan, "median_tanimoto": pairs["similarity"].median() if len(pairs) else np.nan, "p90_tanimoto": pairs["similarity"].quantile(0.9) if len(pairs) else np.nan, "structural_diversity_score": 1.0 - pairs["similarity"].mean() if len(pairs) else np.nan})
     result = pd.DataFrame(rows)
     return result, {"group_count": len(result)}, warnings
 
 
-def execute(operator: str, property_table: pd.DataFrame, groups: dict[str, set[str]], description: pd.DataFrame | None, features: list[str], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
+def execute(
+    operator: str,
+    property_table: pd.DataFrame,
+    groups: dict[str, set[str]],
+    description: pd.DataFrame | None,
+    features: list[str],
+    args: argparse.Namespace,
+    reference_description: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
     if operator == "activity_distribution":
         result, summary = activity_distribution(property_table, groups, args); return result, summary, []
     if operator == "group_profile":
@@ -411,15 +576,15 @@ def execute(operator: str, property_table: pd.DataFrame, groups: dict[str, set[s
     if operator == "group_enrichment":
         result, summary = group_enrichment(property_table, groups, args); return result, summary, []
     if operator == "pairwise_structure_similarity":
-        return pairwise_similarity_analysis(property_table, args)
+        return pairwise_similarity_analysis(property_table, groups, args)
     if operator == "activity_cliff":
-        return activity_cliff(property_table, args)
+        return activity_cliff(property_table, groups, args)
     if operator == "descriptor_activity_correlation":
         result, summary = descriptor_correlation(description, features); return result, summary, []
     if operator == "knn_activity_consistency":
-        result, summary = knn_edges(description, features, args); return result, summary, []
+        result, summary = knn_edges(description, features, groups, args, reference_description); return result, summary, []
     if operator == "sali":
-        result, summary = sali_analysis(description, features, args); return result, summary, []
+        result, summary = sali_analysis(description, features, groups, args, reference_description); return result, summary, []
     if operator == "group_overlap":
         result, summary = group_overlap(groups); return result, summary, []
     if operator == "group_structural_diversity":
@@ -427,19 +592,41 @@ def execute(operator: str, property_table: pd.DataFrame, groups: dict[str, set[s
     raise ValueError(f"Unsupported operator: {operator}")
 
 
+def generated_result_records(result: pd.DataFrame, operator: str) -> list[dict[str, Any]]:
+    if not len(result):
+        return []
+    group_columns = {"group_id", "group_id_a", "group_id_b"}
+    if group_columns.intersection(result.columns):
+        limit = 5000
+    elif operator == "descriptor_activity_correlation":
+        limit = 100
+    else:
+        return []
+    records = []
+    for index, row in result.head(limit).iterrows():
+        records.append({"record_id": f"{operator}:{index}", "values": clean_json(row.to_dict())})
+    return records
+
+
 def run() -> int:
     started_at = utc_now()
     args = parse_args()
     run_id = args.run_id or run_id_now()
-    _, property_table, id_column, smiles_column, input_hash, input_warnings = load_property(args)
-    description, features = load_description(args.description, property_table)
-    groups = membership_sets(args.membership, set(property_table["compound_id"]))
+    _, full_property_table, id_column, smiles_column, input_hash, input_warnings = load_property(args)
+    groups = membership_sets(args.membership, set(full_property_table["compound_id"]))
     operator = CAPABILITY["implementation"]["operator"]
+    scoped_property_table, scope = apply_scope(full_property_table, groups, args)
+    if args.scope_compound_set_hash:
+        scope["selection_hash"] = args.scope_compound_set_hash
+    group_context_operators = {"group_profile", "group_enrichment", "group_overlap", "group_structural_diversity"}
+    property_table = full_property_table if operator in group_context_operators else scoped_property_table
+    description, features, reference_description = load_description(args.description, scoped_property_table, full_property_table)
     outdir = default_output(args, run_id)
     if outdir.exists() and any(outdir.iterdir()) and not args.overwrite:
         raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
     outdir.mkdir(parents=True, exist_ok=True)
-    result, summary, warnings = execute(operator, property_table, groups, description, features, args)
+    result, summary, warnings = execute(operator, property_table, groups, description, features, args, reference_description)
+    summary["scope"] = scope
     warnings = input_warnings + warnings
     result_path = outdir / CAPABILITY["output"]["filename"]
     result.to_csv(result_path, index=False)
@@ -447,23 +634,42 @@ def run() -> int:
     supporting_compounds: list[str] = []
     supporting_pairs: list[dict[str, Any]] = []
     if "compound_id" in result.columns:
-        supporting_compounds = result["compound_id"].dropna().astype(str).head(100).tolist()
+        supporting_compounds = list(dict.fromkeys(result["compound_id"].dropna().astype(str).head(100).tolist()))
     if {"compound_id_a", "compound_id_b"}.issubset(result.columns):
-        supporting_pairs = result[["compound_id_a", "compound_id_b"]].head(100).to_dict(orient="records")
+        pair_columns = [column for column in ("compound_id_a", "compound_id_b", "similarity", "distance", "abs_delta_property", "cliff_score") if column in result.columns]
+        supporting_pairs = result[pair_columns].head(100).to_dict(orient="records")
+    elif {"compound_id", "neighbor_id"}.issubset(result.columns):
+        pair_columns = [column for column in ("compound_id", "neighbor_id", "neighbor_rank", "distance", "abs_delta_property", "sali") if column in result.columns]
+        supporting_pairs = result[pair_columns].head(100).rename(columns={"compound_id": "compound_id_a", "neighbor_id": "compound_id_b"}).to_dict(orient="records")
+    if operator == "sali":
+        human_summary = (
+            f"{CAPABILITY['display_name']} analyzed {scope['sample_count']} scoped endpoint rows with "
+            f"{summary.get('metric')} distance. Median SALI={clean_json(summary.get('median_sali'))}, "
+            f"p95 SALI={clean_json(summary.get('p95_sali'))}. Inspect the upper tail for localized cliffs "
+            "and the center plus upper tail for overall landscape smoothness."
+        )
+        uncertainty = {
+            "metric_scale_dependence": "Raw SALI values depend on the endpoint scale and selected distance metric.",
+            "measurement_context": "High SALI pairs require assay-error and condition checks before chemical interpretation.",
+        }
+    else:
+        human_summary = f"{CAPABILITY['display_name']} analyzed scope={scope['mode']} with {scope['sample_count']} endpoint rows. See {result_path.name}."
+        uncertainty = None
+    evidence_context = str(args.node_id or f"{args.evaluation_representation or 'NA'}:{scope['compound_set_hash'][:12]}").replace(" ", "_")
     evidence = {
-        "schema_version": "1.0.0", "evidence_id": f"{run_id}:{CAPABILITY['operator_id']}:{target_group or 'GLOBAL'}:0001",
+        "schema_version": "1.0.0", "evidence_id": f"{run_id}:{CAPABILITY['operator_id']}:{evidence_context}:0001",
         "operator_id": CAPABILITY["operator_id"], "operator_name": CAPABILITY["display_name"], "operator_version": CAPABILITY["version"], "run_id": run_id,
         "target_group_id": target_group, "grouping_representation": args.grouping_representation, "evaluation_representation": args.evaluation_representation,
-        "input_features": features, "sample_count": int(len(property_table)), "result_type": operator, "result_values": summary,
+        "input_features": features, "sample_count": int(scope["sample_count"]), "scope": scope, "result_type": operator, "result_values": summary,
         "statistical_significance": {key: value for key, value in summary.items() if "pvalue" in key or "qvalue" in key} or None,
-        "uncertainty": None, "applicability_conditions": [f"endpoint={args.property_column}", f"higher_is_better={args.higher_is_better}"],
+        "uncertainty": uncertainty, "applicability_conditions": [f"endpoint={args.property_column}", f"higher_is_better={args.higher_is_better}", *([f"metric={summary.get('metric')}"] if summary.get("metric") else [])],
         "warnings": warnings, "supporting_compounds": supporting_compounds, "supporting_pairs": supporting_pairs,
-        "generated_evidence": [], "machine_readable_summary": summary,
-        "human_readable_summary": f"{CAPABILITY['display_name']} analyzed {len(property_table)} valid endpoint rows. See {result_path.name}.",
+        "generated_evidence": generated_result_records(result, operator), "machine_readable_summary": summary,
+        "human_readable_summary": human_summary,
         "artifacts": [{"type": "operator_result", "path": result_path.name, "sha256": file_hash(result_path)}], "created_at": utc_now()
     }
     config = {key: value for key, value in vars(args).items()}
-    manifest = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "output": result_path.name, "warnings": warnings, "created_at": utc_now()}
+    manifest = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now()}
     if args.conductor:
         validate_json(manifest, "artifact_manifest.schema.json")
         write_json(outdir / "analysis_manifest.json", manifest)

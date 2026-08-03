@@ -57,7 +57,7 @@ OPERATORS = [
     ("A003", "cs-analysis-pairwise-structure-similarity", "Pairwise structure similarity", "pairwise_structure_similarity", "feature_space", "medium", "stable", True, []),
     ("A004", "cs-analysis-descriptor-activity-correlation", "Descriptor-activity correlation", "descriptor_activity_correlation", "interpretable_association", "low", "stable", True, ["description"]),
     ("A005", "cs-analysis-knn-activity-consistency", "kNN activity consistency", "knn_activity_consistency", "feature_space", "medium", "stable", True, ["description"]),
-    ("A006", "cs-analysis-sali", "Structure-activity landscape index", "sali", "landscape", "medium", "stable", True, ["description"]),
+    ("A006", "cs-analysis-sali", "Extended structure-activity landscape index", "sali", "landscape", "medium", "stable", True, ["description"]),
     ("A007", "cs-analysis-activity-cliff", "Activity cliff detection", "activity_cliff", "landscape", "medium", "stable", True, []),
     ("A008", "cs-analysis-group-enrichment", "Group activity enrichment", "group_enrichment", "group_profile", "low", "stable", True, ["grouping"]),
     ("A009", "cs-analysis-group-overlap", "Group overlap", "group_overlap", "group_quality", "low", "stable", True, ["grouping"]),
@@ -74,7 +74,7 @@ WIDE_PROFILE: dict[str, dict[str, Any]] = {
     "D013": {"wide_shallow_axis": "shape_and_3d_pharmacophore", "default_parameters": {"num_confs": 20, "random_seed": 61453}},
     "D017": {"wide_shallow_axis": "pharmacophore_2d"},
     "C001": {"wide_shallow_axis": "scaffold_rule", "default_parameters": {"min_cluster_size": 3}},
-    "C002": {"wide_shallow_axis": "maximum_common_substructure", "default_parameters": {"min_cluster_size": 3, "max_pairs": 2000, "max_core_groups": 100}},
+    "C002": {"wide_shallow_axis": "maximum_common_substructure", "default_parameters": {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300}},
     "C003": {"wide_shallow_axis": "fragment_decomposition", "default_parameters": {"min_cluster_size": 3}},
     "C005": {"wide_shallow_axis": "vector_similarity_partition", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "jaccard", "similarity_threshold": 0.55}},
     "C006": {"wide_shallow_axis": "vector_hierarchical", "wide_shallow_sources": {"description": ["D001", "D013", "D017"]}, "default_parameters": {"min_cluster_size": 3, "metric": "cosine", "distance_threshold": 0.7}},
@@ -85,11 +85,11 @@ WIDE_PROFILE: dict[str, dict[str, Any]] = {
     "A002": {"wide_shallow_axis": "endpoint_distribution"},
     "A003": {"wide_shallow_axis": "pairwise_structure_space", "default_parameters": {"max_pairs": 200000}},
     "A004": {"wide_shallow_axis": "descriptor_activity_association", "wide_shallow_sources": {"description": ["D001", "D013"]}},
-    "A005": {"wide_shallow_axis": "neighborhood_activity_consistency", "wide_shallow_sources": {"description": ["D004", "D007"]}, "default_parameters": {"k": 10, "metric": "cosine"}},
-    "A006": {"wide_shallow_axis": "representation_specific_activity_cliffs", "wide_shallow_sources": {"description": ["D002", "D013", "D017"]}, "default_parameters": {"k": 10, "metric": "cosine"}},
+    "A005": {"wide_shallow_axis": "neighborhood_activity_consistency", "wide_shallow_sources": {"description": ["D004", "D007"]}, "wide_shallow_parameter_overrides": {"description": {"D004": {"metric": "cosine"}, "D007": {"metric": "tanimoto"}}}, "default_parameters": {"k": 10}},
+    "A006": {"wide_shallow_axis": "representation_specific_activity_cliffs", "wide_shallow_sources": {"description": ["D002", "D013", "D017"]}, "wide_shallow_parameter_overrides": {"description": {"D002": {"metric": "tanimoto"}, "D013": {"metric": "manhattan"}, "D017": {"metric": "tanimoto"}}}, "default_parameters": {"k": 10}},
     "A007": {"wide_shallow_axis": "structure_activity_cliffs", "default_parameters": {"similarity_threshold": 0.8, "activity_delta_threshold": 1.0, "max_pairs": 200000}},
     "A008": {"wide_shallow_axis": "group_activity_enrichment", "wide_shallow_sources": {"grouping": ["*"]}, "default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
-    "A009": {"wide_shallow_axis": "overlapping_group_structure", "wide_shallow_sources": {"grouping": ["C003"]}},
+    "A009": {"wide_shallow_axis": "overlapping_group_structure", "wide_shallow_sources": {"grouping": ["C002", "C003"]}},
     "A010": {"wide_shallow_axis": "group_structural_diversity", "wide_shallow_sources": {"grouping": ["C001", "C002", "C003", "C006"]}, "default_parameters": {"max_pairs": 200000}},
 }
 
@@ -301,7 +301,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             inputs = "long形式の`cluster_id,compound_id`またはIDとgroup列を持つwide形式のmembership CSVを使う。long形式ではoverlapを表す同一compound IDの反復を許可する。"
         clustering_options = {
             "structure_murcko": "`--min-cluster-size`未満のscaffold groupを出力しない。",
-            "structure_mcs": "`--min-cluster-size`、`--max-pairs`、`--max-core-groups`で探索量を制限する。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。",
+            "structure_mcs": "`--min-cluster-size`（既定3）、`--max-pairs`（既定・上限1000）、`--max-core-groups`（既定300）で探索量を制限する。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。",
             "structure_brics": "`--min-cluster-size`未満のfragment groupを出力しない。",
             "structure_recap": "`--min-cluster-size`未満のfragment groupを出力しない。",
             "categorical": "`--columns`を必須とし、`--min-cluster-size`未満のgroupを出力しない。",
@@ -340,29 +340,31 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
         inputs = f"元CSV、endpoint列、`--higher-is-better`または`--no-higher-is-better`を必ず指定する。{dependency_text}"
         operator = capability["implementation"]["operator"]
+        if operator == "sali":
+            purpose = "Description空間の局所的なproperty勾配をSALIで評価し、高SALI cliff pairとlandscape分布の平滑性をCONDUCTOR evidenceとして生成する。"
         analysis_options = {
             "group_profile": "`--membership`を必須とし、`--high-quantile`、`--low-quantile`、任意の`--target-group`を指定できる。",
             "activity_distribution": "全体分布をdefaultとし、任意の`--membership`と`--target-group`でgroup別に限定できる。",
-            "pairwise_structure_similarity": "SMILES列を使い、`--max-pairs`でpair列挙を制限する。",
-            "descriptor_activity_correlation": "`--description`の全数値featureについてPearson/Spearman相関を計算する。algorithm固有optionはない。",
-            "knn_activity_consistency": "`--description`、`--k`、`--metric`を指定する。",
-            "sali": "`--description`、`--k`、`--metric`を指定し、近傍edge上でSALIを計算する。",
-            "activity_cliff": "`--similarity-threshold`、`--activity-delta-threshold`、`--max-pairs`を指定する。",
+            "pairwise_structure_similarity": "SMILES列を使い、`--max-pairs`でpair列挙を制限する。Group内／二Group間scopeを指定できる。",
+            "descriptor_activity_correlation": "`--description`の全数値featureについてPearson/Spearman相関を計算する。任意のGroup内scopeへ限定できる。",
+            "knn_activity_consistency": "`--description`と`--k`を指定する。`--metric auto`はfeature特性から距離を選び、CONDUCTOR初手ではsource別metricをStateへ明示記録する。Group内／二Group間scopeではglobal前処理基準を既定とする。",
+            "sali": "`--description`と`--k`を指定する。`--metric auto`はMorgan/binaryへTanimoto、USR/USRCATへManhattan、embedding/SVDまたは疎なcountへcosine、その他の連続descriptorへEuclideanを選ぶ。Group内／二Group間scopeとglobal前処理基準に対応し、高SALI cliff pairとlandscape分布の平滑性をともにevidenceへ残す。",
+            "activity_cliff": "`--similarity-threshold`、`--activity-delta-threshold`、`--max-pairs`を指定する。Group内／二Group間scopeを指定できる。",
             "group_enrichment": "`--membership`を必須とし、`--high-quantile`、`--low-quantile`を指定する。",
-            "group_overlap": "`--membership`を必須とする。algorithm固有optionはない。",
+            "group_overlap": "`--membership`を必須とする。初手ではC002 MCSとC003 BRICSを評価する。",
             "group_structural_diversity": "`--membership`を必須とし、SMILES列と`--max-pairs`を使う。",
         }
         option_guidance = analysis_options[operator]
         output_contract = f'''- 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`{capability["output"]["filename"]}`だけを生成する。
 - CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     else:
-        purpose = "複数Operator evidenceを統合し、agent向けJSONと人間向けMarkdown/HTMLを生成する。"
-        inputs = "`--evidence`または`--evidence-dir`で一つ以上のevidence JSONを指定する。"
+        purpose = "専用Interpretation Policyに従うClaude Code Agent向けに、複数Operator evidence、Group局所性、依存関係、失敗を読み取り専用で整理する。"
+        inputs = "`--evidence`または`--evidence-dir`で同一runのevidenceを指定する。CONDUCTORでは`--state`を必ず指定する。"
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --evidence-dir path/to/evidence --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --evidence-dir results/CONDUCTOR/PROJECT/RUN_ID/analysis --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
-        output_contract = '''- 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へ`interpretation.json`、`interpretation.md`、`interpretation.html`を生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/<node-id-safe>/`へ同じ三成果物とschema検証済み`execution_event.json`を生成する。'''
-        option_guidance = "`--evidence`は反復可能で、`--evidence-dir`も反復可能である。異なるrun IDのevidenceは混在させない。"
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --evidence-dir results/CONDUCTOR/PROJECT/RUN_ID/analysis --state results/CONDUCTOR/PROJECT/RUN_ID/state.json --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
+        output_contract = '''- 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へ`interpretation.json`、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/<node-id-safe>/`へ同じ成果物とschema検証済み`execution_event.json`を生成する。専用Agentは必要に応じて`exploration_plan.json`を追加する。'''
+        option_guidance = "`references/interpretation_policy.md`を完全に読む。`--state`から失敗、skip、依存性、探索ledgerを読み、矛盾とnegative resultを保持する。全discoveryに反証要求を付ける。既存Groupingにないrandom、matched random、交差、差分、boundaryはPlanの`scope`へcompound IDと選択法を記録し、membership生成とOperator実行はOrchestratorへ委ねる。"
     return f'''---
 name: {name}
 description: {capability["description"]} General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
@@ -505,6 +507,8 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         if algorithm.startswith("structure_"):
             constraints.append("Description vectorは入力にせず、fingerprint生成を内部に隠した距離clusteringも行わない。")
             constraints.append("invalid SMILESは未割当として保持する。分子標準化は行わない。")
+        if algorithm == "structure_mcs":
+            constraints.append("`--max-pairs`は1～1000に制限し、`--max-core-groups`の既定値は300とする。")
         if algorithm.startswith("vector_"):
             constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。0/1 vectorでのみJaccard距離を利用できる。")
             constraints.append("結果は入力feature、距離metric、thresholdまたはcluster数に依存する。")
@@ -535,16 +539,20 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             general_args += " --membership cluster_membership.csv"
         constraints = ["endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。"]
         constraints.append("数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。")
+        if operator in {"knn_activity_consistency", "sali"}:
+            constraints.append("`--metric auto`はfeature特性から距離を選び、Morgan表現にはTanimoto以外を使用しない。")
+        if operator == "sali":
+            constraints.append("高SALI pairと、中心・upper tailが示すlandscape平滑性をともに評価し、異なるmetricのraw SALI値を直接比較しない。")
         if approval:
             constraints.append("dataset規模によって高コストになる場合は、CONDUCTORで人間の承認を得る。")
         primary_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}"
         extra_example = ""
     else:
-        purpose = "一つ以上のOperator evidenceを統合し、agent向けJSONと人間向けMarkdown/HTMLを生成する。"
-        scenes = "複数解析の観察、警告、支持・矛盾関係を整理し、次の解析候補をまとめる場合。"
-        constraints = ["異なるrun IDのevidenceは混在させない。", "具体的な新規SMILESは生成せず、構造変換・設計方向までを提示する。"]
+        purpose = "専用Interpretation Agent向けにOperator evidence、Group局所性、依存関係、失敗を読み取り専用で整理し、agent JSONと人間向けreportを生成する。"
+        scenes = "異なるDescription・Grouping・Operator間の一致、矛盾、例外、global/local差を比較し、反証を伴う探索要求を作る場合。"
+        constraints = ["専用Policyを読み、Interpretation nodeを読み取り専用の終端として扱う。", "全discoveryに反証要求を付け、同じanalysis signatureを再要求しない。", "多重探索結果、negative result、矛盾を削除しない。", "State更新、Operator実行、approval判断、新規SMILES生成は行わない。"]
         primary_example = f"python .claude/skills/{name}/scripts/launch.py --evidence-dir path/to/evidence"
-        general_args = "--evidence-dir path/to/evidence"
+        general_args = "--evidence-dir path/to/evidence --state path/to/state.json"
         extra_example = ""
 
     constraint_text = "\n".join(f"- {item}" for item in constraints) if constraints else "- 特になし。"
@@ -686,12 +694,38 @@ def main() -> int:
     for identifier, name, display, operator, family, cost, status, wide, dependencies in OPERATORS:
         capability = base_capability(identifier, name, display, "analysis", family, cost, status, wide)
         capability.update({"operator_id": identifier, "dependencies": dependencies, "input_contract": ["endpoint_csv", *dependencies], "output": {"filename": f"{identifier}_{operator}.csv", "evidence": "evidence.json"}, "implementation": {"operator": operator}})
+        capability["scope_support"] = {
+            "A001": ["global", "within-group"],
+            "A002": ["global", "within-group"],
+            "A003": ["global", "within-group", "between-groups"],
+            "A004": ["global", "within-group"],
+            "A005": ["global", "within-group", "between-groups"],
+            "A006": ["global", "within-group", "between-groups"],
+            "A007": ["global", "within-group", "between-groups"],
+            "A008": ["global", "within-group"],
+            "A009": ["global"],
+            "A010": ["global", "within-group"],
+        }[identifier]
+        if identifier == "A006":
+            capability["description"] = "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI, preserve high-SALI cliff pairs for interpretation, and generate CONDUCTOR v4 evidence."
         apply_wide_profile(capability)
         created += create_skill(capability, "analysis", TEMPLATES / "operator_run.py", ["execution_event.schema.json", "evidence.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
     interpretation = base_capability("I001", "cs-analysis-interpret-evidence", "SAR evidence interpretation", "interpretation", "evidence_integration", "low", "stable", False)
-    interpretation.update({"interpretation_id": "I001", "dependencies": ["evidence"], "input_contract": ["evidence_json"], "output": {"json": "interpretation.json", "markdown": "interpretation.md", "html": "interpretation.html"}, "implementation": {"purpose": "evidence_interpretation"}})
-    created += create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "evidence.schema.json"], args.force)
+    interpretation.update({
+        "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
+        "interpretation_id": "I001",
+        "dependencies": ["evidence"],
+        "input_contract": ["evidence_json", "optional_state_json_read_only", "interpretation_policy_markdown"],
+        "output": {"json": "interpretation.json", "markdown": "interpretation.md", "html": "interpretation.html", "context": "interpretation_context.json", "exploration_plan": "exploration_plan.json"},
+        "implementation": {"purpose": "policy_guided_iterative_evidence_exploration", "state_access": "read_only", "execution_authority": "orchestrator_only"},
+    })
+    interpretation_created = create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "interpretation_exploration_plan.schema.json", "evidence.schema.json"], args.force)
+    created += interpretation_created
+    if interpretation_created:
+        references = SKILLS_ROOT / interpretation["skill_name"] / "references"
+        references.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "docs" / "CONDUCTOR_v4_interpretation_policy.md", references / "interpretation_policy.md")
     included.append(interpretation["skill_name"])
     selection_path = ROOT / "catalog" / "included_skills.json"
     selection = json.loads(selection_path.read_text(encoding="utf-8"))

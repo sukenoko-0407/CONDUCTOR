@@ -31,6 +31,8 @@ python .claude/skills/cs-analysis-knn-activity-consistency/scripts/launch.py --i
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
+- `--metric auto`はbinary vectorへTanimoto、USR/USRCATへManhattan、疎なcount vectorへcosine、その他の連続descriptorへEuclideanを選ぶ。
+- Group内／Group間比較ではglobal前処理基準を既定とし、scopeとcompound集合hashをevidenceへ残す。
 
 ## 変更履歴
 

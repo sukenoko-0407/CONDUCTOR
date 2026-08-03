@@ -24,7 +24,7 @@ Descriptor-activity correlationを実行し、客観的な数値結果とCONDUCT
 
 ## Algorithm-specific options
 
-`--description`の全数値featureについてPearson/Spearman相関を計算する。algorithm固有optionはない。
+`--description`の全数値featureについてPearson/Spearman相関を計算する。任意の`--membership --target-group --scope-mode within-group`でGroup局所相関を計算できる。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

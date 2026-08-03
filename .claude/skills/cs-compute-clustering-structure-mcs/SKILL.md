@@ -24,7 +24,7 @@ compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う�
 
 ## Algorithm-specific options
 
-`--min-cluster-size`、`--max-pairs`、`--max-core-groups`で探索量を制限する。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。
+`--min-cluster-size`（既定3）、`--max-pairs`（既定・上限1000）、`--max-core-groups`（既定300）で探索量を制限する。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

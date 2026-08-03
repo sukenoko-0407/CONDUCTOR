@@ -32,7 +32,9 @@ SBDD実処理、MMP、新規化合物SMILES生成、人間フィードバック�
 ```text
 CONDUCTOR/
 ├── .claude/
-│   ├── agents/cs-conductor-orchestrator.md
+│   ├── agents/
+│   │   ├── cs-conductor-orchestrator.md
+│   │   └── cs-conductor-interpreter.md
 │   └── skills/<skill-name>/
 │       ├── SKILL.md
 │       ├── capability.json
@@ -90,6 +92,8 @@ direct structure GroupingはMurcko、MCS、BRICS、RECAPに限定し、SMILESを
 - 元CSV、ID列、endpoint列、`higher_is_better`を受ける。
 - 必要に応じDescription artifact、Grouping membership、registryを明示入力する。
 - 同じ入力CSVでもendpointが異なれば別runとする。
+- 全Operatorはscope metadataをevidenceへ残す。A003、A005、A006、A007は`global`、`within-group`、`between-groups`、A004はglobalとwithin-groupに対応する。
+- 局所解析はGrouping membershipとtarget Groupを明示し、連続Descriptionの比較ではglobal referenceでfitした前処理を既定とする。
 
 ## 6. 出力契約
 
@@ -123,7 +127,7 @@ Agentはrepository名、Catalog収載、CONDUCTOR互換artifact、`results/CONDU
 - Grouping capability: `C001`から新規附番
 - Operator: `A001`から新規附番
 - Interpretation: `I001`から新規附番
-- Evidence: `<run_id>:<operator_id>:<group_id-or-global>:<sequence>`
+- Evidence: `<run_id>:<operator_id>:<node-or-scope-context>:<sequence>`
 - Group: `<clustering_id>_<sequence>`（methodはCatalogのcapability IDとregistryで参照する）
 
 旧L01-L60、旧group ID、旧CLI、旧出力パスとの互換性は持たない。
@@ -134,7 +138,7 @@ D011（chiral Morgan）はD002の`--include-chirality`へ、D018（Gobbi Pharm2D
 
 各Skillの`capability.json`をmetadata源とし、`catalog/included_skills.json`に人間が列挙したSkillだけを`catalog/catalog.json`へ収載する。Markdown版Catalogは機械Catalogから生成する。自動スキャンはallowlistを変更しない。
 
-初手profileへの参加は`default_wide_shallow`、担当軸は`wide_shallow_axis`、上流の限定組合せは`wide_shallow_sources`で宣言する。依存を持つ初手capabilityはsourceを明示し、Catalog builderはsourceの存在、stage、初手profile参加を検証する。`*`は初手で計画された当該stageの全nodeを意味する。
+初手profileへの参加は`default_wide_shallow`、担当軸は`wide_shallow_axis`、上流の限定組合せは`wide_shallow_sources`で宣言する。source固有parameterは`wide_shallow_parameter_overrides`で宣言し、例えば同じOperatorでもbinary fingerprintへTanimoto、USR/USRCATへManhattanを割り当てる。依存を持つ初手capabilityはsourceを明示し、Catalog builderはsourceの存在、stage、初手profile参加、parameter overrideの参照整合性を検証する。`*`は初手で計画された当該stageの全nodeを意味する。
 
 ## 9. StateとDAG
 
@@ -147,14 +151,15 @@ Stateはrunごとに一つのJSONとし、次を保持する。
 - 出力artifact、警告、開始・終了時刻
 - Orchestratorの選択理由と人間承認状態
 - `wide_shallow/deep_dive` phase、coverage axis、上流artifact binding、node固有output directory
+- `interpretation_exploration` phase、Policy version、人間設定budget、seed、iteration、request ledger、analysis signature
 
 SkillはStateを直接更新せず、実行時の`configuration`を含むexecution eventを生成する。Orchestratorのローカルscriptが実行前にnodeを`running`へ遷移させ、project/run/node/capabilityと計画parameterをeventに照合して原子的にStateへ反映する。eventなしで異常終了した場合は専用のfailure遷移へ理由を記録する。上流nodeが失敗または承認拒否で実行不能になった場合、そのnodeだけに依存する未開始下流nodeを理由付き`skipped`へ伝播する。上流hashが変化した場合、下流nodeと対応するdomain/evidence graph nodeを`stale`にする。
 
-実行DAG、group関係graph、evidence依存graphは別オブジェクトとして管理し、ID参照で接続する。
+実行DAG、group関係graph、evidence依存graphは別オブジェクトとして管理し、ID参照で接続する。同じcapability、上流node、科学的parameterからanalysis signatureを作り、Interpretation探索で同じ解析を再登録しない。
 
 ## 10. Orchestration
 
-Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。現profileはDescription 7 node、Grouping 9 node、Operator 35 nodeの計51 nodeを基本とし、assay条件が複数ならcategorical Groupingと対応Operatorを追加する。Descriptionには2D物性、circular graph、substructure、atom pair、path、2D pharmacophore、3D shape/pharmacophoreを含む。GroupingはSMILES直接型としてMurcko、事前許可済み必須初手MCS、BRICSを、Description-vector型としてButina、hierarchical、DBSCAN、Leidenを含む。vector ClusteringはD001、D002、D013、D017のうちCatalogで宣言されたartifactへ個別bindingする。Operatorは全10種を、意味のある上流sourceだけに接続する。
+Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。現profileはDescription 7 node、Grouping 9 node、Operator 36 nodeの計52 nodeを基本とし、assay条件が複数ならcategorical Groupingと対応Operatorを追加する。Descriptionには2D物性、circular graph、substructure、atom pair、path、2D pharmacophore、3D shape/pharmacophoreを含む。GroupingはSMILES直接型としてMurcko、事前許可済み必須初手MCS、BRICSを、Description-vector型としてButina、hierarchical、DBSCAN、Leidenを含む。vector ClusteringはD001、D002、D013、D017のうちCatalogで宣言されたartifactへ個別bindingする。Operatorは全10種を、意味のある上流sourceだけに接続する。A009は重複所属が重要なC002 MCSとC003 BRICSの双方へ接続する。
 
 初手はヒント発見のための網羅passであり、一部nodeで信号が弱いことを理由に残りを打ち切らない。Stateは`wide_shallow` nodeを`deep_dive`より優先し、初手がterminalになるまでInterpretationの開始を拒否する。coverage auditで必須軸の成功、失敗、代替、skip理由を確認してから、以下を根拠に深掘り候補を選ぶ。
 
@@ -170,7 +175,13 @@ Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。�
 
 ## 11. Interpretation
 
-正本はagent-friendlyなJSONとし、観察、支持、矛盾、独立性、代替説明、scope、例外、確信度、次解析、構造設計方向、人間確認点を含む。同じ内容からMarkdownと自己完結HTMLを生成する。具体的な新規SMILES生成は行わない。
+Interpretationは`docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Claude Code Agentが担当する。I001 runnerはevidence index、Group候補、provenance、関係候補、失敗、skip、探索ledgerを`interpretation_context.json`へ機械的に整理し、Agentが多面的に比較する。
+
+Interpretation nodeはStateを変更しない読み取り専用の終端nodeとする。追加計算は`exploration_plan.json`としてOrchestratorへ返し、Orchestratorだけが人間設定budget、並列上限、Orchestrator指定bounds、重複analysis signature、反証要求、costとapprovalを検証して、新しいDescription–Grouping–Operator branchを作る。そのbranchは別のInterpretation nodeで終える。既存Groupingにない切り出しはPlanにcompound ID集合を持たせ、登録時にrun inputと照合したcontent-addressed membershipへ固定する。
+
+多重探索による発見候補を抑制せず、DiscoveryとValidation、negative result、矛盾、未実行候補、全試行履歴を保持する。一つの整合的仮説へ収束させない。各discoveryには反証、control、または独立replicationを必ず要求する。
+
+正本JSONは観察、evidence relation、依存性、代替説明、scope、例外、反証状態、確信度、探索履歴、次解析意図、人間確認点を含む。同じ内容からMarkdownと自己完結HTMLを生成する。具体的な新規SMILES生成は行わない。
 
 ## 12. 環境
 

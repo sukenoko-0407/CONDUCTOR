@@ -19,6 +19,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 2. Initialize one run per endpoint with a required `higher_is_better` direction and human-specified parallel limit.
 3. Create the mandatory `representative-family-wide-v1` plan from capabilities marked `default_wide_shallow`. Preserve every declared Description, Grouping, and Operator axis, including the 3D Description axis.
 4. Expand each dependent capability only across its explicit `wide_shallow_sources`; add dependency edges and `input_bindings` before execution. Never bind a downstream node to the first Description or Grouping merely because it was created first.
+   Apply every Catalog-declared `wide_shallow_parameter_overrides` entry for the bound source. For A006, preserve D002=`tanimoto`, D013=`manhattan`, and D017=`tanimoto`; never replace them with one global metric.
    - For `grouping_kind=direct_structure`, pass the run SMILES input and never substitute a Description artifact.
    - For `grouping_kind=description_vector`, pass exactly the artifact from `input_bindings.description`; never pass raw SMILES or let the Clustering Skill generate a fingerprint internally.
 5. If a Catalog capability exposes `variants`, choose one explicitly. Keep the same capability ID, create a separate node for each compared variant, and store CLI destinations in the node's `parameters` using `state_manager.py add --parameters-json`. Do not represent a variant as an unplanned argument change.
@@ -26,10 +27,12 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 7. Mark each selected node `running` with `state_manager.py start`; this enforces the human-specified parallel limit.
 8. Invoke the Project Skill with `--conductor`, the State project, the same run ID, the reserved node ID, and the exact node `parameters`. The planned parameters already include node-specific `output_dir` and resolved upstream artifact arguments derived from `input_bindings`. Never omit or replace these CONDUCTOR context arguments.
 9. Record each schema-valid `execution_event.json` through `state_manager.py record`. State rejects events whose `configuration` does not match the planned parameter subset. If execution terminates without an event, use `state_manager.py fail` with the concrete error; a failed node is not automatically retried.
-10. Complete a coverage audit with `state status`. Do not stop the initial pass because early results lack signal. Replace a failed/inapplicable axis where practical, or preserve its concrete skip rationale. Only then inspect evidence, contradictions, warnings, and representation independence and add focused nodes that can resolve a concrete uncertainty.
+10. Complete a coverage audit with `state status`. Do not stop the initial pass because early results lack signal. Replace a failed/inapplicable axis where practical, or preserve its concrete skip rationale. Then invoke the dedicated `cs-conductor-interpreter` Agent; do not duplicate its semantic evidence comparison inside Orchestration.
 11. Before a high/very-high cost node, or a normally medium-cost node made expensive by dataset scale, explain purpose, target, expected information, resources, and alternative; add it with `--require-approval` when necessary, wait for explicit human approval, then record it. The exception is a Catalog capability explicitly marked `approval_policy=preauthorized_initial`.
     C002 MCS is the mandatory central direct-structure axis and carries that policy. Plan it in every initial profile and start it as soon as State reports it runnable; do not request run-specific approval or convert it into an optional deep dive.
-12. Run Interpretation only after every initial node is terminal and after passing both positive and contradictory evidence, failures, coverage gaps, and unexecuted relevant options. State enforces this gate.
+12. Before iterative Interpretation exploration, obtain a human budget and record it with `state configure-exploration`. Run Interpretation only after every initial node is terminal. Pass State, positive and negative evidence, failures, coverage gaps, prior Interpretation, and unexecuted relevant options. State enforces the initial gate.
+13. Treat every Interpretation node as read-only and terminal. The Interpreter may write an `exploration_plan.json` but may not execute it. Validate and register that plan with `state register-exploration`; this rejects repeated analysis signatures, duplicate or dangling IDs, requests outside Orchestrator bounds, over-budget batches, missing falsification requests, and dependencies on terminal Interpretation nodes. For an explicit Plan `scope`, registration validates compound IDs against the run input and materializes a content-addressed membership CSV under `interpretation/scopes/`.
+14. Execute registered low-cost nodes within the delegated budget and normal parallel limit. Request human approval for high-cost or out-of-budget work. After the branch is terminal, add a new I001 node over the new and relevant prior evidence. If findings remain too numerous for humans, prefer further discriminating Description–Grouping–Operator–Interpretation branches over discarding findings.
 
 ## Environment
 
@@ -100,6 +103,21 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state add \
   --reason "Assess whether stereochemical encoding resolves the local inconsistency"
 ```
 
+Configure the human-approved Interpretation exploration envelope:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state configure-exploration \
+  --state path/to/state.json --max-iterations 5 \
+  --max-additional-nodes 40 --walltime-minutes 240 --seed 61453
+```
+
+Register a schema-valid plan produced by the Interpretation Agent:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state register-exploration \
+  --state path/to/state.json --plan path/to/exploration_plan.json
+```
+
 Record an execution failure that produced no event:
 
 ```bash
@@ -112,6 +130,8 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state fail \
 - Treat the initial breadth profile as a required hint-discovery pass, not as an optional low-cost sample.
 - Preserve all Catalog-declared representative axes; 3D Description is mandatory in the initial profile.
 - Treat C002 MCS as a mandatory, preauthorized initial Grouping axis even though its cost class is `high`.
+- Interpret A006 as a landscape Operator: examine the SALI center and upper tail for overall smoothness/roughness, then investigate top pairs as localized cliffs. Seek structural, pharmacophore, Grouping, assay-context, and independent-representation explanations; do not treat a high score alone as mechanism.
+- Do not compare raw SALI values across different metric scales. Compare ranks, local property deltas, neighborhood consistency, and whether the same cliff recurs in independent representations.
 - Prefer representation-family diversity over redundant variants during the first pass.
 - Preserve the boundary between direct SMILES Grouping and Description-vector Clustering; never recreate the retired SMILES-to-fingerprint clustering wrappers inside the workflow.
 - Use a non-default variant only when it can answer a stated question; represent every compared variant as a separate State node.
@@ -119,5 +139,9 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state fail \
 - Do not claim absence of a useful signal until `wide_shallow_coverage` has been audited across Description, Grouping, and Operator.
 - Prefer nodes that can change the next decision.
 - Separate execution DAG, group relation graph, and evidence dependency graph.
+- Read `docs/CONDUCTOR_v4_interpretation_policy.md` before registering Interpretation exploration. Interpretation proposes scientific questions; Orchestration maps them to Catalog capabilities, enforces budget and approval, and never rewrites them into a preferred coherent story.
+- Accept multiple-testing false positives as discovery candidates, but preserve trial history and distinguish Discovery from Validation. Every registered discovery must have a falsification request.
+- Prioritize adequately sized Groups, flag Groups above 30% and especially 50% of the dataset as progressively less local, and retain small structurally cohesive or clear-MCS Groups as candidates.
+- Never repeat an analysis signature already present in the execution DAG or exploration ledger.
 - Never infer approval from silence. `preauthorized_initial` is a human-defined Catalog policy, not inferred approval.
 - Never modify molecular structures or endpoint units.

@@ -31,6 +31,7 @@ python .claude/skills/cs-analysis-descriptor-activity-correlation/scripts/launch
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
+- membershipとtarget Groupを指定すると局所相関を評価できる。小Groupは探索的に扱う。
 
 ## 変更履歴
 

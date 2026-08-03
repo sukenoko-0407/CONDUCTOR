@@ -1,8 +1,8 @@
-# Structure-activity landscape index
+# Extended structure-activity landscape index
 
 ## SKILLの目的
 
-Structure-activity landscape indexを実行し、一般利用向け数値結果とCONDUCTOR向けevidenceを生成する。
+表現に適した距離でSALIを計算し、property landscapeの局所Cliffと全体的な平滑性を評価する。
 
 ## 想定利用シーン
 
@@ -31,6 +31,10 @@ python .claude/skills/cs-analysis-sali/scripts/launch.py --input compounds.csv -
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
+- Morganとbinary fingerprintにはTanimoto、USR/USRCATにはManhattanを使用する。`--metric auto`でも自動選択できる。
+- 高SALI pairは測定誤差・assay条件・他表現で確認し、低い中心値とupper tailはその空間での相対的な平滑性として扱う。
+- metricとendpoint scaleが異なるrun間でraw SALI値を直接比較しない。
+- Group内／Group間scopeに対応し、連続表現ではglobal前処理基準を既定とする。
 
 ## 変更履歴
 

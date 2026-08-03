@@ -21,6 +21,7 @@
     "molecule_standardization": "out_of_scope"
   },
   "default_wide_shallow": true,
+  "scope_support": ["global", "within-group", "between-groups"],
   "wide_shallow_axis": "neighborhood_activity_consistency",
   "wide_shallow_sources": {
     "description": [
@@ -28,10 +29,19 @@
       "D007"
     ]
   },
+  "wide_shallow_parameter_overrides": {
+    "description": {
+      "D004": {
+        "metric": "cosine"
+      },
+      "D007": {
+        "metric": "tanimoto"
+      }
+    }
+  },
   "operator_id": "A005",
   "default_parameters": {
-    "k": 10,
-    "metric": "cosine"
+    "k": 10
   },
   "dependencies": [
     "description"

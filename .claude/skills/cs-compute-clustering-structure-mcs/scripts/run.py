@@ -97,8 +97,8 @@ def parse_args() -> argparse.Namespace:
     if algorithm == "categorical":
         parser.add_argument("--columns", required=True, help="Comma-separated categorical columns.")
     if algorithm == "structure_mcs":
-        parser.add_argument("--max-pairs", type=int, default=2000)
-        parser.add_argument("--max-core-groups", type=int, default=100)
+        parser.add_argument("--max-pairs", type=int, default=1000, help="Maximum evaluated molecule pairs (1-1000).")
+        parser.add_argument("--max-core-groups", type=int, default=300, help="Maximum number of retained MCS groups.")
     if algorithm.startswith("vector_"):
         parser.add_argument("--metric", choices=["cosine", "euclidean", "manhattan"], default="cosine")
     method = algorithm.split("_", 1)[1] if algorithm.startswith(("structure_", "vector_")) else ("connected_components" if algorithm == "meta_overlap" else None)
@@ -123,6 +123,8 @@ def parse_args() -> argparse.Namespace:
     for name in ("min_cluster_size", "max_pairs", "max_core_groups", "min_samples", "n_clusters"):
         if hasattr(args, name) and getattr(args, name) is not None and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
+    if algorithm == "structure_mcs" and args.max_pairs > 1000:
+        parser.error("--max-pairs must be <= 1000")
     for name in ("distance_threshold", "eps", "resolution"):
         if hasattr(args, name) and getattr(args, name) <= 0:
             parser.error(f"--{name.replace('_', '-')} must be > 0")

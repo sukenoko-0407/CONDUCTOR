@@ -2,11 +2,11 @@
   "schema_version": "1.0.0",
   "capability_id": "A006",
   "skill_name": "cs-analysis-sali",
-  "display_name": "Structure-activity landscape index",
+  "display_name": "Extended structure-activity landscape index",
   "version": "4.0.0",
   "stage": "analysis",
   "family": "landscape",
-  "description": "Use when Claude Code needs to run Structure-activity landscape index from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI, preserve high-SALI cliff pairs for interpretation, and generate CONDUCTOR v4 evidence.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -21,6 +21,7 @@
     "molecule_standardization": "out_of_scope"
   },
   "default_wide_shallow": true,
+  "scope_support": ["global", "within-group", "between-groups"],
   "wide_shallow_axis": "representation_specific_activity_cliffs",
   "wide_shallow_sources": {
     "description": [
@@ -29,10 +30,22 @@
       "D017"
     ]
   },
+  "wide_shallow_parameter_overrides": {
+    "description": {
+      "D002": {
+        "metric": "tanimoto"
+      },
+      "D013": {
+        "metric": "manhattan"
+      },
+      "D017": {
+        "metric": "tanimoto"
+      }
+    }
+  },
   "operator_id": "A006",
   "default_parameters": {
-    "k": 10,
-    "metric": "cosine"
+    "k": 10
   },
   "dependencies": [
     "description"

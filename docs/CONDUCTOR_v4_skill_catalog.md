@@ -2,7 +2,7 @@
 
 > この文書は`catalog/catalog.json`から生成される。収載対象は人間管理の`catalog/included_skills.json`で指定する。
 
-Generated: `2026-08-03T12:43:08.039574+00:00`
+Generated: `2026-08-03T17:00:41.220467+00:00`
 
 ## Description
 
@@ -53,20 +53,20 @@ Generated: `2026-08-03T12:43:08.039574+00:00`
 | A003 | `cs-analysis-pairwise-structure-similarity` | Pairwise structure similarity | - | feature_space | - | endpoint_csv | pairwise_structure_space | - | medium | stable | False |
 | A004 | `cs-analysis-descriptor-activity-correlation` | Descriptor-activity correlation | - | interpretable_association | - | endpoint_csv, description | descriptor_activity_association | description: D001, D013 | low | stable | False |
 | A005 | `cs-analysis-knn-activity-consistency` | kNN activity consistency | - | feature_space | - | endpoint_csv, description | neighborhood_activity_consistency | description: D004, D007 | medium | stable | False |
-| A006 | `cs-analysis-sali` | Structure-activity landscape index | - | landscape | - | endpoint_csv, description | representation_specific_activity_cliffs | description: D002, D013, D017 | medium | stable | False |
+| A006 | `cs-analysis-sali` | Extended structure-activity landscape index | - | landscape | - | endpoint_csv, description | representation_specific_activity_cliffs | description: D002, D013, D017 | medium | stable | False |
 | A007 | `cs-analysis-activity-cliff` | Activity cliff detection | - | landscape | - | endpoint_csv | structure_activity_cliffs | - | medium | stable | False |
 | A008 | `cs-analysis-group-enrichment` | Group activity enrichment | - | group_profile | - | endpoint_csv, grouping | group_activity_enrichment | grouping: * | low | stable | False |
-| A009 | `cs-analysis-group-overlap` | Group overlap | - | group_quality | - | endpoint_csv, grouping | overlapping_group_structure | grouping: C003 | low | stable | False |
+| A009 | `cs-analysis-group-overlap` | Group overlap | - | group_quality | - | endpoint_csv, grouping | overlapping_group_structure | grouping: C002, C003 | low | stable | False |
 | A010 | `cs-analysis-group-structural-diversity` | Group structural diversity | - | group_quality | - | endpoint_csv, grouping | group_structural_diversity | grouping: C001, C002, C003, C006 | medium | stable | False |
 
 ## Interpretation
 
 | ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| I001 | `cs-analysis-interpret-evidence` | SAR evidence interpretation | - | evidence_integration | - | evidence_json | - | - | low | stable | False |
+| I001 | `cs-analysis-interpret-evidence` | SAR evidence interpretation | - | evidence_integration | - | evidence_json, optional_state_json_read_only, interpretation_policy_markdown | - | - | low | stable | False |
 
 ## Orchestration
 
 | ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| O001 | `cs-conductor-orchestrator` | CONDUCTOR v4 Orchestrator | - | graph_orchestration | - | catalog_json, policy_markdown, endpoint_csv | - | - | low | stable | False |
+| O001 | `cs-conductor-orchestrator` | CONDUCTOR v4 Orchestrator | - | graph_orchestration | - | catalog_json, policy_markdown, interpretation_policy_markdown, endpoint_csv, optional_interpretation_exploration_plan_json | - | - | low | stable | False |

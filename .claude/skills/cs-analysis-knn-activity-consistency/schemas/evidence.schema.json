@@ -3,7 +3,7 @@
   "$id": "https://conductor.local/schemas/evidence.schema.json",
   "title": "CONDUCTOR v4 operator evidence",
   "type": "object",
-  "required": ["schema_version", "evidence_id", "operator_id", "operator_name", "operator_version", "run_id", "target_group_id", "grouping_representation", "evaluation_representation", "input_features", "sample_count", "result_type", "result_values", "statistical_significance", "uncertainty", "applicability_conditions", "warnings", "supporting_compounds", "supporting_pairs", "generated_evidence", "machine_readable_summary", "human_readable_summary", "artifacts", "created_at"],
+  "required": ["schema_version", "evidence_id", "operator_id", "operator_name", "operator_version", "run_id", "target_group_id", "grouping_representation", "evaluation_representation", "input_features", "sample_count", "scope", "result_type", "result_values", "statistical_significance", "uncertainty", "applicability_conditions", "warnings", "supporting_compounds", "supporting_pairs", "generated_evidence", "machine_readable_summary", "human_readable_summary", "artifacts", "created_at"],
   "properties": {
     "schema_version": {"const": "1.0.0"},
     "evidence_id": {"type": "string", "minLength": 1},
@@ -16,6 +16,20 @@
     "evaluation_representation": {"type": ["string", "null"]},
     "input_features": {"type": "array", "items": {"type": "string"}},
     "sample_count": {"type": "integer", "minimum": 0},
+    "scope": {
+      "type": "object",
+      "required": ["mode", "sample_count", "sample_fraction", "compound_set_hash", "reference_scope"],
+      "properties": {
+        "mode": {"enum": ["global", "within-group", "between-groups"]},
+        "target_group_id": {"type": ["string", "null"]},
+        "comparison_group_id": {"type": ["string", "null"]},
+        "sample_count": {"type": "integer", "minimum": 0},
+        "sample_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "compound_set_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "reference_scope": {"enum": ["global", "local"]}
+      },
+      "additionalProperties": true
+    },
     "result_type": {"type": "string", "minLength": 1},
     "result_values": {"type": "object"},
     "statistical_significance": {"type": ["object", "null"]},

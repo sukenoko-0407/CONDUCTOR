@@ -35,7 +35,7 @@ project=jak2、parallel_limit=8でCONDUCTOR v4解析を開始してください�
 広く浅い解析後、深掘り候補と承認が必要な計算を報告してください。
 ```
 
-OrchestratorはPolicy、Catalog、Stateを読み、allowlistに収載されたSkillだけでDAGを計画する。初手の`representative-family-wide-v1`は、3Dを含むDescription 7 node、Grouping 9 node、Operator 35 nodeの計51 nodeを基本とする。GroupingはSMILES直接型3 nodeと、Description artifact入力型6 nodeから成る。assay条件が複数なら関連nodeを追加する。初期結果の一部に信号がなくても残りを打ち切らない。MCSは高コストでも必須初手として事前許可されており、Stateでrunnableになり次第、runごとの承認待ちなしで実行する。
+OrchestratorはPolicy、Catalog、Stateを読み、allowlistに収載されたSkillだけでDAGを計画する。初手の`representative-family-wide-v1`は、3Dを含むDescription 7 node、Grouping 9 node、Operator 36 nodeの計52 nodeを基本とする。GroupingはSMILES直接型3 nodeと、Description artifact入力型6 nodeから成る。A009はC002 MCSとC003 BRICSの重複Groupを評価する。assay条件が複数なら関連nodeを追加する。初期結果の一部に信号がなくても残りを打ち切らない。MCSは高コストでも必須初手として事前許可されており、Stateでrunnableになり次第、runごとの承認待ちなしで実行する。
 
 ## 3. Stateを手動操作する
 
@@ -86,7 +86,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state record \
   --event results/CONDUCTOR/jak2/<run_id>/description/<skill>/D001-001/execution_event.json
 ```
 
-初手nodeは同じSkillを異なる上流sourceへ適用する場合がある。Stateの`input_bindings`、`parameters`、`output_dir`をそのまま使用し、最初に見つかったDescriptionやGrouping artifactへ置き換えない。特に`cs-compute-clustering-vector-*`へ元のSMILES CSVを渡さず、bindingされたDescription CSVを渡す。node固有directoryではnode IDの`:`を`-`へ変換する。
+初手nodeは同じSkillを異なる上流sourceへ適用する場合がある。Stateの`input_bindings`、source別`parameters`、`output_dir`をそのまま使用し、最初に見つかったDescriptionやGrouping artifact、共通metricへ置き換えない。特に`cs-compute-clustering-vector-*`へ元のSMILES CSVを渡さず、bindingされたDescription CSVを渡す。A006 SALIではD002=`tanimoto`、D013=`manhattan`、D017=`tanimoto`を使用する。node固有directoryではnode IDの`:`を`-`へ変換する。
 
 同一algorithmのvariantを比較する場合はcapabilityを増やさず、parameterを持つ別nodeを追加する。JSON keyはCLIの内部名（hyphenをunderscoreへ変換）を使う。
 
@@ -185,6 +185,18 @@ python .claude/skills/cs-compute-description-morgan/scripts/launch.py \
 
 `--conductor`は主結果に加え、schema検証済みmanifest、warnings、execution eventを生成する。Operatorは`evidence.json`、Groupingは`group_registry.json`も生成する。
 
+OperatorをGroup局所へ再適用する例:
+
+```bash
+python .claude/skills/cs-analysis-sali/scripts/launch.py \
+  --input compounds.csv --property-column pIC50 --higher-is-better \
+  --description morgan.csv --membership cluster_membership.csv \
+  --target-group C002_G0001 --scope-mode within-group \
+  --reference-scope global
+```
+
+A003、A005、A006、A007は`--comparison-group`と`--scope-mode between-groups`にも対応する。scope比較では同じendpoint、表現、Metricとglobal前処理基準を維持する。
+
 repository名、Catalog収載、CONDUCTOR互換入力、出力先だけからCONDUCTOR利用を推測しない。意図が曖昧なら、出力内容と保存先が変わることを説明して実行前に確認する。確認できない場合は通常モードで実行する。CLIは不完全なCONDUCTOR contextと、通常モードへの`--project`／`--node-id`混入をerrorにする。
 
 CONDUCTOR利用が明示されているのにproject、run ID、node IDが未確定の場合は、通常モードへ降格せず、Orchestratorでrun/nodeを初期化するか不足情報を確認する。Agentが識別子を捏造して実行してはならない。
@@ -199,7 +211,26 @@ CONDUCTOR利用が明示されているのにproject、run ID、node IDが未確
 
 ## 7. Interpretation
 
-Operatorの客観的evidenceを`cs-analysis-interpret-evidence`へ渡す。正本は`interpretation.json`、人間向け派生物は`interpretation.md`と自己完結`interpretation.html`である。Observation、Interpretation、Hypothesisを分離し、支持だけでなく矛盾、依存関係、失敗、未実行候補も含める。推奨は構造変換・設計方向までとし、新規SMILESは生成しない。
+専用`cs-conductor-interpreter` Agentは`docs/CONDUCTOR_v4_interpretation_policy.md`に従い、Stateと全evidenceを読み取り専用で比較する。Interpretation nodeは終端であり、State変更やOperator直接実行を行わない。
+
+反復探索前に、人間が探索budgetを設定する。
+
+```bash
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state configure-exploration \
+  --state results/CONDUCTOR/PROJECT/RUN_ID/state.json \
+  --max-iterations 5 --max-additional-nodes 40 \
+  --walltime-minutes 240 --seed 61453
+```
+
+Interpreterには`evidence.json`だけでなく`state.json`を渡す。I001は`interpretation.json`、`interpretation_context.json`、Markdown、自己完結HTMLを生成する。Agentが追加解析を必要と判断した場合は、各discoveryに反証要求を持つ`exploration_plan.json`を作る。
+
+```bash
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state register-exploration \
+  --state results/CONDUCTOR/PROJECT/RUN_ID/state.json \
+  --plan path/to/exploration_plan.json
+```
+
+登録時にbudget、seed、Catalog、上流node、Orchestrator指定のGroup/Description/Grouping/Operator bounds、重複・参照不明ID、同一analysis signatureの再実行、Interpretation nodeへの依存、反証要求を検証する。Plan requestに`scope`がある場合は、random、matched random、交差、差分などの選択法とcompound IDを検証し、`interpretation/scopes/`のcontent-addressed membership CSVへ自動変換する。許可された低コストnodeは通常の並列上限内で実行し、高コストnodeは人間承認を求める。結果が多い場合は削除せず、Orchestratorが識別力のある追加Description–Grouping–Operator branchを作り、別のInterpretation nodeで比較する。
 
 ## 8. 開発者向け確認
 

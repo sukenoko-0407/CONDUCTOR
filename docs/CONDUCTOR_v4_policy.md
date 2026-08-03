@@ -63,8 +63,10 @@ Groupingは、入力と責務が異なる二系統を混同しない。
 - A005 kNN activity consistencyをD004とD007へ実行する。
 - A006 SALIをD002、D013、D017へ実行する。
 - A001 group profileとA008 group enrichmentを初手の全Grouping nodeへ実行する。
-- A009 group overlapを重複groupを生成するC003へ実行する。
+- A009 group overlapを、重複MCS Groupを持ち得るC002とfragment Groupを持つC003へ実行する。
 - A010 group structural diversityをC001、C002、C003および各C006 nodeへ実行する。
+
+Description空間を使うOperatorのmetricは表現特性に従う。A006 SALIはD002 MorganにTanimoto、D013 USR/USRCATにManhattan、D017 folded Pharm2DにTanimotoを使用し、一律のmetricへ置換しない。SALIは上位pairだけでなくmedianとupper tailを合わせてlandscapeの平滑性・起伏として評価する。高SALI pairは局所Cliff候補として構造差、pharmacophore差、Grouping、assay条件、他表現で意味を検証する。異なるmetric間のraw SALI値は直接比較しない。
 
 これは全Description × 全Grouping × 全Operatorの総当たりではない。各情報軸を少なくとも一度観測し、重要な局所関係を独立表現で照合できる最小の網羅profileである。
 
@@ -109,4 +111,8 @@ GPU、外部model weight、大規模pairwise計算、3D conformer大量生成、
 
 ## 7. Interpretationへの引き渡し
 
-Interpretationには、注目結果だけでなく、矛盾、警告、失敗、未実行候補、evidence依存関係も渡す。Interpretation後に追加解析が推奨された場合はDAGへ新node候補として追加し、高コストなら改めて人間承認を得る。
+Interpretationは`docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Agentへ委譲する。注目結果だけでなく、全evidence、Group詳細、警告、negative result、失敗、skip、未実行候補、analysis signature、evidence依存関係、過去Interpretationを渡す。
+
+Interpretation nodeは読み取り専用の終端とし、State更新やOperator直接実行を許可しない。追加解析は`exploration_plan.json`として返し、Orchestratorが人間設定の最大iteration、追加node、walltime、seed、並列上限、Catalog cost、重複署名を検証して新しいbranchを作る。各discoveryには少なくとも一つの反証要求を含める。高コストなら改めて人間承認を得る。
+
+多重探索による偶然の発見は探索手法に内在するものとして許容する。候補を抑制する代わりにDiscoveryとValidationを区別し、全試行、未選択候補、反証、negative resultを記録する。発見候補が多い場合は削除せず、Orchestratorが識別力のある追加Description、Grouping、Operator、Interpretation branchを計画する。

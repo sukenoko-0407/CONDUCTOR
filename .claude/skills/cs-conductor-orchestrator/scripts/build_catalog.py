@@ -107,6 +107,7 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
         if not capability.get("wide_shallow_axis"):
             raise ValueError(f"{capability['capability_id']}: default wide-shallow capability requires wide_shallow_axis")
         sources = capability.get("wide_shallow_sources") or {}
+        parameter_overrides = capability.get("wide_shallow_parameter_overrides") or {}
         for dependency_stage in (stage for stage in capability.get("dependencies") or [] if stage != "evidence"):
             if dependency_stage not in sources:
                 raise ValueError(f"{capability['capability_id']}: default wide-shallow dependency {dependency_stage} requires explicit wide_shallow_sources")
@@ -120,6 +121,16 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
                     raise ValueError(f"{capability['capability_id']}: source {source_id} is not stage {dependency_stage}")
                 if not source.get("default_wide_shallow"):
                     raise ValueError(f"{capability['capability_id']}: source {source_id} is not in the default wide-shallow plan")
+        for dependency_stage, source_overrides in parameter_overrides.items():
+            if dependency_stage not in (capability.get("dependencies") or []):
+                raise ValueError(f"{capability['capability_id']}: parameter override stage {dependency_stage} is not a dependency")
+            allowed_sources = sources.get(dependency_stage) or []
+            for source_id in source_overrides:
+                source = by_id.get(source_id)
+                if source is None or source["stage"] != dependency_stage:
+                    raise ValueError(f"{capability['capability_id']}: invalid parameter override source {source_id}")
+                if "*" not in allowed_sources and source_id not in allowed_sources:
+                    raise ValueError(f"{capability['capability_id']}: parameter override source {source_id} is not declared in wide_shallow_sources")
     catalog = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "selection_managed_by": "human", "selection_path": "catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
     return catalog, render_markdown(catalog)
 

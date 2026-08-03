@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0.0",
+  "policy_version": "1.0.0",
+  "run_id": "R",
+  "source_interpretation_id": "R:I001:seed",
+  "iteration": 1,
+  "seed": 61453,
+  "mode": "autonomous",
+  "bounds": {
+    "operator_ids": ["A002"],
+    "notes": "Unit-test exploration envelope"
+  },
+  "discoveries": [
+    {
+      "discovery_id": "DISC-001",
+      "observation": "A global observation requires a matched falsification analysis.",
+      "evidence_ids": ["R:A002:A002-001:0001"],
+      "status": "discovery",
+      "falsification_required": true
+    }
+  ],
+  "requests": [
+    {
+      "request_id": "REQ-001",
+      "purpose": "falsify",
+      "capability_id": "A002",
+      "depends_on": [],
+      "parameters": {"scope_mode": "global"},
+      "parent_discovery_ids": ["DISC-001"],
+      "expected_information_gain": "Tests whether the observation persists under a separately recorded analysis request.",
+      "selection_reason": "Mandatory falsification request for DISC-001."
+    }
+  ],
+  "unselected_candidates": [
+    {
+      "candidate_id": "CAND-002",
+      "reason_not_selected": "Outside the unit-test node budget."
+    }
+  ],
+  "created_at": "2026-08-04T00:00:00+00:00"
+}

@@ -6,7 +6,7 @@
   "version": "4.0.0",
   "stage": "orchestration",
   "family": "graph_orchestration",
-  "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, Policy, execution DAG, and execution events.",
+  "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, orchestration and Interpretation Policies, execution DAG, exploration ledger, and execution events.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -18,12 +18,15 @@
   },
   "dependencies": [],
   "default_wide_shallow": false,
-  "input_contract": ["catalog_json", "policy_markdown", "endpoint_csv"],
+  "input_contract": ["catalog_json", "policy_markdown", "interpretation_policy_markdown", "endpoint_csv", "optional_interpretation_exploration_plan_json"],
   "output": {
     "state": "state.json",
-    "catalog": "catalog/catalog.json"
+    "catalog": "catalog/catalog.json",
+    "exploration_ledger": "state.json#/interpretation_exploration",
+    "materialized_scopes": "interpretation/scopes/*.csv"
   },
   "implementation": {
-    "purpose": "dag_state_orchestration"
+    "purpose": "dag_state_and_interpretation_exploration_orchestration",
+    "interpretation_execution_authority": "orchestrator_only"
   }
 }

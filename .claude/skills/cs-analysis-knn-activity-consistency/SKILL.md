@@ -24,7 +24,7 @@ kNN activity consistencyを実行し、客観的な数値結果とCONDUCTOR evid
 
 ## Algorithm-specific options
 
-`--description`、`--k`、`--metric`を指定する。
+`--description`と`--k`を指定する。`--metric auto`はfeature特性から距離を選び、CONDUCTOR初手ではD004 hashed atom-pair count=`cosine`、D007 RDKit path bit fingerprint=`tanimoto`をStateへ明示記録する。Group内または二Group間をscopeにでき、連続表現の比較では`--reference-scope global`を既定として距離前処理を固定する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

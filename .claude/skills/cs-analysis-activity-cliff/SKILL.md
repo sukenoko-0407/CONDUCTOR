@@ -24,7 +24,7 @@ Activity cliff detectionを実行し、客観的な数値結果とCONDUCTOR evid
 
 ## Algorithm-specific options
 
-`--similarity-threshold`、`--activity-delta-threshold`、`--max-pairs`を指定する。
+`--similarity-threshold`、`--activity-delta-threshold`、`--max-pairs`を指定する。任意のGroup内または二Group間へscopeを限定し、CliffのGroup内部・境界局在を比較できる。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

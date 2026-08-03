@@ -31,6 +31,7 @@ python .claude/skills/cs-analysis-group-overlap/scripts/launch.py --input compou
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
+- CONDUCTOR初手ではC002 MCSとC003 BRICSのGroup重複を評価する。
 
 ## 変更履歴
 

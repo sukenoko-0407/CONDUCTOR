@@ -68,8 +68,25 @@
         "uniqueItems": true
       }
     },
+    "wide_shallow_parameter_overrides": {
+      "type": "object",
+      "propertyNames": {"enum": ["description", "grouping", "evidence"]},
+      "additionalProperties": {
+        "type": "object",
+        "patternProperties": {
+          "^[DCAIO][0-9]{3}$": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    },
     "default_variant": {"type": "string", "minLength": 1},
     "default_parameters": {"type": "object"},
+    "scope_support": {
+      "type": "array",
+      "items": {"enum": ["global", "within-group", "between-groups"]},
+      "minItems": 1,
+      "uniqueItems": true
+    },
     "variants": {
       "type": "array",
       "minItems": 2,

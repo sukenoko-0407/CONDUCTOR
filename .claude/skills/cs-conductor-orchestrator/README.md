@@ -35,6 +35,9 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state init \
 - 高コスト処理は原則として人間の明示承認前に実行しない。ただしCatalogで`preauthorized_initial`と明記されたC002 MCSは必須初手として承認待ちなしで実行する。
 - 初手の一部で信号が弱くても残りを打ち切らず、coverage audit後に深掘りへ進む。
 - vector ClusteringにはStateでbindingされたDescription artifactだけを渡し、raw SMILESからの内部fingerprint生成を許可しない。
+- Interpretation探索は人間設定のiteration・追加node・walltime・seed内で行い、専用Interpreterのplanを重複署名と反証要求について検証する。
+- random、matched random、交差、差分などの明示scopeは入力IDを検証し、再現可能なmembership CSVへ固定する。
+- Interpretation nodeは読み取り専用の終端とし、追加解析はOrchestratorが新しいbranchとして登録する。
 - 分子標準化、活性単位変換、pActivity変換は行わない。
 
 ## 変更履歴

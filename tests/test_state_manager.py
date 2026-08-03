@@ -25,7 +25,7 @@ class StateLogicTests(unittest.TestCase):
             "conductor_version": "4.0.0",
             "run": {"run_id": "R", "project": "P", "input": "input.csv", "input_hash": "0" * 64, "endpoint": "pIC50", "higher_is_better": True, "parallel_limit": 2, "created_at": "2026-01-01T00:00:00+00:00"},
             "execution_graph": {"nodes": [], "edges": []},
-            "domain_graph": {}, "evidence_graph": {}, "history": [], "updated_at": "2026-01-01T00:00:00+00:00",
+            "domain_graph": {}, "evidence_graph": {}, "interpretation_exploration": STATE.default_exploration_state(), "history": [], "updated_at": "2026-01-01T00:00:00+00:00",
         }
 
     def test_dependencies_and_approval_control_runnable_nodes(self) -> None:
@@ -130,7 +130,7 @@ class StateLogicTests(unittest.TestCase):
             self.assertEqual({"D001", "D002", "D003", "D004", "D007", "D013", "D017"}, description_ids)
             self.assertEqual(9, len(grouping_nodes))
             self.assertEqual({"C001", "C002", "C003", "C005", "C006", "C007", "C009"}, {node["capability_id"] for node in grouping_nodes})
-            self.assertEqual(35, len(analysis_nodes))
+            self.assertEqual(36, len(analysis_nodes))
             self.assertEqual({f"A{index:03d}" for index in range(1, 11)}, {node["capability_id"] for node in analysis_nodes})
 
             c005 = [node for node in grouping_nodes if node["capability_id"] == "C005"]
@@ -143,24 +143,134 @@ class StateLogicTests(unittest.TestCase):
             self.assertEqual({"D002:001"}, {node["input_bindings"]["description"] for node in c009})
             mcs = next(node for node in grouping_nodes if node["capability_id"] == "C002")
             self.assertEqual("not_required", mcs["human_approval"])
+            self.assertEqual([], mcs["dependencies"])
+            self.assertEqual(3, mcs["parameters"]["min_cluster_size"])
+            self.assertEqual(1000, mcs["parameters"]["max_pairs"])
+            self.assertEqual(300, mcs["parameters"]["max_core_groups"])
+            planned["run"]["parallel_limit"] = 64
+            self.assertIn(mcs["node_id"], {node["node_id"] for node in STATE.runnable_nodes(planned)})
             a004 = [node for node in analysis_nodes if node["capability_id"] == "A004"]
             self.assertEqual({"D001:001", "D013:001"}, {node["input_bindings"]["description"] for node in a004})
+            a005 = [node for node in analysis_nodes if node["capability_id"] == "A005"]
+            self.assertEqual(
+                {"D004:001": "cosine", "D007:001": "tanimoto"},
+                {node["input_bindings"]["description"]: node["parameters"]["metric"] for node in a005},
+            )
             a006 = [node for node in analysis_nodes if node["capability_id"] == "A006"]
             self.assertEqual({"D002:001", "D013:001", "D017:001"}, {node["input_bindings"]["description"] for node in a006})
+            self.assertEqual(
+                {"D002:001": "tanimoto", "D013:001": "manhattan", "D017:001": "tanimoto"},
+                {node["input_bindings"]["description"]: node["parameters"]["metric"] for node in a006},
+            )
             a001 = [node for node in analysis_nodes if node["capability_id"] == "A001"]
             self.assertEqual({node["node_id"] for node in grouping_nodes}, {node["input_bindings"]["grouping"] for node in a001})
+            a009 = [node for node in analysis_nodes if node["capability_id"] == "A009"]
+            self.assertEqual({"C002:001", "C003:001"}, {node["input_bindings"]["grouping"] for node in a009})
 
             output_dirs = [node["output_dir"] for node in nodes]
             self.assertEqual(len(output_dirs), len(set(output_dirs)))
             self.assertTrue(all(":" not in Path(path).name for path in output_dirs))
-            self.assertEqual(51, len(nodes))
+            self.assertEqual(52, len(nodes))
             self.assertEqual("representative-family-wide-v1", planned["wide_shallow_plan"]["profile"])
             self.assertIn("shape_and_3d_pharmacophore", planned["wide_shallow_plan"]["required_axes"]["description"])
 
             with redirect_stdout(io.StringIO()):
                 STATE.cmd_plan_wide(SimpleNamespace(state=str(state_path)))
             replanned = json.loads(state_path.read_text(encoding="utf-8"))
-            self.assertEqual(51, len(replanned["execution_graph"]["nodes"]))
+            self.assertEqual(52, len(replanned["execution_graph"]["nodes"]))
+
+    def test_interpretation_exploration_budget_falsification_and_duplicate_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            state_path = temporary / "state.json"
+            state = self.state()
+            state["run"]["input"] = str((ROOT / "tests" / "data" / "small_sar.csv").resolve())
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            STATE.cmd_configure_exploration(SimpleNamespace(state=str(state_path), max_iterations=3, max_additional_nodes=4, walltime_minutes=60, seed=61453))
+
+            plan = json.loads((ROOT / "tests" / "data" / "exploration_plan.json").read_text(encoding="utf-8"))
+            plan_path = temporary / "plan.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                STATE.cmd_register_exploration(SimpleNamespace(state=str(state_path), plan=str(plan_path)))
+            registered = json.loads(state_path.read_text(encoding="utf-8"))
+            node = registered["execution_graph"]["nodes"][0]
+            self.assertEqual("interpretation_exploration", node["phase"])
+            self.assertEqual("falsify", node["exploration"]["purpose"])
+            self.assertEqual(node["analysis_signature"], registered["interpretation_exploration"]["ledger"][0]["analysis_signature"])
+
+            duplicate = json.loads(json.dumps(plan))
+            duplicate["iteration"] = 2
+            duplicate["requests"][0]["request_id"] = "REQ-002"
+            duplicate_path = temporary / "duplicate.json"
+            duplicate_path.write_text(json.dumps(duplicate), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Repeated analysis signature"):
+                STATE.cmd_register_exploration(SimpleNamespace(state=str(state_path), plan=str(duplicate_path)))
+
+            missing_falsification = json.loads(json.dumps(plan))
+            missing_falsification["iteration"] = 2
+            missing_falsification["requests"][0]["request_id"] = "REQ-003"
+            missing_falsification["requests"][0]["purpose"] = "characterize"
+            missing_falsification["requests"][0]["parameters"] = {"scope_mode": "global", "target_group": "unused"}
+            missing_path = temporary / "missing-falsification.json"
+            missing_path.write_text(json.dumps(missing_falsification), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "requires a falsification request"):
+                STATE.cmd_register_exploration(SimpleNamespace(state=str(state_path), plan=str(missing_path)))
+
+            scoped = json.loads(json.dumps(plan))
+            scoped["iteration"] = 2
+            scoped["requests"][0]["request_id"] = "REQ-SCOPE-001"
+            scoped["requests"][0]["parameters"] = {}
+            scoped["requests"][0]["scope"] = {
+                "scope_id": "MATCHED-A",
+                "mode": "within-group",
+                "selection_method": "matched_random",
+                "target_group_id": "MATCHED_CONTROL",
+                "target_compound_ids": ["CMPD_001", "CMPD_003", "CMPD_005"],
+                "source_group_ids": ["G_TEST"],
+                "selection_notes": "Seeded unit-test control",
+            }
+            scoped_path = temporary / "scoped.json"
+            scoped_path.write_text(json.dumps(scoped), encoding="utf-8")
+            with redirect_stdout(io.StringIO()):
+                STATE.cmd_register_exploration(SimpleNamespace(state=str(state_path), plan=str(scoped_path)))
+            scoped_state = json.loads(state_path.read_text(encoding="utf-8"))
+            scoped_node = scoped_state["execution_graph"]["nodes"][1]
+            membership_path = Path(scoped_node["parameters"]["membership"])
+            self.assertTrue(membership_path.is_file())
+            self.assertEqual("within-group", scoped_node["parameters"]["scope_mode"])
+            self.assertEqual("MATCHED_CONTROL", scoped_node["parameters"]["target_group"])
+            self.assertEqual(3, scoped_node["exploration"]["scope"]["target_count"])
+            self.assertEqual(
+                scoped_node["exploration"]["scope"]["compound_set_hash"],
+                scoped_state["interpretation_exploration"]["ledger"][1]["scope"]["compound_set_hash"],
+            )
+
+            repeated_scope = json.loads(json.dumps(scoped))
+            repeated_scope["iteration"] = 3
+            repeated_scope["requests"][0]["request_id"] = "REQ-SCOPE-002"
+            repeated_scope_path = temporary / "repeated-scope.json"
+            repeated_scope_path.write_text(json.dumps(repeated_scope), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Repeated analysis signature"):
+                STATE.cmd_register_exploration(SimpleNamespace(state=str(state_path), plan=str(repeated_scope_path)))
+
+            empty_bounds = json.loads(json.dumps(plan))
+            empty_bounds["iteration"] = 3
+            empty_bounds["mode"] = "orchestrator-bounded"
+            empty_bounds["bounds"] = {"notes": "No scientific boundary"}
+            empty_bounds["requests"][0]["request_id"] = "REQ-BOUND-EMPTY"
+            empty_bounds_path = temporary / "empty-bounds.json"
+            empty_bounds_path.write_text(json.dumps(empty_bounds), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "requires at least one explicit scientific bound"):
+                STATE.cmd_register_exploration(SimpleNamespace(state=str(state_path), plan=str(empty_bounds_path)))
+
+            outside_bounds = json.loads(json.dumps(empty_bounds))
+            outside_bounds["bounds"] = {"operator_ids": ["A006"]}
+            outside_bounds["requests"][0]["request_id"] = "REQ-BOUND-OUTSIDE"
+            outside_bounds_path = temporary / "outside-bounds.json"
+            outside_bounds_path.write_text(json.dumps(outside_bounds), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "outside operator_ids"):
+                STATE.cmd_register_exploration(SimpleNamespace(state=str(state_path), plan=str(outside_bounds_path)))
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ Pairwise structure similarityを実行し、客観的な数値結果とCONDUCTOR
 
 ## Algorithm-specific options
 
-SMILES列を使い、`--max-pairs`でpair列挙を制限する。
+SMILES列を使い、`--max-pairs`でpair列挙を制限する。任意の`--membership --target-group --scope-mode within-group`でGroup内へ限定できる。`between-groups`では`--comparison-group`も指定し、Group間pairだけを評価する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

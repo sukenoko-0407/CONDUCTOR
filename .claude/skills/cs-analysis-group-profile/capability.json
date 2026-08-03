@@ -21,6 +21,7 @@
     "molecule_standardization": "out_of_scope"
   },
   "default_wide_shallow": true,
+  "scope_support": ["global", "within-group"],
   "wide_shallow_axis": "group_activity_profile",
   "wide_shallow_sources": {
     "grouping": [

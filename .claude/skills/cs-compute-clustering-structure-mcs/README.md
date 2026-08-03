@@ -32,6 +32,7 @@ python .claude/skills/cs-compute-clustering-structure-mcs/scripts/launch.py --in
 - 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
 - Description vectorは入力にせず、fingerprint生成を内部に隠した距離clusteringも行わない。
 - invalid SMILESは未割当として保持する。分子標準化は行わない。
+- `--min-cluster-size`の既定値は3、`--max-pairs`は既定値・上限とも1000、`--max-core-groups`の既定値は300。
 - C002は高コストだが、CONDUCTOR v4の必須初手として方針上事前許可されており、runごとの人間承認は不要。人間指定の並列上限には従う。
 
 ## 変更履歴

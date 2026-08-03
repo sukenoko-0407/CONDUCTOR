@@ -3,11 +3,56 @@
   "$id": "https://conductor.local/schemas/interpretation.schema.json",
   "title": "CONDUCTOR v4 interpretation",
   "type": "object",
-  "required": ["schema_version", "run_id", "interpretation_id", "notable_findings", "hypotheses", "recommended_next_analysis", "human_review_points", "created_at"],
+  "required": ["schema_version", "policy_version", "run_id", "interpretation_id", "evidence_index", "evidence_relations", "unresolved_contradictions", "exploration_summary", "notable_findings", "hypotheses", "recommended_next_analysis", "human_review_points", "created_at"],
   "properties": {
     "schema_version": {"const": "1.0.0"},
+    "policy_version": {"const": "1.0.0"},
     "run_id": {"type": "string", "minLength": 1},
     "interpretation_id": {"type": "string", "minLength": 1},
+    "evidence_index": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["evidence_id", "operator_id", "scope", "sample_count", "artifact_paths", "warnings"],
+        "properties": {
+          "evidence_id": {"type": "string", "minLength": 1},
+          "operator_id": {"type": "string", "pattern": "^A[0-9]{3}$"},
+          "scope": {"type": "object"},
+          "sample_count": {"type": "integer", "minimum": 0},
+          "artifact_paths": {"type": "array", "items": {"type": "string"}},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "evidence_relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["relation_id", "evidence_ids", "relation_type", "independence", "rationale", "status"],
+        "properties": {
+          "relation_id": {"type": "string", "minLength": 1},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}, "minItems": 2, "uniqueItems": true},
+          "relation_type": {"enum": ["corroborates", "duplicates", "refines", "localizes", "conditionalizes", "contradicts", "apparent_contradiction", "exception", "incomparable", "comparison_candidate", "unresolved"]},
+          "independence": {"enum": ["high", "medium", "low", "unknown"]},
+          "rationale": {"type": "string", "minLength": 1},
+          "status": {"enum": ["candidate", "reviewed", "validated"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "unresolved_contradictions": {"type": "array", "items": {"type": "object"}},
+    "exploration_summary": {
+      "type": "object",
+      "required": ["stage", "attempted_analysis_signatures", "negative_results_preserved", "falsification_required"],
+      "properties": {
+        "stage": {"enum": ["discovery", "validation", "mixed"]},
+        "attempted_analysis_signatures": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "negative_results_preserved": {"type": "boolean"},
+        "falsification_required": {"const": true}
+      },
+      "additionalProperties": true
+    },
     "notable_findings": {
       "type": "array",
       "items": {
@@ -54,11 +99,12 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["source_hypothesis_id", "action", "requires_human_approval"],
+        "required": ["source_hypothesis_id", "action", "purpose", "approval_status"],
         "properties": {
           "source_hypothesis_id": {"type": "string"},
           "action": {"type": "string", "minLength": 1},
-          "requires_human_approval": {"type": "boolean"}
+          "purpose": {"enum": ["characterize", "falsify", "control", "replicate"]},
+          "approval_status": {"const": "orchestrator_must_determine"}
         },
         "additionalProperties": true
       }

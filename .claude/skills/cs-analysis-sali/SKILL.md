@@ -1,14 +1,14 @@
 ---
 name: cs-analysis-sali
-description: Use when Claude Code needs to run Structure-activity landscape index from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment. General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
+description: Evaluate local property-landscape roughness and smoothness with representation-aware SALI, retain high-SALI cliff pairs for chemical interpretation, and generate CONDUCTOR v4 evidence. General mode is the default; use CONDUCTOR mode only with complete project, run, and node context.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
-# Structure-activity landscape index
+# Extended structure-activity landscape index
 
 ## Purpose
 
-Structure-activity landscape indexを実行し、客観的な数値結果とCONDUCTOR evidenceを生成する。
+Description空間の局所的なproperty勾配をSALIで評価し、Cliffを示す高SALI pairと、平坦・平滑なlandscapeを示す分布全体の両方をCONDUCTOR evidenceとして生成する。
 
 ## Input
 
@@ -24,7 +24,11 @@ Structure-activity landscape indexを実行し、客観的な数値結果とCOND
 
 ## Algorithm-specific options
 
-`--description`、`--k`、`--metric`を指定し、近傍edge上でSALIを計算する。
+`--description`と`--k`を指定し、近傍edge上でSALIを計算する。`--metric auto`はMorganまたはbinary vectorへTanimoto、USR/USRCATへManhattan、embedding/SVDまたは疎なcount vectorへcosine、その他の連続descriptorへEuclideanを選ぶ。Morgan表現にはTanimoto以外を使用しない。
+
+`--membership --target-group --scope-mode within-group`でGroup内、さらに`--comparison-group --scope-mode between-groups`でGroup間edgeを評価できる。scope比較では`--reference-scope global`を既定とし、同じ前処理基準を維持する。
+
+CONDUCTOR初手ではD002 Morgan=`tanimoto`、D013 USR/USRCAT=`manhattan`、D017 folded Pharm2D=`tanimoto`をStateへ明示記録する。高い上位分位だけでなくmedian、p75、p90、p95、近傍活性相関を確認する。高いupper tailは局所Cliff、中心とupper tailの双方が小さい場合はその表現空間でpropertyが比較的平滑に配置されている可能性としてInterpretationへ渡す。異なるmetric間でraw SALI値を直接比較しない。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

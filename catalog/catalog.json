@@ -3,7 +3,7 @@
   "conductor_version": "4.0.0",
   "selection_managed_by": "human",
   "selection_path": "catalog/included_skills.json",
-  "generated_at": "2026-08-03T12:43:08.039574+00:00",
+  "generated_at": "2026-08-03T17:00:41.220467+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -28,6 +28,10 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
       "wide_shallow_axis": "group_activity_profile",
       "wide_shallow_sources": {
         "grouping": [
@@ -77,6 +81,10 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
       "wide_shallow_axis": "endpoint_distribution",
       "operator_id": "A002",
       "dependencies": [],
@@ -114,6 +122,11 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
       "wide_shallow_axis": "pairwise_structure_space",
       "operator_id": "A003",
       "default_parameters": {
@@ -154,6 +167,10 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
       "wide_shallow_axis": "descriptor_activity_association",
       "wide_shallow_sources": {
         "description": [
@@ -200,6 +217,11 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
       "wide_shallow_axis": "neighborhood_activity_consistency",
       "wide_shallow_sources": {
         "description": [
@@ -207,10 +229,19 @@
           "D007"
         ]
       },
+      "wide_shallow_parameter_overrides": {
+        "description": {
+          "D004": {
+            "metric": "cosine"
+          },
+          "D007": {
+            "metric": "tanimoto"
+          }
+        }
+      },
       "operator_id": "A005",
       "default_parameters": {
-        "k": 10,
-        "metric": "cosine"
+        "k": 10
       },
       "dependencies": [
         "description"
@@ -231,11 +262,11 @@
       "schema_version": "1.0.0",
       "capability_id": "A006",
       "skill_name": "cs-analysis-sali",
-      "display_name": "Structure-activity landscape index",
+      "display_name": "Extended structure-activity landscape index",
       "version": "4.0.0",
       "stage": "analysis",
       "family": "landscape",
-      "description": "Use when Claude Code needs to run Structure-activity landscape index from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "description": "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI, preserve high-SALI cliff pairs for interpretation, and generate CONDUCTOR v4 evidence.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -250,6 +281,11 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
       "wide_shallow_axis": "representation_specific_activity_cliffs",
       "wide_shallow_sources": {
         "description": [
@@ -258,10 +294,22 @@
           "D017"
         ]
       },
+      "wide_shallow_parameter_overrides": {
+        "description": {
+          "D002": {
+            "metric": "tanimoto"
+          },
+          "D013": {
+            "metric": "manhattan"
+          },
+          "D017": {
+            "metric": "tanimoto"
+          }
+        }
+      },
       "operator_id": "A006",
       "default_parameters": {
-        "k": 10,
-        "metric": "cosine"
+        "k": 10
       },
       "dependencies": [
         "description"
@@ -301,6 +349,11 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
       "wide_shallow_axis": "structure_activity_cliffs",
       "operator_id": "A007",
       "default_parameters": {
@@ -343,6 +396,10 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
       "wide_shallow_axis": "group_activity_enrichment",
       "wide_shallow_sources": {
         "grouping": [
@@ -392,9 +449,13 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global"
+      ],
       "wide_shallow_axis": "overlapping_group_structure",
       "wide_shallow_sources": {
         "grouping": [
+          "C002",
           "C003"
         ]
       },
@@ -437,6 +498,10 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
       "wide_shallow_axis": "group_structural_diversity",
       "wide_shallow_sources": {
         "grouping": [
@@ -535,8 +600,8 @@
       "clustering_id": "C002",
       "default_parameters": {
         "min_cluster_size": 3,
-        "max_pairs": 2000,
-        "max_core_groups": 100
+        "max_pairs": 1000,
+        "max_core_groups": 300
       },
       "dependencies": [],
       "input_contract": [
@@ -1680,7 +1745,7 @@
       "version": "4.0.0",
       "stage": "interpretation",
       "family": "evidence_integration",
-      "description": "Use when Claude Code needs to run SAR evidence interpretation from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -1700,15 +1765,21 @@
         "evidence"
       ],
       "input_contract": [
-        "evidence_json"
+        "evidence_json",
+        "optional_state_json_read_only",
+        "interpretation_policy_markdown"
       ],
       "output": {
         "json": "interpretation.json",
         "markdown": "interpretation.md",
-        "html": "interpretation.html"
+        "html": "interpretation.html",
+        "context": "interpretation_context.json",
+        "exploration_plan": "exploration_plan.json"
       },
       "implementation": {
-        "purpose": "evidence_interpretation"
+        "purpose": "policy_guided_iterative_evidence_exploration",
+        "state_access": "read_only",
+        "execution_authority": "orchestrator_only"
       }
     },
     {
@@ -1719,7 +1790,7 @@
       "version": "4.0.0",
       "stage": "orchestration",
       "family": "graph_orchestration",
-      "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, Policy, execution DAG, and execution events.",
+      "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, orchestration and Interpretation Policies, execution DAG, exploration ledger, and execution events.",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -1737,14 +1808,19 @@
       "input_contract": [
         "catalog_json",
         "policy_markdown",
-        "endpoint_csv"
+        "interpretation_policy_markdown",
+        "endpoint_csv",
+        "optional_interpretation_exploration_plan_json"
       ],
       "output": {
         "state": "state.json",
-        "catalog": "catalog/catalog.json"
+        "catalog": "catalog/catalog.json",
+        "exploration_ledger": "state.json#/interpretation_exploration",
+        "materialized_scopes": "interpretation/scopes/*.csv"
       },
       "implementation": {
-        "purpose": "dag_state_orchestration"
+        "purpose": "dag_state_and_interpretation_exploration_orchestration",
+        "interpretation_execution_authority": "orchestrator_only"
       }
     }
   ]

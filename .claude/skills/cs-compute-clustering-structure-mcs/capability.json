@@ -27,8 +27,8 @@
   "clustering_id": "C002",
   "default_parameters": {
     "min_cluster_size": 3,
-    "max_pairs": 2000,
-    "max_core_groups": 100
+    "max_pairs": 1000,
+    "max_core_groups": 300
   },
   "dependencies": [],
   "input_contract": [

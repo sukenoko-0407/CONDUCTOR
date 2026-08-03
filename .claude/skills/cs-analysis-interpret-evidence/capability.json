@@ -6,7 +6,7 @@
   "version": "4.0.0",
   "stage": "interpretation",
   "family": "evidence_integration",
-  "description": "Use when Claude Code needs to run SAR evidence interpretation from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -26,14 +26,20 @@
     "evidence"
   ],
   "input_contract": [
-    "evidence_json"
+    "evidence_json",
+    "optional_state_json_read_only",
+    "interpretation_policy_markdown"
   ],
   "output": {
     "json": "interpretation.json",
     "markdown": "interpretation.md",
-    "html": "interpretation.html"
+    "html": "interpretation.html",
+    "context": "interpretation_context.json",
+    "exploration_plan": "exploration_plan.json"
   },
   "implementation": {
-    "purpose": "evidence_interpretation"
+    "purpose": "policy_guided_iterative_evidence_exploration",
+    "state_access": "read_only",
+    "execution_authority": "orchestrator_only"
   }
 }

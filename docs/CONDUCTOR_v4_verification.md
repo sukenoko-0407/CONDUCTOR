@@ -1,6 +1,6 @@
 # CONDUCTOR v4 検証記録
 
-検証日: 2026-08-03
+検証日: 2026-08-04
 
 ## 自動試験
 
@@ -10,7 +10,7 @@ Windows、Python 3.12.12の既存`.venv`で次を実行した。
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-結果: 25 tests passed。
+結果: 28 tests passed。
 
 確認範囲:
 
@@ -23,8 +23,9 @@ Windows、Python 3.12.12の既存`.venv`で次を実行した。
 - D001 → C001 → A002 → I001のCONDUCTOR artifact chain
 - execution eventがproject、run ID、node IDを持ち、State contextと照合されること
 - State dependency、承認gate、downstream traversal
-- `representative-family-wide-v1`がDescription 7、Grouping 9、Operator 35の計51 nodeへ展開され、3DのD013と承認不要の必須初手C002 MCSを含むこと
+- `representative-family-wide-v1`がDescription 7、Grouping 9、Operator 36の計52 nodeへ展開され、3DのD013と承認不要の必須初手C002 MCSを含むこと
 - C005、C006、C007、C009、A001、A004、A006等がCatalog指定sourceへ個別bindingされ、vector Clusteringがrun元CSVや最初のDescriptionへ暗黙接続されないこと
+- A005/A006の表現別parameter overrideがStateへ保存され、初手でD004→cosine、D007→Tanimoto、D002→Tanimoto、D013→Manhattan、D017→Tanimotoとなること
 - direct structure Grouping 4 SkillがSMILES入力かつDescription非依存、Description-vector Clustering 6 SkillがDescription CSV入力かつDescription依存であること
 - 旧SMILES-to-Morgan clustering wrapper 6 Skillが現役directoryとallowlistに存在しないこと
 - 初手DAGの再計画がnodeを重複生成せず、node固有`<node-id-safe>`出力先が衝突しないこと
@@ -40,12 +41,17 @@ Windows、Python 3.12.12の既存`.venv`で次を実行した。
 - 上流変更時のdomain/evidence graph node stale化
 - Morgan chiralityとGobbi Pharm2D SVDが統合Skillのparameter variantとして動作すること
 - Stateが計画と異なるvariant configurationを拒否すること
+- A006がMorgan表現をTanimotoへ自動解決し、Morganへのcosine指定を拒否すること。SALIの中央値・上側分位点・上位pairがevidenceへ残り、I001へfocus pairとして伝わること
+- A006をglobal、within-group、between-groupsで実行し、scope、標本数、global前処理基準、固有evidence ID、およびI001のglobal-local関係候補が保持されること
+- 専用Interpretation Agent、正本Interpretation Policy、Skill内Policy snapshot、探索Plan schemaの整合
+- Interpretation探索budget、seed、iteration、必須反証、analysis signature重複拒否、terminal Interpretation依存拒否のState制御
+- matched random等の明示compound scopeがrun inputと照合され、content-addressed membershipとして記録され、同一scopeの再登録が拒否されること
 - capability別`--help`が無関係なalgorithm optionを表示しないこと
 - 全42 Skillの人間向けREADMEが指定6 section、利用例、version 1.0.0の変更履歴を持ち、60行以内であること
 
 追加の静的確認:
 
-- `.claude`、`tools`、`tests`のPython 106 fileに対する書込みなし構文検査
+- `.claude`、`tools`、`tests`の現役Python 94 fileに対する書込みなし構文検査
 - 全42 Pixi manifestのTOML parse
 - 全Pixi manifestが`linux-64`と`win-64`を宣言
 - Catalog builderによる42 capability metadata検証とGrouping taxonomy検証

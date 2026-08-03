@@ -31,6 +31,7 @@ python .claude/skills/cs-analysis-pairwise-structure-similarity/scripts/launch.p
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
+- membershipを追加するとGroup内または二Group間のpairへscopeを限定できる。
 
 ## 変更履歴
 

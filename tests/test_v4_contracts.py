@@ -128,6 +128,10 @@ class RepositoryContractTests(unittest.TestCase):
             elif entry["cost"]["class"] in {"high", "very_high"}:
                 self.assertTrue(entry["cost"]["human_approval_required"])
         self.assertEqual(["C002"], preauthorized)
+        self.assertEqual(
+            {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300},
+            by_id["C002"]["default_parameters"],
+        )
         self.assertEqual({"standard", "chiral"}, {item["id"] for item in by_id["D002"]["variants"]})
         self.assertEqual({"folded", "svd"}, {item["id"] for item in by_id["D017"]["variants"]})
         self.assertEqual({"D001", "D002", "D003", "D004", "D007", "D013", "D017"}, {entry["capability_id"] for entry in catalog["capabilities"] if entry["stage"] == "description" and entry.get("default_wide_shallow")})
@@ -137,6 +141,18 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertEqual({"description": ["D001", "D013", "D017"]}, by_id["C006"]["wide_shallow_sources"])
         self.assertEqual({"description": ["D001"]}, by_id["C007"]["wide_shallow_sources"])
         self.assertEqual({"description": ["D002"]}, by_id["C009"]["wide_shallow_sources"])
+        self.assertEqual(
+            {"description": {"D004": {"metric": "cosine"}, "D007": {"metric": "tanimoto"}}},
+            by_id["A005"]["wide_shallow_parameter_overrides"],
+        )
+        self.assertEqual(
+            {"description": {"D002": {"metric": "tanimoto"}, "D013": {"metric": "manhattan"}, "D017": {"metric": "tanimoto"}}},
+            by_id["A006"]["wide_shallow_parameter_overrides"],
+        )
+        self.assertEqual(["global", "within-group"], by_id["A002"]["scope_support"])
+        self.assertEqual(["global", "within-group", "between-groups"], by_id["A006"]["scope_support"])
+        self.assertEqual(["global"], by_id["A009"]["scope_support"])
+        self.assertEqual({"grouping": ["C002", "C003"]}, by_id["A009"]["wide_shallow_sources"])
         groupings = [entry for entry in catalog["capabilities"] if entry["stage"] == "grouping"]
         self.assertEqual([f"C{index:03d}" for index in range(1, 13)], sorted(entry["capability_id"] for entry in groupings))
         direct = [entry for entry in groupings if entry["grouping_kind"] == "direct_structure"]
@@ -161,8 +177,23 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("Skill", definition)
         self.assertIn("AskUserQuestion", definition)
         self.assertIn("  - cs-conductor-orchestrator", definition)
+        self.assertIn("C002 MCS is the sole initial exception", definition)
+        self.assertIn("without asking for run-specific approval", definition)
         self.assertTrue((ROOT / "pyproject.toml").is_file())
         self.assertTrue((ROOT / "uv.lock").is_file())
+
+    def test_interpretation_has_a_dedicated_policy_managed_terminal_agent(self) -> None:
+        agent = (ROOT / ".claude" / "agents" / "cs-conductor-interpreter.md").read_text(encoding="utf-8")
+        policy = (ROOT / "docs" / "CONDUCTOR_v4_interpretation_policy.md").read_text(encoding="utf-8")
+        snapshot = (SKILLS / "cs-analysis-interpret-evidence" / "references" / "interpretation_policy.md").read_text(encoding="utf-8")
+        capability = json.loads((SKILLS / "cs-analysis-interpret-evidence" / "capability.json").read_text(encoding="utf-8"))
+        self.assertEqual(policy, snapshot)
+        self.assertIn("read-only terminal stage", agent)
+        self.assertIn("Never request a computation whose signature already appears", agent)
+        self.assertIn("falsification", agent.lower())
+        self.assertIn("compound ID", agent)
+        self.assertIn("exploration_plan", capability["output"])
+        self.assertTrue((SKILLS / "cs-analysis-interpret-evidence" / "schemas" / "interpretation_exploration_plan.schema.json").is_file())
 
 
 @unittest.skipUnless(__import__("importlib").util.find_spec("rdkit"), "RDKit is not installed")
@@ -217,8 +248,8 @@ class RuntimeSmokeTests(unittest.TestCase):
             ("cs-compute-clustering-structure-murcko", ["--min-cluster-size"], ["--metric", "--similarity-threshold", "--max-core-groups"]),
             ("cs-compute-clustering-structure-mcs", ["--max-pairs", "--max-core-groups"], ["--max-cores", "--metric"]),
             ("cs-compute-clustering-vector-butina", ["--metric", "--similarity-threshold"], ["--radius", "--eps"]),
-            ("cs-analysis-descriptor-activity-correlation", ["--description"], ["--k", "--max-pairs", "--membership"]),
-            ("cs-analysis-activity-cliff", ["--similarity-threshold", "--activity-delta-threshold", "--max-pairs"], ["--description", "--membership", "--k"]),
+            ("cs-analysis-descriptor-activity-correlation", ["--description", "--membership", "--scope-mode"], ["--k", "--max-pairs"]),
+            ("cs-analysis-activity-cliff", ["--similarity-threshold", "--activity-delta-threshold", "--max-pairs", "--membership", "--scope-mode"], ["--description", "--k"]),
         ]
         for skill_name, present, absent in cases:
             with self.subTest(skill=skill_name):
@@ -227,6 +258,88 @@ class RuntimeSmokeTests(unittest.TestCase):
                     self.assertIn(option, process.stdout)
                 for option in absent:
                     self.assertNotIn(option, process.stdout)
+
+        mcs_runner = str(SKILLS / "cs-compute-clustering-structure-mcs" / "scripts" / "run.py")
+        rejected = subprocess.run(
+            [sys.executable, mcs_runner, "--smiles", "CCO", "--max-pairs", "1001"],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(2, rejected.returncode)
+        self.assertIn("--max-pairs must be <= 1000", rejected.stderr)
+
+    def test_sali_selects_representation_metric_and_preserves_landscape_evidence(self) -> None:
+        data = ROOT / "tests" / "data" / "small_sar.csv"
+        sali_runner = SKILLS / "cs-analysis-sali" / "scripts" / "run.py"
+        interpretation_runner = SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            description = temporary / "D002_morgan.csv"
+            description.write_text(
+                "compound_id,morgan_bit_0,morgan_bit_1,morgan_bit_2\n"
+                "CMPD_001,1,0,0\nCMPD_002,1,0,0\nCMPD_003,1,1,0\n"
+                "CMPD_004,0,0,1\nCMPD_005,0,1,1\nCMPD_006,0,1,1\n",
+                encoding="utf-8",
+            )
+            outdir = temporary / "sali"
+            self.run_cli(
+                str(sali_runner), "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
+                "--description", str(description), "--evaluation-representation", "D002", "--metric", "auto", "--k", "2",
+                "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", "sali-metric",
+                "--node-id", "A006:001", "--overwrite",
+            )
+            evidence = json.loads((outdir / "evidence.json").read_text(encoding="utf-8"))
+            summary = evidence["machine_readable_summary"]
+            self.assertEqual("tanimoto", summary["metric"])
+            self.assertEqual("auto", summary["requested_metric"])
+            self.assertIn("median_sali", summary)
+            self.assertIn("p95_sali", summary)
+            self.assertTrue(summary["top_sali_pairs"])
+            self.assertTrue(evidence["supporting_pairs"])
+            self.assertIsInstance(evidence["uncertainty"], dict)
+            self.assertEqual("global", evidence["scope"]["mode"])
+
+            membership = ROOT / "tests" / "data" / "scope_membership.csv"
+            scoped_evidence = []
+            for label, node_id, extra in [
+                ("within", "A006:002", ["--target-group", "G_ALIPHATIC", "--scope-mode", "within-group"]),
+                ("between", "A006:003", ["--target-group", "G_ALIPHATIC", "--comparison-group", "G_AROMATIC", "--scope-mode", "between-groups"]),
+            ]:
+                scoped_outdir = temporary / label
+                self.run_cli(
+                    str(sali_runner), "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
+                    "--description", str(description), "--membership", str(membership),
+                    "--evaluation-representation", "D002", "--metric", "auto", "--k", "2",
+                    "--reference-scope", "global", "--output-dir", str(scoped_outdir), "--conductor",
+                    "--project", "unit", "--run-id", "sali-metric", "--node-id", node_id, "--overwrite", *extra,
+                )
+                scoped_evidence.append(json.loads((scoped_outdir / "evidence.json").read_text(encoding="utf-8")))
+            self.assertEqual("within-group", scoped_evidence[0]["scope"]["mode"])
+            self.assertEqual(3, scoped_evidence[0]["scope"]["sample_count"])
+            self.assertEqual("global", scoped_evidence[0]["scope"]["reference_scope"])
+            self.assertEqual("between-groups", scoped_evidence[1]["scope"]["mode"])
+            self.assertEqual(6, scoped_evidence[1]["scope"]["sample_count"])
+            self.assertEqual(3, len({evidence["evidence_id"], *(item["evidence_id"] for item in scoped_evidence)}))
+
+            rejected = subprocess.run(
+                [sys.executable, str(sali_runner), "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
+                 "--description", str(description), "--evaluation-representation", "D002", "--metric", "cosine",
+                 "--output-dir", str(temporary / "rejected")],
+                cwd=ROOT, text=True, capture_output=True,
+            )
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn("Morgan representations require --metric tanimoto", rejected.stderr)
+
+            interpreted = temporary / "interpretation"
+            self.run_cli(
+                str(interpretation_runner), "--evidence", str(outdir / "evidence.json"),
+                "--evidence", str(temporary / "within" / "evidence.json"),
+                "--evidence", str(temporary / "between" / "evidence.json"),
+                "--output-dir", str(interpreted), "--run-id", "sali-metric", "--overwrite",
+            )
+            interpretation = json.loads((interpreted / "interpretation.json").read_text(encoding="utf-8"))
+            self.assertTrue(interpretation["hypotheses"][0]["focus_pairs"])
+            self.assertIn("SALI landscape", interpretation["notable_findings"][0]["observation"])
+            self.assertTrue(any(item["relation_type"] == "localizes" for item in interpretation["evidence_relations"]))
 
     @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn") and __import__("importlib").util.find_spec("scipy"), "scikit-learn and SciPy are not installed")
     def test_vector_clustering_requires_a_description_vector_and_supports_binary_jaccard(self) -> None:
