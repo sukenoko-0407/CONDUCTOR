@@ -1,0 +1,13 @@
+[workspace]
+name = "cs-conductor-orchestrator"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[dependencies]
+python = ">=3.12,<3.13"
+jsonschema = ">=4.21"
+
+[tasks]
+catalog = "python ../scripts/build_catalog.py"
+state = "python ../scripts/state_manager.py"
+smoke = "python ../scripts/state_manager.py --help"

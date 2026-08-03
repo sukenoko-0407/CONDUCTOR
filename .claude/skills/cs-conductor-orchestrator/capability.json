@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "capability_id": "O001",
+  "skill_name": "cs-conductor-orchestrator",
+  "display_name": "CONDUCTOR v4 Orchestrator",
+  "version": "4.0.0",
+  "stage": "orchestration",
+  "family": "graph_orchestration",
+  "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, Policy, execution DAG, and execution events.",
+  "cost": {
+    "class": "low",
+    "human_approval_required": false,
+    "hpc_profile": "cpu64"
+  },
+  "applicability": {
+    "status": "stable",
+    "platforms": ["linux-64", "win-64"]
+  },
+  "dependencies": [],
+  "default_wide_shallow": false,
+  "input_contract": ["catalog_json", "policy_markdown", "endpoint_csv"],
+  "output": {
+    "state": "state.json",
+    "catalog": "catalog/catalog.json"
+  },
+  "implementation": {
+    "purpose": "dag_state_orchestration"
+  }
+}

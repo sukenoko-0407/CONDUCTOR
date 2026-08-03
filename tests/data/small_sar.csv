@@ -1,0 +1,7 @@
+compound_id,smiles,pIC50,assay
+CMPD_001,CCO,5.1,A
+CMPD_002,CCCO,5.4,A
+CMPD_003,CCCCO,5.8,A
+CMPD_004,c1ccccc1,6.2,B
+CMPD_005,Oc1ccccc1,6.8,B
+CMPD_006,Nc1ccccc1,7.0,B

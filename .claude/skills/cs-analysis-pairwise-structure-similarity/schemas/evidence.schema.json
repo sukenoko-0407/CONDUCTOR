@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/evidence.schema.json",
+  "title": "CONDUCTOR v4 operator evidence",
+  "type": "object",
+  "required": ["schema_version", "evidence_id", "operator_id", "operator_name", "operator_version", "run_id", "target_group_id", "grouping_representation", "evaluation_representation", "input_features", "sample_count", "result_type", "result_values", "statistical_significance", "uncertainty", "applicability_conditions", "warnings", "supporting_compounds", "supporting_pairs", "generated_evidence", "machine_readable_summary", "human_readable_summary", "artifacts", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "evidence_id": {"type": "string", "minLength": 1},
+    "operator_id": {"type": "string", "pattern": "^A[0-9]{3}$"},
+    "operator_name": {"type": "string", "minLength": 1},
+    "operator_version": {"const": "4.0.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "target_group_id": {"type": ["string", "null"]},
+    "grouping_representation": {"type": ["string", "null"]},
+    "evaluation_representation": {"type": ["string", "null"]},
+    "input_features": {"type": "array", "items": {"type": "string"}},
+    "sample_count": {"type": "integer", "minimum": 0},
+    "result_type": {"type": "string", "minLength": 1},
+    "result_values": {"type": "object"},
+    "statistical_significance": {"type": ["object", "null"]},
+    "uncertainty": {"type": ["object", "null"]},
+    "applicability_conditions": {"type": "array", "items": {"type": "string"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "supporting_compounds": {"type": "array", "items": {"type": "string"}},
+    "supporting_pairs": {"type": "array", "items": {"type": "object"}},
+    "generated_evidence": {"type": "array", "items": {"type": "object"}},
+    "machine_readable_summary": {"type": "object"},
+    "human_readable_summary": {"type": "string"},
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "path"],
+        "properties": {
+          "type": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

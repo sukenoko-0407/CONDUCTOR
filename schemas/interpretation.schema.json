@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/interpretation.schema.json",
+  "title": "CONDUCTOR v4 interpretation",
+  "type": "object",
+  "required": ["schema_version", "run_id", "interpretation_id", "notable_findings", "hypotheses", "recommended_next_analysis", "human_review_points", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "interpretation_id": {"type": "string", "minLength": 1},
+    "notable_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "title", "observation", "evidence_ids", "result_values", "warnings"],
+        "properties": {
+          "finding_id": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "observation": {"type": "string", "minLength": 1},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "result_values": {"type": "object"},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["hypothesis_id", "title", "target_group", "observation", "supporting_evidence", "contradicting_evidence", "evidence_independence", "alternative_explanations", "scope", "exceptions", "confidence", "confidence_rationale", "proposed_structural_implication", "recommended_next_analysis", "recommended_next_compounds", "human_review_points"],
+        "properties": {
+          "hypothesis_id": {"type": "string", "minLength": 1},
+          "title": {"type": "string", "minLength": 1},
+          "target_group": {"type": ["string", "null"]},
+          "observation": {"type": "string", "minLength": 1},
+          "supporting_evidence": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "contradicting_evidence": {"type": "array", "items": {"type": "string"}},
+          "evidence_independence": {"type": "string", "minLength": 1},
+          "alternative_explanations": {"type": "array", "items": {"type": "string"}},
+          "scope": {"type": "array", "items": {"type": "string"}},
+          "exceptions": {"type": "array", "items": {"type": "string"}},
+          "confidence": {"type": "string", "minLength": 1},
+          "confidence_rationale": {"type": "string", "minLength": 1},
+          "proposed_structural_implication": {"type": "string"},
+          "recommended_next_analysis": {"type": "array", "items": {"type": "string"}},
+          "recommended_next_compounds": {"type": "array", "items": {"type": "string"}},
+          "human_review_points": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "recommended_next_analysis": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source_hypothesis_id", "action", "requires_human_approval"],
+        "properties": {
+          "source_hypothesis_id": {"type": "string"},
+          "action": {"type": "string", "minLength": 1},
+          "requires_human_approval": {"type": "boolean"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "human_review_points": {"type": "array", "items": {"type": "string"}},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

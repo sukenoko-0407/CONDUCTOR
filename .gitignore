@@ -1,4 +1,13 @@
 .venv/
+.pixi/
+.claude/skills/*/env/cache/
+.claude/skills/*/env/config/
+.claude/skills/*/env/data/
+.claude/skills/*/env/state/
+.claude/skills/*/env/tmp/
+.claude/skills/*/env/pixi-home/
+Archive/
+results/
 outputs/*
 !outputs/.gitkeep
 descriptions/

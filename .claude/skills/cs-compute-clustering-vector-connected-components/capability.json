@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "capability_id": "C016",
+  "skill_name": "cs-compute-clustering-vector-connected-components",
+  "display_name": "Vector connected-component clustering",
+  "version": "4.0.0",
+  "stage": "grouping",
+  "family": "vector",
+  "description": "Use when Claude Code needs to run Vector connected-component clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "cost": {
+    "class": "medium",
+    "human_approval_required": false,
+    "hpc_profile": "cpu64"
+  },
+  "applicability": {
+    "status": "stable",
+    "platforms": [
+      "linux-64",
+      "win-64"
+    ],
+    "molecule_standardization": "out_of_scope"
+  },
+  "default_wide_shallow": false,
+  "clustering_id": "C016",
+  "dependencies": [
+    "description"
+  ],
+  "input_contract": [
+    "description_csv"
+  ],
+  "output": {
+    "membership": "cluster_membership.csv",
+    "summary": "cluster_summary.csv"
+  },
+  "implementation": {
+    "algorithm": "vector_connected_components"
+  }
+}
