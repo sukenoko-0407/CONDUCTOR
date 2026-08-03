@@ -16,6 +16,28 @@ SKILLS = ROOT / ".claude" / "skills"
 
 
 class RepositoryContractTests(unittest.TestCase):
+    def test_human_readmes_are_present_and_concise(self) -> None:
+        required_sections = [
+            "## SKILLの目的",
+            "## 想定利用シーン",
+            "## 環境構築",
+            "## 利用例",
+            "## 制約事項",
+            "## 変更履歴",
+        ]
+        skill_directories = sorted(path for path in SKILLS.iterdir() if path.is_dir())
+        self.assertEqual(48, len(skill_directories))
+        for skill in skill_directories:
+            readme = skill / "README.md"
+            self.assertTrue(readme.is_file(), skill.name)
+            text = readme.read_text(encoding="utf-8")
+            for section in required_sections:
+                self.assertEqual(1, text.count(section), f"{skill.name}: {section}")
+            self.assertIn("scripts/launch.py", text, skill.name)
+            self.assertIn("| Version | 変更内容 |", text, skill.name)
+            self.assertIn("| 1.0.0 |", text, skill.name)
+            self.assertLessEqual(len(text.splitlines()), 60, skill.name)
+
     def test_allowlisted_skills_are_self_contained(self) -> None:
         import jsonschema
 

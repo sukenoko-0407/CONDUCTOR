@@ -395,6 +395,152 @@ CONDUCTOR利用が明示されていない場合はこちらを使う。
 '''
 
 
+def readme_md(capability: dict[str, Any], kind: str) -> str:
+    name = capability["skill_name"]
+    display = capability["display_name"]
+    approval = capability["cost"]["human_approval_required"]
+    environment = (
+        "`scripts/launch.py`を実行すると、`env/pixi.toml`から環境を自動作成または再利用する。"
+        "Linuxでは共有Pixiを優先し、cacheと環境はこのSkillの`env/`配下に置かれる。"
+    )
+    conductor_args = "--conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID"
+
+    if kind == "description":
+        algorithm = capability["implementation"]["algorithm"]
+        family_scenes = {
+            "physicochemical": "物性傾向の把握、活性との相関確認、解釈可能な特徴量の作成。",
+            "2d_fingerprint": "構造類似性評価、クラスタリング、近傍解析に使う2D表現の作成。",
+            "substructure": "部分構造や官能基パターンに基づく比較、Grouping、SAR解析。",
+            "3d_shape": "3D形状や立体配置を使った比較、2D表現と異なる観点での深掘り。",
+            "pharmacophore": "2D pharmacophore配置に基づく類似性評価やクラスタリング。",
+            "pretrained_embedding": "ローカルに配置した事前学習modelから分子embeddingを抽出する場合。",
+            "quantum": "電子エネルギーや原子電荷など、量子化学由来の特徴量が必要な場合。",
+        }
+        purpose = f"CSVまたは1件以上のSMILESから{display}を計算し、Description表を生成する。"
+        scenes = family_scenes[capability["family"]]
+        general_args = "--input compounds.csv"
+        extra_example = ""
+        if algorithm == "morgan":
+            extra_example = f'''\nchiralityを含める例:\n\n```bash\npython .claude/skills/{name}/scripts/launch.py --input compounds.csv --include-chirality\n```'''
+        elif algorithm == "gobbi_pharm2d":
+            extra_example = f'''\nSVD表現を作る例:\n\n```bash\npython .claude/skills/{name}/scripts/launch.py --input compounds.csv --reduction svd --svd-dim 128\n```'''
+        elif algorithm == "pretrained_embedding":
+            general_args += " --model-dir /shared/models/molecular-model --device cuda"
+        constraints = ["入力分子の標準化は行わない。重複IDはerror、invalid SMILESは行を保持して警告対象とする。"]
+        if algorithm == "gobbi_pharm2d":
+            constraints.append("SVD表現は入力datasetに依存する座標系であり、2件以上のvalid moleculeが必要。")
+        if algorithm == "pretrained_embedding":
+            constraints.append("model weightを自動downloadしない。`--model-dir`またはlocal adapterが必要。")
+        if algorithm in {"rdkit_3d", "usr_usrcat", "shape", "mordred_3d", "tblite_xtb"}:
+            constraints.append("入力SMILESからconformerを生成するため、結果と計算時間は3D生成条件の影響を受ける。")
+        if approval:
+            constraints.append("高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。")
+        primary_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}"
+    elif kind == "clustering":
+        algorithm = capability["implementation"]["algorithm"]
+        if algorithm.startswith("structure_"):
+            purpose = f"compound IDとSMILESから{display}を実行し、cluster membershipとsummaryを生成する。"
+            scenes = "化学構造に基づくseries分割、scaffold/fragment解析、または類似性groupの作成。"
+            general_args = "--input compounds.csv"
+        elif algorithm.startswith("vector_"):
+            purpose = f"数値Descriptionから{display}を実行し、cluster membershipとsummaryを生成する。"
+            scenes = "descriptor、fingerprint、embedding空間で化合物をgroup化し、構造based Groupingと比較する場合。"
+            general_args = "--input description.csv"
+        elif algorithm == "categorical":
+            purpose = "CSVのカテゴリ列からgroupを作り、cluster membershipとsummaryを生成する。"
+            scenes = "assay条件、既知series、sourceなど、人間が付与したカテゴリで化合物を分ける場合。"
+            general_args = "--input compounds.csv --columns assay"
+        else:
+            purpose = "既存group間のcompound重複を使ってmeta groupを生成する。"
+            scenes = "複数Groupingの重複関係を要約し、上位のgroup構造を確認する場合。"
+            general_args = "--input cluster_membership.csv"
+        constraints = ["一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。"]
+        if algorithm.startswith("structure_"):
+            constraints.append("invalid SMILESは未割当として保持する。分子標準化は行わない。")
+        if algorithm.startswith("vector_"):
+            constraints.append("結果は入力feature、距離metric、thresholdまたはcluster数に依存する。")
+        if approval:
+            constraints.append("高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。")
+        primary_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}"
+        extra_example = ""
+    elif kind == "analysis":
+        operator = capability["implementation"]["operator"]
+        operator_scenes = {
+            "group_profile": "各groupの活性分布とhigh/low activity比率を比較する場合。",
+            "activity_distribution": "endpoint全体または指定groupの分布を最初に把握する場合。",
+            "pairwise_structure_similarity": "構造類似度と活性差をpair単位で確認する場合。",
+            "descriptor_activity_correlation": "各Description featureと活性の単変量関連を確認する場合。",
+            "knn_activity_consistency": "近傍化合物間で活性がどの程度一貫するか評価する場合。",
+            "sali": "近い表現を持つ化合物間の大きな活性差を優先順位付けする場合。",
+            "activity_cliff": "高い構造類似性と大きな活性差を同時に満たすpairを抽出する場合。",
+            "group_enrichment": "特定groupにhigh activity化合物が濃縮されているか評価する場合。",
+            "group_overlap": "Grouping内のgroup同士がどの程度重複するか評価する場合。",
+            "group_structural_diversity": "各group内の構造的な多様性を評価する場合。",
+        }
+        purpose = f"{display}を実行し、一般利用向け数値結果とCONDUCTOR向けevidenceを生成する。"
+        scenes = operator_scenes[operator]
+        general_args = "--input compounds.csv --property-column pIC50 --higher-is-better"
+        if "description" in capability.get("dependencies", []):
+            general_args += " --description description.csv"
+        if "grouping" in capability.get("dependencies", []):
+            general_args += " --membership cluster_membership.csv"
+        constraints = ["endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。"]
+        constraints.append("数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。")
+        if approval:
+            constraints.append("dataset規模によって高コストになる場合は、CONDUCTORで人間の承認を得る。")
+        primary_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}"
+        extra_example = ""
+    else:
+        purpose = "一つ以上のOperator evidenceを統合し、agent向けJSONと人間向けMarkdown/HTMLを生成する。"
+        scenes = "複数解析の観察、警告、支持・矛盾関係を整理し、次の解析候補をまとめる場合。"
+        constraints = ["異なるrun IDのevidenceは混在させない。", "具体的な新規SMILESは生成せず、構造変換・設計方向までを提示する。"]
+        primary_example = f"python .claude/skills/{name}/scripts/launch.py --evidence-dir path/to/evidence"
+        general_args = "--evidence-dir path/to/evidence"
+        extra_example = ""
+
+    constraint_text = "\n".join(f"- {item}" for item in constraints) if constraints else "- 特になし。"
+    conductor_example = f"python .claude/skills/{name}/scripts/launch.py {general_args} {conductor_args}"
+    return f'''# {display}
+
+## SKILLの目的
+
+{purpose}
+
+## 想定利用シーン
+
+{scenes}
+
+## 環境構築
+
+{environment}
+
+## 利用例
+
+一般利用（主成果物のみ）:
+
+```bash
+{primary_example}
+```
+{extra_example}
+
+CONDUCTORのState nodeとして利用する場合:
+
+```bash
+{conductor_example}
+```
+
+## 制約事項
+
+{constraint_text}
+
+## 変更履歴
+
+| Version | 変更内容 |
+|---|---|
+| 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
+'''
+
+
 def base_capability(identifier: str, name: str, display: str, stage: str, family: str, cost: str, status: str, wide: bool) -> dict[str, Any]:
     return {
         "schema_version": "1.0.0",
@@ -420,6 +566,7 @@ def create_skill(capability: dict[str, Any], kind: str, template: Path, schemas:
     (skill_dir / "env").mkdir(parents=True, exist_ok=True)
     dump_json(skill_dir / "capability.json", capability)
     (skill_dir / "SKILL.md").write_text(skill_md(capability, kind), encoding="utf-8")
+    (skill_dir / "README.md").write_text(readme_md(capability, kind), encoding="utf-8")
     shutil.copy2(template, skill_dir / "scripts" / "run.py")
     (skill_dir / "scripts" / "launch.py").write_text(LAUNCHER, encoding="utf-8")
     implementation = capability["implementation"].get("algorithm") or capability["implementation"].get("operator") or capability["implementation"].get("purpose")

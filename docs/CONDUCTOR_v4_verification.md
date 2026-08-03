@@ -10,7 +10,7 @@ Windows、Python 3.12.12の既存`.venv`で次を実行した。
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-結果: 19 tests passed。
+結果: 20 tests passed。
 
 確認範囲:
 
@@ -33,6 +33,7 @@ Windows、Python 3.12.12の既存`.venv`で次を実行した。
 - Morgan chiralityとGobbi Pharm2D SVDが統合Skillのparameter variantとして動作すること
 - Stateが計画と異なるvariant configurationを拒否すること
 - capability別`--help`が無関係なalgorithm optionを表示しないこと
+- 全48 Skillの人間向けREADMEが指定6 section、利用例、version 1.0.0の変更履歴を持ち、60行以内であること
 
 追加の静的確認:
 
