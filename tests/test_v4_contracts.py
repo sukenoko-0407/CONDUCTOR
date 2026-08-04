@@ -129,7 +129,7 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertTrue(entry["cost"]["human_approval_required"])
         self.assertEqual(["C002"], preauthorized)
         self.assertEqual(
-            {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300},
+            {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300, "random_seed": 61453},
             by_id["C002"]["default_parameters"],
         )
         self.assertEqual({"standard", "chiral"}, {item["id"] for item in by_id["D002"]["variants"]})
@@ -216,6 +216,45 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertFalse((outdir / "warnings.json").exists())
             self.assertFalse((outdir / "execution_event.json").exists())
 
+    def test_compound_ids_are_preserved_as_strings_across_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            source = temporary / "leading-zero-ids.csv"
+            source.write_text(
+                "compound_id,smiles,pIC50\n0001,CCO,5.0\n0002,CCN,6.0\n0003,CCC,5.5\n",
+                encoding="utf-8",
+            )
+            description_dir = temporary / "description"
+            self.run_cli(
+                str(SKILLS / "cs-compute-description-rdkit-2d" / "scripts" / "run.py"),
+                "--input", str(source), "--output-dir", str(description_dir), "--run-id", "leading-zero", "--overwrite",
+            )
+            description_path = description_dir / "D001_rdkit_2d.csv"
+            with description_path.open(encoding="utf-8", newline="") as handle:
+                description_ids = [row["compound_id"] for row in DictReader(handle)]
+            self.assertEqual(["0001", "0002", "0003"], description_ids)
+
+            grouping_dir = temporary / "grouping"
+            self.run_cli(
+                str(SKILLS / "cs-compute-clustering-vector-hierarchical" / "scripts" / "run.py"),
+                "--input", str(description_path), "--n-clusters", "1", "--min-cluster-size", "1",
+                "--output-dir", str(grouping_dir), "--run-id", "leading-zero", "--overwrite",
+            )
+            with (grouping_dir / "cluster_membership.csv").open(encoding="utf-8", newline="") as handle:
+                grouping_ids = {row["compound_id"] for row in DictReader(handle)}
+            self.assertEqual({"0001", "0002", "0003"}, grouping_ids)
+
+            analysis_dir = temporary / "analysis"
+            self.run_cli(
+                str(SKILLS / "cs-analysis-sali" / "scripts" / "run.py"),
+                "--input", str(source), "--property-column", "pIC50", "--higher-is-better",
+                "--description", str(description_path), "--evaluation-representation", "D001", "--k", "1",
+                "--output-dir", str(analysis_dir), "--run-id", "leading-zero", "--overwrite",
+            )
+            with (analysis_dir / "A006_sali.csv").open(encoding="utf-8", newline="") as handle:
+                analysis_ids = {row["compound_id"] for row in DictReader(handle)}
+            self.assertEqual({"0001", "0002", "0003"}, analysis_ids)
+
     def test_description_variant_cli_is_scoped_and_general_outputs_remain_primary_only(self) -> None:
         cases = [
             ("cs-compute-description-rdkit-2d", [], ["--n-bits", "--include-chirality", "--reduction"]),
@@ -249,7 +288,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             ("cs-compute-clustering-structure-mcs", ["--max-pairs", "--max-core-groups"], ["--max-cores", "--metric"]),
             ("cs-compute-clustering-vector-butina", ["--metric", "--similarity-threshold"], ["--radius", "--eps"]),
             ("cs-analysis-descriptor-activity-correlation", ["--description", "--membership", "--scope-mode"], ["--k", "--max-pairs"]),
-            ("cs-analysis-activity-cliff", ["--similarity-threshold", "--activity-delta-threshold", "--max-pairs", "--membership", "--scope-mode"], ["--description", "--k"]),
+            ("cs-analysis-activity-cliff", ["--similarity-threshold", "--activity-delta-threshold", "--max-pairs", "--random-seed", "--membership", "--scope-mode"], ["--description", "--k"]),
         ]
         for skill_name, present, absent in cases:
             with self.subTest(skill=skill_name):
@@ -295,6 +334,8 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertIn("p95_sali", summary)
             self.assertTrue(summary["top_sali_pairs"])
             self.assertTrue(evidence["supporting_pairs"])
+            self.assertTrue(all(pair["compound_id_a"] != pair["compound_id_b"] for pair in evidence["supporting_pairs"]))
+            self.assertTrue(any({pair["compound_id_a"], pair["compound_id_b"]} == {"CMPD_001", "CMPD_002"} for pair in evidence["supporting_pairs"]))
             self.assertIsInstance(evidence["uncertainty"], dict)
             self.assertEqual("global", evidence["scope"]["mode"])
 
@@ -327,7 +368,7 @@ class RuntimeSmokeTests(unittest.TestCase):
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertNotEqual(0, rejected.returncode)
-            self.assertIn("Morgan representations require --metric tanimoto", rejected.stderr)
+            self.assertIn("Binary Description vectors require --metric tanimoto", rejected.stderr)
 
             interpreted = temporary / "interpretation"
             self.run_cli(
@@ -342,7 +383,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertTrue(any(item["relation_type"] == "localizes" for item in interpretation["evidence_relations"]))
 
     @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn") and __import__("importlib").util.find_spec("scipy"), "scikit-learn and SciPy are not installed")
-    def test_vector_clustering_requires_a_description_vector_and_supports_binary_jaccard(self) -> None:
+    def test_vector_clustering_requires_a_description_vector_and_binary_tanimoto(self) -> None:
         runner = SKILLS / "cs-compute-clustering-vector-butina" / "scripts" / "run.py"
         raw_smiles = subprocess.run(
             [sys.executable, str(runner), "--smiles", "CCO"],
@@ -361,25 +402,26 @@ class RuntimeSmokeTests(unittest.TestCase):
             )
             outdir = temporary / "grouping"
             self.run_cli(
-                str(runner), "--input", str(description), "--metric", "jaccard",
+                str(runner), "--input", str(description), "--metric", "tanimoto",
                 "--similarity-threshold", "0.5", "--min-cluster-size", "1",
-                "--output-dir", str(outdir), "--run-id", "jaccard", "--overwrite",
+                "--output-dir", str(outdir), "--run-id", "tanimoto", "--overwrite",
             )
             with (outdir / "cluster_membership.csv").open(encoding="utf-8", newline="") as handle:
                 rows = list(DictReader(handle))
             invalid = next(row for row in rows if row["compound_id"] == "D")
             self.assertEqual("0.0", invalid["membership_value"])
             self.assertEqual("invalid_smiles", invalid["membership_reason"])
+            duplicate_vector_rows = [row for row in rows if row["compound_id"] in {"A", "B"} and row["membership_value"] == "1.0"]
+            self.assertEqual(2, len(duplicate_vector_rows))
+            self.assertEqual(duplicate_vector_rows[0]["cluster_id"], duplicate_vector_rows[1]["cluster_id"])
             self.assertFalse((outdir / "grouping_manifest.json").exists())
 
-            continuous = temporary / "continuous.csv"
-            continuous.write_text("compound_id,feature_1\nA,0.2\nB,0.8\n", encoding="utf-8")
             rejected = subprocess.run(
-                [sys.executable, str(runner), "--input", str(continuous), "--metric", "jaccard", "--output-dir", str(temporary / "rejected")],
+                [sys.executable, str(runner), "--input", str(description), "--metric", "cosine", "--output-dir", str(temporary / "rejected")],
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertNotEqual(0, rejected.returncode)
-            self.assertIn("requires a binary Description vector", rejected.stderr)
+            self.assertIn("Binary Description vectors require --metric tanimoto", rejected.stderr)
 
     @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn") and __import__("importlib").util.find_spec("scipy"), "scikit-learn and SciPy are not installed")
     def test_gobbi_pharm2d_svd_is_a_general_mode_variant(self) -> None:
@@ -490,7 +532,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertNotEqual(0, process.returncode)
             self.assertIn("Duplicate compound IDs", process.stderr)
 
-    def test_meta_overlap_accepts_long_membership(self) -> None:
+    def test_meta_overlap_accepts_long_membership_and_boolean_matrix_shards(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             membership = ROOT / "tests" / "data" / "meta_overlap.csv"
@@ -504,10 +546,68 @@ class RuntimeSmokeTests(unittest.TestCase):
             for auxiliary in ["group_registry.json", "grouping_manifest.json", "warnings.json", "execution_event.json"]:
                 self.assertFalse((outdir / auxiliary).exists(), auxiliary)
 
+            shard_a = temporary / "Cpd_Group_matrix_G000000_099999.csv"
+            shard_b = temporary / "Cpd_Group_matrix_G100000_199999.csv"
+            shard_a.write_text(
+                "compound_id,G_A,G_B\nA,True,False\nB,True,True\nC,False,True\n",
+                encoding="utf-8",
+            )
+            shard_b.write_text(
+                "compound_id,G_C\nA,False\nB,True\nC,True\n",
+                encoding="utf-8",
+            )
+            wide_outdir = temporary / "meta-wide"
+            self.run_cli(
+                str(SKILLS / "cs-compute-clustering-meta-overlap" / "scripts" / "run.py"),
+                "--input", str(shard_a), "--input", str(shard_b), "--output-dir", str(wide_outdir),
+                "--min-cluster-size", "1", "--run-id", "meta-wide", "--overwrite",
+            )
+            with (wide_outdir / "cluster_membership.csv").open(encoding="utf-8", newline="") as handle:
+                wide_rows = list(DictReader(handle))
+            self.assertEqual({"A", "B", "C"}, {row["compound_id"] for row in wide_rows if float(row["membership_value"]) > 0})
+
+    def test_mcs_pair_cap_is_random_seeded_and_bounded(self) -> None:
+        data = ROOT / "tests" / "data" / "small_sar.csv"
+        runner = SKILLS / "cs-compute-clustering-structure-mcs" / "scripts" / "run.py"
+        with tempfile.TemporaryDirectory() as directory:
+            outdir = Path(directory) / "mcs"
+            self.run_cli(
+                str(runner), "--input", str(data), "--min-cluster-size", "3",
+                "--max-pairs", "5", "--max-core-groups", "300", "--random-seed", "123",
+                "--output-dir", str(outdir), "--conductor", "--project", "unit",
+                "--run-id", "mcs-random", "--node-id", "C002:001", "--overwrite",
+            )
+            manifest = json.loads((outdir / "grouping_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(15, manifest["details"]["pair_population"])
+            self.assertEqual(5, manifest["details"]["evaluated_pair_count"])
+            self.assertEqual("uniform_random_without_replacement", manifest["details"]["pair_sampling"])
+            self.assertEqual(123, manifest["details"]["random_seed"])
+            rejected = subprocess.run(
+                [sys.executable, str(runner), "--input", str(data), "--max-pairs", "1001", "--output-dir", str(Path(directory) / "rejected")],
+                cwd=ROOT, text=True, capture_output=True,
+            )
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn("--max-pairs must be <= 1000", rejected.stderr)
+
+            operator_outdir = Path(directory) / "pairwise"
+            self.run_cli(
+                str(SKILLS / "cs-analysis-pairwise-structure-similarity" / "scripts" / "run.py"),
+                "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
+                "--max-pairs", "5", "--random-seed", "321", "--output-dir", str(operator_outdir),
+                "--conductor", "--project", "unit", "--run-id", "pair-random", "--node-id", "A003:001", "--overwrite",
+            )
+            operator_evidence = json.loads((operator_outdir / "evidence.json").read_text(encoding="utf-8"))
+            operator_summary = operator_evidence["machine_readable_summary"]
+            self.assertEqual(15, operator_summary["eligible_pair_count"])
+            self.assertEqual(5, operator_summary["evaluated_pair_count"])
+            self.assertEqual("uniform_random_without_replacement", operator_summary["pair_sampling"])
+            self.assertEqual(321, operator_summary["random_seed"])
+
     def test_analysis_general_mode_emits_only_primary_result(self) -> None:
         data = ROOT / "tests" / "data" / "small_sar.csv"
         with tempfile.TemporaryDirectory() as directory:
-            outdir = Path(directory) / "analysis"
+            temporary = Path(directory)
+            outdir = temporary / "analysis"
             self.run_cli(
                 str(SKILLS / "cs-analysis-activity-distribution" / "scripts" / "run.py"),
                 "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
@@ -517,12 +617,28 @@ class RuntimeSmokeTests(unittest.TestCase):
             for auxiliary in ["evidence.json", "analysis_manifest.json", "warnings.json", "execution_event.json"]:
                 self.assertFalse((outdir / auxiliary).exists(), auxiliary)
 
+            wide_membership = temporary / "wide-membership.csv"
+            wide_membership.write_text(
+                "compound_id,G_A,G_B\n"
+                "CMPD_001,True,False\nCMPD_002,True,False\nCMPD_003,True,False\n"
+                "CMPD_004,False,True\nCMPD_005,False,True\nCMPD_006,False,True\n",
+                encoding="utf-8",
+            )
+            group_outdir = temporary / "group-profile"
+            self.run_cli(
+                str(SKILLS / "cs-analysis-group-profile" / "scripts" / "run.py"),
+                "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
+                "--membership", str(wide_membership), "--output-dir", str(group_outdir), "--overwrite",
+            )
+            with (group_outdir / "A001_group_profile.csv").open(encoding="utf-8", newline="") as handle:
+                group_rows = list(DictReader(handle))
+            self.assertEqual({"G_A", "G_B"}, {row["group_id"] for row in group_rows})
+
     def test_end_to_end_artifact_chain(self) -> None:
         data = ROOT / "tests" / "data" / "small_sar.csv"
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             description = temporary / "description"
-            grouping = temporary / "grouping"
             analysis = temporary / "analysis"
             interpretation = temporary / "interpretation"
             state_root = temporary / "state-run"
@@ -537,6 +653,8 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertEqual(str(data), assay_node["parameters"]["input"])
             description_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "D001")
             description = Path(description_node["output_dir"])
+            grouping_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "C001")
+            grouping = Path(grouping_node["output_dir"])
             self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", "D001:001")
             self.run_cli(str(SKILLS / "cs-compute-description-rdkit-2d" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(description), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "D001:001", "--overwrite")
             description_event = json.loads((description / "execution_event.json").read_text(encoding="utf-8"))
@@ -552,16 +670,39 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertNotEqual(0, rejected.returncode)
             self.assertIn("Event project does not match State", rejected.stderr)
             self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(description / "execution_event.json"))
-            self.run_cli(str(SKILLS / "cs-compute-clustering-structure-murcko" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(grouping), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "C001:001", "--min-cluster-size", "1", "--overwrite")
+            self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", grouping_node["node_id"])
+            self.run_cli(str(SKILLS / "cs-compute-clustering-structure-murcko" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(grouping), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", grouping_node["node_id"], "--min-cluster-size", "3", "--overwrite")
+            self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(grouping / "execution_event.json"))
             self.run_cli(str(SKILLS / "cs-analysis-activity-distribution" / "scripts" / "run.py"), "--input", str(data), "--property-column", "pIC50", "--higher-is-better", "--output-dir", str(analysis), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "A002:001", "--overwrite")
-            self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--output-dir", str(interpretation), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "I001:001", "--overwrite")
+            self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--state", str(state_path), "--output-dir", str(interpretation), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "I001:001", "--overwrite")
             standalone_interpretation = temporary / "standalone-interpretation"
             self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--output-dir", str(standalone_interpretation), "--run-id", run_id, "--overwrite")
             self.assertFalse((standalone_interpretation / "execution_event.json").exists())
             for path in [description / "execution_event.json", grouping / "group_registry.json", analysis / "evidence.json", interpretation / "interpretation.json", interpretation / "interpretation.md", interpretation / "interpretation.html"]:
                 self.assertTrue(path.is_file(), path)
+            html_report = (interpretation / "interpretation.html").read_text(encoding="utf-8")
+            for heading in ["探索概要", "Evidence index", "注目すべき発見", "Evidence間関係", "未解決の矛盾", "仮説・検証候補", "推奨される次解析", "人間による確認事項"]:
+                self.assertIn(heading, html_report)
+            edited_interpretation = json.loads((interpretation / "interpretation.json").read_text(encoding="utf-8"))
+            edited_interpretation["human_review_points"].append("RENDER_SENTINEL")
+            (interpretation / "interpretation.json").write_text(json.dumps(edited_interpretation), encoding="utf-8")
+            self.run_cli(
+                str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "render.py"),
+                "--input", str(interpretation / "interpretation.json"),
+            )
+            self.assertIn("RENDER_SENTINEL", (interpretation / "interpretation.html").read_text(encoding="utf-8"))
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual("succeeded", state["execution_graph"]["nodes"][0]["status"])
+            self.assertEqual(1, state["group_index"]["group_count"])
+            registry_path = Path(state["group_index"]["registry_path"])
+            matrix_path = Path(state["group_index"]["matrix_shards"][0]["path"])
+            with registry_path.open(encoding="utf-8", newline="") as handle:
+                registry_rows = list(DictReader(handle))
+            with matrix_path.open(encoding="utf-8", newline="") as handle:
+                matrix_rows = list(DictReader(handle))
+            self.assertEqual(grouping_node["node_id"], registry_rows[0]["source_node_id"])
+            self.assertRegex(registry_rows[0]["group_id"], r"^G_C001_001_[A-F0-9]{16}$")
+            self.assertIn(registry_rows[0]["group_id"], matrix_rows[0])
 
 
 if __name__ == "__main__":

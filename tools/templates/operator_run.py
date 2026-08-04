@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import random
 import sys
 from datetime import datetime, timezone
 from itertools import combinations
@@ -120,6 +121,7 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument("--activity-delta-threshold", type=float, default=1.0)
     if operator in {"pairwise_structure_similarity", "activity_cliff", "group_structural_diversity"}:
         parser.add_argument("--max-pairs", type=int, default=200000)
+        parser.add_argument("--random-seed", type=int, default=61453, help="Seed for uniform random sampling when eligible pairs exceed --max-pairs.")
     args = parser.parse_args()
     if args.conductor:
         missing = [name for name in ("project", "run_id", "node_id") if not getattr(args, name)]
@@ -131,6 +133,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--k must be >= 1")
     if hasattr(args, "max_pairs") and args.max_pairs < 1:
         parser.error("--max-pairs must be >= 1")
+    if hasattr(args, "random_seed") and args.random_seed < 0:
+        parser.error("--random-seed must be >= 0")
     for name in ("high_quantile", "low_quantile", "similarity_threshold"):
         if hasattr(args, name) and not 0 <= getattr(args, name) <= 1:
             parser.error(f"--{name.replace('_', '-')} must be between 0 and 1")
@@ -175,8 +179,9 @@ def load_property(args: argparse.Namespace) -> tuple[pd.DataFrame, pd.DataFrame,
     if args.higher_is_better is None:
         raise ValueError("--higher-is-better or --no-higher-is-better is required")
     path = Path(args.input)
-    original = pd.read_csv(path)
-    id_column = args.id_column or infer_column(list(original.columns), "id")
+    header = pd.read_csv(path, nrows=0)
+    id_column = args.id_column or infer_column(list(header.columns), "id")
+    original = pd.read_csv(path, dtype={id_column: "string"} if id_column else None)
     if id_column is None or id_column not in original.columns:
         raise ValueError("ID column could not be inferred; specify --id-column")
     if args.property_column not in original.columns:
@@ -207,15 +212,30 @@ def load_description(
     if not path_text:
         return None, [], None
     path = Path(path_text)
-    frame = pd.read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path)
-    id_column = infer_column(list(frame.columns), "id")
+    if path.suffix.lower() == ".parquet":
+        frame = pd.read_parquet(path)
+        id_column = infer_column(list(frame.columns), "id")
+    else:
+        header = pd.read_csv(path, nrows=0)
+        id_column = infer_column(list(header.columns), "id")
+        frame = pd.read_csv(path, dtype={id_column: "string"} if id_column else None)
     if id_column is None:
         raise ValueError("Description compound ID column could not be inferred")
     if id_column != "compound_id":
         frame = frame.rename(columns={id_column: "compound_id"})
-    frame["compound_id"] = frame["compound_id"].astype(str)
+    if frame["compound_id"].isna().any():
+        raise ValueError("Description compound IDs must be non-empty and unique")
+    frame["compound_id"] = frame["compound_id"].astype(str).str.strip()
+    if frame["compound_id"].eq("").any() or frame["compound_id"].duplicated().any():
+        raise ValueError("Description compound IDs must be non-empty and unique")
     excluded = {"compound_id", "input_smiles", "canonical_smiles", "mol_parse_ok", "description_error", "descriptor_error"}
-    features = [column for column in frame.columns if column not in excluded and pd.api.types.is_numeric_dtype(frame[column])]
+    features = [column for column in frame.columns if column not in excluded and pd.api.types.is_numeric_dtype(frame[column]) and frame[column].notna().any()]
+    if not features:
+        raise ValueError("Description contains no usable numeric feature columns")
+    valid_mask = frame[features].notna().any(axis=1)
+    if "mol_parse_ok" in frame.columns:
+        valid_mask &= frame["mol_parse_ok"].map(lambda value: str(value).strip().lower() in {"true", "1", "yes"})
+    frame = frame.loc[valid_mask].copy()
     selected_columns = ["compound_id", *features]
     merged = property_table[["compound_id", "property_value"]].merge(frame[selected_columns], on="compound_id", how="inner")
     reference_source = reference_property_table if reference_property_table is not None else property_table
@@ -226,12 +246,24 @@ def load_description(
 def membership_sets(path_text: str | None, valid_ids: set[str]) -> dict[str, set[str]]:
     if not path_text:
         return {}
-    frame = pd.read_csv(path_text)
+    header = pd.read_csv(path_text, nrows=0)
+    membership_id_column = infer_column(list(header.columns), "id")
+    frame = pd.read_csv(path_text, dtype={membership_id_column: "string"} if membership_id_column else None)
     groups: dict[str, set[str]] = {}
+    def active_mask(values: pd.Series) -> pd.Series:
+        text = values.astype(str).str.strip().str.lower()
+        truthy = text.isin({"true", "yes", "y"})
+        numeric = pd.to_numeric(values, errors="coerce").fillna(0) > 0
+        return truthy | numeric
+
     if {"cluster_id", "compound_id"}.issubset(frame.columns):
+        if "membership_value" in frame.columns:
+            frame = frame.loc[active_mask(frame["membership_value"])]
         for group_id, group in frame.groupby("cluster_id"):
             groups[str(group_id)] = set(group["compound_id"].astype(str)) & valid_ids
     elif {"group_id", "compound_id"}.issubset(frame.columns):
+        if "membership_value" in frame.columns:
+            frame = frame.loc[active_mask(frame["membership_value"])]
         for group_id, group in frame.groupby("group_id"):
             groups[str(group_id)] = set(group["compound_id"].astype(str)) & valid_ids
     else:
@@ -242,7 +274,7 @@ def membership_sets(path_text: str | None, valid_ids: set[str]) -> dict[str, set
         for column in frame.columns:
             if column == id_column:
                 continue
-            mask = pd.to_numeric(frame[column], errors="coerce").fillna(0) > 0
+            mask = active_mask(frame[column])
             groups[str(column)] = set(ids[mask]) & valid_ids
     return {key: value for key, value in groups.items() if value}
 
@@ -350,7 +382,7 @@ def group_enrichment(property_table: pd.DataFrame, groups: dict[str, set[str]], 
     return result, {"group_count": len(result), "favorable_threshold": threshold}
 
 
-def pairwise_structure(property_table: pd.DataFrame, groups: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
+def pairwise_structure(property_table: pd.DataFrame, groups: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, np.ndarray, list[str], dict[str, Any]]:
     if "input_smiles" not in property_table.columns:
         raise ValueError("A SMILES column is required")
     from rdkit import Chem, DataStructs
@@ -366,42 +398,55 @@ def pairwise_structure(property_table: pd.DataFrame, groups: dict[str, set[str]]
             warnings.append(f"{row.compound_id}: invalid SMILES")
             continue
         ids.append(str(row.compound_id)); props.append(float(row.property_value)); fps.append(generator.GetFingerprint(mol))
-    pair_rows = []
+    rng = random.Random(args.random_seed)
+    selected_pairs: list[tuple[int, int]] = []
+    eligible_pair_count = 0
     for i, j in combinations(range(len(ids)), 2):
         if args.scope_mode == "between-groups":
             left_to_right = ids[i] in groups[args.target_group] and ids[j] in groups[args.comparison_group]
             right_to_left = ids[j] in groups[args.target_group] and ids[i] in groups[args.comparison_group]
             if not (left_to_right or right_to_left):
                 continue
-        if len(pair_rows) >= args.max_pairs:
-            warnings.append(f"Eligible pair enumeration capped at {args.max_pairs}")
-            break
+        eligible_pair_count += 1
+        if len(selected_pairs) < args.max_pairs:
+            selected_pairs.append((i, j))
+        else:
+            replacement = rng.randrange(eligible_pair_count)
+            if replacement < args.max_pairs:
+                selected_pairs[replacement] = (i, j)
+    sampled = eligible_pair_count > args.max_pairs
+    if sampled:
+        warnings.append(f"Eligible pairs uniformly sampled to {args.max_pairs} with seed {args.random_seed}")
+    pair_rows = []
+    for i, j in sorted(selected_pairs):
         similarity = float(DataStructs.TanimotoSimilarity(fps[i], fps[j]))
         pair_rows.append({"compound_id_a": ids[i], "compound_id_b": ids[j], "similarity": similarity, "distance": 1.0 - similarity, "property_a": props[i], "property_b": props[j], "abs_delta_property": abs(props[i] - props[j])})
     columns = ["compound_id_a", "compound_id_b", "similarity", "distance", "property_a", "property_b", "abs_delta_property"]
-    return pd.DataFrame(pair_rows, columns=columns), np.asarray(props, dtype=float), warnings
+    sampling = {"eligible_pair_count": eligible_pair_count, "evaluated_pair_count": len(selected_pairs), "pair_sampling": "uniform_random_without_replacement" if sampled else "exhaustive", "random_seed": args.random_seed}
+    return pd.DataFrame(pair_rows, columns=columns), np.asarray(props, dtype=float), warnings, sampling
 
 
 def pairwise_similarity_analysis(property_table: pd.DataFrame, groups: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
-    pairs, _, warnings = pairwise_structure(property_table, groups, args)
-    summary = {"pair_count": len(pairs), "mean_similarity": float(pairs["similarity"].mean()) if len(pairs) else None, "median_similarity": float(pairs["similarity"].median()) if len(pairs) else None, "p90_similarity": float(pairs["similarity"].quantile(0.9)) if len(pairs) else None}
+    pairs, _, warnings, sampling = pairwise_structure(property_table, groups, args)
+    summary = {"pair_count": len(pairs), "mean_similarity": float(pairs["similarity"].mean()) if len(pairs) else None, "median_similarity": float(pairs["similarity"].median()) if len(pairs) else None, "p90_similarity": float(pairs["similarity"].quantile(0.9)) if len(pairs) else None, **sampling}
     return pairs, summary, warnings
 
 
 def activity_cliff(property_table: pd.DataFrame, groups: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any], list[str]]:
-    pairs, _, warnings = pairwise_structure(property_table, groups, args)
+    pairs, _, warnings, sampling = pairwise_structure(property_table, groups, args)
     cliffs = pairs[(pairs["similarity"] >= args.similarity_threshold) & (pairs["abs_delta_property"] >= args.activity_delta_threshold)].copy()
     if len(cliffs):
         cliffs["cliff_score"] = cliffs["abs_delta_property"] / np.maximum(1.0 - cliffs["similarity"], 1e-6)
         cliffs = cliffs.sort_values("cliff_score", ascending=False)
-    return cliffs, {"pair_count": len(pairs), "cliff_count": len(cliffs), "cliff_density": len(cliffs) / max(1, len(pairs)), "similarity_threshold": args.similarity_threshold, "activity_delta_threshold": args.activity_delta_threshold}, warnings
+    return cliffs, {"pair_count": len(pairs), "cliff_count": len(cliffs), "cliff_density": len(cliffs) / max(1, len(pairs)), "similarity_threshold": args.similarity_threshold, "activity_delta_threshold": args.activity_delta_threshold, **sampling}, warnings
 
 
 def resolve_metric(matrix: np.ndarray, features: list[str], args: argparse.Namespace) -> str:
     requested = args.metric
     representation = str(args.evaluation_representation or "").upper()
     feature_names = [str(feature).lower() for feature in features]
-    is_morgan = representation == "D002" or any("morgan" in name for name in feature_names)
+    fingerprint_ids = {"D002", "D003", "D007", "D008", "D009", "D010"}
+    is_fingerprint = representation in fingerprint_ids or any("morgan" in name for name in feature_names)
     is_binary = bool(matrix.size) and bool(np.all((matrix == 0) | (matrix == 1)))
     is_usr = representation == "D013" or any(name.startswith(("usr__", "usrcat__")) for name in feature_names)
     is_latent = representation == "D019" or any("embedding" in name or "svd" in name for name in feature_names)
@@ -409,15 +454,17 @@ def resolve_metric(matrix: np.ndarray, features: list[str], args: argparse.Names
     sparse = bool(matrix.size) and float(np.count_nonzero(matrix)) / float(matrix.size) < 0.5
 
     if requested == "auto":
-        if is_morgan or is_binary:
+        if is_fingerprint or is_binary:
             return "tanimoto"
         if is_usr:
             return "manhattan"
         if is_latent or (nonnegative_integer and sparse):
             return "cosine"
         return "euclidean"
-    if is_morgan and requested != "tanimoto":
-        raise ValueError("Morgan representations require --metric tanimoto")
+    if is_binary and requested != "tanimoto":
+        raise ValueError("Binary Description vectors require --metric tanimoto")
+    if is_fingerprint and requested != "tanimoto":
+        raise ValueError(f"{representation or 'Fingerprint'} representations require --metric tanimoto")
     if requested == "tanimoto" and np.any(matrix < 0):
         raise ValueError("--metric tanimoto requires non-negative Description values")
     return requested
@@ -441,7 +488,7 @@ def description_matrix(
     matrix = imputer.transform(description[features])
     reference_matrix = imputer.transform(fit_frame[features])
     resolved_metric = resolve_metric(matrix, features, args)
-    if resolved_metric != "tanimoto":
+    if resolved_metric in {"euclidean", "manhattan"}:
         scaler = StandardScaler().fit(reference_matrix)
         matrix = scaler.transform(matrix)
     if resolved_metric == "tanimoto":
@@ -550,14 +597,16 @@ def group_structural_diversity(property_table: pd.DataFrame, groups: dict[str, s
         raise ValueError("--membership is required")
     rows = []
     warnings: list[str] = []
+    sampling_by_group: dict[str, Any] = {}
     selected_groups = {args.target_group: groups[args.target_group]} if args.target_group else groups
     for group_id, members in selected_groups.items():
         group_table = property_table[property_table["compound_id"].isin(members)]
-        pairs, _, pair_warnings = pairwise_structure(group_table, groups, args)
+        pairs, _, pair_warnings, sampling = pairwise_structure(group_table, groups, args)
+        sampling_by_group[str(group_id)] = sampling
         warnings.extend(f"{group_id}: {warning}" for warning in pair_warnings)
         rows.append({"group_id": group_id, "sample_count": len(group_table), "pair_count": len(pairs), "mean_tanimoto": pairs["similarity"].mean() if len(pairs) else np.nan, "median_tanimoto": pairs["similarity"].median() if len(pairs) else np.nan, "p90_tanimoto": pairs["similarity"].quantile(0.9) if len(pairs) else np.nan, "structural_diversity_score": 1.0 - pairs["similarity"].mean() if len(pairs) else np.nan})
     result = pd.DataFrame(rows)
-    return result, {"group_count": len(result)}, warnings
+    return result, {"group_count": len(result), "pair_sampling_by_group": sampling_by_group}, warnings
 
 
 def execute(
@@ -612,7 +661,15 @@ def run() -> int:
     started_at = utc_now()
     args = parse_args()
     run_id = args.run_id or run_id_now()
-    _, full_property_table, id_column, smiles_column, input_hash, input_warnings = load_property(args)
+    _, full_property_table, id_column, smiles_column, property_input_hash, input_warnings = load_property(args)
+    input_components = [{"role": "endpoint", "path": str(Path(args.input).resolve()), "sha256": property_input_hash}]
+    if args.description:
+        description_path = Path(args.description)
+        input_components.append({"role": "description", "path": str(description_path.resolve()), "sha256": file_hash(description_path)})
+    if args.membership:
+        membership_path = Path(args.membership)
+        input_components.append({"role": "membership", "path": str(membership_path.resolve()), "sha256": file_hash(membership_path)})
+    input_hash = value_hash(input_components)
     groups = membership_sets(args.membership, set(full_property_table["compound_id"]))
     operator = CAPABILITY["implementation"]["operator"]
     scoped_property_table, scope = apply_scope(full_property_table, groups, args)
@@ -622,8 +679,11 @@ def run() -> int:
     property_table = full_property_table if operator in group_context_operators else scoped_property_table
     description, features, reference_description = load_description(args.description, scoped_property_table, full_property_table)
     outdir = default_output(args, run_id)
-    if outdir.exists() and any(outdir.iterdir()) and not args.overwrite:
-        raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
+    if outdir.exists() and any(outdir.iterdir()):
+        if not args.overwrite:
+            raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
+        for name in [CAPABILITY["output"]["filename"], "analysis_manifest.json", "evidence.json", "warnings.json", "execution_event.json"]:
+            (outdir / name).unlink(missing_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
     result, summary, warnings = execute(operator, property_table, groups, description, features, args, reference_description)
     summary["scope"] = scope
@@ -677,7 +737,7 @@ def run() -> int:
     if args.conductor:
         validate_json(evidence, "evidence.schema.json")
         write_json(outdir / "evidence.json", evidence)
-        event = {"schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id, "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded", "input_hash": input_hash, "config_hash": value_hash(config), "configuration": config, "artifacts": [{"type": "operator_result", "path": result_path.name, "sha256": file_hash(result_path)}, {"type": "evidence", "path": "evidence.json"}, {"type": "manifest", "path": "analysis_manifest.json"}], "warnings": warnings, "started_at": started_at, "finished_at": utc_now()}
+        event = {"schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id, "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded", "input_hash": input_hash, "config_hash": value_hash(config), "configuration": config, "artifacts": [{"type": "operator_result", "path": result_path.name, "sha256": file_hash(result_path)}, {"type": "evidence", "path": "evidence.json", "sha256": file_hash(outdir / "evidence.json")}, {"type": "manifest", "path": "analysis_manifest.json", "sha256": file_hash(outdir / "analysis_manifest.json")}], "warnings": warnings, "started_at": started_at, "finished_at": utc_now()}
         validate_json(event, "execution_event.schema.json")
         write_json(outdir / "execution_event.json", event)
     print(result_path)

@@ -26,7 +26,7 @@ compound IDと数値featureを持つDescription CSVを必須入力とする。ra
 
 `--min-cluster-size`未満のgroupを出力しない。`--metric`を指定できる。`--similarity-threshold`でgraph edgeを定義する。
 
-`--metric jaccard`は0/1のbinary Descriptionだけに使う。連続値Descriptionには`cosine`、`euclidean`または`manhattan`を使う。
+`--metric auto`を既定とし、`--input-representation`と実VectorからMetricを選ぶ。binaryおよびMorganはTanimoto、USR/USRCATはManhattan、疎な非負countとembedding/SVDはCosine、その他の連続値は標準化Euclideanを使う。binaryまたは既知のbit fingerprintへTanimoto以外を明示すると停止する。同一Vectorを持つ異なるcompound IDは許容する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

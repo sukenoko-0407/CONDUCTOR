@@ -77,6 +77,8 @@ def parse_args() -> argparse.Namespace:
         missing = [name for name in ("project", "run_id", "node_id") if not getattr(args, name)]
         if missing:
             parser.error("--conductor requires --project, --run-id, and --node-id")
+        if not args.state:
+            parser.error("--conductor Interpretation requires --state")
     elif args.project or args.node_id:
         parser.error("--project and --node-id are valid only with --conductor")
     if args.seed is not None and args.seed < 0:
@@ -114,7 +116,7 @@ def load_catalog(path_text: str | None) -> dict[str, dict[str, Any]]:
 
 def state_context(state: dict[str, Any] | None) -> dict[str, Any]:
     if state is None:
-        return {"available": False, "failures": [], "skips": [], "pending": [], "attempted_analysis_signatures": [], "exploration": None}
+        return {"available": False, "failures": [], "skips": [], "pending": [], "attempted_analysis_signatures": [], "exploration": None, "group_index": None}
     nodes = state.get("execution_graph", {}).get("nodes", [])
     return {
         "available": True,
@@ -123,6 +125,7 @@ def state_context(state: dict[str, Any] | None) -> dict[str, Any]:
         "pending": [{"node_id": n["node_id"], "capability_id": n["capability_id"], "status": n.get("status")} for n in nodes if n.get("status") in {"pending", "running", "stale"}],
         "attempted_analysis_signatures": sorted({n["analysis_signature"] for n in nodes if n.get("analysis_signature")}),
         "exploration": state.get("interpretation_exploration"),
+        "group_index": state.get("group_index"),
         "wide_shallow_plan": state.get("wide_shallow_plan"),
     }
 
@@ -205,17 +208,21 @@ def build_relations(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
         same_grouping = bool(left.get("grouping_representation")) and left.get("grouping_representation") == right.get("grouping_representation")
         same_scope = left.get("scope", {}).get("compound_set_hash") == right.get("scope", {}).get("compound_set_hash")
         same_target = bool(left.get("target_group_id")) and left.get("target_group_id") == right.get("target_group_id")
+        same_signature = bool(left.get("analysis_signature")) and left.get("analysis_signature") == right.get("analysis_signature")
+        shared_dependencies = sorted(set(left.get("source_dependencies") or []) & set(right.get("source_dependencies") or []))
         shared_pairs = len(pair_keys(left) & pair_keys(right))
         global_local = same_operator and same_evaluation and {left.get("scope", {}).get("mode"), right.get("scope", {}).get("mode")} == {"global", "within-group"}
         if not any((same_operator, same_evaluation, same_grouping, same_scope, same_target, shared_pairs, global_local)):
             continue
-        if same_operator and same_evaluation and same_scope:
+        if same_signature:
             relation_type = "duplicates"
         elif global_local:
             relation_type = "localizes"
+        elif same_operator and same_evaluation and same_scope:
+            relation_type = "refines"
         else:
             relation_type = "comparison_candidate"
-        if same_evaluation or (same_grouping and same_target):
+        if same_evaluation or (same_grouping and same_target) or shared_dependencies:
             independence = "low"
         elif left.get("evaluation_family") and left.get("evaluation_family") == right.get("evaluation_family"):
             independence = "medium"
@@ -232,10 +239,18 @@ def build_relations(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
             reasons.append("same Grouping representation")
         if same_scope:
             reasons.append("same compound scope")
+        if same_target:
+            reasons.append("same target Group")
         if global_local:
             reasons.append("global/local scope contrast")
         if shared_pairs:
             reasons.append(f"{shared_pairs} shared supporting pairs")
+        if same_signature:
+            reasons.append("same analysis signature")
+        elif same_operator and same_evaluation and same_scope:
+            reasons.append("different analysis signatures or parameterizations")
+        if shared_dependencies:
+            reasons.append(f"shared upstream nodes: {', '.join(shared_dependencies)}")
         relations.append({
             "relation_id": f"R{number:05d}",
             "evidence_ids": [left["evidence_id"], right["evidence_id"]],
@@ -403,9 +418,22 @@ def markdown_report(value: dict[str, Any]) -> str:
         f"- Stage: `{value['exploration_summary']['stage']}`",
         f"- Generated: `{value['created_at']}`",
         "",
-        "## 注目すべき発見",
+        "## 探索概要",
+        "",
+        "```json",
+        json.dumps(value["exploration_summary"], ensure_ascii=False, indent=2),
+        "```",
+        "",
+        "## Evidence index",
         "",
     ]
+    for item in value["evidence_index"]:
+        lines.append(f"- `{item['evidence_id']}` Operator={item['operator_id']} scope={(item.get('scope') or {}).get('mode', 'unknown')} N={item.get('sample_count', 0)}")
+    lines.extend([
+        "",
+        "## 注目すべき発見",
+        "",
+    ])
     for finding in value["notable_findings"]:
         lines.extend([f"### {finding['finding_id']}: {finding['title']}", "", finding["observation"], "", f"Evidence: {', '.join(finding['evidence_ids'])}", ""])
     lines.extend(["## Evidence間関係", ""])
@@ -429,10 +457,27 @@ def markdown_report(value: dict[str, Any]) -> str:
             f"- 矛盾Evidence: {', '.join(hypothesis['contradicting_evidence']) or '未検出／未評価'}",
             f"- 確信度: `{hypothesis['confidence']}`",
             f"- 反証状態: `{hypothesis.get('falsification_status', 'unknown')}`",
-            f"- 根拠: {hypothesis['confidence_rationale']}", "", "次解析:", "",
+            f"- Evidence独立性: {hypothesis['evidence_independence']}",
+            f"- 根拠: {hypothesis['confidence_rationale']}",
+            f"- 構造的含意: {hypothesis['proposed_structural_implication']}",
+            "", "代替説明:", "",
         ])
+        lines.extend(f"- {item}" for item in hypothesis["alternative_explanations"])
+        lines.extend(["", "適用scope:", ""])
+        lines.extend(f"- {item}" for item in hypothesis["scope"])
+        lines.extend(["", "例外:", ""])
+        lines.extend(f"- {item}" for item in hypothesis["exceptions"])
+        lines.extend(["", "次解析:", ""])
         lines.extend(f"- {item}" for item in hypothesis["recommended_next_analysis"])
+        lines.extend(["", "次化合物の方向性:", ""])
+        lines.extend(f"- {item}" for item in hypothesis["recommended_next_compounds"])
+        lines.extend(["", "個別の人間確認事項:", ""])
+        lines.extend(f"- {item}" for item in hypothesis["human_review_points"])
         lines.append("")
+    lines.extend(["## 推奨される次解析", ""])
+    for item in value["recommended_next_analysis"]:
+        lines.append(f"- `{item.get('purpose', '')}` {item.get('action', '')} ({item.get('source_hypothesis_id', '')})")
+    lines.append("")
     lines.extend(["## 人間による確認事項", ""])
     lines.extend(f"- {item}" for item in value["human_review_points"])
     lines.append("")
@@ -440,11 +485,73 @@ def markdown_report(value: dict[str, Any]) -> str:
 
 
 def html_report(value: dict[str, Any]) -> str:
+    def html_list(items: list[Any], empty: str = "なし") -> str:
+        return "<ul>" + ("".join(f"<li>{html.escape(str(item))}</li>" for item in items) or f"<li class='meta'>{html.escape(empty)}</li>") + "</ul>"
+
+    def json_block(item: Any) -> str:
+        if item is value.get("exploration_summary"):
+            return f"<article>{overview}</article>"
+        return f"<pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre>"
+
+    summary = value["exploration_summary"]
+    attempted_signatures = summary.get("attempted_analysis_signatures") or []
+    overview = (
+        "<div class='table-wrap'><table><tbody>"
+        f"<tr><th>解析段階</th><td>{html.escape(str(summary.get('stage', 'unknown')))}</td><th>再現用seed</th><td>{html.escape(str(summary.get('seed', '-')))}</td></tr>"
+        f"<tr><th>Evidence数</th><td>{html.escape(str(summary.get('evidence_count', 0)))}</td><th>関係候補数</th><td>{html.escape(str(summary.get('relation_candidate_count', 0)))}</td></tr>"
+        f"<tr><th>Negative result</th><td>{'保持する' if summary.get('negative_results_preserved') else '保持しない'}</td><th>反証探索</th><td>{'必須' if summary.get('falsification_required') else '任意'}</td></tr>"
+        f"<tr><th>実施済みanalysis signature</th><td colspan='3'>{html_list(attempted_signatures, 'なし')}</td></tr>"
+        "</tbody></table></div>"
+    )
+    evidence_rows = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(item['evidence_id']))}</td>"
+        f"<td>{html.escape(str(item['operator_id']))}</td>"
+        f"<td>{html.escape(str((item.get('scope') or {}).get('mode', 'unknown')))}</td>"
+        f"<td>{html.escape(str(item.get('evaluation_representation') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('grouping_representation') or '-'))}</td>"
+        f"<td>{int(item.get('sample_count') or 0)}</td>"
+        f"<td>{html.escape('; '.join(str(warning) for warning in item.get('warnings') or []))}</td>"
+        "</tr>"
+        for item in value["evidence_index"]
+    )
     findings = "".join(f"<article><h3>{html.escape(item['finding_id'])}: {html.escape(item['title'])}</h3><p>{html.escape(item['observation'])}</p><p class='meta'>Evidence: {html.escape(', '.join(item['evidence_ids']))}</p></article>" for item in value["notable_findings"])
+    if not findings:
+        findings = "<p class='meta'>注目候補なし、またはAgent未評価。</p>"
     relations = "".join(f"<tr><td>{html.escape(item['relation_id'])}</td><td>{html.escape(item['relation_type'])}</td><td>{html.escape(item['independence'])}</td><td>{html.escape(', '.join(item['evidence_ids']))}</td><td>{html.escape(item['rationale'])}</td></tr>" for item in value["evidence_relations"])
-    hypotheses = "".join(f"<article><h3>{html.escape(item['hypothesis_id'])}: {html.escape(item['title'])}</h3><dl><dt>対象</dt><dd>{html.escape(str(item['target_group'] or 'GLOBAL'))}</dd><dt>観察</dt><dd>{html.escape(item['observation'])}</dd><dt>確信度</dt><dd><span class='badge'>{html.escape(item['confidence'])}</span> {html.escape(item['confidence_rationale'])}</dd><dt>反証状態</dt><dd>{html.escape(item.get('falsification_status', 'unknown'))}</dd><dt>次解析</dt><dd><ul>{''.join('<li>'+html.escape(x)+'</li>' for x in item['recommended_next_analysis'])}</ul></dd></dl></article>" for item in value["hypotheses"])
+    if not relations:
+        relations = "<tr><td colspan='5' class='meta'>比較候補なし。</td></tr>"
+    contradictions = "".join(f"<article class='contradiction'>{json_block(item)}</article>" for item in value["unresolved_contradictions"])
+    if not contradictions:
+        contradictions = "<p class='meta'>未検出またはAgent未評価。</p>"
+    hypotheses = "".join(
+        "<article>"
+        f"<h3>{html.escape(item['hypothesis_id'])}: {html.escape(item['title'])}</h3><dl>"
+        f"<dt>対象</dt><dd>{html.escape(str(item['target_group'] or 'GLOBAL'))}</dd>"
+        f"<dt>観察</dt><dd>{html.escape(item['observation'])}</dd>"
+        f"<dt>支持Evidence</dt><dd>{html.escape(', '.join(item['supporting_evidence']) or 'なし')}</dd>"
+        f"<dt>矛盾Evidence</dt><dd>{html.escape(', '.join(item['contradicting_evidence']) or '未検出／未評価')}</dd>"
+        f"<dt>Evidence独立性</dt><dd>{html.escape(item['evidence_independence'])}</dd>"
+        f"<dt>代替説明</dt><dd>{html_list(item['alternative_explanations'])}</dd>"
+        f"<dt>適用scope</dt><dd>{html_list(item['scope'])}</dd>"
+        f"<dt>例外</dt><dd>{html_list(item['exceptions'], '未記録')}</dd>"
+        f"<dt>確信度</dt><dd><span class='badge'>{html.escape(item['confidence'])}</span> {html.escape(item['confidence_rationale'])}</dd>"
+        f"<dt>反証状態</dt><dd>{html.escape(item.get('falsification_status', 'unknown'))}</dd>"
+        f"<dt>構造的含意</dt><dd>{html.escape(item['proposed_structural_implication'])}</dd>"
+        f"<dt>次解析</dt><dd>{html_list(item['recommended_next_analysis'])}</dd>"
+        f"<dt>次化合物の方向性</dt><dd>{html_list(item['recommended_next_compounds'])}</dd>"
+        f"<dt>個別の人間確認事項</dt><dd>{html_list(item['human_review_points'])}</dd>"
+        "</dl></article>"
+        for item in value["hypotheses"]
+    )
+    if not hypotheses:
+        hypotheses = "<p class='meta'>仮説候補なし、またはAgent未評価。</p>"
+    next_analyses = "".join(
+        f"<li><b>{html.escape(str(item.get('purpose', '')))}</b> — {html.escape(str(item.get('action', '')))} <span class='meta'>({html.escape(str(item.get('source_hypothesis_id', '')))})</span></li>"
+        for item in value["recommended_next_analysis"]
+    )
     reviews = "".join(f"<li>{html.escape(item)}</li>" for item in value["human_review_points"])
-    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR v4 Interpretation</title><style>:root{{--ink:#172033;--muted:#667085;--line:#d8dee9;--accent:#3157a4;--paper:#fff}}*{{box-sizing:border-box}}body{{margin:0;background:#f4f6f9;color:var(--ink);font:15px/1.65 system-ui,sans-serif}}main{{max-width:1200px;margin:32px auto;padding:36px;background:var(--paper);box-shadow:0 8px 30px #1e293b1a}}h1{{font-size:30px;margin:0}}h2{{margin-top:42px;border-bottom:2px solid var(--accent);padding-bottom:8px}}article{{border:1px solid var(--line);border-radius:10px;padding:20px;margin:16px 0}}table{{border-collapse:collapse;width:100%;font-size:13px}}th,td{{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}dt{{font-weight:700;margin-top:10px}}dd{{margin-left:0}}.meta{{color:var(--muted)}}.badge{{display:inline-block;background:#e8eefb;color:#23427e;border-radius:999px;padding:2px 10px;font-weight:700}}@media print{{body{{background:#fff}}main{{box-shadow:none;margin:0;max-width:none}}}}</style></head><body><main><header><h1>CONDUCTOR v4 Interpretation Report</h1><p class='meta'>Run {html.escape(value['run_id'])} · Policy {html.escape(value['policy_version'])} · {html.escape(value['created_at'])}</p></header><h2>注目すべき発見</h2>{findings}<h2>Evidence間関係</h2><table><thead><tr><th>ID</th><th>関係</th><th>独立性</th><th>Evidence</th><th>根拠</th></tr></thead><tbody>{relations}</tbody></table><h2>仮説・検証候補</h2>{hypotheses}<h2>人間による確認事項</h2><ul>{reviews}</ul></main></body></html>"""
+    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR v4 Interpretation</title><style>:root{{--ink:#172033;--muted:#667085;--line:#d8dee9;--accent:#3157a4;--paper:#fff;--warn:#a13d2d}}*{{box-sizing:border-box}}body{{margin:0;background:#f4f6f9;color:var(--ink);font:15px/1.65 system-ui,sans-serif}}main{{max-width:1200px;margin:32px auto;padding:36px;background:var(--paper);box-shadow:0 8px 30px #1e293b1a}}h1{{font-size:30px;margin:0}}h2{{margin-top:42px;border-bottom:2px solid var(--accent);padding-bottom:8px}}article{{border:1px solid var(--line);border-radius:10px;padding:20px;margin:16px 0}}.contradiction{{border-left:5px solid var(--warn)}}.summary{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:24px 0}}.summary div{{border:1px solid var(--line);border-radius:8px;padding:12px}}.summary b{{display:block;font-size:24px}}.table-wrap{{overflow-x:auto}}table{{border-collapse:collapse;width:100%;font-size:13px}}th,td{{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}dt{{font-weight:700;margin-top:10px}}dd{{margin-left:0}}pre{{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;padding:12px;border-radius:6px}}.meta{{color:var(--muted)}}.badge{{display:inline-block;background:#e8eefb;color:#23427e;border-radius:999px;padding:2px 10px;font-weight:700}}@media print{{body{{background:#fff}}main{{box-shadow:none;margin:0;max-width:none}}}}</style></head><body><main><header><h1>CONDUCTOR v4 Interpretation Report</h1><p class='meta'>Run {html.escape(value['run_id'])} · Policy {html.escape(value['policy_version'])} · {html.escape(value['created_at'])}</p></header><section class='summary'><div>Stage<b>{html.escape(str(summary.get('stage', 'unknown')))}</b></div><div>Evidence<b>{len(value['evidence_index'])}</b></div><div>Relations<b>{len(value['evidence_relations'])}</b></div><div>Contradictions<b>{len(value['unresolved_contradictions'])}</b></div></section><h2>探索概要</h2>{json_block(summary)}<h2>Evidence index</h2><div class='table-wrap'><table><thead><tr><th>Evidence ID</th><th>Operator</th><th>Scope</th><th>Evaluation</th><th>Grouping</th><th>N</th><th>Warnings</th></tr></thead><tbody>{evidence_rows}</tbody></table></div><h2>注目すべき発見</h2>{findings}<h2>Evidence間関係</h2><div class='table-wrap'><table><thead><tr><th>ID</th><th>関係</th><th>独立性</th><th>Evidence</th><th>根拠</th></tr></thead><tbody>{relations}</tbody></table></div><h2>未解決の矛盾</h2>{contradictions}<h2>仮説・検証候補</h2>{hypotheses}<h2>推奨される次解析</h2><ul>{next_analyses}</ul><h2>人間による確認事項</h2><ul>{reviews}</ul></main></body></html>"""
 
 
 def run() -> int:
@@ -462,6 +569,8 @@ def run() -> int:
         raise ValueError(f"Requested run_id does not match evidence run_id: {sorted(run_ids)}")
     run_id = args.run_id or (next(iter(run_ids)) if len(run_ids) == 1 else run_id_now())
     state = load_optional_json(args.state)
+    if state:
+        validate(state, "state.schema.json")
     if state and state.get("run", {}).get("run_id") != run_id:
         raise ValueError("State run_id does not match Interpretation run_id")
     catalog = load_catalog(args.catalog)
@@ -472,7 +581,13 @@ def run() -> int:
     seed = args.seed if args.seed is not None else (configured_seed if configured_seed is not None else int(value_hash(run_id)[:8], 16))
     interpretation = build_interpretation(evidence_items, index, relations, run_id, args.stage, state_info, seed)
     validate(interpretation, "interpretation.schema.json")
-    previous = [json.loads(Path(path).read_text(encoding="utf-8")) for path in args.previous_interpretation]
+    previous = []
+    for path_text in args.previous_interpretation:
+        prior = json.loads(Path(path_text).read_text(encoding="utf-8"))
+        validate(prior, "interpretation.schema.json")
+        if prior.get("run_id") != run_id:
+            raise ValueError(f"Previous Interpretation belongs to another run: {prior.get('run_id')}")
+        previous.append(prior)
     dataset_count = int((state or {}).get("run", {}).get("row_count") or max((item["sample_count"] for item in index), default=0))
     context = {
         "schema_version": "1.0.0",
@@ -499,8 +614,11 @@ def run() -> int:
         outdir = find_workspace() / "results" / "CONDUCTOR" / args.project / run_id / "interpretation" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-")
     else:
         outdir = find_workspace() / "results" / "interpretation" / "standalone" / CAPABILITY["skill_name"] / run_id
-    if outdir.exists() and any(outdir.iterdir()) and not args.overwrite:
-        raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
+    if outdir.exists() and any(outdir.iterdir()):
+        if not args.overwrite:
+            raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
+        for name in ["interpretation.json", "interpretation.md", "interpretation.html", "interpretation_context.json", "exploration_plan.json", "execution_event.json"]:
+            (outdir / name).unlink(missing_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
     targets = [outdir / "interpretation.json", outdir / "interpretation.md", outdir / "interpretation.html", outdir / "interpretation_context.json"]
     write_json(targets[0], interpretation)
@@ -509,9 +627,16 @@ def run() -> int:
     write_json(targets[3], context)
     if args.conductor:
         config = vars(args)
-        input_components = [file_hash(path) for path in paths]
+        input_components = [{"role": "evidence", "path": str(path.resolve()), "sha256": file_hash(path)} for path in paths]
         if args.state:
-            input_components.append(file_hash(Path(args.state)))
+            state_path = Path(args.state)
+            input_components.append({"role": "state", "path": str(state_path.resolve()), "sha256": file_hash(state_path)})
+        for path_text in args.previous_interpretation:
+            previous_path = Path(path_text)
+            input_components.append({"role": "previous_interpretation", "path": str(previous_path.resolve()), "sha256": file_hash(previous_path)})
+        catalog_path = Path(args.catalog) if args.catalog else find_workspace() / "catalog" / "catalog.json"
+        if catalog_path.exists():
+            input_components.append({"role": "catalog", "path": str(catalog_path.resolve()), "sha256": file_hash(catalog_path)})
         event = {
             "schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id,
             "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded",

@@ -17,7 +17,7 @@ Operator evidence、State上のprovenance、Group局所性を読み取り専用�
 ## Input
 
 - `--evidence`または`--evidence-dir`: 同一runの一つ以上のschema-valid `evidence.json`
-- `--state`: CONDUCTORでは必ず指定し、coverage、失敗、skip、analysis signature、探索budgetを読み取る
+- `--state`: CONDUCTORでは必ず指定し、coverage、失敗、skip、analysis signature、探索budget、Group indexの所在を読み取る。詳細membershipは注目候補の列だけを読む
 - `--previous-interpretation`: iteration間比較に使用できる
 - `--stage discovery|validation|mixed`
 - `--seed`: random候補選択の再現用。省略時はState設定、次にrun ID由来値を使う
@@ -59,7 +59,7 @@ Operator evidence、State上のprovenance、Group局所性を読み取り専用�
 - 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`
 - CONDUCTOR: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/<node-id-safe>/`
 
-両モードで`interpretation.json`、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。専用Agentは必要に応じてschema-valid `exploration_plan.json`を追加する。CONDUCTOR runnerは`execution_event.json`も生成する。
+両モードで`interpretation.json`、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。Markdown/HTMLには探索概要、Evidence index、発見、Evidence間関係、未解決矛盾、仮説、推奨次解析、人間確認事項を表示する。専用Agentは必要に応じてschema-valid `exploration_plan.json`を追加する。CONDUCTOR runnerは`execution_event.json`も生成する。
 
 ## Environment
 

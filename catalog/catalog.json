@@ -3,7 +3,7 @@
   "conductor_version": "4.0.0",
   "selection_managed_by": "human",
   "selection_path": "catalog/included_skills.json",
-  "generated_at": "2026-08-03T17:00:41.220467+00:00",
+  "generated_at": "2026-08-04T00:13:30.981862+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -130,7 +130,8 @@
       "wide_shallow_axis": "pairwise_structure_space",
       "operator_id": "A003",
       "default_parameters": {
-        "max_pairs": 200000
+        "max_pairs": 200000,
+        "random_seed": 61453
       },
       "dependencies": [],
       "input_contract": [
@@ -359,7 +360,8 @@
       "default_parameters": {
         "similarity_threshold": 0.8,
         "activity_delta_threshold": 1.0,
-        "max_pairs": 200000
+        "max_pairs": 200000,
+        "random_seed": 61453
       },
       "dependencies": [],
       "input_contract": [
@@ -513,7 +515,8 @@
       },
       "operator_id": "A010",
       "default_parameters": {
-        "max_pairs": 200000
+        "max_pairs": 200000,
+        "random_seed": 61453
       },
       "dependencies": [
         "grouping"
@@ -601,7 +604,8 @@
       "default_parameters": {
         "min_cluster_size": 3,
         "max_pairs": 1000,
-        "max_core_groups": 300
+        "max_core_groups": 300,
+        "random_seed": 61453
       },
       "dependencies": [],
       "input_contract": [
@@ -726,7 +730,7 @@
       "clustering_id": "C005",
       "default_parameters": {
         "min_cluster_size": 3,
-        "metric": "jaccard",
+        "metric": "auto",
         "similarity_threshold": 0.55
       },
       "dependencies": [
@@ -778,7 +782,7 @@
       "clustering_id": "C006",
       "default_parameters": {
         "min_cluster_size": 3,
-        "metric": "cosine",
+        "metric": "auto",
         "distance_threshold": 0.7
       },
       "dependencies": [
@@ -828,7 +832,7 @@
       "clustering_id": "C007",
       "default_parameters": {
         "min_cluster_size": 3,
-        "metric": "cosine",
+        "metric": "auto",
         "eps": 0.5,
         "min_samples": 3
       },
@@ -870,6 +874,13 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": false,
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "similarity_threshold": 0.55,
+        "resolution": 1.0,
+        "random_seed": 61453
+      },
       "clustering_id": "C008",
       "dependencies": [
         "description"
@@ -918,7 +929,7 @@
       "clustering_id": "C009",
       "default_parameters": {
         "min_cluster_size": 3,
-        "metric": "jaccard",
+        "metric": "auto",
         "similarity_threshold": 0.55,
         "resolution": 1.0,
         "random_seed": 61453
@@ -961,6 +972,11 @@
         "molecule_standardization": "out_of_scope"
       },
       "default_wide_shallow": false,
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "similarity_threshold": 0.55
+      },
       "clustering_id": "C010",
       "dependencies": [
         "description"

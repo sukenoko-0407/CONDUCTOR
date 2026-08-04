@@ -28,7 +28,8 @@
   "default_parameters": {
     "min_cluster_size": 3,
     "max_pairs": 1000,
-    "max_core_groups": 300
+    "max_core_groups": 300,
+    "random_seed": 61453
   },
   "dependencies": [],
   "input_contract": [

@@ -25,7 +25,8 @@
   "wide_shallow_axis": "pairwise_structure_space",
   "operator_id": "A003",
   "default_parameters": {
-    "max_pairs": 200000
+    "max_pairs": 200000,
+    "random_seed": 61453
   },
   "dependencies": [],
   "input_contract": [

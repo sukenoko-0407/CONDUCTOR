@@ -30,7 +30,7 @@ python .claude/skills/cs-compute-clustering-vector-dbscan/scripts/launch.py --in
 ## 制約事項
 
 - 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
-- raw SMILESは入力にできず、Descriptionを内部生成しない。0/1 vectorでのみJaccard距離を利用できる。
+- raw SMILESは入力にできず、Descriptionを内部生成しない。`--metric auto`は表現に応じてTanimoto、Manhattan、Cosine、標準化Euclideanを選び、binaryまたは既知のbit fingerprintではTanimoto以外を許可しない。
 - 結果は入力feature、距離metric、thresholdまたはcluster数に依存する。
 
 ## 変更履歴

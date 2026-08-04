@@ -68,6 +68,8 @@ Group sizeは固定閾値だけで選別せず、全体に対する割合、構�
 - 小Groupでも構造類似性が高い、明確なMCSを持つ、同一変換seriesを構成する、または反復Cliffを含む場合は優先候補になり得る。
 - 小Groupの非検出を「現象がない」と解釈しない。sample数、pair数、effective k、一化合物感度を確認する。
 
+Group IDはrun共通`group_registry.csv`を正本とし、必要な候補だけ横持ち`Cpd_Group_matrix_*.csv`からmembershipを読む。`discarded` Groupは新しい自動探索候補から外すが、過去evidenceの説明と人間監査には残す。Interpretationが新しいrandom、intersection、difference、boundary scopeを提案した場合、そのGroup IDとmembershipの登録はOrchestratorへ委ねる。
+
 ## 7. 反証探索
 
 注目ポイントを発見した場合は、必ず少なくとも一つの反証探索を探索要求へ含める。反証候補がまだ実行できない場合は、その理由を未解決事項として残す。
@@ -123,4 +125,4 @@ Interpretation Agentはapprovalを決定しない。OrchestratorがCatalogとdat
 - 注目候補が独立解析で再現または反証された
 - 残る候補が高コストで人間判断を必要とする
 
-正本JSONには、evidence index、関係graph、注目結果、未解決矛盾、反証状態、探索履歴、未実行候補、次の探索要求を含める。MarkdownとHTMLは情報を削除せず、注目理由別に人間が走査できる形へ整理する。具体的な新規SMILESは生成しない。
+正本JSONには、evidence index、関係graph、注目結果、未解決矛盾、反証状態、探索履歴、未実行候補、次の探索要求を含める。MarkdownとHTMLには、探索概要、Evidence index、発見、Evidence間関係、未解決の矛盾、仮説、推奨次解析、人間確認事項を省略せず表示する。具体的な新規SMILESは生成しない。

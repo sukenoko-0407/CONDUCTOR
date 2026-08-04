@@ -2,7 +2,7 @@
 
 > この文書は`catalog/catalog.json`から生成される。収載対象は人間管理の`catalog/included_skills.json`で指定する。
 
-Generated: `2026-08-03T17:00:41.220467+00:00`
+Generated: `2026-08-04T00:13:30.981862+00:00`
 
 ## Description
 

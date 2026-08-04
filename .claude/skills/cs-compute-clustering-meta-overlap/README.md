@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-既存group間のcompound重複を使ってmeta groupを生成する。
+long形式のGrouping結果またはBoolean wide matrix shardにあるcompound重複を使ってmeta groupを生成する。
 
 ## 想定利用シーン
 
@@ -17,19 +17,20 @@
 一般利用（主成果物のみ）:
 
 ```bash
-python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input cluster_membership.csv
+python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input grouping_a.csv --input grouping_b.csv
 ```
 
 
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input cluster_membership.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input grouping_a.csv --input grouping_b.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
 ```
 
 ## 制約事項
 
 - 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
+- `--input`を反復指定でき、異なるGrouping nodeのmembershipを一つのmeta解析へ渡せる。
 
 ## 変更履歴
 

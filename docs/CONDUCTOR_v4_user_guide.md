@@ -73,6 +73,17 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state status \
 
 `status`の`wide_shallow_coverage`には、Description、Grouping、Operatorの軸別状態が表示される。「ヒントなし」と判断する前に、未実行、失敗、skipと代替の要否を確認する。
 
+Groupの詳細は常時Stateへ展開せず、必要なときだけrun共通indexを読む。`groups`は由来と状態を表示し、`discard-group`は低価値領域を自動探索対象から外すが、所属列と履歴は削除しない。
+
+```bash
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state groups \
+  --state results/CONDUCTOR/jak2/<run_id>/state.json --status active
+
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state discard-group \
+  --state results/CONDUCTOR/jak2/<run_id>/state.json \
+  --group-id G_C002_001_4A91C2D0870FB6E3 --reason "独立表現で支持されず、十分に検討済み"
+```
+
 Skill実行後は、Skillが返した`execution_event.json`をStateへ記録する。
 
 ```bash
@@ -163,15 +174,18 @@ python .claude/skills/cs-compute-clustering-structure-murcko/scripts/launch.py \
   --input compounds.csv
 ```
 
-Butina、hierarchical、DBSCAN、Louvain、Leiden、connected-componentsはDescription Skillの数値CSVを処理する。raw SMILESを直接渡してはならない。binary fingerprintへJaccardを使う例:
+Butina、hierarchical、DBSCAN、Louvain、Leiden、connected-componentsはDescription Skillの数値CSVを処理する。raw SMILESを直接渡してはならない。既定の`--metric auto`はbinaryおよびMorganへTanimoto、USR/USRCATへManhattan、疎な非負countとembedding/SVDへCosine、その他の連続値へ標準化Euclideanを選ぶ。Morgan fingerprintを明示的にTanimotoで処理する例:
 
 ```bash
 python .claude/skills/cs-compute-description-morgan/scripts/launch.py \
   --input compounds.csv --output-dir results/example/morgan
 
 python .claude/skills/cs-compute-clustering-vector-butina/scripts/launch.py \
-  --input results/example/morgan/D002_morgan.csv --metric jaccard
+  --input results/example/morgan/D002_morgan.csv \
+  --input-representation D002 --metric tanimoto
 ```
+
+MCSでpair数を制限する場合は先頭から抽出せず、再現可能な一様ランダム抽出を行う。`--max-pairs`の上限は1000、`--random-seed`の既定値は61453である。
 
 一般利用はdefaultであり、`--conductor`、`--project`、`--node-id`を指定しない。Description、Clustering、Operatorは主成果物だけを出力する。既定出力は`results/description|clustering|analysis/...`であり、`--output-dir`が常に優先されるが、出力先を`results/CONDUCTOR/`配下にしてもモードは変わらない。
 
@@ -191,7 +205,7 @@ OperatorをGroup局所へ再適用する例:
 python .claude/skills/cs-analysis-sali/scripts/launch.py \
   --input compounds.csv --property-column pIC50 --higher-is-better \
   --description morgan.csv --membership cluster_membership.csv \
-  --target-group C002_G0001 --scope-mode within-group \
+  --target-group G_C002_001_4A91C2D0870FB6E3 --scope-mode within-group \
   --reference-scope global
 ```
 

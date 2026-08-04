@@ -84,7 +84,8 @@ direct structure GroupingはMurcko、MCS、BRICS、RECAPに限定し、SMILESを
 - compound IDと数値featureを持つDescription SkillのCSV artifactを`--input`で受ける。
 - raw SMILESおよび反復可能な`--smiles`は受け付けず、descriptorやfingerprintを内部生成しない。
 - CONDUCTORではStateの`input_bindings.description`で生成元Description nodeを一つ明示する。
-- `jaccard`は0/1のbinary vectorだけに許可し、連続値vectorにはcosine、euclideanまたはmanhattanを使う。
+- `--metric auto`を既定とし、Descriptionの表現種別と実VectorからMetricを決定する。binaryおよびMorganはTanimoto、USR/USRCATはManhattan、疎な非負countはCosine、embedding/SVDはCosine、その他の連続値は標準化Euclideanを使う。binaryまたは既知のbit fingerprintへTanimoto以外を明示した場合はerrorとする。
+- 異なるcompound IDが同一Vectorを持つことは許容する。近傍解析では自己行だけを除外し、距離0の別化合物は正当な近傍として保持する。
 - invalid SMILESまたはDescription値がない行はclusterへ代入せず、主結果に未割当として保持する。
 
 ### 5.3 Operator
@@ -128,7 +129,7 @@ Agentはrepository名、Catalog収載、CONDUCTOR互換artifact、`results/CONDU
 - Operator: `A001`から新規附番
 - Interpretation: `I001`から新規附番
 - Evidence: `<run_id>:<operator_id>:<node-or-scope-context>:<sequence>`
-- Group: `<clustering_id>_<sequence>`（methodはCatalogのcapability IDとregistryで参照する）
+- Group: `G_<source-node-id-safe>_<group-content-hash16>`。hashはGroupラベルとmember集合から決め、再計算で内容が同じGroupは同じID、内容が変わったGroupは新しいIDとする。methodはCatalogのcapability IDとregistryで参照する。
 
 旧L01-L60、旧group ID、旧CLI、旧出力パスとの互換性は持たない。
 
@@ -182,6 +183,14 @@ Interpretation nodeはStateを変更しない読み取り専用の終端nodeと�
 多重探索による発見候補を抑制せず、DiscoveryとValidation、negative result、矛盾、未実行候補、全試行履歴を保持する。一つの整合的仮説へ収束させない。各discoveryには反証、control、または独立replicationを必ず要求する。
 
 正本JSONは観察、evidence relation、依存性、代替説明、scope、例外、反証状態、確信度、探索履歴、次解析意図、人間確認点を含む。同じ内容からMarkdownと自己完結HTMLを生成する。具体的な新規SMILES生成は行わない。
+
+## 11.1 Orchestratorの二段階状態認識
+
+Stateは軽量な制御面とし、node status、依存関係、初手coverage、approval、探索budget、Group件数だけを常時読む。化合物ごとのGroup所属と詳細provenanceはrun共通のGroup indexへ分離し、局所解析の選択時だけ参照する。
+
+Group indexは横持ちBoolean CSVとprovenance CSVから構成する。Group IDは生成nodeを含む一意IDとし、複数Descriptionから同じClustering Capabilityを実行しても衝突させない。Interpretationが作るrandom、intersection、difference、boundary scopeも同じGroup indexへ登録する。
+
+Orchestratorは全解析空間を完全に記憶する必要はない。粗い状態から次の領域を選び、必要なGroup行・列とevidenceだけを読む。十分に深掘りして情報価値が低い領域は理由付き`discarded`として自動選択対象から外すが、監査可能性のためmembershipと履歴は保持する。
 
 ## 12. 環境
 

@@ -22,6 +22,13 @@
     "molecule_standardization": "out_of_scope"
   },
   "default_wide_shallow": false,
+  "default_parameters": {
+    "min_cluster_size": 3,
+    "metric": "auto",
+    "similarity_threshold": 0.55,
+    "resolution": 1.0,
+    "random_seed": 61453
+  },
   "clustering_id": "C008",
   "dependencies": [
     "description"

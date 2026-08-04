@@ -27,6 +27,14 @@ Orchestration Agentは、Catalogに収載されたSkillだけを使い、run Sta
 
 初手の標準profileを`representative-family-wide-v1`とし、Catalog metadataの`default_wide_shallow`、`wide_shallow_axis`、`wide_shallow_sources`を正本とする。現行profileは次を必須代表とする。
 
+### 3.0 状態認識とGroup管理
+
+Orchestratorの通常判断では、run phase、nodeの完了／未完了、初手coverage、runnable node、active/discarded Group数という粗い状態を優先する。個々の化合物所属やGroup由来は、候補選択、比較、反証を行う時だけ詳細索引から読む。State本体へ巨大なmembershipを埋め込まない。
+
+全Groupはrun内で一意なGroup IDを持つ。化合物所属は`grouping/group_index/Cpd_Group_matrix_G000000_099999.csv`形式の横持ちBoolean matrix、Group由来は`grouping/group_index/group_registry.csv`で管理する。Group列が10万を超える場合だけ次のmatrix shardを追加する。
+
+詳細索引の完全な常時把握は要求しない。十分に検討して情報価値が低い領域は、理由を記録してGroupを`discarded`にできる。discardは履歴とmembership列を削除せず、以後の自動優先候補から外す操作とする。
+
 ### 3.1 Description
 
 - D001 RDKit 2D: 2D物性・topological scalar
@@ -45,16 +53,20 @@ Groupingは、入力と責務が異なる二系統を混同しない。
 
 - direct structure GroupingはSMILESを直接入力し、Description vectorを生成・消費しない。
   - C001 Murcko: scaffold rule
-  - C002 MCS: maximum common substructure。構造Groupingの中心的な確認軸として全runの初手に必ず計画・実行する。高コストだが`preauthorized_initial`であり、runごとの事前承認は不要
+  - C002 MCS: maximum common substructure。構造Groupingの中心的な確認軸として全runの初手に必ず計画・実行する。高コストだが`preauthorized_initial`であり、runごとの事前承認は不要。pair上限時は記録されたseedによる一様ランダム非復元抽出を行う
+
+pairwise構造Operatorもpair上限超過時に先頭から切らず、Stateへ記録したseedでeligible pairを一様ランダム非復元抽出する。
   - C003 BRICS: fragment decomposition
 - Description-vector ClusteringはDescription SkillのCSV artifactだけを入力し、raw SMILESや内部生成fingerprintを使わない。
-  - C005 vector Butina: D002 MorganをJaccard/Tanimoto相当のbinary vector空間で分割
+  - C005 vector Butina: D002 MorganをTanimotoのbinary vector空間で分割
   - C006 vector hierarchical: D001、D013、D017の各表現で別nodeとして実行
   - C007 vector DBSCAN: D001の連続値空間でdensity-based grouping
   - C009 vector Leiden: D002 Morganの類似graphでcommunity検出
 - assay条件が複数ならC011 categoricalを追加する。
 
 同一algorithmを全Descriptionへ総当たりしない一方、物性、2D fingerprint、3D shape、pharmacophoreという異なるvector空間と、similarity partition、hierarchy、density、graph communityという異なる原理を初手から観測する。各vector nodeは上流Descriptionを明示的にbindingし、最初に生成されたDescriptionへ暗黙接続しない。`structure-butina`のようにSMILESからfingerprintをSkill内部で生成する複合ラッパーはCatalogへ収載しない。
+
+vector ClusteringのMetricはAlgorithmではなく入力Description表現から決定する。binaryおよびMorganはTanimotoを必須とし、USR/USRCATはManhattan、疎なcount vectorとembedding/SVDはCosine、その他の連続descriptorは標準化Euclideanを基本とする。`metric=auto`とStateの`input_representation`を正本とし、binaryまたは既知のbit fingerprintへTanimoto以外が明示された場合は停止する。
 
 ### 3.3 Operator
 
@@ -108,6 +120,8 @@ GPU、外部model weight、大規模pairwise計算、3D conformer大量生成、
 - 上流artifactが変われば下流を`stale`にする。
 - resume時は`succeeded`かつhash一致のnodeを再実行しない。
 - 同じ失敗を無制限に再試行しない。原因と代替案を人間へ示す。
+- 同一analysis signatureを理由なく再登録しない。意図的replicationだけを明示的な例外とする。
+- Groupを捨てる場合はGroup IDと理由を記録し、matrix列や過去evidenceを削除しない。
 
 ## 7. Interpretationへの引き渡し
 

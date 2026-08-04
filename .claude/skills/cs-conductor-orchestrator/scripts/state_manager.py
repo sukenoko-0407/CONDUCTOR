@@ -19,7 +19,7 @@ GROUP_MATRIX_SHARD_SIZE = 100_000
 GROUP_REGISTRY_FIELDS = [
     "group_id", "group_label", "grouping_capability_id", "grouping_skill_name",
     "source_node_id", "source_description_id", "source_description_node_id",
-    "compound_count", "activity_blind", "status", "membership_artifact",
+    "source_grouping_node_ids", "compound_count", "activity_blind", "status", "membership_artifact",
     "definition_json", "created_at", "discard_reason", "discarded_at",
 ]
 
@@ -165,6 +165,13 @@ def write_csv_rows(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]
     temporary.replace(path)
 
 
+def write_json_file(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
 def binding_node_ids(bindings: dict[str, Any], stage: str) -> list[str]:
     value = bindings.get(stage)
     if value is None:
@@ -182,9 +189,14 @@ def dependency_bindings(dependency_nodes: list[dict[str, Any]]) -> dict[str, Any
 def validate_dependency_contract(capability: dict[str, Any], dependency_nodes: list[dict[str, Any]]) -> None:
     required = capability.get("dependencies") or []
     required_stages = ["analysis" if item == "evidence" else item for item in required]
+    allowed_stages = set(required_stages)
+    if capability.get("stage") == "analysis" and any(
+        mode != "global" for mode in capability.get("scope_support") or []
+    ):
+        allowed_stages.add("grouping")
     actual_stages = [node["stage"] for node in dependency_nodes]
     missing = sorted(stage for stage in set(required_stages) if stage not in actual_stages)
-    unexpected = sorted(stage for stage in set(actual_stages) if stage not in required_stages)
+    unexpected = sorted(stage for stage in set(actual_stages) if stage not in allowed_stages)
     if missing:
         raise ValueError(f"{capability['capability_id']} requires dependency stage(s): {missing}")
     if unexpected:
@@ -198,6 +210,25 @@ def validate_dependency_contract(capability: dict[str, Any], dependency_nodes: l
         )
         if count > 1 and not multiple_allowed:
             raise ValueError(f"{capability['capability_id']} accepts only one {stage} dependency")
+
+
+def validate_analysis_scope_contract(
+    capability: dict[str, Any],
+    dependency_nodes: list[dict[str, Any]],
+    parameters: dict[str, Any],
+) -> None:
+    if capability.get("stage") != "analysis":
+        return
+    scope_mode = str(parameters.get("scope_mode") or "global")
+    if scope_mode not in set(capability.get("scope_support") or ["global"]):
+        raise ValueError(f"{capability['capability_id']} does not support scope mode {scope_mode}")
+    has_grouping_dependency = any(node["stage"] == "grouping" for node in dependency_nodes)
+    generated_scope = bool(parameters.get("scope_compound_set_hash"))
+    grouping_is_required = "grouping" in (capability.get("dependencies") or [])
+    if scope_mode != "global" and not has_grouping_dependency and not generated_scope:
+        raise ValueError("A local Operator node requires a Grouping dependency or an Orchestrator-generated explicit scope")
+    if scope_mode == "global" and has_grouping_dependency and not grouping_is_required:
+        raise ValueError("A global Operator node must not carry an unused optional Grouping dependency")
 
 
 def group_index_paths(state_path: Path) -> tuple[Path, Path]:
@@ -245,12 +276,14 @@ def update_group_index(
         if row.get("source_node_id") == node["node_id"] and row.get("status") != "discarded":
             row["status"] = "stale"
     description_nodes = binding_node_ids(node.get("input_bindings") or {}, "description")
+    grouping_nodes = binding_node_ids(node.get("input_bindings") or {}, "grouping")
     for item in registry_json:
         group_id = str(item["group_id"])
         existing = registry_by_id.get(group_id)
         if existing and existing.get("source_node_id") != node["node_id"]:
             raise ValueError(f"Group ID collision across nodes: {group_id}")
         row = existing or {field: "" for field in GROUP_REGISTRY_FIELDS}
+        preserve_discard = bool(existing and existing.get("status") == "discarded")
         row.update({
             "group_id": group_id,
             "group_label": str(item.get("group_label") or ""),
@@ -259,14 +292,15 @@ def update_group_index(
             "source_node_id": node["node_id"],
             "source_description_id": str(item.get("source_description_id") or ""),
             "source_description_node_id": description_nodes[0] if description_nodes else "",
+            "source_grouping_node_ids": ";".join(grouping_nodes),
             "compound_count": str(len(memberships[group_id])),
             "activity_blind": str(bool(item.get("activity_blind", True))),
-            "status": "active",
+            "status": "discarded" if preserve_discard else "active",
             "membership_artifact": str(membership_path.resolve()),
             "definition_json": json.dumps(item.get("definition") or {}, ensure_ascii=False, sort_keys=True),
             "created_at": row.get("created_at") or utc_now(),
-            "discard_reason": "",
-            "discarded_at": "",
+            "discard_reason": row.get("discard_reason", "") if preserve_discard else "",
+            "discarded_at": row.get("discarded_at", "") if preserve_discard else "",
         })
         if existing is None:
             registry_rows.append(row)
@@ -299,15 +333,19 @@ def update_group_index(
     graph_nodes = state["domain_graph"].setdefault("nodes", [])
     graph_by_id = {item.get("group_id"): item for item in graph_nodes}
     graph_edges = state["domain_graph"].setdefault("edges", [])
+    for graph_node in graph_nodes:
+        if graph_node.get("source_node_id") == node["node_id"] and graph_node.get("status") != "discarded":
+            graph_node["status"] = "stale"
     for item in registry_json:
         group_id = str(item["group_id"])
+        group_status = registry_by_id[group_id]["status"]
         graph_node = {
             "group_id": group_id,
             "group_label": item.get("group_label"),
             "grouping_capability_id": item.get("grouping_capability_id"),
             "source_node_id": node["node_id"],
             "source_description_node_id": description_nodes[0] if description_nodes else None,
-            "status": "active",
+            "status": group_status,
         }
         if group_id in graph_by_id:
             graph_by_id[group_id].update(graph_node)
@@ -332,7 +370,10 @@ def append_history(state: dict[str, Any], action: str, **details: Any) -> None:
     state["history"].append({"timestamp": utc_now(), "action": action, **details})
 
 
-TRANSIENT_PARAMETER_KEYS = {"output_dir", "project", "run_id", "node_id", "conductor", "overwrite"}
+TRANSIENT_PARAMETER_KEYS = {
+    "output_dir", "project", "run_id", "node_id", "conductor", "overwrite",
+    "input", "description", "membership", "state", "evidence", "catalog",
+}
 
 
 def analysis_signature(capability_id: str, dependencies: list[str], parameters: dict[str, Any]) -> str:
@@ -350,6 +391,12 @@ def analysis_signature(capability_id: str, dependencies: list[str], parameters: 
 
 def safe_node_segment(node_id: str) -> str:
     return node_id.replace(":", "-")
+
+
+def bind_system_parameter(parameters: dict[str, Any], key: str, value: Any) -> None:
+    if key in parameters and parameters[key] != value:
+        raise ValueError(f"CONDUCTOR-bound parameter {key} conflicts with the run or dependency artifact")
+    parameters[key] = value
 
 
 def primary_artifact_path(node: dict[str, Any], capability: dict[str, Any]) -> Path:
@@ -387,7 +434,7 @@ def configure_node_io(
 
     stage = capability["stage"]
     if stage == "description":
-        parameters.setdefault("input", state["run"]["input"])
+        bind_system_parameter(parameters, "input", state["run"]["input"])
         parameters.setdefault("format", "csv")
     elif stage == "grouping":
         description_node_ids = binding_node_ids(bindings, "description")
@@ -399,30 +446,30 @@ def configure_node_io(
                 source_node = state_nodes(state)[source_node_id]
                 source_capability = capabilities[source_node["capability_id"]]
                 artifact_paths.append(str(primary_artifact_path(source_node, source_capability)))
-            parameters.setdefault("input", artifact_paths[0] if len(artifact_paths) == 1 else artifact_paths)
+            bind_system_parameter(parameters, "input", artifact_paths[0] if len(artifact_paths) == 1 else artifact_paths)
             if description_node_ids:
                 source_node = state_nodes(state)[description_node_ids[0]]
-                parameters.setdefault("input_representation", source_node["capability_id"])
+                bind_system_parameter(parameters, "input_representation", source_node["capability_id"])
         else:
-            parameters.setdefault("input", state["run"]["input"])
+            bind_system_parameter(parameters, "input", state["run"]["input"])
     elif stage == "analysis":
-        parameters.setdefault("input", state["run"]["input"])
-        parameters.setdefault("property_column", state["run"]["endpoint"])
-        parameters.setdefault("higher_is_better", state["run"]["higher_is_better"])
+        bind_system_parameter(parameters, "input", state["run"]["input"])
+        bind_system_parameter(parameters, "property_column", state["run"]["endpoint"])
+        bind_system_parameter(parameters, "higher_is_better", state["run"]["higher_is_better"])
         description_node_ids = binding_node_ids(bindings, "description")
         grouping_node_ids = binding_node_ids(bindings, "grouping")
         if description_node_ids:
             source_node = state_nodes(state)[description_node_ids[0]]
             source_capability = capabilities[source_node["capability_id"]]
-            parameters.setdefault("description", str(primary_artifact_path(source_node, source_capability)))
-            parameters.setdefault("evaluation_representation", source_node["capability_id"])
+            bind_system_parameter(parameters, "description", str(primary_artifact_path(source_node, source_capability)))
+            bind_system_parameter(parameters, "evaluation_representation", source_node["capability_id"])
         if grouping_node_ids:
             source_node = state_nodes(state)[grouping_node_ids[0]]
             source_capability = capabilities[source_node["capability_id"]]
-            parameters.setdefault("membership", str(primary_artifact_path(source_node, source_capability)))
-            parameters.setdefault("grouping_representation", source_node["capability_id"])
+            bind_system_parameter(parameters, "membership", str(primary_artifact_path(source_node, source_capability)))
+            bind_system_parameter(parameters, "grouping_representation", source_node["capability_id"])
         if capability["capability_id"] in {"A003", "A007", "A010"}:
-            parameters.setdefault("evaluation_representation", "internal_morgan_r2_2048")
+            bind_system_parameter(parameters, "evaluation_representation", "internal_morgan_r2_2048")
     elif stage == "interpretation":
         evidence_paths = []
         for dependency_node_id in node.get("dependencies") or []:
@@ -430,8 +477,8 @@ def configure_node_io(
             if source_node["stage"] == "analysis":
                 evidence_paths.append(str(Path(source_node["output_dir"]) / "evidence.json"))
         if evidence_paths:
-            parameters.setdefault("evidence", evidence_paths)
-        parameters.setdefault("state", str((output_root / "state.json").resolve()))
+            bind_system_parameter(parameters, "evidence", evidence_paths)
+        bind_system_parameter(parameters, "state", str((output_root / "state.json").resolve()))
 
 
 def nodes_for_wide_source(
@@ -526,6 +573,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "domain_graph": {"nodes": [], "edges": []},
         "evidence_graph": {"nodes": [], "edges": []},
         "group_index": {"registry_path": str((outdir / "grouping" / "group_index" / "group_registry.csv").resolve()), "matrix_shards": [], "group_count": 0, "active_group_count": 0, "discarded_group_count": 0, "updated_at": utc_now()},
+        "interpretations": [],
         "interpretation_exploration": default_exploration_state(),
         "history": [],
         "updated_at": utc_now(),
@@ -657,10 +705,11 @@ def cmd_add(args: argparse.Namespace) -> int:
         validate_dependency_contract(capability, dependency_nodes)
         selected_parameters = dict(capability.get("default_parameters") or {})
         selected_parameters.update(parameters)
+        validate_analysis_scope_contract(capability, dependency_nodes, selected_parameters)
         signature = analysis_signature(capability["capability_id"], dependencies, selected_parameters)
         duplicate = next((item["node_id"] for item in state["execution_graph"]["nodes"] if item.get("analysis_signature") == signature), None)
-        if duplicate and not getattr(args, "allow_repeat", False):
-            raise ValueError(f"Repeated analysis signature is not allowed; existing node={duplicate}. Use --allow-repeat only for an intentional replication")
+        if duplicate:
+            raise ValueError(f"Repeated analysis signature is not allowed; existing node={duplicate}")
         bindings = dependency_bindings(dependency_nodes)
         node = add_node(state, capability, dependencies, args.reason or "Human or Orchestrator selected deep-dive", parameters)
         configure_node_io(state, node, capability, capabilities, state_path.parent, bindings)
@@ -767,15 +816,21 @@ def prepare_exploration_scope(
         ),
     }
     compound_set_hash = hashlib.sha256(json.dumps(canonical_scope, sort_keys=True).encode("utf-8")).hexdigest()
-    target_group = scope.get("target_group_id") or f"SCOPE_{compound_set_hash[:12]}_A"
-    comparison_group = scope.get("comparison_group_id") if scope["mode"] == "between-groups" else None
+    canonical_group_definition = {
+        **canonical_scope,
+        "selection_method": scope["selection_method"],
+        "source_group_ids": sorted(scope.get("source_group_ids") or []),
+    }
+    group_definition_hash = hashlib.sha256(json.dumps(canonical_group_definition, sort_keys=True).encode("utf-8")).hexdigest()
+    target_group_label = scope.get("target_group_id") or f"scope:{scope['scope_id']}:target"
+    comparison_group_label = scope.get("comparison_group_id") if scope["mode"] == "between-groups" else None
+    target_group = f"G_SCOPE_{group_definition_hash[:16]}_A"
+    comparison_group = f"G_SCOPE_{group_definition_hash[:16]}_B" if scope["mode"] == "between-groups" else None
     if scope["mode"] == "between-groups":
-        comparison_group = comparison_group or f"SCOPE_{compound_set_hash[:12]}_B"
-        if target_group == comparison_group:
-            raise ValueError("Exploration target and comparison group IDs must differ")
-    scope_path = (state_path.parent / "interpretation" / "scopes" / f"{compound_set_hash}.csv").resolve()
-    rows = [{"cluster_id": target_group, "compound_id": compound_id} for compound_id in sorted(target_ids)]
-    rows.extend({"cluster_id": comparison_group, "compound_id": compound_id} for compound_id in sorted(comparison_ids))
+        comparison_group_label = comparison_group_label or f"scope:{scope['scope_id']}:comparison"
+    scope_path = (state_path.parent / "interpretation" / "scopes" / f"{group_definition_hash}.csv").resolve()
+    rows = [{"cluster_id": target_group, "compound_id": compound_id, "membership_value": "1.0", "membership_reason": target_group_label} for compound_id in sorted(target_ids)]
+    rows.extend({"cluster_id": comparison_group, "compound_id": compound_id, "membership_value": "1.0", "membership_reason": comparison_group_label} for compound_id in sorted(comparison_ids))
 
     selected_parameters.update({
         "membership": str(scope_path),
@@ -794,9 +849,12 @@ def prepare_exploration_scope(
         "input_id_column": id_column,
         "target_group_id": target_group,
         "comparison_group_id": comparison_group,
+        "target_group_label": target_group_label,
+        "comparison_group_label": comparison_group_label,
         "target_count": len(target_ids),
         "comparison_count": len(comparison_ids),
         "compound_set_hash": compound_set_hash,
+        "group_definition_hash": group_definition_hash,
         "membership_path": str(scope_path),
         "selection_notes": scope.get("selection_notes", ""),
     }
@@ -807,7 +865,7 @@ def write_scope_membership(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
     with temporary.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["cluster_id", "compound_id"])
+        writer = csv.DictWriter(handle, fieldnames=["cluster_id", "compound_id", "membership_value", "membership_reason"])
         writer.writeheader()
         writer.writerows(rows)
     temporary.replace(path)
@@ -929,6 +987,7 @@ def cmd_register_exploration(args: argparse.Namespace) -> int:
             selected_parameters = dict(capability.get("default_parameters") or {})
             selected_parameters.update(request.get("parameters") or {})
             scope_record, pending_scope = prepare_exploration_scope(state_path, state, capability, request, selected_parameters)
+            validate_analysis_scope_contract(capability, dependency_nodes, selected_parameters)
             if pending_scope:
                 scope_path, scope_rows = pending_scope
                 pending_scope_files[scope_path] = scope_rows
@@ -973,6 +1032,40 @@ def cmd_register_exploration(args: argparse.Namespace) -> int:
             })
         for scope_path, scope_rows in pending_scope_files.items():
             write_scope_membership(scope_path, scope_rows)
+        for node_id in planned_nodes:
+            node = known_nodes[node_id]
+            scope_record = (node.get("exploration") or {}).get("scope")
+            if not scope_record:
+                continue
+            scope_path = Path(scope_record["membership_path"])
+            scope_groups = [{
+                "group_id": scope_record["target_group_id"],
+                "group_label": scope_record.get("target_group_label"),
+                "grouping_capability_id": "SCOPE",
+                "source_description_id": None,
+                "definition": {"selection_method": scope_record["selection_method"], "source_group_ids": scope_record["source_group_ids"], "selection_notes": scope_record["selection_notes"]},
+                "compound_count": scope_record["target_count"],
+                "activity_blind": True,
+            }]
+            if scope_record.get("comparison_group_id"):
+                scope_groups.append({
+                    "group_id": scope_record["comparison_group_id"],
+                    "group_label": scope_record.get("comparison_group_label"),
+                    "grouping_capability_id": "SCOPE",
+                    "source_description_id": None,
+                    "definition": {"selection_method": scope_record["selection_method"], "source_group_ids": scope_record["source_group_ids"], "selection_notes": scope_record["selection_notes"]},
+                    "compound_count": scope_record["comparison_count"],
+                    "activity_blind": True,
+                })
+            scope_registry_path = scope_path.with_suffix(".groups.json")
+            write_json_file(scope_registry_path, scope_groups)
+            scope_source = {
+                "node_id": f"SCOPE:{scope_record['group_definition_hash'][:16]}",
+                "capability_id": "SCOPE",
+                "skill_name": "cs-conductor-orchestrator",
+                "input_bindings": {},
+            }
+            update_group_index(state_path, state, scope_source, scope_path, scope_registry_path)
         state["interpretation_exploration"]["ledger"].extend(new_ledger)
         state["interpretation_exploration"]["iterations"].append({
             "iteration": plan["iteration"],
@@ -1117,7 +1210,7 @@ def downstream(state: dict[str, Any], source: str) -> set[str]:
 def set_derived_graph_status(state: dict[str, Any], source_node_ids: set[str], status: str) -> None:
     for graph_name in ["domain_graph", "evidence_graph"]:
         for item in state[graph_name].setdefault("nodes", []):
-            if item.get("source_node_id") in source_node_ids:
+            if item.get("source_node_id") in source_node_ids and item.get("status") != "discarded":
                 item["status"] = status
     registry_path_text = (state.get("group_index") or {}).get("registry_path")
     if registry_path_text:
@@ -1172,10 +1265,10 @@ def cmd_record(args: argparse.Namespace) -> int:
         previous_config = node.get("config_hash")
         changed = (previous_input and previous_input != event["input_hash"]) or (previous_config and previous_config != event["config_hash"])
         artifacts = []
+        resolved_artifacts: list[tuple[dict[str, Any], Path]] = []
         group_membership_path: Path | None = None
         group_registry_path: Path | None = None
         interpretation_path: Path | None = None
-        set_derived_graph_status(state, {node["node_id"]}, "stale")
         for artifact in event.get("artifacts") or []:
             artifact = dict(artifact)
             artifact_path = (event_path.parent / str(artifact.get("path", ""))).resolve()
@@ -1184,6 +1277,10 @@ def cmd_record(args: argparse.Namespace) -> int:
             declared_hash = artifact.get("sha256")
             if declared_hash and file_hash(artifact_path) != declared_hash:
                 raise ValueError(f"Event artifact hash mismatch: {artifact_path}")
+            resolved_artifacts.append((artifact, artifact_path))
+        if not (node["stage"] == "grouping" and event["status"] == "succeeded"):
+            set_derived_graph_status(state, {node["node_id"]}, "stale")
+        for artifact, artifact_path in resolved_artifacts:
             artifact["resolved_path"] = str(artifact_path)
             artifacts.append(artifact)
             if artifact.get("type") == "group_membership":
@@ -1225,6 +1322,15 @@ def cmd_record(args: argparse.Namespace) -> int:
                 if ledger_item.get("node_id") == node["node_id"]:
                     ledger_item["status"] = event["status"]
                     ledger_item["finished_at"] = event.get("finished_at")
+        downstream_skipped: list[str] = []
+        if event["status"] in {"failed", "skipped"}:
+            reason = "; ".join(str(item) for item in event.get("warnings") or []) or f"Execution event reported {event['status']}"
+            node["error" if event["status"] == "failed" else "skip_reason"] = reason
+            downstream_skipped = skip_blocked_descendants(
+                state,
+                node["node_id"],
+                f"Required upstream node {node['node_id']} reported {event['status']}: {reason}",
+            )
         if changed:
             downstream_ids = downstream(state, node["node_id"])
             for node_id in downstream_ids:
@@ -1232,7 +1338,7 @@ def cmd_record(args: argparse.Namespace) -> int:
                 if target["status"] == "succeeded":
                     target["status"] = "stale"
             set_derived_graph_status(state, downstream_ids, "stale")
-        append_history(state, "event_recorded", node_id=node["node_id"], status=node["status"], downstream_invalidated=bool(changed))
+        append_history(state, "event_recorded", node_id=node["node_id"], status=node["status"], downstream_invalidated=bool(changed), downstream_skipped=downstream_skipped)
         write_state(state_path, state)
     return 0
 
@@ -1287,6 +1393,8 @@ def cmd_groups(args: argparse.Namespace) -> int:
 def cmd_discard_group(args: argparse.Namespace) -> int:
     state_path = Path(args.state)
     requested = {value.strip() for value in args.group_id.split(",") if value.strip()}
+    if not requested:
+        raise ValueError("At least one Group ID is required")
     with state_lock(state_path):
         state = read_json(state_path)
         registry_path_text = (state.get("group_index") or {}).get("registry_path")
@@ -1359,7 +1467,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--input", required=True); init.add_argument("--endpoint", required=True); init.add_argument("--higher-is-better", action=argparse.BooleanOptionalAction, required=True)
     init.add_argument("--project", required=True); init.add_argument("--parallel-limit", type=int, required=True); init.add_argument("--assay-column"); init.add_argument("--run-id"); init.add_argument("--output-dir"); init.add_argument("--overwrite", action="store_true"); init.set_defaults(func=cmd_init)
     plan = sub.add_parser("plan-wide"); plan.add_argument("--state", required=True); plan.set_defaults(func=cmd_plan_wide)
-    add = sub.add_parser("add"); add.add_argument("--state", required=True); add.add_argument("--capability-id", required=True); add.add_argument("--depends-on"); add.add_argument("--reason"); add.add_argument("--parameters-json", help="JSON object of Skill CLI parameter destinations, for example {\"include_chirality\":true}."); add.add_argument("--require-approval", action="store_true", help="Require human approval because run-specific scale makes this execution expensive."); add.add_argument("--allow-repeat", action="store_true", help="Allow an intentional exact replication that would otherwise be rejected by analysis signature."); add.set_defaults(func=cmd_add)
+    add = sub.add_parser("add"); add.add_argument("--state", required=True); add.add_argument("--capability-id", required=True); add.add_argument("--depends-on"); add.add_argument("--reason"); add.add_argument("--parameters-json", help="JSON object of Skill CLI parameter destinations, for example {\"include_chirality\":true}."); add.add_argument("--require-approval", action="store_true", help="Require human approval because run-specific scale makes this execution expensive."); add.set_defaults(func=cmd_add)
     configure_exploration = sub.add_parser("configure-exploration"); configure_exploration.add_argument("--state", required=True); configure_exploration.add_argument("--max-iterations", type=int, required=True); configure_exploration.add_argument("--max-additional-nodes", type=int, required=True); configure_exploration.add_argument("--walltime-minutes", type=int, required=True); configure_exploration.add_argument("--seed", type=int, required=True); configure_exploration.set_defaults(func=cmd_configure_exploration)
     register_exploration = sub.add_parser("register-exploration"); register_exploration.add_argument("--state", required=True); register_exploration.add_argument("--plan", required=True); register_exploration.set_defaults(func=cmd_register_exploration)
     approve = sub.add_parser("approve"); approve.add_argument("--state", required=True); approve.add_argument("--node-id", required=True); decision = approve.add_mutually_exclusive_group(required=True); decision.add_argument("--approve", action="store_true"); decision.add_argument("--reject", dest="approve", action="store_false"); approve.add_argument("--rationale", required=True); approve.set_defaults(func=cmd_approve)

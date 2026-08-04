@@ -141,7 +141,20 @@ def main() -> int:
     args = parser.parse_args()
     workspace = find_workspace()
     catalog, markdown = build(workspace)
-    if not args.check:
+    if args.check:
+        catalog_path = workspace / "catalog" / "catalog.json"
+        markdown_path = workspace / "docs" / "CONDUCTOR_v4_skill_catalog.md"
+        if not catalog_path.exists() or not markdown_path.exists():
+            raise FileNotFoundError("Generated Catalog artifacts are missing")
+        existing = json.loads(catalog_path.read_text(encoding="utf-8"))
+        comparable_existing = {key: value for key, value in existing.items() if key != "generated_at"}
+        comparable_generated = {key: value for key, value in catalog.items() if key != "generated_at"}
+        if comparable_existing != comparable_generated:
+            raise ValueError("catalog/catalog.json is stale; rebuild the Catalog")
+        catalog["generated_at"] = existing["generated_at"]
+        if markdown_path.read_text(encoding="utf-8") != render_markdown(catalog):
+            raise ValueError("docs/CONDUCTOR_v4_skill_catalog.md is stale; rebuild the Catalog")
+    else:
         (workspace / "catalog" / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (workspace / "docs" / "CONDUCTOR_v4_skill_catalog.md").write_text(markdown, encoding="utf-8")
     print(f"Validated {len(catalog['capabilities'])} allowlisted capabilities")

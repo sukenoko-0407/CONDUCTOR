@@ -33,7 +33,8 @@
   },
   "operator_id": "A010",
   "default_parameters": {
-    "max_pairs": 200000
+    "max_pairs": 200000,
+    "random_seed": 61453
   },
   "dependencies": [
     "grouping"

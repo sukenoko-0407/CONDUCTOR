@@ -31,6 +31,7 @@ python .claude/skills/cs-analysis-group-structural-diversity/scripts/launch.py -
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
+- `--max-pairs`超過時はGroupごとに`--random-seed`でpairを一様ランダム抽出する。
 
 ## 変更履歴
 

@@ -12,7 +12,7 @@ Overlap-based meta clusteringを単独実行し、一般利用ではClustering�
 
 ## Input
 
-long形式の`cluster_id,compound_id`またはIDとgroup列を持つwide形式のmembership CSVを使う。long形式ではoverlapを表す同一compound IDの反復を許可する。 分子標準化、活性単位変換、pActivity変換は行わない。
+long形式の`cluster_id,compound_id,membership_value`または`group_id,compound_id,membership_value`、もしくは行がcompound、列がGroup IDのBoolean wide形式のmembership CSVを使う。`--input`は反復指定でき、複数のGrouping artifactまたはmatrix shardを結合してmeta groupingを行う。long形式と複数shardでは同一compound IDの反復を許可する。分子標準化、活性単位変換、pActivity変換は行わない。
 
 ## Required workflow
 
@@ -55,7 +55,7 @@ long形式の`cluster_id,compound_id`またはIDとgroup列を持つwide形式�
 CONDUCTOR利用が明示されていない場合はこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/cluster_membership.csv --run-id general-001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input grouping_a.csv --input grouping_b.csv --run-id general-001
 ```
 
 ## CONDUCTOR mode command
@@ -63,7 +63,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/cluster_membershi
 明示的なCONDUCTOR利用で、project、run、nodeが確定している場合だけこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/cluster_membership.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input grouping_a.csv --input grouping_b.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
 ```
 
 ## Boundaries

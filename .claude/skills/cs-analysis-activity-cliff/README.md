@@ -32,6 +32,7 @@ python .claude/skills/cs-analysis-activity-cliff/scripts/launch.py --input compo
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
 - membershipによりGroup内部とGroup間境界のCliffを分けて解析できる。
+- `--max-pairs`超過時は`--random-seed`に基づきeligible pairを一様ランダム抽出する。
 
 ## 変更履歴
 

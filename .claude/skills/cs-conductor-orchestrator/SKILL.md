@@ -12,6 +12,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 2. Read `catalog/catalog.json`; use only listed capabilities.
 3. Read the target run's `state.json` before choosing a next action.
 4. Treat `catalog/included_skills.json` as human-managed. Never add a Skill to it autonomously.
+5. Use `state status` for coarse progress. Use `state groups` and the external Group index only when detailed membership/provenance is needed.
 
 ## Workflow
 
@@ -26,6 +27,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 6. Use `scripts/state_manager.py runnable` to find nodes whose dependencies and approval requirements are satisfied.
 7. Mark each selected node `running` with `state_manager.py start`; this enforces the human-specified parallel limit.
 8. Invoke the Project Skill with `--conductor`, the State project, the same run ID, the reserved node ID, and the exact node `parameters`. The planned parameters already include node-specific `output_dir` and resolved upstream artifact arguments derived from `input_bindings`. Never omit or replace these CONDUCTOR context arguments.
+   A list-valued `input` means repeat `--input` once per artifact; this is used by C012 meta-overlap.
 9. Record each schema-valid `execution_event.json` through `state_manager.py record`. State rejects events whose `configuration` does not match the planned parameter subset. If execution terminates without an event, use `state_manager.py fail` with the concrete error; a failed node is not automatically retried.
 10. Complete a coverage audit with `state status`. Do not stop the initial pass because early results lack signal. Replace a failed/inapplicable axis where practical, or preserve its concrete skip rationale. Then invoke the dedicated `cs-conductor-interpreter` Agent; do not duplicate its semantic evidence comparison inside Orchestration.
 11. Before a high/very-high cost node, or a normally medium-cost node made expensive by dataset scale, explain purpose, target, expected information, resources, and alternative; add it with `--require-approval` when necessary, wait for explicit human approval, then record it. The exception is a Catalog capability explicitly marked `approval_policy=preauthorized_initial`.
@@ -33,6 +35,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 12. Before iterative Interpretation exploration, obtain a human budget and record it with `state configure-exploration`. Run Interpretation only after every initial node is terminal. Pass State, positive and negative evidence, failures, coverage gaps, prior Interpretation, and unexecuted relevant options. State enforces the initial gate.
 13. Treat every Interpretation node as read-only and terminal. The Interpreter may write an `exploration_plan.json` but may not execute it. Validate and register that plan with `state register-exploration`; this rejects repeated analysis signatures, duplicate or dangling IDs, requests outside Orchestrator bounds, over-budget batches, missing falsification requests, and dependencies on terminal Interpretation nodes. For an explicit Plan `scope`, registration validates compound IDs against the run input and materializes a content-addressed membership CSV under `interpretation/scopes/`.
 14. Execute registered low-cost nodes within the delegated budget and normal parallel limit. Request human approval for high-cost or out-of-budget work. After the branch is terminal, add a new I001 node over the new and relevant prior evidence. If findings remain too numerous for humans, prefer further discriminating Description–Grouping–Operator–Interpretation branches over discarding findings.
+15. Treat Group IDs as immutable identities. Inspect `grouping/group_index/group_registry.csv` and only the needed columns in `Cpd_Group_matrix_*.csv`. Mark a low-value explored region with `state discard-group`; retain its membership and history for audit.
 
 ## Environment
 
@@ -72,6 +75,21 @@ Inspect runnable nodes:
 
 ```bash
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state runnable --state path/to/state.json
+```
+
+Inspect detailed Group provenance only when needed:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state groups \
+  --state path/to/state.json --status active
+```
+
+Stop automatically prioritizing a well-explored low-value Group without deleting it:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state discard-group \
+  --state path/to/state.json --group-id G_C006_001_4A91C2D0870FB6E3 \
+  --reason "Independent representations did not support this region"
 ```
 
 Reserve a runnable node before launching it:

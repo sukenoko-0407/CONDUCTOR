@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CONDUCTOR Description間の関係性とカバー範囲</title>
+  <style>
+    :root {
+      --ink: #15243a;
+      --muted: #5f6f82;
+      --paper: #ffffff;
+      --canvas: #eef3f7;
+      --line: #d7e0e8;
+      --navy: #173a5e;
+      --blue: #2d6ea3;
+      --cyan: #2e8c99;
+      --green: #4d8b68;
+      --amber: #b6792a;
+      --red: #a94d55;
+      --violet: #6f62a7;
+      --soft-blue: #eaf3fa;
+      --soft-green: #eaf5ef;
+      --soft-amber: #fbf2e4;
+      --soft-violet: #f0edf8;
+      --shadow: 0 18px 50px rgba(21, 36, 58, .10);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(45,110,163,.12), transparent 28rem),
+        linear-gradient(180deg, #f7fafc 0, var(--canvas) 35rem);
+      font: 15px/1.72 system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif;
+    }
+    .shell { max-width: 1180px; margin: 0 auto; padding: 32px 24px 72px; }
+    header {
+      position: relative;
+      overflow: hidden;
+      padding: 44px 48px;
+      color: white;
+      border-radius: 24px;
+      background: linear-gradient(125deg, #112f4e, #245f86 62%, #2d7d87);
+      box-shadow: var(--shadow);
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      right: -90px; top: -120px;
+      width: 340px; height: 340px;
+      border: 48px solid rgba(255,255,255,.07);
+      border-radius: 50%;
+    }
+    .eyebrow { margin: 0 0 8px; color: #bfe2eb; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { max-width: 850px; margin: 0; font-size: clamp(30px, 5vw, 52px); line-height: 1.15; letter-spacing: -.03em; }
+    .lead { max-width: 790px; margin: 20px 0 0; color: #e3eef5; font-size: 17px; }
+    .meta { margin-top: 22px; color: #bfd2df; font-size: 13px; }
+    nav {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin: 22px 0 0;
+    }
+    nav a {
+      color: #e8f5f7; text-decoration: none;
+      border: 1px solid rgba(255,255,255,.24);
+      background: rgba(255,255,255,.08);
+      border-radius: 999px; padding: 6px 12px; font-size: 13px;
+    }
+    main { margin-top: 26px; }
+    section {
+      margin-top: 22px;
+      padding: 30px 34px;
+      background: rgba(255,255,255,.96);
+      border: 1px solid rgba(215,224,232,.9);
+      border-radius: 18px;
+      box-shadow: 0 8px 28px rgba(21,36,58,.06);
+    }
+    h2 { margin: 0 0 18px; font-size: 25px; letter-spacing: -.02em; }
+    h3 { margin: 26px 0 10px; font-size: 18px; }
+    p { margin: 10px 0; }
+    .summary-grid, .axis-grid, .choice-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .metric, .axis, .choice {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fbfdff;
+      padding: 18px;
+    }
+    .metric strong { display: block; color: var(--navy); font-size: 30px; line-height: 1; }
+    .metric span { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; }
+    .axis { border-top: 4px solid var(--blue); }
+    .axis:nth-child(3n+2) { border-top-color: var(--cyan); }
+    .axis:nth-child(3n) { border-top-color: var(--violet); }
+    .axis b { display: block; margin-bottom: 5px; }
+    .axis small { color: var(--muted); }
+    .callout {
+      margin-top: 18px; padding: 16px 18px;
+      border-left: 5px solid var(--amber);
+      border-radius: 8px; background: var(--soft-amber);
+    }
+    .relation-stack { display: grid; gap: 12px; }
+    .relation {
+      display: grid;
+      grid-template-columns: minmax(180px, .8fr) 54px minmax(260px, 1.5fr);
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fbfdff;
+    }
+    .relation .source, .relation .target { padding: 11px 13px; border-radius: 10px; background: var(--soft-blue); }
+    .relation .target { background: var(--soft-green); }
+    .relation .arrow { text-align: center; color: var(--blue); font-size: 24px; font-weight: 800; }
+    .relation small { display: block; margin-top: 3px; color: var(--muted); }
+    .tag {
+      display: inline-block; margin-right: 5px; padding: 2px 8px;
+      border-radius: 999px; color: #285777; background: #e8f2f8;
+      font-size: 12px; font-weight: 750;
+    }
+    .tag.warn { color: #7b511d; background: #faecd5; }
+    .tag.low { color: #614e91; background: #ece8f7; }
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: #f5fbff; background: var(--navy); font-size: 13px; }
+    tbody tr:nth-child(even) { background: #f7fafc; }
+    code { padding: 1px 5px; border-radius: 5px; color: #264f70; background: #edf3f7; }
+    .coverage-list { display: grid; gap: 10px; }
+    .coverage-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.1fr) 150px minmax(240px, 1.5fr);
+      align-items: center; gap: 14px;
+      padding: 11px 0; border-bottom: 1px solid #e7edf2;
+    }
+    .blocks { display: flex; gap: 5px; }
+    .blocks i { width: 20px; height: 9px; border-radius: 99px; background: #d9e2e9; }
+    .blocks i.on { background: var(--cyan); }
+    .coverage-row small { color: var(--muted); }
+    .choice { border-left: 4px solid var(--cyan); }
+    .choice b { color: var(--navy); }
+    .choice p { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+    .decision {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px;
+      margin: 18px 0 4px;
+    }
+    .decision div { position: relative; padding: 12px 8px; text-align: center; border-radius: 10px; background: var(--soft-blue); font-size: 13px; }
+    .decision div:not(:last-child)::after { content: "→"; position: absolute; right: -10px; color: var(--blue); font-weight: 900; }
+    .footnote { color: var(--muted); font-size: 13px; }
+    footer { padding: 24px 8px 0; color: var(--muted); font-size: 13px; }
+    @media (max-width: 900px) {
+      .summary-grid, .axis-grid, .choice-grid { grid-template-columns: repeat(2, 1fr); }
+      .decision { grid-template-columns: repeat(3, 1fr); }
+      .relation, .coverage-row { grid-template-columns: 1fr; }
+      .relation .arrow { transform: rotate(90deg); }
+    }
+    @media (max-width: 560px) {
+      .shell { padding: 14px 12px 50px; }
+      header { padding: 32px 24px; border-radius: 16px; }
+      section { padding: 24px 18px; }
+      .summary-grid, .axis-grid, .choice-grid, .decision { grid-template-columns: 1fr; }
+      .decision div:not(:last-child)::after { content: "↓"; right: auto; left: 50%; bottom: -15px; }
+    }
+    @media print {
+      body { background: white; font-size: 11px; }
+      .shell { max-width: none; padding: 0; }
+      header { box-shadow: none; border-radius: 0; print-color-adjust: exact; }
+      nav { display: none; }
+      section { box-shadow: none; break-inside: avoid; }
+      table { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <p class="eyebrow">CONDUCTOR · Description landscape</p>
+      <h1>Description間の関係性とカバー範囲</h1>
+      <p class="lead">18個のSkillを「数」ではなく、包含関係、類似family、独立した化学情報軸として整理する。広く浅い解析で何を代表として選び、何を深掘りに残すかを人間が判断するための資料。</p>
+      <p class="meta">作成日 2026-08-03 · 対象: Catalog収載Description Skill 18件</p>
+      <nav aria-label="文書内ナビゲーション">
+        <a href="#overview">要約</a><a href="#map">関係図</a><a href="#families">Family</a><a href="#coverage">Coverage</a><a href="#selection">代表選択</a><a href="#quantify">定量化</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="overview">
+        <h2>1. Executive summary</h2>
+        <div class="summary-grid">
+          <div class="metric"><strong>18</strong><span>Catalog収載Description Skill</span></div>
+          <div class="metric"><strong>約9</strong><span>主要な独立情報軸。厳密な数学的rankではなく設計上の整理</span></div>
+          <div class="metric"><strong>3</strong><span>明確なSkill間包含関係</span></div>
+          <div class="metric"><strong>2D</strong><span>最も厚くカバーされた領域</span></div>
+        </div>
+        <p class="callout"><b>結論:</b> 古典的なLigand-only 2D表現は非常に広い。fingerprintはやや過密で、3Dはglobal shape中心。learned/quantumは異なる軸を提供できるが、現時点ではmodel依存または限定的である。</p>
+
+        <h3>主要な情報軸</h3>
+        <div class="axis-grid">
+          <div class="axis"><b>2D scalar</b><small>D001 / D015</small></div>
+          <div class="axis"><b>Local graph</b><small>D002</small></div>
+          <div class="axis"><b>Substructure</b><small>D003 / D006 / D008</small></div>
+          <div class="axis"><b>Pair &amp; torsion</b><small>D004 / D005</small></div>
+          <div class="axis"><b>Path &amp; subgraph</b><small>D007 / D009 / D010</small></div>
+          <div class="axis"><b>2D pharmacophore</b><small>D017</small></div>
+          <div class="axis"><b>3D shape</b><small>D012 / D013 / D014 / D016</small></div>
+          <div class="axis"><b>Learned</b><small>D019</small></div>
+          <div class="axis"><b>Quantum</b><small>D020</small></div>
+        </div>
+      </section>
+
+      <section id="map">
+        <h2>2. 強い包含・変換関係</h2>
+        <div class="relation-stack">
+          <div class="relation">
+            <div class="source"><span class="tag">subset</span><b>D006 RDKit fragment</b><small>85 fragment counts</small></div>
+            <div class="arrow">⊂</div>
+            <div class="target"><b>D001 RDKit 2D</b><small>217 features。D006の全featureを含む</small></div>
+          </div>
+          <div class="relation">
+            <div class="source"><span class="tag">subset</span><b>D014 Basic shape</b><small>10 global shape scalars</small></div>
+            <div class="arrow">⊂</div>
+            <div class="target"><b>D012 RDKit 3D</b><small>同じ10値＋PBF。確認環境では共通値も数値的に同一</small></div>
+          </div>
+          <div class="relation">
+            <div class="source"><span class="tag warn">definition subset</span><b>D015 Mordred 2D</b><small>1,613 descriptor definitions</small></div>
+            <div class="arrow">⊂</div>
+            <div class="target"><b>D016 Mordred 3D</b><small>1,826 definitions。2D集合＋213個の3D descriptor</small></div>
+          </div>
+          <div class="relation">
+            <div class="source"><span class="tag warn">same raw source</span><b>D017 folded</b><small>39,972 raw bitsを固定長へfolding</small></div>
+            <div class="arrow">↔</div>
+            <div class="target"><b>D017 SVD</b><small>同じraw signatureへdataset-specific TruncatedSVD</small></div>
+          </div>
+          <div class="relation">
+            <div class="source"><span class="tag low">internal overlap</span><b>D013 USR</b><small>12 shape moments</small></div>
+            <div class="arrow">⊂</div>
+            <div class="target"><b>D013 USRCAT</b><small>60列の先頭12列がUSRと同一。72出力列中、実質60定義</small></div>
+          </div>
+        </div>
+        <p class="footnote">包含されるSkillも不要とは限らない。小さく解釈しやすい出力、下流処理の軽量化、意味の限定という管理上の価値がある。</p>
+      </section>
+
+      <section id="families">
+        <h2>3. 類似familyと補完性</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Family</th><th>Skill</th><th>類似性</th><th>補完する情報</th></tr></thead>
+            <tbody>
+              <tr><td>Local graph</td><td>D002 Morgan</td><td>D004/D005と同じ2D graph由来</td><td>原子中心の局所環境。chirality、bit/count、feature invariantを選択可能</td></tr>
+              <tr><td>Relational topology</td><td>D004 Atom Pair / D005 Torsion</td><td>互いに中程度</td><td>原子対距離と連続原子列。Morganより長距離・sequence寄り</td></tr>
+              <tr><td>Substructure</td><td>D003 / D006 / D008</td><td>高類似になりやすい</td><td>curated key、count、generic patternという出力意味の違い</td></tr>
+              <tr><td>Path/subgraph</td><td>D007 / D009 / D010</td><td>同じ大分類で高類似</td><td>graph属性とhashing方式が異なる。初期解析では一つを代表にできる</td></tr>
+              <tr><td>3D</td><td>D012 / D013 / D014 / D016</td><td>D012–D014は非常に高い</td><td>D013は分布momentとatom category、D016は多数descriptorを追加</td></tr>
+              <tr><td>Distinct sources</td><td>D017 / D019 / D020</td><td>古典graph表現との類似性は比較的低い</td><td>pharmacophore、learned representation、electronic state</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="coverage">
+        <h2>4. Coverage landscape</h2>
+        <p class="footnote">ブロックは相対的な網羅性を示し、予測性能や品質scoreではない。</p>
+        <div class="coverage-list">
+          <div class="coverage-row"><b>2D scalar</b><div class="blocks"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div><small>D001/D015。低コスト代表と大規模集合を併設</small></div>
+          <div class="coverage-row"><b>Fragment / substructure</b><div class="blocks"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><small>D003/D006/D008。解釈性と網羅性を複数方式でカバー</small></div>
+          <div class="coverage-row"><b>2D graph fingerprint</b><div class="blocks"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div><small>D002/D004/D005/D007/D009/D010。選択肢は多く、やや過密</small></div>
+          <div class="coverage-row"><b>Stereochemistry</b><div class="blocks"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div><small>D002 chiralと3D系。一部の表現だけがsensitive</small></div>
+          <div class="coverage-row"><b>2D pharmacophore</b><div class="blocks"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><small>D017 folded/SVD</small></div>
+          <div class="coverage-row"><b>3D global shape</b><div class="blocks"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><small>D012/D013/D014/D016。強いが重複とsingle-conformer依存がある</small></div>
+          <div class="coverage-row"><b>Conformer ensemble</b><div class="blocks"><i class="on"></i><i></i><i></i><i></i><i></i></div><small>最良conformer一つを採用。ensemble統計なし</small></div>
+          <div class="coverage-row"><b>Learned representation</b><div class="blocks"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div><small>D019。実効coverageはlocal modelとtraining objectiveに依存</small></div>
+          <div class="coverage-row"><b>Quantum / electronic</b><div class="blocks"><i class="on"></i><i></i><i></i><i></i><i></i></div><small>D020。energyとcharge統計のみ</small></div>
+          <div class="coverage-row"><b>Protein / interaction</b><div class="blocks"><i></i><i></i><i></i><i></i><i></i></div><small>現行scope外。将来用SBDD schemaのみ</small></div>
+        </div>
+      </section>
+
+      <section id="selection">
+        <h2>5. 広く浅い解析での代表選択</h2>
+        <div class="decision" aria-label="初期解析の代表情報軸">
+          <div>D001<br>2D scalar</div><div>D002<br>local graph</div><div>D003<br>substructure</div><div>D004<br>atom pair</div><div>D007<br>path</div><div>D017<br>2D pharmacophore</div><div>D013<br>初手3D</div>
+        </div>
+        <div class="choice-grid">
+          <div class="choice"><b>D001 → D015</b><p>初期は低コストRDKit 2D。より広いscalar descriptorが必要ならMordred 2Dへ。</p></div>
+          <div class="choice"><b>D002 variants</b><p>standardを基本とし、stereocenterが重要ならchiral、atom type abstractionが必要ならfeature invariant。</p></div>
+          <div class="choice"><b>D007 → D009/D010</b><p>D007を初手のpath代表とし、局所結果が不安定な場合に別path/subgraph方式で再評価。</p></div>
+          <div class="choice"><b>D017 folded → SVD</b><p>foldedを一般的なfingerprintとして使用。SVDは下流の連続vector処理との相性を変えたい場合。</p></div>
+          <div class="choice"><b>D013 → D012/D016</b><p>D013を初手から実行して3Dのヒントを探索する。D014はshape限定表が必要な場合に限る。</p></div>
+          <div class="choice"><b>D019 / D020</b><p>既存evidenceで不足する情報を説明し、計算資源とmodelを確認して人間承認後に実行。</p></div>
+        </div>
+      </section>
+
+      <section id="quantify">
+        <h2>6. Dataset別の直交性を定量化する方法</h2>
+        <p>静的には異なるalgorithmでも、特定の化合物集合では同じ近傍構造を返すことがある。run単位では次の指標を組み合わせる。</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>指標</th><th>確認する内容</th><th>Orchestrationへの利用</th></tr></thead>
+            <tbody>
+              <tr><td>Similarity matrix Spearman</td><td>化合物pairの近さの順位が表現間で一致するか</td><td>高相関Skillの重複実行を抑える</td></tr>
+              <tr><td>Centered kernel alignment</td><td>表現空間全体の幾何が近いか</td><td>独立representation familyを選ぶ</td></tr>
+              <tr><td>ARI / NMI / VI</td><td>各Description由来Groupingの一致・不一致</td><td>安定groupとrepresentation固有groupを分離する</td></tr>
+              <tr><td>Cross-validated incremental value</td><td>既存表現へ追加したとき活性情報が増えるか</td><td>高コストDescriptionへ進む根拠にする</td></tr>
+              <tr><td>Local neighbor / cliff agreement</td><td>注目局所で近傍やcliffが再現するか</td><td>全体相関では見えない局所深掘りを選ぶ</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>7. 総合評価</h2>
+        <ul>
+          <li>古典的Ligand-only 2D SAR表現のbreadthは高い。</li>
+          <li>fingerprintは選択肢が多く、初期探索では総当たりよりfamily代表選択が重要。</li>
+          <li>D006、D014、D017 SVDは独立情報源よりも、解釈性・出力粒度・下流処理との相性を調整する役割が強い。</li>
+          <li>3Dはglobal shapeとMordredを持つが、conformer ensemble、explicit 3D pharmacophore、electrostatic fieldは不足。</li>
+          <li>D019とD020は異なる情報軸を追加できるが、現状はmodel依存または限定的。</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <p>根拠: <code>tools/templates/description_run.py</code>、CONDUCTOR Skill Catalog、Design Spec。feature数は現在のWindows検証環境にあるRDKit/Mordred versionで確認した値であり、library更新で変わる可能性がある。</p>
+    </footer>
+  </div>
+</body>
+</html>

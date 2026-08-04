@@ -74,23 +74,25 @@ WIDE_PROFILE: dict[str, dict[str, Any]] = {
     "D013": {"wide_shallow_axis": "shape_and_3d_pharmacophore", "default_parameters": {"num_confs": 20, "random_seed": 61453}},
     "D017": {"wide_shallow_axis": "pharmacophore_2d"},
     "C001": {"wide_shallow_axis": "scaffold_rule", "default_parameters": {"min_cluster_size": 3}},
-    "C002": {"wide_shallow_axis": "maximum_common_substructure", "default_parameters": {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300}},
+    "C002": {"wide_shallow_axis": "maximum_common_substructure", "default_parameters": {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300, "random_seed": 61453}},
     "C003": {"wide_shallow_axis": "fragment_decomposition", "default_parameters": {"min_cluster_size": 3}},
-    "C005": {"wide_shallow_axis": "vector_similarity_partition", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "jaccard", "similarity_threshold": 0.55}},
-    "C006": {"wide_shallow_axis": "vector_hierarchical", "wide_shallow_sources": {"description": ["D001", "D013", "D017"]}, "default_parameters": {"min_cluster_size": 3, "metric": "cosine", "distance_threshold": 0.7}},
-    "C007": {"wide_shallow_axis": "vector_density_clustering", "wide_shallow_sources": {"description": ["D001"]}, "default_parameters": {"min_cluster_size": 3, "metric": "cosine", "eps": 0.5, "min_samples": 3}},
-    "C009": {"wide_shallow_axis": "vector_graph_community", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "jaccard", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
+    "C005": {"wide_shallow_axis": "vector_similarity_partition", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55}},
+    "C006": {"wide_shallow_axis": "vector_hierarchical", "wide_shallow_sources": {"description": ["D001", "D013", "D017"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "distance_threshold": 0.7}},
+    "C007": {"wide_shallow_axis": "vector_density_clustering", "wide_shallow_sources": {"description": ["D001"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "eps": 0.5, "min_samples": 3}},
+    "C008": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
+    "C009": {"wide_shallow_axis": "vector_graph_community", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
+    "C010": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55}},
     "C011": {"wide_shallow_axis": "assay_context_groups"},
     "A001": {"wide_shallow_axis": "group_activity_profile", "wide_shallow_sources": {"grouping": ["*"]}, "default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
     "A002": {"wide_shallow_axis": "endpoint_distribution"},
-    "A003": {"wide_shallow_axis": "pairwise_structure_space", "default_parameters": {"max_pairs": 200000}},
+    "A003": {"wide_shallow_axis": "pairwise_structure_space", "default_parameters": {"max_pairs": 200000, "random_seed": 61453}},
     "A004": {"wide_shallow_axis": "descriptor_activity_association", "wide_shallow_sources": {"description": ["D001", "D013"]}},
     "A005": {"wide_shallow_axis": "neighborhood_activity_consistency", "wide_shallow_sources": {"description": ["D004", "D007"]}, "wide_shallow_parameter_overrides": {"description": {"D004": {"metric": "cosine"}, "D007": {"metric": "tanimoto"}}}, "default_parameters": {"k": 10}},
     "A006": {"wide_shallow_axis": "representation_specific_activity_cliffs", "wide_shallow_sources": {"description": ["D002", "D013", "D017"]}, "wide_shallow_parameter_overrides": {"description": {"D002": {"metric": "tanimoto"}, "D013": {"metric": "manhattan"}, "D017": {"metric": "tanimoto"}}}, "default_parameters": {"k": 10}},
-    "A007": {"wide_shallow_axis": "structure_activity_cliffs", "default_parameters": {"similarity_threshold": 0.8, "activity_delta_threshold": 1.0, "max_pairs": 200000}},
+    "A007": {"wide_shallow_axis": "structure_activity_cliffs", "default_parameters": {"similarity_threshold": 0.8, "activity_delta_threshold": 1.0, "max_pairs": 200000, "random_seed": 61453}},
     "A008": {"wide_shallow_axis": "group_activity_enrichment", "wide_shallow_sources": {"grouping": ["*"]}, "default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
     "A009": {"wide_shallow_axis": "overlapping_group_structure", "wide_shallow_sources": {"grouping": ["C002", "C003"]}},
-    "A010": {"wide_shallow_axis": "group_structural_diversity", "wide_shallow_sources": {"grouping": ["C001", "C002", "C003", "C006"]}, "default_parameters": {"max_pairs": 200000}},
+    "A010": {"wide_shallow_axis": "group_structural_diversity", "wide_shallow_sources": {"grouping": ["C001", "C002", "C003", "C006"]}, "default_parameters": {"max_pairs": 200000, "random_seed": 61453}},
 }
 
 
@@ -298,10 +300,10 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             inputs = "compound IDと一つ以上のカテゴリ列を持つCSVを使い、`--columns assay,series`のようにGroupingへ使用する列を必ず指定する。"
         elif capability["implementation"]["algorithm"] == "meta_overlap":
             base_args = "--input path/to/cluster_membership.csv"
-            inputs = "long形式の`cluster_id,compound_id`またはIDとgroup列を持つwide形式のmembership CSVを使う。long形式ではoverlapを表す同一compound IDの反復を許可する。"
+            inputs = "long形式の`cluster_id,compound_id,membership_value`または`group_id,compound_id,membership_value`、もしくは行がcompound、列がGroup IDのBoolean wide形式のmembership CSVを使う。long形式と複数shardでは同一compound IDの反復を許可する。"
         clustering_options = {
             "structure_murcko": "`--min-cluster-size`未満のscaffold groupを出力しない。",
-            "structure_mcs": "`--min-cluster-size`（既定3）、`--max-pairs`（既定・上限1000）、`--max-core-groups`（既定300）で探索量を制限する。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。",
+            "structure_mcs": "`--min-cluster-size`（既定3）、`--max-pairs`（既定・上限1000）、`--max-core-groups`（既定300）で探索量を制限する。pair上限を適用する場合は`--random-seed`に基づく一様ランダム非復元抽出を行う。C002は構造Groupingの中心的な初手であり、CONDUCTOR v4ではrunごとの事前承認なしで実行する。",
             "structure_brics": "`--min-cluster-size`未満のfragment groupを出力しない。",
             "structure_recap": "`--min-cluster-size`未満のfragment groupを出力しない。",
             "categorical": "`--columns`を必須とし、`--min-cluster-size`未満のgroupを出力しない。",
@@ -309,7 +311,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         }
         if algorithm.startswith(("structure_", "vector_")) and algorithm.split("_", 1)[1] not in {"murcko", "mcs", "brics", "recap"}:
             method = algorithm.split("_", 1)[1]
-            source_options = "`--metric`を指定できる。`--metric jaccard`は0/1のbinary Descriptionだけに使う。"
+            source_options = "`--metric auto`を既定とし、`--input-representation`と実VectorからMetricを決定する。binaryおよびMorganはTanimoto、USR/USRCATはManhattan、疎countとembedding/SVDはCosine、その他の連続値は標準化Euclideanを用いる。binaryまたは既知のbit fingerprintへTanimoto以外を明示すると停止する。"
             method_options = {
                 "butina": "`--similarity-threshold`でcluster cutoffを指定する。",
                 "hierarchical": "`--n-clusters`または`--distance-threshold`で切断条件を指定する。",
@@ -345,14 +347,14 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         analysis_options = {
             "group_profile": "`--membership`を必須とし、`--high-quantile`、`--low-quantile`、任意の`--target-group`を指定できる。",
             "activity_distribution": "全体分布をdefaultとし、任意の`--membership`と`--target-group`でgroup別に限定できる。",
-            "pairwise_structure_similarity": "SMILES列を使い、`--max-pairs`でpair列挙を制限する。Group内／二Group間scopeを指定できる。",
+            "pairwise_structure_similarity": "SMILES列を使い、`--max-pairs`でpair数を制限する。上限超過時は`--random-seed`による一様ランダム非復元抽出を行う。Group内／二Group間scopeを指定できる。",
             "descriptor_activity_correlation": "`--description`の全数値featureについてPearson/Spearman相関を計算する。任意のGroup内scopeへ限定できる。",
             "knn_activity_consistency": "`--description`と`--k`を指定する。`--metric auto`はfeature特性から距離を選び、CONDUCTOR初手ではsource別metricをStateへ明示記録する。Group内／二Group間scopeではglobal前処理基準を既定とする。",
             "sali": "`--description`と`--k`を指定する。`--metric auto`はMorgan/binaryへTanimoto、USR/USRCATへManhattan、embedding/SVDまたは疎なcountへcosine、その他の連続descriptorへEuclideanを選ぶ。Group内／二Group間scopeとglobal前処理基準に対応し、高SALI cliff pairとlandscape分布の平滑性をともにevidenceへ残す。",
-            "activity_cliff": "`--similarity-threshold`、`--activity-delta-threshold`、`--max-pairs`を指定する。Group内／二Group間scopeを指定できる。",
+            "activity_cliff": "`--similarity-threshold`、`--activity-delta-threshold`、`--max-pairs`を指定する。pair上限超過時は`--random-seed`による一様ランダム非復元抽出を行う。Group内／二Group間scopeを指定できる。",
             "group_enrichment": "`--membership`を必須とし、`--high-quantile`、`--low-quantile`を指定する。",
             "group_overlap": "`--membership`を必須とする。初手ではC002 MCSとC003 BRICSを評価する。",
-            "group_structural_diversity": "`--membership`を必須とし、SMILES列と`--max-pairs`を使う。",
+            "group_structural_diversity": "`--membership`を必須とし、SMILES列と`--max-pairs`を使う。pair上限超過時は`--random-seed`による一様ランダム非復元抽出を行う。",
         }
         option_guidance = analysis_options[operator]
         output_contract = f'''- 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`{capability["output"]["filename"]}`だけを生成する。
@@ -500,7 +502,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             scenes = "assay条件、既知series、sourceなど、人間が付与したカテゴリで化合物を分ける場合。"
             general_args = "--input compounds.csv --columns assay"
         else:
-            purpose = "既存group間のcompound重複を使ってmeta groupを生成する。"
+            purpose = "long形式のGrouping結果またはBoolean wide matrix shardにあるcompound重複を使ってmeta groupを生成する。"
             scenes = "複数Groupingの重複関係を要約し、上位のgroup構造を確認する場合。"
             general_args = "--input cluster_membership.csv"
         constraints = ["一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。"]
@@ -510,7 +512,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         if algorithm == "structure_mcs":
             constraints.append("`--max-pairs`は1～1000に制限し、`--max-core-groups`の既定値は300とする。")
         if algorithm.startswith("vector_"):
-            constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。0/1 vectorでのみJaccard距離を利用できる。")
+            constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。`--metric auto`は表現に応じてTanimoto、Manhattan、Cosine、標準化Euclideanを選び、binaryまたは既知のbit fingerprintではTanimoto以外を許可しない。")
             constraints.append("結果は入力feature、距離metric、thresholdまたはcluster数に依存する。")
         if approval:
             constraints.append("高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。")

@@ -32,6 +32,7 @@ python .claude/skills/cs-analysis-interpret-evidence/scripts/launch.py --evidenc
 - 注目した全discoveryに反証要求を付け、同じanalysis signatureを再要求しません。
 - 新しい切り出しはPlanの`scope`にcompound IDと選択法を記録し、membership生成はOrchestratorへ委ねます。
 - 多重探索結果、negative result、矛盾を削除しません。
+- HTMLは探索概要、Evidence index、発見、関係、未解決矛盾、仮説、推奨次解析、人間確認事項を含む監査用レポートです。
 - State更新、Operator実行、承認判断、新規SMILES生成は行いません。
 
 ## 変更履歴

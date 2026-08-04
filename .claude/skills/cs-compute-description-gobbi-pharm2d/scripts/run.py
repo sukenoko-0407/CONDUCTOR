@@ -177,7 +177,12 @@ def infer_columns(df: pd.DataFrame, id_column: str | None, smiles_column: str | 
 def load_records(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
     if args.input:
         input_path = Path(args.input)
-        df = pd.read_csv(input_path)
+        header = pd.read_csv(input_path, nrows=0)
+        candidate_id = args.id_column
+        if not candidate_id:
+            ranked_ids = sorted(header.columns, key=lambda column: _name_score(str(column), "id"), reverse=True)
+            candidate_id = str(ranked_ids[0]) if ranked_ids and _name_score(str(ranked_ids[0]), "id") > 0 else None
+        df = pd.read_csv(input_path, dtype={candidate_id: "string"} if candidate_id else None)
         id_column, smiles_column = infer_columns(df, args.id_column, args.smiles_column)
         if id_column and df[id_column].isna().any():
             raise ValueError("Compound IDs must not be missing")
@@ -193,7 +198,7 @@ def load_records(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
         ids = pd.Series(supplied_ids or [f"CMPD_{i:06d}" for i in range(1, len(values) + 1)])
         smiles = pd.Series(values)
         source_name = "smiles"
-        input_hash = object_hash(values)
+        input_hash = object_hash({"compound_ids": ids.astype(str).tolist(), "smiles": values})
     if len(ids) == 0:
         raise ValueError("At least one compound is required")
     if ids.isna().any() or ids.astype(str).str.strip().eq("").any():
@@ -440,10 +445,13 @@ def run() -> int:
     run_id = args.run_id or default_run_id()
     source, source_name, input_hash = load_records(args)
     outdir = output_dir(args, source_name, run_id)
-    if outdir.exists() and any(outdir.iterdir()) and not args.overwrite:
-        raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
-    outdir.mkdir(parents=True, exist_ok=True)
     extension = "parquet" if args.format == "parquet" else "csv"
+    if outdir.exists() and any(outdir.iterdir()):
+        if not args.overwrite:
+            raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
+        for name in [f"{CAPABILITY['output']['basename']}.csv", f"{CAPABILITY['output']['basename']}.parquet", "description_manifest.json", "warnings.json", "execution_event.json"]:
+            (outdir / name).unlink(missing_ok=True)
+    outdir.mkdir(parents=True, exist_ok=True)
     result_path = outdir / f"{CAPABILITY['output']['basename']}.{extension}"
     try:
         from rdkit import Chem
@@ -506,7 +514,7 @@ def run() -> int:
             "schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id,
             "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded",
             "input_hash": input_hash, "config_hash": object_hash(config), "configuration": config,
-            "artifacts": [{"type": "description", "path": result_path.name, "sha256": file_sha256(result_path)}, {"type": "manifest", "path": "description_manifest.json"}],
+            "artifacts": [{"type": "description", "path": result_path.name, "sha256": file_sha256(result_path)}, {"type": "manifest", "path": "description_manifest.json", "sha256": file_sha256(outdir / "description_manifest.json")}],
             "warnings": warnings, "started_at": started_at, "finished_at": utc_now()
         }
         validate_json(event, "execution_event.schema.json")

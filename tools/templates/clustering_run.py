@@ -160,7 +160,11 @@ def infer_named(columns: list[str], kind: str) -> str | None:
 def load_input(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
     if args.input:
         paths = [Path(value) for value in args.input] if isinstance(args.input, list) else [Path(args.input)]
-        frames = [pd.read_csv(path) for path in paths]
+        frames = []
+        for path in paths:
+            header = pd.read_csv(path, nrows=0)
+            candidate_id = args.id_column or infer_named(list(header.columns), "id")
+            frames.append(pd.read_csv(path, dtype={candidate_id: "string"} if candidate_id else None))
         df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
         source_name = paths[0].stem if len(paths) == 1 else "multiple_memberships"
         digest = value_hash([{"path": str(path.resolve()), "sha256": file_hash(path)} for path in paths])
@@ -171,7 +175,7 @@ def load_input(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
             raise ValueError("--compound-id count must match --smiles count")
         df = pd.DataFrame({"compound_id": ids or [f"CMPD_{i:06d}" for i in range(1, len(smiles) + 1)], "smiles": smiles})
         source_name = "smiles"
-        digest = value_hash(smiles)
+        digest = value_hash({"compound_ids": df["compound_id"].astype(str).tolist(), "smiles": smiles})
     if df.empty:
         raise ValueError("At least one input row is required")
     id_column = args.id_column or infer_named(list(df.columns), "id")
@@ -183,11 +187,7 @@ def load_input(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
     if df[id_column].isna().any():
         raise ValueError("Compound IDs must be non-empty and unique")
     ids = df[id_column].astype(str).str.strip()
-    allow_repeated_members = (
-        CAPABILITY["implementation"]["algorithm"] == "meta_overlap"
-        and {"cluster_id", "compound_id"}.issubset(df.columns)
-        and id_column == "compound_id"
-    )
+    allow_repeated_members = CAPABILITY["implementation"]["algorithm"] == "meta_overlap"
     if ids.eq("").any() or (ids.duplicated().any() and not allow_repeated_members):
         raise ValueError("Compound IDs must be non-empty and unique")
     if id_column != "compound_id":
@@ -326,6 +326,8 @@ def resolve_vector_metric(values: pd.DataFrame, features: list[str], args: argpa
     feature_names = [str(feature).lower() for feature in features]
     if any(name.startswith(("usr__", "usrcat__")) for name in feature_names):
         return "manhattan"
+    if any("embedding" in name or "svd" in name for name in feature_names):
+        return "cosine"
     sparse_nonnegative = bool(finite.size) and bool(np.all(finite >= 0)) and float(np.count_nonzero(finite)) / float(finite.size) < 0.5
     return "cosine" if sparse_nonnegative else "euclidean"
 
@@ -447,12 +449,22 @@ def categorical_groups(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dict
 
 
 def meta_overlap_groups(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dict[str, set[str]], dict[str, Any]]:
-    if {"cluster_id", "compound_id"}.issubset(df.columns):
-        member_sets = {str(group): set(frame["compound_id"].astype(str)) for group, frame in df.groupby("cluster_id")}
+    def active_mask(values: pd.Series) -> pd.Series:
+        text = values.astype(str).str.strip().str.lower()
+        return text.isin({"true", "yes", "y"}) | (pd.to_numeric(values, errors="coerce").fillna(0) > 0)
+
+    long_group_column = "cluster_id" if "cluster_id" in df.columns else ("group_id" if "group_id" in df.columns else None)
+    if long_group_column and "compound_id" in df.columns:
+        active = df if "membership_value" not in df.columns else df.loc[active_mask(df["membership_value"])]
+        active = active.loc[active[long_group_column].notna() & active[long_group_column].astype(str).str.strip().ne("")]
+        member_sets = {str(group): set(frame["compound_id"].astype(str)) for group, frame in active.groupby(long_group_column)}
     else:
         id_column = "compound_id"
-        member_sets = {str(column): set(df.loc[pd.to_numeric(df[column], errors="coerce").fillna(0) > 0, id_column].astype(str)) for column in df.columns if column != id_column}
+        member_sets = {str(column): set(df.loc[active_mask(df[column]), id_column].astype(str)) for column in df.columns if column != id_column}
+        member_sets = {group_id: members for group_id, members in member_sets.items() if members}
     names = sorted(member_sets)
+    if not names:
+        return {}, {"source_group_count": 0}
     distance = np.zeros((len(names), len(names)), dtype=float)
     for i, left in enumerate(names):
         for j, right in enumerate(names):
@@ -468,12 +480,13 @@ def meta_overlap_groups(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dic
     return groups, {"source_group_count": len(names)}
 
 
-def stable_group_id(sequence: int, args: argparse.Namespace) -> str:
+def stable_group_id(label: str, members: set[str], args: argparse.Namespace) -> str:
     if args.conductor and args.node_id:
         context = re.sub(r"[^A-Za-z0-9]+", "_", str(args.node_id)).strip("_").upper()
     else:
         context = CAPABILITY["clustering_id"]
-    return f"G_{context}_{sequence:06d}"
+    identity = value_hash({"label": str(label), "members": sorted(str(member) for member in members)})[:16].upper()
+    return f"G_{context}_{identity}"
 
 
 def run() -> int:
@@ -482,8 +495,11 @@ def run() -> int:
     run_id = args.run_id or run_id_now()
     df, source_name, input_hash = load_input(args)
     outdir = default_output(args, source_name, run_id)
-    if outdir.exists() and any(outdir.iterdir()) and not args.overwrite:
-        raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
+    if outdir.exists() and any(outdir.iterdir()):
+        if not args.overwrite:
+            raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
+        for name in ["cluster_membership.csv", "cluster_summary.csv", "group_registry.json", "grouping_manifest.json", "warnings.json", "execution_event.json"]:
+            (outdir / name).unlink(missing_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
     algorithm = CAPABILITY["implementation"]["algorithm"]
     warnings: list[str] = []
@@ -509,8 +525,8 @@ def run() -> int:
         raise ValueError(f"Unsupported clustering algorithm: {algorithm}")
     membership_rows: list[dict[str, Any]] = []
     registry: list[dict[str, Any]] = []
-    for sequence, (label, members) in enumerate(sorted(groups.items(), key=lambda item: (-len(item[1]), item[0])), start=1):
-        group_id = stable_group_id(sequence, args)
+    for label, members in sorted(groups.items(), key=lambda item: (-len(item[1]), item[0])):
+        group_id = stable_group_id(label, members, args)
         registry.append({"group_id": group_id, "group_label": label, "grouping_capability_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "source_node_id": args.node_id, "source_description_id": getattr(args, "input_representation", None), "definition": details, "compound_count": len(members), "activity_blind": True})
         membership_rows.extend({"cluster_id": group_id, "compound_id": compound_id, "membership_value": 1.0, "membership_reason": label} for compound_id in sorted(members))
     assigned_ids = set().union(*groups.values()) if groups else set()

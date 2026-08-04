@@ -28,6 +28,13 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state init \
   --project PROJECT --parallel-limit 8
 ```
 
+粗い進捗と、必要なGroupだけを確認する:
+
+```bash
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state status --state path/to/state.json
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state groups --state path/to/state.json --status active
+```
+
 ## 制約事項
 
 - `catalog/included_skills.json`に人間が収載したSkillだけを使用する。
@@ -37,6 +44,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state init \
 - vector ClusteringにはStateでbindingされたDescription artifactだけを渡し、raw SMILESからの内部fingerprint生成を許可しない。
 - Interpretation探索は人間設定のiteration・追加node・walltime・seed内で行い、専用Interpreterのplanを重複署名と反証要求について検証する。
 - random、matched random、交差、差分などの明示scopeは入力IDを検証し、再現可能なmembership CSVへ固定する。
+- Group IDはrun内で一意とし、由来は`group_registry.csv`、全化合物の所属はBooleanの`Cpd_Group_matrix_*.csv`で監査できる。低価値領域は削除せず`discarded`にする。
 - Interpretation nodeは読み取り専用の終端とし、追加解析はOrchestratorが新しいbranchとして登録する。
 - 分子標準化、活性単位変換、pActivity変換は行わない。
 

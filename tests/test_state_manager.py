@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from csv import DictReader
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,6 +41,46 @@ class StateLogicTests(unittest.TestCase):
         second["human_approval"] = "approved"
         self.assertEqual([second["node_id"]], [node["node_id"] for node in STATE.runnable_nodes(state)])
 
+    def test_discarded_group_remains_discarded_when_source_node_is_recorded_again(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            input_path = temporary / "input.csv"
+            input_path.write_text("compound_id,smiles,pIC50\nA,CCO,5\nB,CCN,6\n", encoding="utf-8")
+            membership_path = temporary / "cluster_membership.csv"
+            membership_path.write_text(
+                "cluster_id,compound_id,membership_value,membership_reason\n"
+                "G_TEST,A,1,member\nG_TEST,B,0,unassigned\n",
+                encoding="utf-8",
+            )
+            registry_path = temporary / "group_registry.json"
+            registry_path.write_text(
+                json.dumps([{"group_id": "G_TEST", "group_label": "test", "activity_blind": True}]),
+                encoding="utf-8",
+            )
+            state = self.state()
+            state["run"].update({"input": str(input_path), "id_column": "compound_id", "row_count": 2})
+            node = {
+                "node_id": "C001:001", "capability_id": "C001", "skill_name": "grouping",
+                "input_bindings": {},
+            }
+            state_path = temporary / "state.json"
+            STATE.update_group_index(state_path, state, node, membership_path, registry_path)
+            STATE.write_state(state_path, state)
+            with redirect_stdout(io.StringIO()):
+                STATE.cmd_discard_group(SimpleNamespace(state=str(state_path), group_id="G_TEST", reason="low value"))
+
+            discarded_state = json.loads(state_path.read_text(encoding="utf-8"))
+            STATE.set_derived_graph_status(discarded_state, {node["node_id"]}, "stale")
+            STATE.update_group_index(state_path, discarded_state, node, membership_path, registry_path)
+            STATE.write_state(state_path, discarded_state)
+
+            final_state = json.loads(state_path.read_text(encoding="utf-8"))
+            registry_rows = STATE.read_csv_rows(Path(final_state["group_index"]["registry_path"]))
+            self.assertEqual("discarded", registry_rows[0]["status"])
+            self.assertEqual("discarded", final_state["domain_graph"]["nodes"][0]["status"])
+            self.assertEqual(0, final_state["group_index"]["active_group_count"])
+            self.assertEqual(1, final_state["group_index"]["discarded_group_count"])
+
     def test_rejected_or_failed_upstream_terminally_skips_blocked_descendants(self) -> None:
         state = self.state()
         capability = {"capability_id": "D016", "skill_name": "mordred-3d", "stage": "description", "cost": {"class": "high", "human_approval_required": True}}
@@ -54,6 +95,32 @@ class StateLogicTests(unittest.TestCase):
         self.assertEqual("skipped", dependent["status"])
         self.assertEqual("human rejected high-cost node", dependent["skip_reason"])
         self.assertTrue(STATE.wide_shallow_summary(state)["terminal"])
+
+    def test_failed_execution_event_propagates_terminal_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            state_path = temporary / "state.json"
+            state = self.state()
+            upstream_capability = {"capability_id": "D001", "skill_name": "description", "stage": "description", "cost": {"class": "low", "human_approval_required": False}}
+            downstream_capability = {"capability_id": "A004", "skill_name": "correlation", "stage": "analysis", "cost": {"class": "low", "human_approval_required": False}}
+            upstream = STATE.add_node(state, upstream_capability)
+            downstream = STATE.add_node(state, downstream_capability, [upstream["node_id"]])
+            upstream["status"] = "running"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            event = {
+                "schema_version": "1.0.0", "project": "P", "run_id": "R", "node_id": upstream["node_id"],
+                "capability_id": "D001", "skill_name": "description", "status": "failed",
+                "input_hash": "1" * 64, "config_hash": "2" * 64, "configuration": {}, "artifacts": [],
+                "warnings": ["worker terminated"], "started_at": "2026-01-01T00:00:00+00:00", "finished_at": "2026-01-01T00:01:00+00:00",
+            }
+            event_path = temporary / "event.json"
+            event_path.write_text(json.dumps(event), encoding="utf-8")
+            STATE.cmd_record(SimpleNamespace(state=str(state_path), event=str(event_path)))
+            recorded = json.loads(state_path.read_text(encoding="utf-8"))
+            nodes = {node["node_id"]: node for node in recorded["execution_graph"]["nodes"]}
+            self.assertEqual("failed", nodes[upstream["node_id"]]["status"])
+            self.assertEqual("skipped", nodes[downstream["node_id"]]["status"])
+            self.assertIn("worker terminated", nodes[downstream["node_id"]]["skip_reason"])
 
     def test_approval_rejection_command_records_reason_and_propagates_skip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -90,6 +157,40 @@ class StateLogicTests(unittest.TestCase):
         self.assertEqual([], STATE.runnable_nodes(state))
         first["status"] = "failed"
         self.assertEqual([second["node_id"]], [node["node_id"] for node in STATE.runnable_nodes(state)])
+
+    def test_dependency_contract_supports_meta_inputs_and_tracks_local_grouping(self) -> None:
+        grouping_a = {"node_id": "C001:001", "stage": "grouping"}
+        grouping_b = {"node_id": "C002:001", "stage": "grouping"}
+        description = {"node_id": "D002:001", "stage": "description"}
+        meta = {"capability_id": "C012", "stage": "grouping", "grouping_kind": "meta", "dependencies": ["grouping"]}
+        local_sali = {"capability_id": "A006", "stage": "analysis", "dependencies": ["description"], "scope_support": ["global", "within-group", "between-groups"]}
+        STATE.validate_dependency_contract(meta, [grouping_a, grouping_b])
+        self.assertEqual(["C001:001", "C002:001"], STATE.dependency_bindings([grouping_a, grouping_b])["grouping"])
+        STATE.validate_dependency_contract(local_sali, [description, grouping_a])
+        STATE.validate_analysis_scope_contract(local_sali, [description, grouping_a], {"scope_mode": "within-group"})
+        with self.assertRaisesRegex(ValueError, "requires a Grouping dependency"):
+            STATE.validate_analysis_scope_contract(local_sali, [description], {"scope_mode": "within-group"})
+        signature_a = STATE.analysis_signature("A006", ["D002:001"], {"description": "first.csv", "input": "run-a.csv", "metric": "tanimoto"})
+        signature_b = STATE.analysis_signature("A006", ["D002:001"], {"description": "copied.csv", "input": "run-b.csv", "metric": "tanimoto"})
+        self.assertEqual(signature_a, signature_b)
+
+        state = self.state()
+        state["run"]["input"] = str((ROOT / "tests" / "data" / "small_sar.csv").resolve())
+        state["execution_graph"]["nodes"] = [{
+            "node_id": "D002:001", "capability_id": "D002", "skill_name": "description",
+            "stage": "description", "status": "succeeded", "dependencies": [], "human_approval": "not_required",
+            "output_dir": str((ROOT / "results" / "test-description").resolve()), "parameters": {},
+        }]
+        analysis_node = {"node_id": "A006:001", "stage": "analysis", "parameters": {"description": "rogue.csv"}, "dependencies": ["D002:001"]}
+        capabilities = {
+            "D002": {"stage": "description", "output": {"basename": "D002_morgan"}},
+            "A006": {"capability_id": "A006", "skill_name": "cs-analysis-sali", "stage": "analysis"},
+        }
+        with self.assertRaisesRegex(ValueError, "CONDUCTOR-bound parameter description conflicts"):
+            STATE.configure_node_io(
+                state, analysis_node, capabilities["A006"], capabilities, ROOT / "results" / "test-run",
+                {"description": "D002:001"},
+            )
 
     def test_wide_nodes_are_prioritized_and_gate_interpretation(self) -> None:
         state = self.state()
@@ -147,6 +248,7 @@ class StateLogicTests(unittest.TestCase):
             self.assertEqual(3, mcs["parameters"]["min_cluster_size"])
             self.assertEqual(1000, mcs["parameters"]["max_pairs"])
             self.assertEqual(300, mcs["parameters"]["max_core_groups"])
+            self.assertEqual(61453, mcs["parameters"]["random_seed"])
             planned["run"]["parallel_limit"] = 64
             self.assertIn(mcs["node_id"], {node["node_id"] for node in STATE.runnable_nodes(planned)})
             a004 = [node for node in analysis_nodes if node["capability_id"] == "A004"]
@@ -185,6 +287,9 @@ class StateLogicTests(unittest.TestCase):
             state_path = temporary / "state.json"
             state = self.state()
             state["run"]["input"] = str((ROOT / "tests" / "data" / "small_sar.csv").resolve())
+            state["interpretations"] = [{"interpretation_id": "R:I001:seed", "source_node_id": "I001:001", "status": "active"}]
+            state["evidence_graph"] = {"nodes": [{"evidence_id": "R:A002:A002-001:0001", "source_node_id": "A002:seed", "status": "active"}], "edges": []}
+            state["domain_graph"] = {"nodes": [{"group_id": "G_TEST", "source_node_id": "C001:seed", "status": "active"}], "edges": []}
             state_path.write_text(json.dumps(state), encoding="utf-8")
             STATE.cmd_configure_exploration(SimpleNamespace(state=str(state_path), max_iterations=3, max_additional_nodes=4, walltime_minutes=60, seed=61453))
 
@@ -239,12 +344,22 @@ class StateLogicTests(unittest.TestCase):
             membership_path = Path(scoped_node["parameters"]["membership"])
             self.assertTrue(membership_path.is_file())
             self.assertEqual("within-group", scoped_node["parameters"]["scope_mode"])
-            self.assertEqual("MATCHED_CONTROL", scoped_node["parameters"]["target_group"])
+            self.assertTrue(scoped_node["parameters"]["target_group"].startswith("G_SCOPE_"))
+            self.assertEqual("MATCHED_CONTROL", scoped_node["exploration"]["scope"]["target_group_label"])
             self.assertEqual(3, scoped_node["exploration"]["scope"]["target_count"])
             self.assertEqual(
                 scoped_node["exploration"]["scope"]["compound_set_hash"],
                 scoped_state["interpretation_exploration"]["ledger"][1]["scope"]["compound_set_hash"],
             )
+            registry_path = Path(scoped_state["group_index"]["registry_path"])
+            matrix_path = Path(scoped_state["group_index"]["matrix_shards"][0]["path"])
+            self.assertTrue(registry_path.is_file())
+            self.assertTrue(matrix_path.name.startswith("Cpd_Group_matrix_G000000_099999"))
+            with matrix_path.open(encoding="utf-8", newline="") as handle:
+                matrix_rows = list(DictReader(handle))
+            group_id = scoped_node["parameters"]["target_group"]
+            self.assertEqual("True", next(row for row in matrix_rows if row["compound_id"] == "CMPD_001")[group_id])
+            self.assertEqual("False", next(row for row in matrix_rows if row["compound_id"] == "CMPD_002")[group_id])
 
             repeated_scope = json.loads(json.dumps(scoped))
             repeated_scope["iteration"] = 3

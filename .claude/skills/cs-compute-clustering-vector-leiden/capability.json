@@ -31,7 +31,7 @@
   "clustering_id": "C009",
   "default_parameters": {
     "min_cluster_size": 3,
-    "metric": "jaccard",
+    "metric": "auto",
     "similarity_threshold": 0.55,
     "resolution": 1.0,
     "random_seed": 61453

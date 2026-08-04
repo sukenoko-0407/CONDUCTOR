@@ -27,10 +27,17 @@
 
 SMILES直接型はMurcko、MCS、BRICS、RECAPだけであり、Descriptionを内部生成しない。Description-vector型はDescription Skillの数値CSVだけを入力とし、raw SMILESを受け付けない。
 
+CONDUCTORでは各Grouping nodeが`G_<node-id-underscore-safe>_<group-content-hash16>`形式のrun内一意Group IDを生成する（例: `G_C002_001_4A91C2D0870FB6E3`）。hashはGroupラベルとmember集合から決めるため、再計算で同じGroupはIDを維持し、内容が変わったGroupへ既存IDを流用しない。State Managerは成功eventのlong membershipを次のrun共通索引へ反映する。
+
+- `grouping/group_index/group_registry.csv`: Group ID、ラベル、Grouping Capability、source node、source Description／Grouping、定義、sample数、状態
+- `grouping/group_index/Cpd_Group_matrix_G000000_099999.csv`: 行をcompound ID、列をGroup IDとするBoolean membership matrix
+
+Group列が10万を超えた場合は次のmatrix shardを追加する。`discarded`または`stale`となったGroupも監査用にmatrix列を保持し、状態はregistryで判定する。C012 meta-overlapは`--input`を反復指定して複数のlong形式membership artifactまたはBoolean wide matrix shardを入力できる。
+
 ## Operator
 
 通常モードでは数値結果CSVだけを生成する。CONDUCTORモードでは共通`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を追加する。evidenceはglobal／within-group／between-groups、sample割合、compound集合hash、前処理referenceを持つ。Group単位の結果行は`generated_evidence`へ収載し、大規模pair表は`artifacts`からCSV/Parquetを参照する。
 
 ## Interpretation
 
-`interpretation.json`を正本とし、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。専用Agentは追加計算を直接行わず、schema-valid `exploration_plan.json`をOrchestratorへ返せる。Planは任意のrequestに明示`scope`を持ち、選択法とcompound ID集合を記録できる。Orchestratorは登録時にこれを`interpretation/scopes/<compound-set-hash>.csv`へ変換する。HTMLは外部CDNに依存しない。CONDUCTORモードだけ`execution_event.json`を追加する。
+`interpretation.json`を正本とし、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。専用Agentは追加計算を直接行わず、schema-valid `exploration_plan.json`をOrchestratorへ返せる。Planは任意のrequestに明示`scope`を持ち、選択法とcompound ID集合を記録できる。Orchestratorは登録時にmembership内容とは別に選択法と元Groupも含む定義hashを作り、`interpretation/scopes/<group-definition-hash>.csv`へ固定する。同一compound集合の再解析判定には別のcompound-set hashを使う。HTMLは外部CDNに依存しない。CONDUCTORモードだけ`execution_event.json`を追加する。

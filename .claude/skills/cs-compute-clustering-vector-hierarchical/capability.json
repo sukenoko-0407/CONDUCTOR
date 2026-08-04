@@ -33,7 +33,7 @@
   "clustering_id": "C006",
   "default_parameters": {
     "min_cluster_size": 3,
-    "metric": "cosine",
+    "metric": "auto",
     "distance_threshold": 0.7
   },
   "dependencies": [
