@@ -60,6 +60,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --chec
 - 機械Catalog: `catalog/catalog.json`
 - Orchestration Policy: `docs/CONDUCTOR_v4_policy.md`
 - Interpretation Policy: `docs/CONDUCTOR_v4_interpretation_policy.md`
+- Claude Codeへの解析依頼テンプレート: `docs/prompt/CONDUCTOR_analysis_request_prompt.md`
 - Skill生成・保守: `tools/`と`schemas/`
 
 Catalog収載変更後はOrchestratorの`catalog` commandで再生成し、差分を確認する。

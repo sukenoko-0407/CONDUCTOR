@@ -19,6 +19,7 @@ def main() -> int:
         "docs/CONDUCTOR_v4_policy.md",
         "docs/CONDUCTOR_v4_design_spec.md",
         "docs/CONDUCTOR_v4_interpretation_policy.md",
+        "docs/prompt/CONDUCTOR_analysis_request_prompt.md",
         "schemas/capability.schema.json",
         "pyproject.toml",
         "uv.lock",
