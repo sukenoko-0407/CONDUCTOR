@@ -1,8 +1,8 @@
 # CONDUCTOR v4 Skill Catalog
 
-> この文書は`catalog/catalog.json`から生成される。収載対象は人間管理の`catalog/included_skills.json`で指定する。
+> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`で指定する。
 
-Generated: `2026-08-04T16:47:50.332880+00:00`
+Generated: `2026-08-05T11:22:00.699418+00:00`
 
 ## Description
 

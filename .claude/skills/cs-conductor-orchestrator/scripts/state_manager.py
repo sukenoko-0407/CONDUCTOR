@@ -25,10 +25,10 @@ GROUP_REGISTRY_FIELDS = [
 
 
 def find_workspace() -> Path:
-    for candidate in [Path.cwd(), *Path.cwd().parents, SKILL_DIR, *SKILL_DIR.parents]:
-        if (candidate / "catalog" / "catalog.json").exists() and (candidate / ".claude").exists():
+    for candidate in [SKILL_DIR, *SKILL_DIR.parents, Path.cwd(), *Path.cwd().parents]:
+        if (candidate / ".claude" / "skills").is_dir() and (candidate / "CONDUCTOR_modules" / "catalog" / "catalog.json").is_file():
             return candidate
-    raise RuntimeError("CONDUCTOR workspace could not be located")
+    raise RuntimeError("CONDUCTOR project root could not be located")
 
 
 def utc_now() -> str:
@@ -117,7 +117,7 @@ def validate_event(value: dict[str, Any]) -> None:
 
 
 def catalog_by_id(workspace: Path) -> dict[str, dict[str, Any]]:
-    catalog = read_json(workspace / "catalog" / "catalog.json")
+    catalog = read_json(workspace / "CONDUCTOR_modules" / "catalog" / "catalog.json")
     return {entry["capability_id"]: entry for entry in catalog["capabilities"]}
 
 

@@ -1,22 +1,23 @@
 # CONDUCTOR v4 検証記録
 
-検証日: 2026-08-04
+検証日: 2026-08-05
 
 ## 自動試験
 
 Windows、Python 3.12.12の既存`.venv`で、State、Repository契約、Runtime smokeを分割して実行した。OneDrive配下ではSkillごとのprocess起動が遅いため、Runtime smokeは全methodを複数batchに分けた。
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_state_manager -v
-.\.venv\Scripts\python.exe -m unittest tests.test_v4_contracts.RepositoryContractTests -v
+.\.venv\Scripts\python.exe -m unittest discover -s CONDUCTOR_modules/tests -p "test_state_manager.py" -v
+.\.venv\Scripts\python.exe -m unittest discover -s CONDUCTOR_modules/tests -p "test_v4_contracts.py" -v
 # RuntimeSmokeTestsの全methodを複数batchで実行
 ```
 
-結果: 33 tests passed（State 12、Repository契約6、Runtime smoke 15）。
+結果: 34 tests passed（State 12、Repository契約7、Runtime smoke 15）。
 
 確認範囲:
 
 - allowlist収載42 Skillの自己完結構成、命名、Linux/Windows Pixi platform
+- Project直下の`.claude/`と`CONDUCTOR_modules/`に分離したpackage配置、Catalog参照、Skill自身のProjectを優先するpath解決
 - Catalogと人間管理allowlistの一致、capability ID一意性、高コスト承認属性、およびC002の`preauthorized_initial`例外
 - root JSON Schemaの構文
 - CSVと複数SMILES入力
@@ -87,7 +88,7 @@ Windows、Python 3.12.12の既存`.venv`で、State、Repository契約、Runtime
 - D019 pretrained embedding: GPUおよびローカルmodel weightが必要
 - D020 tblite/xTB: 非常に高コスト
 
-上記はPolicyにより人間承認前に実行していない。C002 MCSはこの対象から外し、承認不要の必須初手として実行検証した。実装、capability別CLI、manifest、Catalog収載、Pixi環境定義は静的検証対象に含めた。D011とD018はそれぞれD002、D017へ統合したため実行対象の欠落ではなく、IDを欠番として保持している。旧`structure-butina`等6 SkillはMorgan生成とvector Clusteringの責務重複を解消するため、`Archive/v4-retired-clustering-wrappers/`へ退避した。
+上記はPolicyにより人間承認前に実行していない。C002 MCSはこの対象から外し、承認不要の必須初手として実行検証した。実装、capability別CLI、manifest、Catalog収載、Pixi環境定義は静的検証対象に含めた。D011とD018はそれぞれD002、D017へ統合したため実行対象の欠落ではなく、IDを欠番として保持している。旧`structure-butina`等6 SkillはMorgan生成とvector Clusteringの責務重複を解消するため、`CONDUCTOR_modules/Archive/v4-retired-clustering-wrappers/`へ退避した。
 
 ## 環境に関する制約
 

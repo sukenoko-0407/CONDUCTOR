@@ -12,7 +12,7 @@ Operator evidence、State上のprovenance、Group局所性を読み取り専用�
 
 ## Required Policy
 
-実行前に`references/interpretation_policy.md`を完全に読む。repository内では同内容の`docs/CONDUCTOR_v4_interpretation_policy.md`を正本として扱う。
+実行前に`references/interpretation_policy.md`を完全に読む。repository内では同内容の`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`を正本として扱う。
 
 ## Input
 

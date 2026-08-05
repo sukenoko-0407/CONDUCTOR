@@ -2,8 +2,8 @@
   "schema_version": "1.0.0",
   "conductor_version": "4.0.0",
   "selection_managed_by": "human",
-  "selection_path": "catalog/included_skills.json",
-  "generated_at": "2026-08-04T16:47:50.332880+00:00",
+  "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
+  "generated_at": "2026-08-05T11:22:00.699418+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -1830,7 +1830,7 @@
       ],
       "output": {
         "state": "state.json",
-        "catalog": "catalog/catalog.json",
+        "catalog": "CONDUCTOR_modules/catalog/catalog.json",
         "exploration_ledger": "state.json#/interpretation_exploration",
         "materialized_scopes": "interpretation/scopes/*.csv"
       },

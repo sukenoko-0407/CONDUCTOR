@@ -125,7 +125,7 @@ GPU、外部model weight、大規模pairwise計算、3D conformer大量生成、
 
 ## 7. Interpretationへの引き渡し
 
-Interpretationは`docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Agentへ委譲する。注目結果だけでなく、全evidence、Group詳細、警告、negative result、失敗、skip、未実行候補、analysis signature、evidence依存関係、過去Interpretationを渡す。
+Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Agentへ委譲する。注目結果だけでなく、全evidence、Group詳細、警告、negative result、失敗、skip、未実行候補、analysis signature、evidence依存関係、過去Interpretationを渡す。
 
 Interpretation nodeは読み取り専用の終端とし、State更新やOperator直接実行を許可しない。追加解析は`exploration_plan.json`として返し、Orchestratorが人間設定の最大iteration、追加node、walltime、seed、並列上限、Catalog cost、重複署名を検証して新しいbranchを作る。各discoveryには少なくとも一つの反証要求を含める。高コストなら改めて人間承認を得る。
 

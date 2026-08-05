@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SKILLS_ROOT = ROOT / ".claude" / "skills"
-TEMPLATES = ROOT / "tools" / "templates"
-SCHEMAS = ROOT / "schemas"
+MODULE_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = MODULE_ROOT.parent
+SKILLS_ROOT = PROJECT_ROOT / ".claude" / "skills"
+TEMPLATES = MODULE_ROOT / "tools" / "templates"
+SCHEMAS = MODULE_ROOT / "schemas"
 
 
 DESCRIPTIONS = [
@@ -728,9 +729,9 @@ def main() -> int:
     if interpretation_created:
         references = SKILLS_ROOT / interpretation["skill_name"] / "references"
         references.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / "docs" / "CONDUCTOR_v4_interpretation_policy.md", references / "interpretation_policy.md")
+        shutil.copy2(MODULE_ROOT / "docs" / "CONDUCTOR_v4_interpretation_policy.md", references / "interpretation_policy.md")
     included.append(interpretation["skill_name"])
-    selection_path = ROOT / "catalog" / "included_skills.json"
+    selection_path = MODULE_ROOT / "catalog" / "included_skills.json"
     selection = json.loads(selection_path.read_text(encoding="utf-8"))
     if not selection.get("included_skills"):
         selection["included_skills"] = included

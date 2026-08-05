@@ -12,11 +12,26 @@ from csv import DictReader
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
+MODULE_ROOT = ROOT / "CONDUCTOR_modules"
 SKILLS = ROOT / ".claude" / "skills"
 
 
 class RepositoryContractTests(unittest.TestCase):
+    def test_conductor_is_packaged_without_extra_project_root_modules(self) -> None:
+        for name in ["catalog", "docs", "schemas", "tests", "tools"]:
+            self.assertTrue((MODULE_ROOT / name).is_dir(), name)
+            legacy = ROOT / name
+            self.assertFalse(legacy.is_dir() and any(path.is_file() for path in legacy.rglob("*")), name)
+        self.assertTrue((MODULE_ROOT / "README.md").is_file())
+        self.assertTrue((MODULE_ROOT / "tools" / "install_into_project.py").is_file())
+        self.assertTrue((MODULE_ROOT / "tools" / "verify_package_layout.py").is_file())
+        catalog = json.loads((MODULE_ROOT / "catalog" / "catalog.json").read_text(encoding="utf-8"))
+        self.assertEqual("CONDUCTOR_modules/catalog/included_skills.json", catalog["selection_path"])
+        for agent_name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"]:
+            text = (ROOT / ".claude" / "agents" / agent_name).read_text(encoding="utf-8")
+            self.assertIn("CONDUCTOR_modules/", text)
+
     def test_human_readmes_are_present_and_concise(self) -> None:
         required_sections = [
             "## SKILLの目的",
@@ -42,8 +57,8 @@ class RepositoryContractTests(unittest.TestCase):
     def test_allowlisted_skills_are_self_contained(self) -> None:
         import jsonschema
 
-        selection = json.loads((ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
-        capability_schema = json.loads((ROOT / "schemas" / "capability.schema.json").read_text(encoding="utf-8"))
+        selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
+        capability_schema = json.loads((MODULE_ROOT / "schemas" / "capability.schema.json").read_text(encoding="utf-8"))
         names = selection["included_skills"]
         self.assertEqual(42, len(names))
         self.assertEqual(len(names), len(set(names)))
@@ -102,6 +117,9 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertIn("--project PROJECT --run-id RUN_ID --node-id NODE_ID", instructions, name)
                 runner = (skill / "scripts" / "run.py").read_text(encoding="utf-8")
                 self.assertNotIn('"--metadata"', runner, name)
+                self.assertIn('skill_candidates = [SKILL_DIR, *SKILL_DIR.parents]', runner, name)
+                self.assertIn('installed_skill = candidate / ".claude" / "skills" / SKILL_DIR.name', runner, name)
+                self.assertIn('candidate / "CONDUCTOR_modules" / "catalog" / "catalog.json"', runner, name)
                 self.assertIn("--conductor requires --project, --run-id, and --node-id", runner, name)
                 self.assertIn("--project and --node-id are valid only with --conductor", runner, name)
                 self.assertIn('str(args.node_id).replace(":", "-")', runner, name)
@@ -111,8 +129,8 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertTrue((skill / "schemas" / "artifact_manifest.schema.json").is_file(), name)
 
     def test_catalog_matches_human_allowlist(self) -> None:
-        selection = json.loads((ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
-        catalog = json.loads((ROOT / "catalog" / "catalog.json").read_text(encoding="utf-8"))
+        selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
+        catalog = json.loads((MODULE_ROOT / "catalog" / "catalog.json").read_text(encoding="utf-8"))
         selected = selection["included_skills"]
         catalog_names = [entry["skill_name"] for entry in catalog["capabilities"]]
         self.assertEqual(set(selected), set(catalog_names))
@@ -169,7 +187,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertNotIn("D018", by_id)
 
     def test_json_schemas_parse(self) -> None:
-        for path in (ROOT / "schemas").glob("*.json"):
+        for path in (MODULE_ROOT / "schemas").glob("*.json"):
             value = json.loads(path.read_text(encoding="utf-8"))
             self.assertIn("$schema", value, path.name)
 
@@ -180,12 +198,12 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("  - cs-conductor-orchestrator", definition)
         self.assertIn("C002 MCS is the sole initial exception", definition)
         self.assertIn("without asking for run-specific approval", definition)
-        self.assertTrue((ROOT / "pyproject.toml").is_file())
-        self.assertTrue((ROOT / "uv.lock").is_file())
+        self.assertTrue((MODULE_ROOT / "pyproject.toml").is_file())
+        self.assertTrue((MODULE_ROOT / "uv.lock").is_file())
 
     def test_interpretation_has_a_dedicated_policy_managed_terminal_agent(self) -> None:
         agent = (ROOT / ".claude" / "agents" / "cs-conductor-interpreter.md").read_text(encoding="utf-8")
-        policy = (ROOT / "docs" / "CONDUCTOR_v4_interpretation_policy.md").read_text(encoding="utf-8")
+        policy = (MODULE_ROOT / "docs" / "CONDUCTOR_v4_interpretation_policy.md").read_text(encoding="utf-8")
         snapshot = (SKILLS / "cs-analysis-interpret-evidence" / "references" / "interpretation_policy.md").read_text(encoding="utf-8")
         capability = json.loads((SKILLS / "cs-analysis-interpret-evidence" / "capability.json").read_text(encoding="utf-8"))
         self.assertEqual(policy, snapshot)
@@ -303,7 +321,7 @@ class RuntimeSmokeTests(unittest.TestCase):
 
         mcs_runner = str(SKILLS / "cs-compute-clustering-structure-mcs" / "scripts" / "run.py")
         rejected = subprocess.run(
-            [sys.executable, mcs_runner, "--input", str(ROOT / "tests" / "data" / "small_sar.csv"), "--max-pairs", "1001"],
+            [sys.executable, mcs_runner, "--input", str(MODULE_ROOT / "tests" / "data" / "small_sar.csv"), "--max-pairs", "1001"],
             cwd=ROOT, text=True, capture_output=True,
         )
         self.assertEqual(2, rejected.returncode)
@@ -320,7 +338,7 @@ class RuntimeSmokeTests(unittest.TestCase):
                 self.assertIn("--input", inline_rejected.stderr)
 
     def test_sali_selects_representation_metric_and_preserves_landscape_evidence(self) -> None:
-        data = ROOT / "tests" / "data" / "small_sar.csv"
+        data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
         sali_runner = SKILLS / "cs-analysis-sali" / "scripts" / "run.py"
         interpretation_runner = SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"
         with tempfile.TemporaryDirectory() as directory:
@@ -352,7 +370,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertIsInstance(evidence["uncertainty"], dict)
             self.assertEqual("global", evidence["scope"]["mode"])
 
-            membership = ROOT / "tests" / "data" / "scope_membership.csv"
+            membership = MODULE_ROOT / "tests" / "data" / "scope_membership.csv"
             scoped_evidence = []
             for label, node_id, extra in [
                 ("within", "A006:002", ["--target-group", "G_ALIPHATIC", "--scope-mode", "within-group"]),
@@ -452,7 +470,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertEqual(["D017_gobbi_pharm2d.csv"], sorted(path.name for path in outdir.iterdir()))
 
     def test_state_rejects_an_unplanned_description_variant(self) -> None:
-        data = ROOT / "tests" / "data" / "small_sar.csv"
+        data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
         state_manager = SKILLS / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
         runner = SKILLS / "cs-compute-description-morgan" / "scripts" / "run.py"
         with tempfile.TemporaryDirectory() as directory:
@@ -494,7 +512,7 @@ class RuntimeSmokeTests(unittest.TestCase):
                 self.assertIn(message, process.stderr)
 
     def test_jak2_description_regression(self) -> None:
-        data = ROOT / "chemble_jak2.csv"
+        data = MODULE_ROOT / "tests" / "data" / "chemble_jak2.csv"
         with tempfile.TemporaryDirectory() as directory:
             outdir = Path(directory) / "jak2"
             self.run_cli(
@@ -548,7 +566,7 @@ class RuntimeSmokeTests(unittest.TestCase):
     def test_meta_overlap_accepts_long_membership_and_boolean_matrix_shards(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
-            membership = ROOT / "tests" / "data" / "meta_overlap.csv"
+            membership = MODULE_ROOT / "tests" / "data" / "meta_overlap.csv"
             outdir = temporary / "meta"
             self.run_cli(
                 str(SKILLS / "cs-compute-clustering-meta-overlap" / "scripts" / "run.py"),
@@ -580,7 +598,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertEqual({"A", "B", "C"}, {row["compound_id"] for row in wide_rows if float(row["membership_value"]) > 0})
 
     def test_mcs_pair_cap_is_random_seeded_and_bounded(self) -> None:
-        data = ROOT / "tests" / "data" / "small_sar.csv"
+        data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
         runner = SKILLS / "cs-compute-clustering-structure-mcs" / "scripts" / "run.py"
         with tempfile.TemporaryDirectory() as directory:
             outdir = Path(directory) / "mcs"
@@ -617,7 +635,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertEqual(321, operator_summary["random_seed"])
 
     def test_analysis_general_mode_emits_only_primary_result(self) -> None:
-        data = ROOT / "tests" / "data" / "small_sar.csv"
+        data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             outdir = temporary / "analysis"
@@ -648,7 +666,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertEqual({"G_A", "G_B"}, {row["group_id"] for row in group_rows})
 
     def test_end_to_end_artifact_chain(self) -> None:
-        data = ROOT / "tests" / "data" / "small_sar.csv"
+        data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             description = temporary / "description"

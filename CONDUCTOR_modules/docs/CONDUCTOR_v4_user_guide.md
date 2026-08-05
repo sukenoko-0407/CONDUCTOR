@@ -9,7 +9,9 @@
 - 入力分子の標準化は事前に人間が行う。
 - 1 runにつきendpointは一つとし、活性の向き`higher_is_better`を必ず指定する。
 
-リポジトリ直下の`pyproject.toml`と`uv.lock`は開発・受入試験用であり、Skillの実行時依存ではない。各Skillはフォルダ単位でコピーして利用できる。
+既存Projectへ組み込む場合は、Project直下に`.claude/agents/`、`.claude/skills/`、`CONDUCTOR_modules/`を配置する。導入手順と配置検証は`CONDUCTOR_modules/README.md`を参照する。
+
+`CONDUCTOR_modules/pyproject.toml`と`CONDUCTOR_modules/uv.lock`は開発・受入試験用であり、Skillの実行時依存ではない。各Skillはフォルダ単位でコピーして利用できる。
 
 各SkillのPixi workspace rootは`<skill>/env/`である。manifestは`<skill>/env/pixi.toml`、lock fileは`<skill>/env/pixi.lock`、環境実体は`<skill>/env/.pixi/envs/default/`となる。バイナリの設置場所、manifestの場所、呼出し時のworking directoryは一致している必要がない。launcherがSkill directoryを基準に絶対パス化するため、環境構築のために`cd`しない。
 
@@ -30,7 +32,7 @@ Claude Codeの新しいsessionでは、追加したSubagentを認識させるた
 
 ```text
 @cs-conductor-orchestrator
-chemble_jak2.csvを入力とし、endpoint=<列名>、higher_is_better=true、
+path/to/compounds.csvを入力とし、endpoint=<列名>、higher_is_better=true、
 project=jak2、parallel_limit=8でCONDUCTOR v4解析を開始してください。
 広く浅い解析後、深掘り候補と承認が必要な計算を報告してください。
 ```
@@ -217,15 +219,15 @@ CONDUCTOR利用が明示されているのにproject、run ID、node IDが未確
 
 ## 6. Catalogの管理
 
-1. 収載したいSkill名だけを`catalog/included_skills.json`へ人間が追加または削除する。
+1. 収載したいSkill名だけを`CONDUCTOR_modules/catalog/included_skills.json`へ人間が追加または削除する。
 2. Orchestratorの`catalog`コマンドを実行する。
-3. `catalog/catalog.json`と`docs/CONDUCTOR_v4_skill_catalog.md`の差分を確認する。
+3. `CONDUCTOR_modules/catalog/catalog.json`と`CONDUCTOR_modules/docs/CONDUCTOR_v4_skill_catalog.md`の差分を確認する。
 
 生成scriptはSkill metadataを検証するが、allowlist自体は変更しない。Skill directoryを作成しただけではCONDUCTORから利用されない。
 
 ## 7. Interpretation
 
-専用`cs-conductor-interpreter` Agentは`docs/CONDUCTOR_v4_interpretation_policy.md`に従い、Stateと全evidenceを読み取り専用で比較する。Interpretation nodeは終端であり、State変更やOperator直接実行を行わない。
+専用`cs-conductor-interpreter` Agentは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従い、Stateと全evidenceを読み取り専用で比較する。Interpretation nodeは終端であり、State変更やOperator直接実行を行わない。
 
 反復探索前に、人間が探索budgetを設定する。
 

@@ -9,7 +9,7 @@ skills:
 
 You are the CONDUCTOR v4 Interpretation Agent.
 
-Before acting, read `docs/CONDUCTOR_v4_interpretation_policy.md` completely, then read the target `state.json`, `catalog/catalog.json`, every supplied `evidence.json`, and the Operator result artifacts needed for the comparisons you make. If the repository policy is unavailable, read the self-contained snapshot at `.claude/skills/cs-analysis-interpret-evidence/references/interpretation_policy.md`.
+Before acting, read `CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md` completely, then read the target `state.json`, `CONDUCTOR_modules/catalog/catalog.json`, every supplied `evidence.json`, and the Operator result artifacts needed for the comparisons you make. If the repository policy is unavailable, read the self-contained snapshot at `.claude/skills/cs-analysis-interpret-evidence/references/interpretation_policy.md`.
 
 Use `state.json` and its `group_index` summary for coarse awareness. Read `group_registry.csv` first, then load only the relevant Group columns from `Cpd_Group_matrix_*.csv`; do not load or restate the complete matrix unless the comparison requires it. Exclude `discarded` Groups from new autonomous candidates while preserving their historical evidence.
 

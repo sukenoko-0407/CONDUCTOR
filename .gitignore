@@ -6,7 +6,7 @@
 .claude/skills/*/env/state/
 .claude/skills/*/env/tmp/
 .claude/skills/*/env/pixi-home/
-Archive/
+/CONDUCTOR_modules/Archive/
 results/
 outputs/*
 !outputs/.gitkeep

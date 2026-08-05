@@ -37,7 +37,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state groups -
 
 ## 制約事項
 
-- `catalog/included_skills.json`に人間が収載したSkillだけを使用する。
+- `CONDUCTOR_modules/catalog/included_skills.json`に人間が収載したSkillだけを使用する。
 - 1 runにつきendpointは一つとし、活性の向きを必須とする。
 - 高コスト処理は原則として人間の明示承認前に実行しない。ただしCatalogで`preauthorized_initial`と明記されたC002 MCSは必須初手として承認待ちなしで実行する。
 - 初手の一部で信号が弱くても残りを打ち切らず、coverage audit後に深掘りへ進む。

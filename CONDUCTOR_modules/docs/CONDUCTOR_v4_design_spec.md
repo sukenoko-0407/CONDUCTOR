@@ -10,7 +10,7 @@ CONDUCTOR v4は、多様な化学表現、Grouping、解析Operator、Interpreta
 - 広く浅い探索から根拠に基づく局所深掘りへのOrchestration
 - machine-readable InterpretationとMarkdown/HTMLレポート
 
-SBDD実処理、MMP、新規化合物SMILES生成、人間フィードバック追跡は初期実装の対象外とする。SBDDについては、将来のPDB/mmCIF、SDF pose、ProLIF/IFP入力を表現する`schemas/sbdd_input.schema.json`だけを予約し、実行Skillは人間が実装・承認・Catalog収載するまで提供しない。
+SBDD実処理、MMP、新規化合物SMILES生成、人間フィードバック追跡は初期実装の対象外とする。SBDDについては、将来のPDB/mmCIF、SDF pose、ProLIF/IFP入力を表現する`CONDUCTOR_modules/schemas/sbdd_input.schema.json`だけを予約し、実行Skillは人間が実装・承認・Catalog収載するまで提供しない。
 
 ## 2. 基本原則
 
@@ -30,7 +30,7 @@ SBDD実処理、MMP、新規化合物SMILES生成、人間フィードバック�
 ## 3. リポジトリ構成
 
 ```text
-CONDUCTOR/
+<project-dir>/
 ├── .claude/
 │   ├── agents/
 │   │   ├── cs-conductor-orchestrator.md
@@ -41,18 +41,20 @@ CONDUCTOR/
 │       ├── scripts/
 │       ├── schemas/
 │       └── env/pixi.toml
-├── catalog/
-│   ├── included_skills.json
-│   └── catalog.json
-├── docs/
-├── schemas/
-├── tests/
-├── pyproject.toml                   # 開発・受入試験のみ
-├── uv.lock                          # 開発・受入試験のみ
+├── CONDUCTOR_modules/
+│   ├── catalog/
+│   │   ├── included_skills.json
+│   │   └── catalog.json
+│   ├── docs/
+│   ├── schemas/                     # Skill生成・保守用の正本
+│   ├── tools/
+│   ├── tests/
+│   ├── pyproject.toml               # 開発・受入試験のみ
+│   └── uv.lock                      # 開発・受入試験のみ
 └── results/                         # Git管理外
 ```
 
-旧資産はGit管理外の`Archive/v2/`に保存する。
+Claude Codeの発見対象である`.claude/agents/`と`.claude/skills/`だけをProject直下へ置く。CONDUCTOR固有の管理・文書・保守資産は`CONDUCTOR_modules/`へ集約する。旧資産はGit管理外の`CONDUCTOR_modules/Archive/`に保存する。
 
 ## 4. Skill命名規約
 
@@ -144,7 +146,7 @@ D011（chiral Morgan）はD002の`--include-chirality`へ、D018（Gobbi Pharm2D
 
 ## 8. Catalog
 
-各Skillの`capability.json`をmetadata源とし、`catalog/included_skills.json`に人間が列挙したSkillだけを`catalog/catalog.json`へ収載する。Markdown版Catalogは機械Catalogから生成する。自動スキャンはallowlistを変更しない。
+各Skillの`capability.json`をmetadata源とし、`CONDUCTOR_modules/catalog/included_skills.json`に人間が列挙したSkillだけを`CONDUCTOR_modules/catalog/catalog.json`へ収載する。Markdown版Catalogは機械Catalogから生成する。自動スキャンはallowlistを変更しない。
 
 初手profileへの参加は`default_wide_shallow`、担当軸は`wide_shallow_axis`、上流の限定組合せは`wide_shallow_sources`で宣言する。source固有parameterは`wide_shallow_parameter_overrides`で宣言し、例えば同じOperatorでもbinary fingerprintへTanimoto、USR/USRCATへManhattanを割り当てる。依存を持つ初手capabilityはsourceを明示し、Catalog builderはsourceの存在、stage、初手profile参加、parameter overrideの参照整合性を検証する。`*`は初手で計画された当該stageの全nodeを意味する。
 
@@ -183,7 +185,7 @@ Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。�
 
 ## 11. Interpretation
 
-Interpretationは`docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Claude Code Agentが担当する。I001 runnerはevidence index、Group候補、provenance、関係候補、失敗、skip、探索ledgerを`interpretation_context.json`へ機械的に整理し、Agentが多面的に比較する。
+Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Claude Code Agentが担当する。I001 runnerはevidence index、Group候補、provenance、関係候補、失敗、skip、探索ledgerを`interpretation_context.json`へ機械的に整理し、Agentが多面的に比較する。
 
 Interpretation nodeはStateを変更しない読み取り専用の終端nodeとする。追加計算は`exploration_plan.json`としてOrchestratorへ返し、Orchestratorだけが人間設定budget、並列上限、Orchestrator指定bounds、重複analysis signature、反証要求、costとapprovalを検証して、新しいDescription–Grouping–Operator branchを作る。そのbranchは別のInterpretation nodeで終える。既存Groupingにない切り出しはPlanにcompound ID集合を持たせ、登録時にrun inputと照合したcontent-addressed membershipへ固定する。
 

@@ -11,7 +11,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
+MODULE_ROOT = ROOT / "CONDUCTOR_modules"
 STATE_MANAGER = ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
 SPEC = importlib.util.spec_from_file_location("state_manager", STATE_MANAGER)
 assert SPEC and SPEC.loader
@@ -175,7 +176,7 @@ class StateLogicTests(unittest.TestCase):
         self.assertEqual(signature_a, signature_b)
 
         state = self.state()
-        state["run"]["input"] = str((ROOT / "tests" / "data" / "small_sar.csv").resolve())
+        state["run"]["input"] = str((MODULE_ROOT / "tests" / "data" / "small_sar.csv").resolve())
         state["execution_graph"]["nodes"] = [{
             "node_id": "D002:001", "capability_id": "D002", "skill_name": "description",
             "stage": "description", "status": "succeeded", "dependencies": [], "human_approval": "not_required",
@@ -217,7 +218,7 @@ class StateLogicTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state_path = Path(directory) / "state.json"
             state = self.state()
-            state["run"]["input"] = str((ROOT / "tests" / "data" / "small_sar.csv").resolve())
+            state["run"]["input"] = str((MODULE_ROOT / "tests" / "data" / "small_sar.csv").resolve())
             state_path.write_text(json.dumps(state), encoding="utf-8")
 
             with redirect_stdout(io.StringIO()):
@@ -286,14 +287,14 @@ class StateLogicTests(unittest.TestCase):
             temporary = Path(directory)
             state_path = temporary / "state.json"
             state = self.state()
-            state["run"]["input"] = str((ROOT / "tests" / "data" / "small_sar.csv").resolve())
+            state["run"]["input"] = str((MODULE_ROOT / "tests" / "data" / "small_sar.csv").resolve())
             state["interpretations"] = [{"interpretation_id": "R:I001:seed", "source_node_id": "I001:001", "status": "active"}]
             state["evidence_graph"] = {"nodes": [{"evidence_id": "R:A002:A002-001:0001", "source_node_id": "A002:seed", "status": "active"}], "edges": []}
             state["domain_graph"] = {"nodes": [{"group_id": "G_TEST", "source_node_id": "C001:seed", "status": "active"}], "edges": []}
             state_path.write_text(json.dumps(state), encoding="utf-8")
             STATE.cmd_configure_exploration(SimpleNamespace(state=str(state_path), max_iterations=3, max_additional_nodes=4, walltime_minutes=60, seed=61453))
 
-            plan = json.loads((ROOT / "tests" / "data" / "exploration_plan.json").read_text(encoding="utf-8"))
+            plan = json.loads((MODULE_ROOT / "tests" / "data" / "exploration_plan.json").read_text(encoding="utf-8"))
             plan_path = temporary / "plan.json"
             plan_path.write_text(json.dumps(plan), encoding="utf-8")
             with redirect_stdout(io.StringIO()):

@@ -8,10 +8,10 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 ## Required context
 
-1. Read `docs/CONDUCTOR_v4_policy.md` completely before planning or changing a run.
-2. Read `catalog/catalog.json`; use only listed capabilities.
+1. Read `CONDUCTOR_modules/docs/CONDUCTOR_v4_policy.md` completely before planning or changing a run.
+2. Read `CONDUCTOR_modules/catalog/catalog.json`; use only listed capabilities.
 3. Read the target run's `state.json` before choosing a next action.
-4. Treat `catalog/included_skills.json` as human-managed. Never add a Skill to it autonomously.
+4. Treat `CONDUCTOR_modules/catalog/included_skills.json` as human-managed. Never add a Skill to it autonomously.
 5. Use `state status` for coarse progress. Use `state groups` and the external Group index only when detailed membership/provenance is needed.
 
 ## Workflow
@@ -157,7 +157,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state fail \
 - Do not claim absence of a useful signal until `wide_shallow_coverage` has been audited across Description, Grouping, and Operator.
 - Prefer nodes that can change the next decision.
 - Separate execution DAG, group relation graph, and evidence dependency graph.
-- Read `docs/CONDUCTOR_v4_interpretation_policy.md` before registering Interpretation exploration. Interpretation proposes scientific questions; Orchestration maps them to Catalog capabilities, enforces budget and approval, and never rewrites them into a preferred coherent story.
+- Read `CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md` before registering Interpretation exploration. Interpretation proposes scientific questions; Orchestration maps them to Catalog capabilities, enforces budget and approval, and never rewrites them into a preferred coherent story.
 - Accept multiple-testing false positives as discovery candidates, but preserve trial history and distinguish Discovery from Validation. Every registered discovery must have a falsification request.
 - Prioritize adequately sized Groups, flag Groups above 30% and especially 50% of the dataset as progressively less local, and retain small structurally cohesive or clear-MCS Groups as candidates.
 - Never repeat an analysis signature already present in the execution DAG or exploration ledger.

@@ -12,10 +12,10 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 
 
 def find_workspace() -> Path:
-    for candidate in [Path.cwd(), *Path.cwd().parents, SKILL_DIR, *SKILL_DIR.parents]:
-        if (candidate / ".claude" / "skills").exists() and (candidate / "catalog").exists():
+    for candidate in [SKILL_DIR, *SKILL_DIR.parents, Path.cwd(), *Path.cwd().parents]:
+        if (candidate / ".claude" / "skills").is_dir() and (candidate / "CONDUCTOR_modules" / "catalog").is_dir():
             return candidate
-    raise RuntimeError("CONDUCTOR workspace could not be located")
+    raise RuntimeError("CONDUCTOR project root could not be located")
 
 
 def utc_now() -> str:
@@ -63,7 +63,7 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
 
 
 def render_markdown(catalog: dict[str, Any]) -> str:
-    lines = ["# CONDUCTOR v4 Skill Catalog", "", "> この文書は`catalog/catalog.json`から生成される。収載対象は人間管理の`catalog/included_skills.json`で指定する。", "", f"Generated: `{catalog['generated_at']}`", ""]
+    lines = ["# CONDUCTOR v4 Skill Catalog", "", "> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`で指定する。", "", f"Generated: `{catalog['generated_at']}`", ""]
     for stage in ["description", "grouping", "analysis", "interpretation", "orchestration"]:
         entries = [entry for entry in catalog["capabilities"] if entry["stage"] == stage]
         if not entries:
@@ -83,7 +83,8 @@ def render_markdown(catalog: dict[str, Any]) -> str:
 
 
 def build(workspace: Path) -> tuple[dict[str, Any], str]:
-    selection_path = workspace / "catalog" / "included_skills.json"
+    modules = workspace / "CONDUCTOR_modules"
+    selection_path = modules / "catalog" / "included_skills.json"
     selection = json.loads(selection_path.read_text(encoding="utf-8"))
     names = selection.get("included_skills") or []
     if len(names) != len(set(names)):
@@ -131,7 +132,7 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
                     raise ValueError(f"{capability['capability_id']}: invalid parameter override source {source_id}")
                 if "*" not in allowed_sources and source_id not in allowed_sources:
                     raise ValueError(f"{capability['capability_id']}: parameter override source {source_id} is not declared in wide_shallow_sources")
-    catalog = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "selection_managed_by": "human", "selection_path": "catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
+    catalog = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
     return catalog, render_markdown(catalog)
 
 
@@ -140,23 +141,24 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="Validate metadata and selection without writing.")
     args = parser.parse_args()
     workspace = find_workspace()
+    modules = workspace / "CONDUCTOR_modules"
     catalog, markdown = build(workspace)
     if args.check:
-        catalog_path = workspace / "catalog" / "catalog.json"
-        markdown_path = workspace / "docs" / "CONDUCTOR_v4_skill_catalog.md"
+        catalog_path = modules / "catalog" / "catalog.json"
+        markdown_path = modules / "docs" / "CONDUCTOR_v4_skill_catalog.md"
         if not catalog_path.exists() or not markdown_path.exists():
             raise FileNotFoundError("Generated Catalog artifacts are missing")
         existing = json.loads(catalog_path.read_text(encoding="utf-8"))
         comparable_existing = {key: value for key, value in existing.items() if key != "generated_at"}
         comparable_generated = {key: value for key, value in catalog.items() if key != "generated_at"}
         if comparable_existing != comparable_generated:
-            raise ValueError("catalog/catalog.json is stale; rebuild the Catalog")
+            raise ValueError("CONDUCTOR_modules/catalog/catalog.json is stale; rebuild the Catalog")
         catalog["generated_at"] = existing["generated_at"]
         if markdown_path.read_text(encoding="utf-8") != render_markdown(catalog):
-            raise ValueError("docs/CONDUCTOR_v4_skill_catalog.md is stale; rebuild the Catalog")
+            raise ValueError("CONDUCTOR_modules/docs/CONDUCTOR_v4_skill_catalog.md is stale; rebuild the Catalog")
     else:
-        (workspace / "catalog" / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        (workspace / "docs" / "CONDUCTOR_v4_skill_catalog.md").write_text(markdown, encoding="utf-8")
+        (modules / "catalog" / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (modules / "docs" / "CONDUCTOR_v4_skill_catalog.md").write_text(markdown, encoding="utf-8")
     print(f"Validated {len(catalog['capabilities'])} allowlisted capabilities")
     return 0
 

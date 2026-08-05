@@ -21,7 +21,7 @@
   "input_contract": ["catalog_json", "policy_markdown", "interpretation_policy_markdown", "endpoint_csv", "optional_interpretation_exploration_plan_json"],
   "output": {
     "state": "state.json",
-    "catalog": "catalog/catalog.json",
+    "catalog": "CONDUCTOR_modules/catalog/catalog.json",
     "exploration_ledger": "state.json#/interpretation_exploration",
     "materialized_scopes": "interpretation/scopes/*.csv"
   },

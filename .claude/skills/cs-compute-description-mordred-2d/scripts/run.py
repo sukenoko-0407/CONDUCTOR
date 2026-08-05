@@ -29,8 +29,25 @@ def default_run_id() -> str:
 
 
 def find_workspace() -> Path:
-    for candidate in [Path.cwd(), *Path.cwd().parents, SKILL_DIR, *SKILL_DIR.parents]:
-        if (candidate / ".claude").exists() and (candidate / "catalog").exists():
+    skill_candidates = [SKILL_DIR, *SKILL_DIR.parents]
+    cwd_candidates = [Path.cwd(), *Path.cwd().parents]
+
+    # The nearest Project containing this installed Skill is authoritative.
+    # This also preserves standalone general-mode use without CONDUCTOR_modules.
+    for candidate in skill_candidates:
+        installed_skill = candidate / ".claude" / "skills" / SKILL_DIR.name
+        if (installed_skill / "capability.json").is_file():
+            return candidate
+
+    # Fall back to the caller Project only for non-standard script placement.
+    for candidate in cwd_candidates:
+        if (candidate / ".claude" / "skills").is_dir() and (
+            candidate / "CONDUCTOR_modules" / "catalog" / "catalog.json"
+        ).is_file():
+            return candidate
+
+    for candidate in cwd_candidates:
+        if (candidate / ".claude" / "skills").is_dir():
             return candidate
     return Path.cwd()
 
