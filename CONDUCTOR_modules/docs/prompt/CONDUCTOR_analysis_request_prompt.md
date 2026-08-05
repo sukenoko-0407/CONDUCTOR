@@ -2,6 +2,8 @@
 
 Claude Codeを対象Projectのrootから起動し、以下のテンプレートを必要に応じて編集して使用する。
 
+同じInput、endpoint、`higher_is_better`に対して解析の完全性を段階的に高める場合、2回目以降は原則として同じCONDUCTOR runと`state.json`を継続する。ここでは一回の人間確認と追加探索のまとまりを「解析Round」と呼び、CONDUCTORのrun IDとは区別する。Input内容、endpoint、方向性が変わる場合、または独立した再現実験として比較したい場合だけ新しいrunを作る。
+
 ## 新しいCONDUCTOR Runを開始する
 
 ```text
@@ -34,9 +36,85 @@ State DAGを通じて管理してください。
 
 人間の承認が必要な高コスト処理に到達した場合は、
 目的、期待される情報、計算資源、代替手段を説明して停止してください。
+
+今回の停止時には、run rootの `session_handoff.md` を
+`CONDUCTOR_modules/docs/prompt/CONDUCTOR_session_handoff_template.md`に沿って作成または更新してください。
 ```
 
-## 既存のCONDUCTOR Runを再開する
+## 2回目以降の解析Roundを実行する
+
+前回結果を踏まえて、同じrunへ追加解析を積み重ねる場合に使用する。
+
+```text
+`cs-conductor-orchestrator` Agentを使用して、次のCONDUCTOR runに対する
+第<ROUND_NUMBER>回の解析Roundを実行してください。
+
+State:
+<STATE_JSON_PATH>
+
+この解析は前回までの続きです。新しいrunやrun IDを作らず、既存のState DAG、
+Group ID、evidence graph、Interpretation履歴、exploration ledgerを引き継いでください。
+
+今回の人間からの指示:
+<例: MCS由来GroupとMorgan空間で生じるCliffの関係を優先して検討する>
+
+今回追加で許容する資源:
+- 追加解析Round数: <ADDITIONAL_ITERATIONS>
+- 追加node数: <ADDITIONAL_NODES>
+- 追加walltime: <ADDITIONAL_WALLTIME_MINUTES>分
+- 並列実行数: <PARALLEL_LIMIT>
+
+最初に `state status` を実行し、完了node、未完了node、失敗node、coverage gap、
+既存のanalysis signature、exploration budgetの累積消費量を確認してください。
+既存budgetを変更する場合は、消費済み量を無視してresetせず、今回の追加許容量を
+反映した新しい累積上限として設定してください。
+
+最新および過去のInterpretation、positive/negative evidence、未解決矛盾、
+discard済み領域を確認し、完了済みの同一解析を繰り返さないでください。
+今回の指示に沿って追加branchを計画し、各注目候補について反証探索を含め、
+追加結果を新しいInterpretation nodeで既存結果と比較してください。
+
+停止時にはrun rootの `session_handoff.md` を更新し、今回の人間指示、実行内容、
+新しい発見、反証結果、未解決事項、次回候補、主要artifact pathを記録してください。
+```
+
+## 新しいClaude Codeセッションで解析Roundを継続する
+
+前回と異なるClaude Codeセッションから同じrunを引き継ぐ場合に使用する。
+
+```text
+これは既存CONDUCTOR runの継続です。
+`cs-conductor-orchestrator` Agentを使用して、第<ROUND_NUMBER>回の解析Roundを実行してください。
+
+State:
+<STATE_JSON_PATH>
+
+Session handoff:
+<SESSION_HANDOFF_PATH>
+
+新しいrunは作成しないでください。まずPolicy、Design、Catalogを読み、次に
+`state.json`と`state status`で実行状態を復元してください。その後、
+`session_handoff.md`、最新の`interpretation.json`と`interpretation.md`、
+関連する`evidence.json`、未処理の`exploration_plan.json`を確認してください。
+
+handoffは案内索引であり正本ではありません。handoffに記録されたState更新時刻が
+現在の`state.json`より古い場合は、Stateとartifactを優先して内容を補正してください。
+Groupの詳細が必要なときだけ`group_registry.csv`と必要なGroup列を確認してください。
+
+今回の人間からの指示:
+<今回優先する問い、対象Group、Description、Operator、避ける領域など>
+
+今回追加で許容する資源:
+- 追加解析Round数: <ADDITIONAL_ITERATIONS>
+- 追加node数: <ADDITIONAL_NODES>
+- 追加walltime: <ADDITIONAL_WALLTIME_MINUTES>分
+- 並列実行数: <PARALLEL_LIMIT>
+
+完了済みの同一analysis signatureを再実行せず、過去の結果と今回の追加結果を
+区別して記録してください。停止時には`session_handoff.md`を更新してください。
+```
+
+## 中断したCONDUCTOR処理を再開する
 
 ```text
 `cs-conductor-orchestrator` Agentを使用して、
@@ -51,6 +129,8 @@ State:
 
 並列実行数は<PARALLEL_LIMIT>です。
 高コスト処理には既存の承認Policyを適用してください。
+
+処理が再び停止する時点で`session_handoff.md`を更新してください。
 ```
 
 ## 個別Skillを一般モードで利用する
@@ -69,5 +149,8 @@ CONDUCTOR runを作らず、単一の機能だけを利用するときのテン�
 
 - CONDUCTOR全体を使う場合は、`cs-conductor-orchestrator`と「CONDUCTORとして実行」を明示する。
 - Input CSV、endpoint、`higher_is_better`、並列実行数を指定する。
+- 同じInputとendpointの追加探索では同じrun IDとStateを継続し、解析Roundだけを進める。
+- 新しいClaude Codeセッションでは、State、handoff、Interpretation、関連evidenceの順に引き継ぐ。
+- 追加予算は既存の消費量を消去せず、累積上限へ換算して管理する。
 - Project内に無関係なファイルがある場合は、解析対象と探索範囲を明示する。
 - 一般利用では「CONDUCTOR runではない」と明記し、`--conductor`を付けない。

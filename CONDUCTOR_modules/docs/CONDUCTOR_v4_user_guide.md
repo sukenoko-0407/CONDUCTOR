@@ -248,7 +248,13 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state register
 
 登録時にbudget、seed、Catalog、上流node、Orchestrator指定のGroup/Description/Grouping/Operator bounds、重複・参照不明ID、同一analysis signatureの再実行、Interpretation nodeへの依存、反証要求を検証する。Plan requestに`scope`がある場合は、random、matched random、交差、差分などの選択法とcompound IDを検証し、`interpretation/scopes/`のcontent-addressed membership CSVへ自動変換する。許可された低コストnodeは通常の並列上限内で実行し、高コストnodeは人間承認を求める。結果が多い場合は削除せず、Orchestratorが識別力のある追加Description–Grouping–Operator branchを作り、別のInterpretation nodeで比較する。
 
-## 8. 開発者向け確認
+## 8. 解析Roundとセッション引継ぎ
+
+同じInput、endpoint、`higher_is_better`について解析を積み重ねる場合は、新しいrunを作らず同じ`state.json`を継続する。追加budgetは消費済みledgerをresetせず、新しい累積上限として設定する。Orchestratorは各人間確認時またはInterpretation Round完了時にrun rootの`session_handoff.md`を更新する。
+
+新しいClaude Codeセッションでは、最初にPolicy、Catalog、`state.json`、`state status`を確認し、その後handoff、最新Interpretation、参照されたevidenceを読む。handoffは現在地とartifactへの索引であり、Stateやevidenceの代替ではない。推奨依頼文とhandoff様式は`CONDUCTOR_modules/docs/prompt/`に収載する。
+
+## 9. 開発者向け確認
 
 ```bash
 uv sync --locked

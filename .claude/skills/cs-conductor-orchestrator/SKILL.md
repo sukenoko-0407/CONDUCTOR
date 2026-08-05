@@ -13,6 +13,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 3. Read the target run's `state.json` before choosing a next action.
 4. Treat `CONDUCTOR_modules/catalog/included_skills.json` as human-managed. Never add a Skill to it autonomously.
 5. Use `state status` for coarse progress. Use `state groups` and the external Group index only when detailed membership/provenance is needed.
+6. When resuming, read `<run-root>/session_handoff.md` if it exists, but verify it against current State, latest Interpretation, and referenced artifacts. State and artifacts remain authoritative.
 
 ## Workflow
 
@@ -36,6 +37,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 13. Treat every Interpretation node as read-only and terminal. The Interpreter may write an `exploration_plan.json` but may not execute it. Validate and register that plan with `state register-exploration`; this rejects repeated analysis signatures, duplicate or dangling IDs, requests outside Orchestrator bounds, over-budget batches, missing falsification requests, and dependencies on terminal Interpretation nodes. For an explicit Plan `scope`, registration validates compound IDs against the run input and materializes a content-addressed membership CSV under `interpretation/scopes/`.
 14. Execute registered low-cost nodes within the delegated budget and normal parallel limit. Request human approval for high-cost or out-of-budget work. After the branch is terminal, add a new I001 node over the new and relevant prior evidence. If findings remain too numerous for humans, prefer further discriminating Description–Grouping–Operator–Interpretation branches over discarding findings.
 15. Treat Group IDs as immutable identities. Inspect `grouping/group_index/group_registry.csv` and only the needed columns in `Cpd_Group_matrix_*.csv`. Mark a low-value explored region with `state discard-group`; retain its membership and history for audit.
+16. At each human checkpoint or completed Interpretation round, create or update `<run-root>/session_handoff.md` using `CONDUCTOR_modules/docs/prompt/CONDUCTOR_session_handoff_template.md`. Record the State timestamp, cumulative budget use, human direction, positive and negative findings, unresolved contradictions, pending approvals, and artifact paths. Treat the handoff as a concise navigation index, not a replacement for State or evidence.
 
 ## Environment
 

@@ -41,3 +41,7 @@ Group列が10万を超えた場合は次のmatrix shardを追加する。`discar
 ## Interpretation
 
 `interpretation.json`を正本とし、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。専用Agentは追加計算を直接行わず、schema-valid `exploration_plan.json`をOrchestratorへ返せる。Planは任意のrequestに明示`scope`を持ち、選択法とcompound ID集合を記録できる。Orchestratorは登録時にmembership内容とは別に選択法と元Groupも含む定義hashを作り、`interpretation/scopes/<group-definition-hash>.csv`へ固定する。同一compound集合の再解析判定には別のcompound-set hashを使う。HTMLは外部CDNに依存しない。CONDUCTORモードだけ`execution_event.json`を追加する。
+
+## セッション引継ぎ
+
+Orchestratorは人間確認による停止時またはInterpretation Round完了時に、run rootの`session_handoff.md`を更新する。これは新しいClaude Codeセッションが読むための簡潔な索引であり、State更新時刻、累積budget、前回の人間指示、主要なpositive/negative evidence、未解決矛盾、保留中承認、主要artifact pathを記載する。実行状態の正本は`state.json`、科学的根拠の正本は各artifactであり、handoffが古い場合は正本を優先する。
