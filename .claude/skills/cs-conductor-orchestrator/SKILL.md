@@ -21,7 +21,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 3. Create the mandatory `representative-family-wide-v1` plan from capabilities marked `default_wide_shallow`. Preserve every declared Description, Grouping, and Operator axis, including the 3D Description axis.
 4. Expand each dependent capability only across its explicit `wide_shallow_sources`; add dependency edges and `input_bindings` before execution. Never bind a downstream node to the first Description or Grouping merely because it was created first.
    Apply every Catalog-declared `wide_shallow_parameter_overrides` entry for the bound source. For A006, preserve D002=`tanimoto`, D013=`manhattan`, and D017=`tanimoto`; never replace them with one global metric.
-   - For `grouping_kind=direct_structure`, pass the run SMILES input and never substitute a Description artifact.
+   - For `grouping_kind=direct_structure`, pass the run's compound-ID/SMILES CSV and never substitute a Description artifact or inline SMILES.
    - For `grouping_kind=description_vector`, pass exactly the artifact from `input_bindings.description`; never pass raw SMILES or let the Clustering Skill generate a fingerprint internally.
 5. If a Catalog capability exposes `variants`, choose one explicitly. Keep the same capability ID, create a separate node for each compared variant, and store CLI destinations in the node's `parameters` using `state_manager.py add --parameters-json`. Do not represent a variant as an unplanned argument change.
 6. Use `scripts/state_manager.py runnable` to find nodes whose dependencies and approval requirements are satisfied.

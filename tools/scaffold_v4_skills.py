@@ -284,9 +284,9 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
     elif kind == "clustering":
         algorithm = capability["implementation"]["algorithm"]
         if algorithm.startswith("structure_"):
-            purpose = f"SMILESを{display}により直接group化し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。"
-            inputs = "compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う。Description CSVを入力とせず、fingerprint vectorを内部生成して距離clusteringへ置き換えない。列が曖昧なら`--id-column`と`--smiles-column`を指定する。"
-            boundary_extra = "- Description vectorを入力とせず、SMILESを宣言された構造規則で直接処理する。\n"
+            purpose = f"compound IDとSMILESを含むCSVを{display}により直接group化し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。"
+            inputs = "compound IDとSMILESを持つCSVを`--input`へ必ず指定する。inlineの`--smiles`と`--compound-id`は受け付けない。Description CSVを入力とせず、fingerprint vectorを内部生成して距離clusteringへ置き換えない。列が曖昧なら`--id-column`と`--smiles-column`を指定する。"
+            boundary_extra = "- 一般利用・CONDUCTOR利用ともcompound ID・SMILES CSVを入力とし、inline SMILESは受け付けない。\n- Description vectorを入力とせず、CSV内のSMILESを宣言された構造規則で直接処理する。\n"
         elif algorithm.startswith("vector_"):
             purpose = f"Description Skillが生成した数値vectorへ{display}を適用し、一般利用ではClustering、CONDUCTOR内ではGrouping artifactを生成する。"
             inputs = "compound IDと数値featureを持つDescription CSVを必須入力とする。raw SMILESは受け付けず、fingerprintやdescriptorを内部生成しない。SMILES列やstatus列はfeatureから除外し、Description値がない行は未割当として保持する。"
@@ -508,6 +508,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         constraints = ["一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。"]
         if algorithm.startswith("structure_"):
             constraints.append("Description vectorは入力にせず、fingerprint生成を内部に隠した距離clusteringも行わない。")
+            constraints.append("一般利用・CONDUCTOR利用ともcompound IDとSMILESを含むCSVを必須入力とし、CLIへのSMILES直接指定は受け付けない。")
             constraints.append("invalid SMILESは未割当として保持する。分子標準化は行わない。")
         if algorithm == "structure_mcs":
             constraints.append("`--max-pairs`は1～1000に制限し、`--max-core-groups`の既定値は300とする。")
@@ -676,8 +677,8 @@ def main() -> int:
             capability["cost"]["human_approval_required"] = False
             capability["approval_policy"] = "preauthorized_initial"
         if algorithm.startswith("structure_"):
-            grouping_kind, dependency, input_contract = "direct_structure", [], ["smiles_csv_or_inline_smiles"]
-            description = f"Group compounds directly from SMILES with {display}, without generating a hidden descriptor vector."
+            grouping_kind, dependency, input_contract = "direct_structure", [], ["compound_id_smiles_csv"]
+            description = f"Group compounds from a compound-ID/SMILES CSV with {display}, without generating a hidden descriptor vector."
         elif algorithm.startswith("vector_"):
             grouping_kind, dependency, input_contract = "description_vector", ["description"], ["description_vector_csv"]
             description = f"Apply {display} to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally."

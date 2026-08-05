@@ -167,7 +167,7 @@ python .claude/skills/cs-compute-description-rdkit-2d/scripts/launch.py \
   --smiles "CCO" --smiles "c1ccccc1"
 ```
 
-Groupingには入力契約が異なる二系統がある。Murcko、MCS、BRICS、RECAPはSMILESを直接処理する。
+Groupingには入力契約が異なる二系統がある。Murcko、MCS、BRICS、RECAPは、compound IDとSMILESを含むCSVを必須入力とし、そのCSV内のSMILESを直接処理する。CLIへのinline `--smiles`入力は受け付けない。
 
 ```bash
 python .claude/skills/cs-compute-clustering-structure-murcko/scripts/launch.py \

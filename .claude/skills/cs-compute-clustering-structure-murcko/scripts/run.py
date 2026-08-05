@@ -78,12 +78,9 @@ def validate_json(value: dict[str, Any], schema_name: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=f"Run {CAPABILITY['skill_name']}.")
     algorithm = CAPABILITY["implementation"]["algorithm"]
-    parser.set_defaults(smiles=None, compound_id=None, id_column=None, smiles_column=None, columns=None)
+    parser.set_defaults(id_column=None, smiles_column=None, columns=None)
     if algorithm.startswith("structure_"):
-        source = parser.add_mutually_exclusive_group(required=True)
-        source.add_argument("--input", help="CSV input containing compound IDs and SMILES.")
-        source.add_argument("--smiles", action="append", help="SMILES; repeat for multiple compounds.")
-        parser.add_argument("--compound-id", action="append")
+        parser.add_argument("--input", required=True, help="CSV input containing compound IDs and SMILES.")
         parser.add_argument("--id-column")
         parser.add_argument("--smiles-column")
     else:
@@ -158,24 +155,15 @@ def infer_named(columns: list[str], kind: str) -> str | None:
 
 
 def load_input(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
-    if args.input:
-        paths = [Path(value) for value in args.input] if isinstance(args.input, list) else [Path(args.input)]
-        frames = []
-        for path in paths:
-            header = pd.read_csv(path, nrows=0)
-            candidate_id = args.id_column or infer_named(list(header.columns), "id")
-            frames.append(pd.read_csv(path, dtype={candidate_id: "string"} if candidate_id else None))
-        df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
-        source_name = paths[0].stem if len(paths) == 1 else "multiple_memberships"
-        digest = value_hash([{"path": str(path.resolve()), "sha256": file_hash(path)} for path in paths])
-    else:
-        smiles = list(args.smiles or [])
-        ids = list(args.compound_id or [])
-        if ids and len(ids) != len(smiles):
-            raise ValueError("--compound-id count must match --smiles count")
-        df = pd.DataFrame({"compound_id": ids or [f"CMPD_{i:06d}" for i in range(1, len(smiles) + 1)], "smiles": smiles})
-        source_name = "smiles"
-        digest = value_hash({"compound_ids": df["compound_id"].astype(str).tolist(), "smiles": smiles})
+    paths = [Path(value) for value in args.input] if isinstance(args.input, list) else [Path(args.input)]
+    frames = []
+    for path in paths:
+        header = pd.read_csv(path, nrows=0)
+        candidate_id = args.id_column or infer_named(list(header.columns), "id")
+        frames.append(pd.read_csv(path, dtype={candidate_id: "string"} if candidate_id else None))
+    df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
+    source_name = paths[0].stem if len(paths) == 1 else "multiple_memberships"
+    digest = value_hash([{"path": str(path.resolve()), "sha256": file_hash(path)} for path in paths])
     if df.empty:
         raise ValueError("At least one input row is required")
     id_column = args.id_column or infer_named(list(df.columns), "id")

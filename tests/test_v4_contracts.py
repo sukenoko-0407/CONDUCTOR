@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -159,7 +160,7 @@ class RepositoryContractTests(unittest.TestCase):
         vectors = [entry for entry in groupings if entry["grouping_kind"] == "description_vector"]
         self.assertEqual(4, len(direct))
         self.assertEqual(6, len(vectors))
-        self.assertTrue(all(entry["input_contract"] == ["smiles_csv_or_inline_smiles"] and not entry["dependencies"] for entry in direct))
+        self.assertTrue(all(entry["input_contract"] == ["compound_id_smiles_csv"] and not entry["dependencies"] for entry in direct))
         self.assertTrue(all(entry["input_contract"] == ["description_vector_csv"] and entry["dependencies"] == ["description"] for entry in vectors))
         self.assertTrue(all(entry["implementation"]["algorithm"] in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"} for entry in direct))
         self.assertFalse(any((SKILLS / f"cs-compute-clustering-structure-{name}").exists() for name in ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected-components"]))
@@ -266,9 +267,9 @@ class RuntimeSmokeTests(unittest.TestCase):
             with self.subTest(skill=skill_name):
                 process = self.run_cli(str(SKILLS / skill_name / "scripts" / "run.py"), "--help")
                 for option in present:
-                    self.assertIn(option, process.stdout)
+                    self.assertRegex(process.stdout, rf"(?<![\w-]){re.escape(option)}(?=[\s=,\]])")
                 for option in absent:
-                    self.assertNotIn(option, process.stdout)
+                    self.assertNotRegex(process.stdout, rf"(?<![\w-]){re.escape(option)}(?=[\s=,\]])")
 
         with tempfile.TemporaryDirectory() as directory:
             outdir = Path(directory) / "chiral"
@@ -284,8 +285,10 @@ class RuntimeSmokeTests(unittest.TestCase):
 
     def test_clustering_and_analysis_cli_is_capability_scoped(self) -> None:
         cases = [
-            ("cs-compute-clustering-structure-murcko", ["--min-cluster-size"], ["--metric", "--similarity-threshold", "--max-core-groups"]),
-            ("cs-compute-clustering-structure-mcs", ["--max-pairs", "--max-core-groups"], ["--max-cores", "--metric"]),
+            ("cs-compute-clustering-structure-murcko", ["--input", "--min-cluster-size"], ["--smiles", "--compound-id", "--metric", "--similarity-threshold", "--max-core-groups"]),
+            ("cs-compute-clustering-structure-mcs", ["--input", "--max-pairs", "--max-core-groups"], ["--smiles", "--compound-id", "--max-cores", "--metric"]),
+            ("cs-compute-clustering-structure-brics", ["--input", "--min-cluster-size"], ["--smiles", "--compound-id", "--metric", "--max-pairs"]),
+            ("cs-compute-clustering-structure-recap", ["--input", "--min-cluster-size"], ["--smiles", "--compound-id", "--metric", "--max-pairs"]),
             ("cs-compute-clustering-vector-butina", ["--metric", "--similarity-threshold"], ["--radius", "--eps"]),
             ("cs-analysis-descriptor-activity-correlation", ["--description", "--membership", "--scope-mode"], ["--k", "--max-pairs"]),
             ("cs-analysis-activity-cliff", ["--similarity-threshold", "--activity-delta-threshold", "--max-pairs", "--random-seed", "--membership", "--scope-mode"], ["--description", "--k"]),
@@ -294,17 +297,27 @@ class RuntimeSmokeTests(unittest.TestCase):
             with self.subTest(skill=skill_name):
                 process = self.run_cli(str(SKILLS / skill_name / "scripts" / "run.py"), "--help")
                 for option in present:
-                    self.assertIn(option, process.stdout)
+                    self.assertRegex(process.stdout, rf"(?<![\w-]){re.escape(option)}(?=[\s=,\]])")
                 for option in absent:
-                    self.assertNotIn(option, process.stdout)
+                    self.assertNotRegex(process.stdout, rf"(?<![\w-]){re.escape(option)}(?=[\s=,\]])")
 
         mcs_runner = str(SKILLS / "cs-compute-clustering-structure-mcs" / "scripts" / "run.py")
         rejected = subprocess.run(
-            [sys.executable, mcs_runner, "--smiles", "CCO", "--max-pairs", "1001"],
+            [sys.executable, mcs_runner, "--input", str(ROOT / "tests" / "data" / "small_sar.csv"), "--max-pairs", "1001"],
             cwd=ROOT, text=True, capture_output=True,
         )
         self.assertEqual(2, rejected.returncode)
         self.assertIn("--max-pairs must be <= 1000", rejected.stderr)
+
+        for structure_name in ["murcko", "mcs", "brics", "recap"]:
+            with self.subTest(inline_rejected=structure_name):
+                structure_runner = str(SKILLS / f"cs-compute-clustering-structure-{structure_name}" / "scripts" / "run.py")
+                inline_rejected = subprocess.run(
+                    [sys.executable, structure_runner, "--smiles", "CCO"],
+                    cwd=ROOT, text=True, capture_output=True,
+                )
+                self.assertEqual(2, inline_rejected.returncode)
+                self.assertIn("--input", inline_rejected.stderr)
 
     def test_sali_selects_representation_metric_and_preserves_landscape_evidence(self) -> None:
         data = ROOT / "tests" / "data" / "small_sar.csv"

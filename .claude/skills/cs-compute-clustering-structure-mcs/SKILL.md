@@ -1,6 +1,6 @@
 ---
 name: cs-compute-clustering-structure-mcs
-description: Group compounds directly from SMILES with maximum common substructure（MCS）. Use for general clustering or an explicitly planned CONDUCTOR v4 structural Grouping node; this Skill does not consume Description vectors or hide a fingerprint-generation step.
+description: Group compounds from a compound-ID/SMILES CSV with maximum common substructure（MCS）. Use for general clustering or an explicitly planned CONDUCTOR v4 structural Grouping node; this Skill requires CSV input and does not consume Description vectors or hide a fingerprint-generation step.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
@@ -12,7 +12,7 @@ SMILESをmaximum common substructure（MCS）により直接group化し、一般
 
 ## Input
 
-compound IDとSMILESを持つCSV、または反復可能な`--smiles`を使う。Description CSVを入力とせず、fingerprint vectorを内部生成して距離clusteringへ置き換えない。列が曖昧なら`--id-column`と`--smiles-column`を指定する。分子標準化、活性単位変換、pActivity変換は行わない。
+compound IDとSMILESを持つCSVを`--input`へ必ず指定する。inline `--smiles`および`--compound-id`は受け付けない。Description CSVを入力とせず、fingerprint vectorを内部生成して距離clusteringへ置き換えない。列が曖昧なら`--id-column`と`--smiles-column`を指定する。分子標準化、活性単位変換、pActivity変換は行わない。
 
 ## Required workflow
 
@@ -69,6 +69,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor
 ## Boundaries
 
 - Description vectorを入力とせず、SMILESを宣言された構造規則で直接処理する。
+- 一般利用とCONDUCTOR利用のどちらもcompound IDとSMILESを持つCSVを入力とし、inline SMILESは使用しない。
 - 最終的なSAR機序を断定しない。
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。

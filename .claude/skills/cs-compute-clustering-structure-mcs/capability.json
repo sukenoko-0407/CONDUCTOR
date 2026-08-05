@@ -7,7 +7,7 @@
   "stage": "grouping",
   "family": "direct_structure",
   "grouping_kind": "direct_structure",
-  "description": "Use when Claude Code needs to group compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval.",
+  "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval.",
   "cost": {
     "class": "high",
     "human_approval_required": false,
@@ -33,7 +33,7 @@
   },
   "dependencies": [],
   "input_contract": [
-    "smiles_csv_or_inline_smiles"
+    "compound_id_smiles_csv"
   ],
   "output": {
     "membership": "cluster_membership.csv",

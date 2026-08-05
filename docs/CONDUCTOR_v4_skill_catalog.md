@@ -2,7 +2,7 @@
 
 > この文書は`catalog/catalog.json`から生成される。収載対象は人間管理の`catalog/included_skills.json`で指定する。
 
-Generated: `2026-08-04T00:13:30.981862+00:00`
+Generated: `2026-08-04T16:47:50.332880+00:00`
 
 ## Description
 
@@ -31,10 +31,10 @@ Generated: `2026-08-04T00:13:30.981862+00:00`
 
 | ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| C001 | `cs-compute-clustering-structure-murcko` | Murcko scaffold clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | scaffold_rule | - | low | stable | False |
-| C002 | `cs-compute-clustering-structure-mcs` | MCS clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | maximum_common_substructure | - | high | experimental | False |
-| C003 | `cs-compute-clustering-structure-brics` | BRICS fragment clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | fragment_decomposition | - | medium | stable | False |
-| C004 | `cs-compute-clustering-structure-recap` | RECAP fragment clustering | - | direct_structure | direct_structure | smiles_csv_or_inline_smiles | - | - | medium | stable | False |
+| C001 | `cs-compute-clustering-structure-murcko` | Murcko scaffold clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | scaffold_rule | - | low | stable | False |
+| C002 | `cs-compute-clustering-structure-mcs` | MCS clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | maximum_common_substructure | - | high | experimental | False |
+| C003 | `cs-compute-clustering-structure-brics` | BRICS fragment clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | fragment_decomposition | - | medium | stable | False |
+| C004 | `cs-compute-clustering-structure-recap` | RECAP fragment clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | medium | stable | False |
 | C005 | `cs-compute-clustering-vector-butina` | Vector Butina clustering | - | description_vector | description_vector | description_vector_csv | vector_similarity_partition | description: D002 | medium | stable | False |
 | C006 | `cs-compute-clustering-vector-hierarchical` | Vector hierarchical clustering | - | description_vector | description_vector | description_vector_csv | vector_hierarchical | description: D001, D013, D017 | medium | stable | False |
 | C007 | `cs-compute-clustering-vector-dbscan` | Vector DBSCAN clustering | - | description_vector | description_vector | description_vector_csv | vector_density_clustering | description: D001 | medium | stable | False |

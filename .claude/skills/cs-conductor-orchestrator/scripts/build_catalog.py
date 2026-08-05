@@ -51,8 +51,8 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
     if kind == "direct_structure":
         if algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
             raise ValueError(f"{expected_name}: direct_structure must use an explicit structure rule, decomposition, or MCS algorithm")
-        if contracts != ["smiles_csv_or_inline_smiles"] or dependencies:
-            raise ValueError(f"{expected_name}: direct_structure must consume SMILES directly and have no Description dependency")
+        if contracts != ["compound_id_smiles_csv"] or dependencies:
+            raise ValueError(f"{expected_name}: direct_structure must consume a compound-ID/SMILES CSV and have no Description dependency")
     elif kind == "description_vector":
         if not algorithm.startswith("vector_"):
             raise ValueError(f"{expected_name}: description_vector must use a vector_* implementation")

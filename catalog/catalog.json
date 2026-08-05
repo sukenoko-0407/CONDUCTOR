@@ -3,7 +3,7 @@
   "conductor_version": "4.0.0",
   "selection_managed_by": "human",
   "selection_path": "catalog/included_skills.json",
-  "generated_at": "2026-08-04T00:13:30.981862+00:00",
+  "generated_at": "2026-08-04T16:47:50.332880+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -542,7 +542,7 @@
       "stage": "grouping",
       "family": "direct_structure",
       "grouping_kind": "direct_structure",
-      "description": "Use when Claude Code needs to group compounds directly from SMILES by Murcko scaffold, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by Murcko scaffold, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -564,7 +564,7 @@
       },
       "dependencies": [],
       "input_contract": [
-        "smiles_csv_or_inline_smiles"
+        "compound_id_smiles_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -583,7 +583,7 @@
       "stage": "grouping",
       "family": "direct_structure",
       "grouping_kind": "direct_structure",
-      "description": "Use when Claude Code needs to group compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval.",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval.",
       "cost": {
         "class": "high",
         "human_approval_required": false,
@@ -609,7 +609,7 @@
       },
       "dependencies": [],
       "input_contract": [
-        "smiles_csv_or_inline_smiles"
+        "compound_id_smiles_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -628,7 +628,7 @@
       "stage": "grouping",
       "family": "direct_structure",
       "grouping_kind": "direct_structure",
-      "description": "Use when Claude Code needs to group compounds directly from SMILES by shared BRICS fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by shared BRICS fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -650,7 +650,7 @@
       },
       "dependencies": [],
       "input_contract": [
-        "smiles_csv_or_inline_smiles"
+        "compound_id_smiles_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -669,7 +669,7 @@
       "stage": "grouping",
       "family": "direct_structure",
       "grouping_kind": "direct_structure",
-      "description": "Use when Claude Code needs to group compounds directly from SMILES by shared RECAP fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by shared RECAP fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -687,7 +687,7 @@
       "clustering_id": "C004",
       "dependencies": [],
       "input_contract": [
-        "smiles_csv_or_inline_smiles"
+        "compound_id_smiles_csv"
       ],
       "output": {
         "membership": "cluster_membership.csv",

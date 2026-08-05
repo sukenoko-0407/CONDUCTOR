@@ -68,7 +68,7 @@ Skill名は小文字英数字とハイフンのみ、64文字未満とする。
 
 ## 5. 入力契約
 
-### 5.1 Descriptionおよびdirect structure Grouping
+### 5.1 Description
 
 - `--input <csv>`または反復可能な`--smiles <smiles>`のどちらかを受ける。
 - CSVはID列とSMILES列を自動推定できる。曖昧な場合は明示指定する。
@@ -77,9 +77,16 @@ Skill名は小文字英数字とハイフンのみ、64文字未満とする。
 - invalid SMILESは主結果に保持し、計算値を欠損、警告を記録する。
 - 塩除去、中和、tautomer正規化、stereo正規化は行わない。
 
-direct structure GroupingはMurcko、MCS、BRICS、RECAPに限定し、SMILESを宣言された構造規則で直接処理する。Morgan等のfingerprintを内部生成してButina、DBSCAN、graph clusteringへ渡す処理は含めない。
+### 5.2 Direct structure Grouping
 
-### 5.2 Description-vector Clustering
+- 一般利用・CONDUCTOR利用とも、compound ID列とSMILES列を含むCSVを`--input <csv>`へ必ず指定する。
+- inlineの`--smiles`と`--compound-id`は受け付けない。複数化合物の集合を分類し、入力集合とID対応を監査できることを優先する。
+- ID列とSMILES列は自動推定できる。曖昧な場合は`--id-column`と`--smiles-column`で明示する。
+- duplicate IDはhard errorとする。invalid SMILESは未割当として保持して警告を記録する。
+- 塩除去、中和、tautomer正規化、stereo正規化は行わない。
+- Murcko、MCS、BRICS、RECAPに限定し、CSV内のSMILESを宣言された構造規則で直接処理する。Morgan等のfingerprintを内部生成してButina、DBSCAN、graph clusteringへ渡す処理は含めない。
+
+### 5.3 Description-vector Clustering
 
 - compound IDと数値featureを持つDescription SkillのCSV artifactを`--input`で受ける。
 - raw SMILESおよび反復可能な`--smiles`は受け付けず、descriptorやfingerprintを内部生成しない。
@@ -88,7 +95,7 @@ direct structure GroupingはMurcko、MCS、BRICS、RECAPに限定し、SMILESを
 - 異なるcompound IDが同一Vectorを持つことは許容する。近傍解析では自己行だけを除外し、距離0の別化合物は正当な近傍として保持する。
 - invalid SMILESまたはDescription値がない行はclusterへ代入せず、主結果に未割当として保持する。
 
-### 5.3 Operator
+### 5.4 Operator
 
 - 元CSV、ID列、endpoint列、`higher_is_better`を受ける。
 - 必要に応じDescription artifact、Grouping membership、registryを明示入力する。

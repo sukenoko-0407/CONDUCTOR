@@ -31,7 +31,7 @@ Windows、Python 3.12.12の既存`.venv`で、State、Repository契約、Runtime
 - vector Clusteringの`auto` Metricが表現に追従し、binaryまたは既知のbit fingerprintへTanimoto以外を拒否すること
 - MCS pair capがseed付き一様ランダム非復元抽出であり、先頭pair抽出を行わないこと
 - pairwise構造Operatorのpair capもseed付き一様ランダム非復元抽出であること
-- direct structure Grouping 4 SkillがSMILES入力かつDescription非依存、Description-vector Clustering 6 SkillがDescription CSV入力かつDescription依存であること
+- direct structure Grouping 4 Skillがcompound-ID/SMILES CSV必須かつDescription非依存で、inline SMILESを拒否すること。Description-vector Clustering 6 SkillがDescription CSV入力かつDescription依存であること
 - 旧SMILES-to-Morgan clustering wrapper 6 Skillが現役directoryとallowlistに存在しないこと
 - 初手DAGの再計画がnodeを重複生成せず、node固有`<node-id-safe>`出力先が衝突しないこと
 - `wide_shallow` nodeが`deep_dive`より優先され、初手がterminalになるまでInterpretationを開始できないこと

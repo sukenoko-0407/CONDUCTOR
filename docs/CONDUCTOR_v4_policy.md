@@ -51,7 +51,7 @@ Orchestratorの通常判断では、run phase、nodeの完了／未完了、初�
 
 Groupingは、入力と責務が異なる二系統を混同しない。
 
-- direct structure GroupingはSMILESを直接入力し、Description vectorを生成・消費しない。
+- direct structure Groupingはrunのcompound-ID/SMILES CSVを必須入力とし、そのSMILESを直接処理する。inline SMILESは受け付けず、Description vectorを生成・消費しない。
   - C001 Murcko: scaffold rule
   - C002 MCS: maximum common substructure。構造Groupingの中心的な確認軸として全runの初手に必ず計画・実行する。高コストだが`preauthorized_initial`であり、runごとの事前承認は不要。pair上限時は記録されたseedによる一様ランダム非復元抽出を行う
 

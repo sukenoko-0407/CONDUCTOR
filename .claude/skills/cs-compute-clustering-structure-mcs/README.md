@@ -30,6 +30,7 @@ python .claude/skills/cs-compute-clustering-structure-mcs/scripts/launch.py --in
 ## 制約事項
 
 - 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
+- 両モードともcompound IDとSMILESを含むCSVを必須入力とし、CLIへのSMILES直接入力は受け付けない。
 - Description vectorは入力にせず、fingerprint生成を内部に隠した距離clusteringも行わない。
 - invalid SMILESは未割当として保持する。分子標準化は行わない。
 - `--min-cluster-size`の既定値は3、`--max-pairs`は既定値・上限とも1000、`--max-core-groups`の既定値は300。pairを間引く場合は`--random-seed`に基づき一様ランダム抽出する。
@@ -40,3 +41,4 @@ python .claude/skills/cs-compute-clustering-structure-mcs/scripts/launch.py --in
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
+| 1.1.0 | 構造クラスタリングの入力をcompound ID・SMILES CSVに限定。 |
