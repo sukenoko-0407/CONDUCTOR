@@ -17,7 +17,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 ## Workflow
 
-1. Build or verify the Catalog with `scripts/build_catalog.py`.
+1. Verify the Catalog read-only with `scripts/build_catalog.py --check`. Never rebuild Catalog or write under `CONDUCTOR_modules/` during an analysis run. `scripts/build_catalog.py --write` is an explicit, human-directed package-maintenance operation only.
 2. Initialize one run per endpoint with a required `higher_is_better` direction and human-specified parallel limit.
 3. Create the mandatory `representative-family-wide-v1` plan from capabilities marked `default_wide_shallow`. Preserve every declared Description, Grouping, and Operator axis, including the 3D Description axis.
 4. Expand each dependent capability only across its explicit `wide_shallow_sources`; add dependency edges and `input_bindings` before execution. Never bind a downstream node to the first Description or Grouping merely because it was created first.
@@ -38,6 +38,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 14. Execute registered low-cost nodes within the delegated budget and normal parallel limit. Request human approval for high-cost or out-of-budget work. After the branch is terminal, add a new I001 node over the new and relevant prior evidence. If findings remain too numerous for humans, prefer further discriminating Description–Grouping–Operator–Interpretation branches over discarding findings.
 15. Treat Group IDs as immutable identities. Inspect `grouping/group_index/group_registry.csv` and only the needed columns in `Cpd_Group_matrix_*.csv`. Mark a low-value explored region with `state discard-group`; retain its membership and history for audit.
 16. At each human checkpoint or completed Interpretation round, create or update `<run-root>/session_handoff.md` using `CONDUCTOR_modules/docs/prompt/CONDUCTOR_session_handoff_template.md`. Record the State timestamp, cumulative budget use, human direction, positive and negative findings, unresolved contradictions, pending approvals, and artifact paths. Treat the handoff as a concise navigation index, not a replacement for State or evidence.
+17. When a human requests any partial Description, Grouping, Operator, or Interpretation within an existing CONDUCTOR run, never invoke the specialist Skill outside State. Resolve the requested Catalog capability and succeeded upstream nodes, then register it with `state add --human-request --reason ...`. State allocates a run-local execution node ID (`D###`, `G###`, `O###`, or `I###`), binds artifacts, and records the instruction. Start, execute, and record the node normally. For a later Interpretation round, use capability `I001`, depend on every selected Evidence-producing Operator node, and pass the latest succeeded Interpretation through `--previous-interpretation-node`; this is read-only lineage, not an execution dependency.
 
 ## Environment
 
@@ -50,6 +51,8 @@ Use `scripts/launch.py`; do not invoke `pixi` directly. It prefers `/home/open-s
 - A user request to run an individual computation without explicit CONDUCTOR intent is outside this Orchestrator workflow and must remain that Skill's general mode.
 - Do not infer CONDUCTOR mode only from repository location, compatible artifacts, or an output path. The active Orchestrator run and State node are the explicit context.
 - Require the Project Skill's `execution_event.json`; reject a successful-looking output that cannot be associated with the expected project, run, node, and capability.
+- Keep Capability ID and Node ID distinct. For example, capability `I001` may execute as nodes `I001`, `I002`, and `I003`; the latter are Interpretation rounds, not different Skills.
+- Repeat list-valued `evidence`, `input`, and `previous_interpretation` parameters as repeated CLI options when invoking a specialist Skill.
 
 ## Commands
 
@@ -90,7 +93,7 @@ Stop automatically prioritizing a well-explored low-value Group without deleting
 
 ```bash
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state discard-group \
-  --state path/to/state.json --group-id G_C006_001_4A91C2D0870FB6E3 \
+  --state path/to/state.json --group-id G_G006_4A91C2D0870FB6E3 \
   --reason "Independent representations did not support this region"
 ```
 
@@ -98,7 +101,7 @@ Reserve a runnable node before launching it:
 
 ```bash
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state start \
-  --state path/to/state.json --node-id D001:001
+  --state path/to/state.json --node-id D001
 ```
 
 Resume and verify the input hash:
@@ -123,6 +126,23 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state add \
   --reason "Assess whether stereochemical encoding resolves the local inconsistency"
 ```
 
+Register a human-requested partial analysis without bypassing the DAG:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state add \
+  --state path/to/state.json --capability-id A006 --depends-on D002 \
+  --human-request --reason "Re-evaluate the requested region in the Morgan landscape"
+```
+
+Register a second Interpretation round. `I001` after `--capability-id` is the Skill capability; the returned execution node is `I002` when one Interpretation node already exists:
+
+```bash
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state add \
+  --state path/to/state.json --capability-id I001 \
+  --depends-on O001,O004,O017 --previous-interpretation-node I001 \
+  --human-request --reason "Reinterpret the selected Evidence using the user's new question"
+```
+
 Configure the human-approved Interpretation exploration envelope:
 
 ```bash
@@ -142,7 +162,7 @@ Record an execution failure that produced no event:
 
 ```bash
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state fail \
-  --state path/to/state.json --node-id D001:001 --reason "concrete error message"
+  --state path/to/state.json --node-id D001 --reason "concrete error message"
 ```
 
 ## Planning principles
@@ -162,6 +182,6 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state fail \
 - Read `CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md` before registering Interpretation exploration. Interpretation proposes scientific questions; Orchestration maps them to Catalog capabilities, enforces budget and approval, and never rewrites them into a preferred coherent story.
 - Accept multiple-testing false positives as discovery candidates, but preserve trial history and distinguish Discovery from Validation. Every registered discovery must have a falsification request.
 - Prioritize adequately sized Groups, flag Groups above 30% and especially 50% of the dataset as progressively less local, and retain small structurally cohesive or clear-MCS Groups as candidates.
-- Never repeat an analysis signature already present in the execution DAG or exploration ledger.
+- Never repeat a Description, Grouping, or Operator analysis signature already present in the execution DAG or exploration ledger. A new Interpretation round may revisit the same fixed Evidence because semantic comparison is its purpose; give it a new `I###` node and retain prior Interpretation lineage.
 - Never infer approval from silence. `preauthorized_initial` is a human-defined Catalog policy, not inferred approval.
 - Never modify molecular structures or endpoint units.

@@ -13,7 +13,8 @@ from typing import Any
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
-POLICY_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
+POLICY_VERSION = "1.1.0"
 
 
 def utc_now() -> str:
@@ -123,8 +124,15 @@ def load_optional_json(path_text: str | None) -> dict[str, Any] | None:
     return json.loads(Path(path_text).read_text(encoding="utf-8")) if path_text else None
 
 
+def default_catalog_path() -> Path:
+    workspace = find_workspace()
+    packaged = workspace / "CONDUCTOR_modules" / "catalog" / "catalog.json"
+    legacy = workspace / "catalog" / "catalog.json"
+    return packaged if packaged.exists() else legacy
+
+
 def load_catalog(path_text: str | None) -> dict[str, dict[str, Any]]:
-    path = Path(path_text) if path_text else find_workspace() / "catalog" / "catalog.json"
+    path = Path(path_text) if path_text else default_catalog_path()
     if not path.exists():
         return {}
     catalog = json.loads(path.read_text(encoding="utf-8"))
@@ -233,10 +241,6 @@ def build_relations(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         if same_signature:
             relation_type = "duplicates"
-        elif global_local:
-            relation_type = "localizes"
-        elif same_operator and same_evaluation and same_scope:
-            relation_type = "refines"
         else:
             relation_type = "comparison_candidate"
         if same_evaluation or (same_grouping and same_target) or shared_dependencies:
@@ -276,6 +280,7 @@ def build_relations(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "rationale": "; ".join(reasons),
             "status": "candidate",
             "shared_pair_count": shared_pairs,
+            "candidate_relation": "global_local_contrast" if global_local else ("parameter_contrast" if same_operator and same_evaluation and same_scope else "cross_evidence_comparison"),
         })
     return relations
 
@@ -317,14 +322,119 @@ def group_candidates(index: list[dict[str, Any]], dataset_count: int) -> list[di
     return sorted(candidates.values(), key=lambda item: (-int(item.get("sample_count") or 0), item["candidate_id"]))
 
 
-def confidence(evidence: dict[str, Any]) -> tuple[str, str]:
-    warnings = evidence.get("warnings") or []
-    count = int(evidence.get("sample_count") or 0)
-    if count >= 30 and not warnings:
-        return "medium", "sample数は比較に利用できるが、独立evidenceと反証探索が完了するまで探索的候補として扱う。"
-    if count >= 10:
-        return "low_to_medium", "sample数またはwarningを考慮し、独立表現、matched control、反証解析を必要とする。"
-    return "low", "小Groupまたは少数sampleの観察であり、構造凝集性と一化合物感度を確認する。"
+STATUS_LABELS = {
+    "discovery": "探索的発見",
+    "validated": "再現・支持あり",
+    "refuted": "反証あり",
+    "inconclusive": "判定保留",
+    "negative": "明瞭な傾向なし",
+}
+CONTRADICTION_LABELS = {
+    "not_assessed": "未評価",
+    "none_found": "評価済み・明瞭な矛盾なし",
+    "found": "矛盾または反対Evidenceあり",
+}
+DRAFT_MARKERS = ("機械下書き", "agentによる比較評価待ち", "agentによる意味解釈待ち", "意味解釈前")
+
+
+def format_number(value: Any, digits: int = 3) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        if value != value:
+            return "NaN"
+        if value == 0:
+            return "0"
+        if abs(value) >= 10000 or abs(value) < 0.001:
+            return f"{value:.{digits}g}"
+        return f"{value:.{digits}f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def analysis_context_for(evidence: dict[str, Any], indexed: dict[str, Any]) -> dict[str, Any]:
+    machine = evidence.get("machine_readable_summary") or {}
+    scope = evidence.get("scope") or indexed.get("scope") or {}
+    return {
+        "operator_id": str(evidence.get("operator_id") or indexed.get("operator_id") or ""),
+        "operator_name": str(evidence.get("operator_name") or indexed.get("operator_name") or ""),
+        "evaluation_representation": evidence.get("evaluation_representation"),
+        "evaluation_family": indexed.get("evaluation_family"),
+        "grouping_representation": evidence.get("grouping_representation"),
+        "grouping_family": indexed.get("grouping_family"),
+        "scope_mode": scope.get("mode", "global"),
+        "target_group_id": scope.get("target_group_id") or evidence.get("target_group_id"),
+        "comparison_group_id": scope.get("comparison_group_id"),
+        "sample_count": int(scope.get("sample_count") or evidence.get("sample_count") or 0),
+        "sample_fraction": scope.get("sample_fraction"),
+        "metric": machine.get("metric"),
+    }
+
+
+def analysis_context_text(context: dict[str, Any]) -> str:
+    operator = str(context.get("operator_name") or context.get("operator_id") or "unknown")
+    if context.get("operator_id"):
+        operator += f" ({context['operator_id']})"
+    parts = [f"Operator={operator}"]
+    if context.get("evaluation_representation"):
+        parts.append(f"Description={context['evaluation_representation']}")
+    if context.get("grouping_representation"):
+        parts.append(f"Grouping={context['grouping_representation']}")
+    scope = str(context.get("scope_mode") or "global")
+    if context.get("target_group_id"):
+        scope += f":{context['target_group_id']}"
+    if context.get("comparison_group_id"):
+        scope += f" vs {context['comparison_group_id']}"
+    parts.extend([f"Scope={scope}", f"N={format_number(context.get('sample_count'))}"])
+    if context.get("sample_fraction") is not None:
+        parts.append(f"全体比={format_number(100 * float(context['sample_fraction']), 1)}%")
+    if context.get("metric"):
+        parts.append(f"Metric={context['metric']}")
+    return " / ".join(parts)
+
+
+def is_draft_text(value: Any) -> bool:
+    lowered = str(value or "").strip().lower()
+    return any(marker in lowered for marker in DRAFT_MARKERS)
+
+
+def validate_human_report(value: dict[str, Any], allow_draft: bool = False) -> None:
+    if value.get("report_status") == "draft":
+        if allow_draft:
+            return
+        raise ValueError("Interpretation is still a machine draft; the dedicated Interpretation Agent must complete it before final rendering")
+    errors: list[str] = []
+    if value.get("report_status") != "agent_interpreted":
+        errors.append("report_status must be agent_interpreted")
+    review = value.get("agent_review") or {}
+    if review.get("completed") is not True or not review.get("reviewed_at"):
+        errors.append("agent_review must record completed=true and reviewed_at")
+    summary = value.get("report_summary") or {}
+    if not summary.get("key_messages"):
+        errors.append("report_summary.key_messages must contain a conclusion")
+    for name in ("analysis_objective", "dataset_scope", "executive_summary", "coverage_summary"):
+        if not str(summary.get(name) or "").strip() or is_draft_text(summary.get(name)):
+            errors.append(f"report_summary.{name} is missing or still a draft")
+    if (value.get("contradiction_assessment") or {}).get("status") == "not_assessed":
+        errors.append("contradiction_assessment must distinguish none_found from found")
+    for finding in value.get("notable_findings") or []:
+        operator_name = str((finding.get("analysis_context") or {}).get("operator_name") or "").strip().lower()
+        if str(finding.get("title") or "").strip().lower() == operator_name:
+            errors.append(f"{finding.get('finding_id')}: title must state a result")
+        for name in ("scientific_question", "observation", "interpretation", "why_notable"):
+            field_text = str(finding.get(name) or "").strip()
+            if not field_text or is_draft_text(field_text):
+                errors.append(f"{finding.get('finding_id')}: {name} is missing or still a draft")
+        if str(finding.get("observation") or "").strip() == str(finding.get("interpretation") or "").strip():
+            errors.append(f"{finding.get('finding_id')}: observation and interpretation must differ")
+    for hypothesis in value.get("hypotheses") or []:
+        for name in ("title", "scientific_question", "claim", "interpretation", "why_notable"):
+            field_text = str(hypothesis.get(name) or "").strip()
+            if not field_text or is_draft_text(field_text):
+                errors.append(f"{hypothesis.get('hypothesis_id')}: {name} is missing or still a draft")
+    if errors:
+        raise ValueError("Human Interpretation quality gate failed:\n- " + "\n- ".join(errors))
 
 
 def build_interpretation(
@@ -332,82 +442,64 @@ def build_interpretation(
     evidence_index: list[dict[str, Any]],
     relations: list[dict[str, Any]],
     run_id: str,
+    interpretation_id: str,
     stage: str,
     state_info: dict[str, Any],
     seed: int,
 ) -> dict[str, Any]:
-    findings = []
-    hypotheses = []
-    next_analysis: list[dict[str, Any]] = []
-    review_points = [
-        "Operator observationとInterpretationを区別する。",
-        "全注目候補について反証、control、または独立replicationを確認する。",
-        "依存したDescriptionや共通pairから得た一致を独立支持として重複計上しない。",
-        "assay条件混在、測定誤差、Groupのsample割合と構造凝集性を確認する。",
-    ]
-    for number, evidence in enumerate(evidence_items, start=1):
+    findings: list[dict[str, Any]] = []
+    for number, (evidence, indexed) in enumerate(zip(evidence_items, evidence_index), start=1):
         evidence_id = str(evidence.get("evidence_id", f"UNKNOWN_{number:04d}"))
         machine = evidence.get("machine_readable_summary") or {}
-        summary = evidence.get("human_readable_summary") or f"Evidence {evidence_id}"
-        operator_id = str(evidence.get("operator_id") or "")
-        if operator_id == "A006":
+        observation = evidence.get("human_readable_summary") or f"Evidence {evidence_id}"
+        context = analysis_context_for(evidence, indexed)
+        if str(evidence.get("operator_id") or "") == "A006":
             representation = evidence.get("evaluation_representation") or "unspecified representation"
-            summary = (
-                f"{representation}のSALI landscape: scope={(evidence.get('scope') or {}).get('mode', 'global')}, "
-                f"metric={machine.get('metric')}, median={machine.get('median_sali')}, p90={machine.get('p90_sali')}, "
-                f"p95={machine.get('p95_sali')}, neighbor Spearman={machine.get('neighbor_property_spearman')}。"
-                "upper tail、中心値、global/local/between-group差を別々に確認する。"
+            observation = (
+                f"{representation}空間の{context['scope_mode']}解析では、median SALI={format_number(machine.get('median_sali'))}、"
+                f"p95 SALI={format_number(machine.get('p95_sali'))}、近傍property Spearman={format_number(machine.get('neighbor_property_spearman'))}"
+                f"（N={context['sample_count']}、metric={machine.get('metric') or 'unspecified'}）。"
             )
-            implication = "上位pair、Group境界、構造・3D・pharmacophore差を照合し、同じ現象が独立表現でも再現するか確認する。"
-            compound_direction = ["Cliff周辺のbridge analogまたは単一変換seriesを検討する。具体的SMILESは生成しない。"]
+            question = f"{representation}で定義した近傍空間の活性landscapeは、対象scopeで平滑か、Cliff的か。"
         else:
-            implication = "具体的構造含意は、Group局所性、独立evidence、例外、反証結果を比較した後に人間が確定する。"
-            compound_direction = ["候補を識別できる構造変換方向を検討する。具体的SMILESは生成しない。"]
+            question = f"{evidence.get('operator_name', 'このOperator')}は対象scopeにどのような傾向、差、または例外を示すか。"
+        limitations = list(evidence.get("warnings") or []) or ["単一Evidenceのため、独立性、比較対象、effect size、例外をまだ評価していない。"]
         findings.append({
             "finding_id": f"F{number:04d}",
             "title": str(evidence.get("operator_name", "Operator evidence")),
-            "observation": summary,
+            "scientific_question": question,
+            "analysis_context": context,
+            "observation": observation,
+            "interpretation": "Interpretation Agentによる比較評価待ちの機械下書き。現時点では意味解釈を確定しない。",
+            "why_notable": "他のDescription、Group、scope、Operatorとの比較対象になり得るEvidenceとして索引化した。",
             "evidence_ids": [evidence_id],
             "result_values": machine,
             "warnings": evidence.get("warnings") or [],
-            "status": "discovery",
+            "limitations": limitations,
+            "status": "inconclusive",
             "scope": evidence.get("scope") or {},
         })
-        level, rationale = confidence(evidence)
-        hypotheses.append({
-            "hypothesis_id": f"H{number:04d}",
-            "title": f"{evidence.get('operator_name', '解析')}から得られた未確定の比較候補",
-            "target_group": evidence.get("target_group_id"),
-            "observation": summary,
-            "supporting_evidence": [evidence_id],
-            "contradicting_evidence": [],
-            "evidence_independence": "単一evidence由来。evidence relation graphで共有表現、scope、pair、上流nodeを確認する。",
-            "alternative_explanations": ["測定誤差またはassay条件差", "sample selection、Group定義、property range、近傍構成による見かけの関係"],
-            "scope": evidence.get("applicability_conditions") or [],
-            "exceptions": [],
-            "confidence": level,
-            "confidence_rationale": rationale,
-            "proposed_structural_implication": implication,
-            "recommended_next_analysis": ["異なるDescription family、Group外、matched controlのいずれかで反証を探索する。"],
-            "recommended_next_compounds": compound_direction,
-            "human_review_points": ["元artifact、Group size、scope fraction、warningを照合する。"],
-            "focus_pairs": (evidence.get("supporting_pairs") or [])[:20],
-            "falsification_status": "required",
-        })
-        next_analysis.append({
-            "source_hypothesis_id": f"H{number:04d}",
-            "action": "独立表現、Group外、matched control、または反対方向の例外で反証を探索する。",
-            "purpose": "falsify",
-            "approval_status": "orchestrator_must_determine",
-        })
+    scope_modes = sorted({str((item.get("scope") or {}).get("mode", "global")) for item in evidence_index})
+    operator_ids = sorted({str(item.get("operator_id")) for item in evidence_index})
     return {
-        "schema_version": "1.0.0",
+        "schema_version": SCHEMA_VERSION,
         "policy_version": POLICY_VERSION,
         "run_id": run_id,
-        "interpretation_id": f"{run_id}:I001:{value_hash([item['evidence_id'] for item in evidence_index])[:12]}",
+        "interpretation_id": interpretation_id,
+        "report_status": "draft",
+        "agent_review": {"completed": False, "reviewed_at": None, "review_scope": "not_started"},
+        "report_summary": {
+            "analysis_objective": "Operator evidenceをDescription、Grouping、scope、解析手法の違いから比較し、人間が検討すべきSAR上の特徴を抽出する。",
+            "dataset_scope": f"同一runのEvidence {len(evidence_index)}件、Operator {len(operator_ids)}種類、scope={', '.join(scope_modes) or 'unknown'}。",
+            "executive_summary": "これは意味解釈前の機械下書きであり、専用Interpretation Agentによるartifact確認とEvidence横断比較を必要とする。",
+            "key_messages": ["Evidenceの索引化は完了したが、人間向けの結論はまだ作成されていない。"],
+            "coverage_summary": f"{len(evidence_index)}件のEvidenceと{len(relations)}件の比較候補を準備した。",
+            "limitations": ["この段階では、effect size、Evidence独立性、矛盾、例外、反証結果を統合評価していない。"],
+        },
         "evidence_index": evidence_index,
         "evidence_relations": relations,
         "unresolved_contradictions": [],
+        "contradiction_assessment": {"status": "not_assessed", "summary": "Interpretation Agentによる矛盾・反対Evidenceの評価待ち。"},
         "exploration_summary": {
             "stage": stage,
             "seed": seed,
@@ -419,67 +511,78 @@ def build_interpretation(
             "agent_review_required": True,
         },
         "notable_findings": findings,
-        "hypotheses": hypotheses,
-        "recommended_next_analysis": next_analysis,
-        "human_review_points": review_points,
+        "hypotheses": [],
+        "recommended_next_analysis": [],
+        "human_review_points": [
+            "専用Interpretation Agentが全artifactを確認し、ObservationとInterpretationを明示的に分ける。",
+            "注目候補だけを本文に残し、単なる実行記録はEvidence indexへ移す。",
+            "矛盾の未評価と、評価した結果として矛盾が見つからない場合を区別する。",
+        ],
         "created_at": utc_now(),
     }
 
 
 def markdown_report(value: dict[str, Any]) -> str:
-    lines = [
-        "# CONDUCTOR v4 Interpretation Report",
-        "",
-        f"- Run ID: `{value['run_id']}`",
-        f"- Policy: `{value['policy_version']}`",
-        f"- Stage: `{value['exploration_summary']['stage']}`",
-        f"- Generated: `{value['created_at']}`",
-        "",
-        "## 探索概要",
-        "",
-        "```json",
-        json.dumps(value["exploration_summary"], ensure_ascii=False, indent=2),
-        "```",
-        "",
-        "## Evidence index",
-        "",
-    ]
-    for item in value["evidence_index"]:
-        lines.append(f"- `{item['evidence_id']}` Operator={item['operator_id']} scope={(item.get('scope') or {}).get('mode', 'unknown')} N={item.get('sample_count', 0)}")
+    summary = value["report_summary"]
+    lines = ["# CONDUCTOR Interpretation Report", ""]
+    if value["report_status"] == "draft":
+        lines.extend(["> **機械下書き — 最終Interpretationではありません。** 専用Interpretation Agentによる意味解釈と最終化が必要です。", ""])
     lines.extend([
-        "",
-        "## 注目すべき発見",
-        "",
+        f"- Run ID: {value['run_id']} / Stage: {value['exploration_summary']['stage']}",
+        f"- Report status: {value['report_status']} / Generated: {value['created_at']}",
+        "", "## 解析の目的と対象", "", summary["analysis_objective"], "",
+        f"**対象範囲:** {summary['dataset_scope']}", "",
+        f"**Coverage:** {summary['coverage_summary']}", "",
+        "## 解釈サマリー", "", summary["executive_summary"], "", "### 主要メッセージ", "",
     ])
+    lines.extend(f"- {item}" for item in summary["key_messages"])
+    lines.extend(["", "### 全体の制約", ""])
+    lines.extend(f"- {item}" for item in summary["limitations"])
+    lines.extend(["", "## 重要な解釈", ""])
+    if not value["notable_findings"]:
+        lines.extend(["- 現時点で本文に掲載すべき注目結果はない。negative resultまたはcoverage不足は後段を参照する。", ""])
     for finding in value["notable_findings"]:
-        lines.extend([f"### {finding['finding_id']}: {finding['title']}", "", finding["observation"], "", f"Evidence: {', '.join(finding['evidence_ids'])}", ""])
-    lines.extend(["## Evidence間関係", ""])
-    if value["evidence_relations"]:
-        for relation in value["evidence_relations"]:
-            lines.append(f"- `{relation['relation_id']}` {relation['relation_type']} / independence={relation['independence']}: {', '.join(relation['evidence_ids'])} — {relation['rationale']}")
-    else:
-        lines.append("- 比較候補なし。")
-    lines.extend(["", "## 未解決の矛盾", ""])
-    if value["unresolved_contradictions"]:
-        lines.extend(f"- {item}" for item in value["unresolved_contradictions"])
-    else:
-        lines.append("- 未検出またはAgent未評価。")
-    lines.extend(["", "## 仮説・検証候補", ""])
+        lines.extend([
+            f"### {finding['title']}", "",
+            f"{finding['finding_id']} · **{STATUS_LABELS.get(finding['status'], finding['status'])}**", "",
+            f"**解析の問い:** {finding['scientific_question']}", "",
+            f"**解析条件:** {analysis_context_text(finding['analysis_context'])}", "",
+            "#### 観察", "", finding["observation"], "",
+            "#### 解釈", "", finding["interpretation"], "",
+            f"**なぜ注目するか:** {finding['why_notable']}", "",
+            "**制約・代替説明:**", "",
+        ])
+        lines.extend(f"- {item}" for item in finding["limitations"])
+        lines.extend(["", f"Evidence: {', '.join(finding['evidence_ids'])}", ""])
+    contradiction = value["contradiction_assessment"]
+    lines.extend(["## 矛盾・反証・negative result", "", f"**評価状態:** {CONTRADICTION_LABELS[contradiction['status']]}", "", contradiction["summary"], ""])
+    for item in value["unresolved_contradictions"]:
+        label = item.get("title") or item.get("summary") or "未解決の矛盾"
+        evidence_ids = ", ".join(item.get("evidence_ids") or [])
+        lines.append(f"- {label}" + (f"（Evidence: {evidence_ids}）" if evidence_ids else ""))
+    lines.extend(["", "## 仮説候補", "", "HはHypothesis（検証可能な仮説候補）のIDであり、単独Evidenceの通し番号ではない。", ""])
+    if not value["hypotheses"]:
+        lines.extend(["- 現時点で、複数Evidenceを統合した仮説候補は設定されていない。", ""])
     for hypothesis in value["hypotheses"]:
         lines.extend([
-            f"### {hypothesis['hypothesis_id']}: {hypothesis['title']}", "",
-            f"- 対象: `{hypothesis['target_group'] or 'GLOBAL'}`",
+            f"### {hypothesis['title']}", "", f"仮説候補 {hypothesis['hypothesis_id']}", "",
+            f"**解析の問い:** {hypothesis['scientific_question']}", "",
+            f"**仮説:** {hypothesis['claim']}", "",
+            f"- 対象: {hypothesis['target_group'] or 'GLOBAL'}",
             f"- 観察: {hypothesis['observation']}",
+            f"- 解釈: {hypothesis['interpretation']}",
+            f"- 注目理由: {hypothesis['why_notable']}",
             f"- 支持Evidence: {', '.join(hypothesis['supporting_evidence'])}",
-            f"- 矛盾Evidence: {', '.join(hypothesis['contradicting_evidence']) or '未検出／未評価'}",
-            f"- 確信度: `{hypothesis['confidence']}`",
-            f"- 反証状態: `{hypothesis.get('falsification_status', 'unknown')}`",
+            f"- 矛盾Evidence: {', '.join(hypothesis['contradicting_evidence']) or 'なし'}",
+            f"- 確信度: {hypothesis['confidence']}",
+            f"- 反証状態: {hypothesis.get('falsification_status', 'unknown')}",
             f"- Evidence独立性: {hypothesis['evidence_independence']}",
             f"- 根拠: {hypothesis['confidence_rationale']}",
             f"- 構造的含意: {hypothesis['proposed_structural_implication']}",
-            "", "代替説明:", "",
+            "", "代替説明・制約:", "",
         ])
         lines.extend(f"- {item}" for item in hypothesis["alternative_explanations"])
+        lines.extend(f"- {item}" for item in hypothesis["limitations"])
         lines.extend(["", "適用scope:", ""])
         lines.extend(f"- {item}" for item in hypothesis["scope"])
         lines.extend(["", "例外:", ""])
@@ -492,10 +595,27 @@ def markdown_report(value: dict[str, Any]) -> str:
         lines.extend(f"- {item}" for item in hypothesis["human_review_points"])
         lines.append("")
     lines.extend(["## 推奨される次解析", ""])
-    for item in value["recommended_next_analysis"]:
-        lines.append(f"- `{item.get('purpose', '')}` {item.get('action', '')} ({item.get('source_hypothesis_id', '')})")
-    lines.append("")
-    lines.extend(["## 人間による確認事項", ""])
+    if value["recommended_next_analysis"]:
+        for item in value["recommended_next_analysis"]:
+            lines.append(f"- {item.get('purpose', '')}: {item.get('action', '')} ({item.get('source_id', '')})")
+    else:
+        lines.append("- 現時点で登録された追加解析要求はない。")
+    lines.extend(["", "## 付録A：Evidence index", ""])
+    for item in value["evidence_index"]:
+        lines.append(f"- {item['evidence_id']} / Operator={item['operator_id']} / scope={(item.get('scope') or {}).get('mode', 'unknown')} / N={item.get('sample_count', 0)}")
+    lines.extend(["", "## 付録B：Evidence間関係候補", ""])
+    if value["evidence_relations"]:
+        for relation in value["evidence_relations"]:
+            lines.append(f"- {relation['relation_id']} {relation['relation_type']} / candidate={relation.get('candidate_relation', '-')} / independence={relation['independence']}: {', '.join(relation['evidence_ids'])} — {relation['rationale']}")
+    else:
+        lines.append("- 比較候補なし。")
+    lines.extend([
+        "", "## 付録C：探索・監査情報", "",
+        f"- Policy: {value['policy_version']}",
+        f"- Seed: {value['exploration_summary'].get('seed')}",
+        f"- Attempted signatures: {len(value['exploration_summary'].get('attempted_analysis_signatures') or [])}",
+        "", "### 人間による確認事項", "",
+    ])
     lines.extend(f"- {item}" for item in value["human_review_points"])
     lines.append("")
     return "\n".join(lines)
@@ -503,72 +623,74 @@ def markdown_report(value: dict[str, Any]) -> str:
 
 def html_report(value: dict[str, Any]) -> str:
     def html_list(items: list[Any], empty: str = "なし") -> str:
-        return "<ul>" + ("".join(f"<li>{html.escape(str(item))}</li>" for item in items) or f"<li class='meta'>{html.escape(empty)}</li>") + "</ul>"
-
-    def json_block(item: Any) -> str:
-        if item is value.get("exploration_summary"):
-            return f"<article>{overview}</article>"
-        return f"<pre>{html.escape(json.dumps(item, ensure_ascii=False, indent=2))}</pre>"
+        body = "".join(f"<li>{html.escape(str(item))}</li>" for item in items)
+        return "<ul>" + (body or f"<li class='meta'>{html.escape(empty)}</li>") + "</ul>"
 
     summary = value["exploration_summary"]
-    attempted_signatures = summary.get("attempted_analysis_signatures") or []
-    overview = (
-        "<div class='table-wrap'><table><tbody>"
-        f"<tr><th>解析段階</th><td>{html.escape(str(summary.get('stage', 'unknown')))}</td><th>再現用seed</th><td>{html.escape(str(summary.get('seed', '-')))}</td></tr>"
-        f"<tr><th>Evidence数</th><td>{html.escape(str(summary.get('evidence_count', 0)))}</td><th>関係候補数</th><td>{html.escape(str(summary.get('relation_candidate_count', 0)))}</td></tr>"
-        f"<tr><th>Negative result</th><td>{'保持する' if summary.get('negative_results_preserved') else '保持しない'}</td><th>反証探索</th><td>{'必須' if summary.get('falsification_required') else '任意'}</td></tr>"
-        f"<tr><th>実施済みanalysis signature</th><td colspan='3'>{html_list(attempted_signatures, 'なし')}</td></tr>"
-        "</tbody></table></div>"
-    )
-    evidence_rows = "".join(
-        "<tr>"
-        f"<td>{html.escape(str(item['evidence_id']))}</td>"
-        f"<td>{html.escape(str(item['operator_id']))}</td>"
-        f"<td>{html.escape(str((item.get('scope') or {}).get('mode', 'unknown')))}</td>"
-        f"<td>{html.escape(str(item.get('evaluation_representation') or '-'))}</td>"
-        f"<td>{html.escape(str(item.get('grouping_representation') or '-'))}</td>"
-        f"<td>{int(item.get('sample_count') or 0)}</td>"
-        f"<td>{html.escape('; '.join(str(warning) for warning in item.get('warnings') or []))}</td>"
-        "</tr>"
-        for item in value["evidence_index"]
-    )
-    findings = "".join(f"<article><h3>{html.escape(item['finding_id'])}: {html.escape(item['title'])}</h3><p>{html.escape(item['observation'])}</p><p class='meta'>Evidence: {html.escape(', '.join(item['evidence_ids']))}</p></article>" for item in value["notable_findings"])
-    if not findings:
-        findings = "<p class='meta'>注目候補なし、またはAgent未評価。</p>"
-    relations = "".join(f"<tr><td>{html.escape(item['relation_id'])}</td><td>{html.escape(item['relation_type'])}</td><td>{html.escape(item['independence'])}</td><td>{html.escape(', '.join(item['evidence_ids']))}</td><td>{html.escape(item['rationale'])}</td></tr>" for item in value["evidence_relations"])
-    if not relations:
-        relations = "<tr><td colspan='5' class='meta'>比較候補なし。</td></tr>"
-    contradictions = "".join(f"<article class='contradiction'>{json_block(item)}</article>" for item in value["unresolved_contradictions"])
-    if not contradictions:
-        contradictions = "<p class='meta'>未検出またはAgent未評価。</p>"
+    report_summary = value["report_summary"]
+    findings = "".join(
+        f"<article class='finding status-{html.escape(item['status'])}'>"
+        f"<div class='card-head'><span class='status-label'>{html.escape(STATUS_LABELS.get(item['status'], item['status']))}</span><span class='id-label'>{html.escape(item['finding_id'])}</span></div>"
+        f"<h3>{html.escape(item['title'])}</h3>"
+        f"<p class='question'><b>解析の問い</b>{html.escape(item['scientific_question'])}</p>"
+        f"<p class='context'>{html.escape(analysis_context_text(item['analysis_context']))}</p>"
+        f"<div class='observation'><h4>観察</h4><p>{html.escape(item['observation'])}</p></div>"
+        f"<div class='meaning'><h4>解釈</h4><p>{html.escape(item['interpretation'])}</p></div>"
+        f"<p><b>なぜ注目するか：</b>{html.escape(item['why_notable'])}</p>"
+        f"<div class='limitations'><b>制約・代替説明</b>{html_list(item['limitations'])}</div>"
+        f"<p class='meta'>Evidence: {html.escape(', '.join(item['evidence_ids']))}</p></article>"
+        for item in value["notable_findings"]
+    ) or "<p class='empty'>現時点で本文に掲載すべき注目結果はありません。</p>"
     hypotheses = "".join(
-        "<article>"
-        f"<h3>{html.escape(item['hypothesis_id'])}: {html.escape(item['title'])}</h3><dl>"
+        "<article class='hypothesis'>"
+        f"<div class='card-head'><span class='status-label'>仮説候補</span><span class='id-label'>{html.escape(item['hypothesis_id'])}</span></div>"
+        f"<h3>{html.escape(item['title'])}</h3>"
+        f"<p class='question'><b>解析の問い</b>{html.escape(item['scientific_question'])}</p>"
+        f"<p class='claim'><b>仮説</b>{html.escape(item['claim'])}</p><dl>"
         f"<dt>対象</dt><dd>{html.escape(str(item['target_group'] or 'GLOBAL'))}</dd>"
         f"<dt>観察</dt><dd>{html.escape(item['observation'])}</dd>"
-        f"<dt>支持Evidence</dt><dd>{html.escape(', '.join(item['supporting_evidence']) or 'なし')}</dd>"
-        f"<dt>矛盾Evidence</dt><dd>{html.escape(', '.join(item['contradicting_evidence']) or '未検出／未評価')}</dd>"
+        f"<dt>解釈</dt><dd>{html.escape(item['interpretation'])}</dd>"
+        f"<dt>注目理由</dt><dd>{html.escape(item['why_notable'])}</dd>"
+        f"<dt>支持Evidence</dt><dd>{html.escape(', '.join(item['supporting_evidence']))}</dd>"
+        f"<dt>矛盾Evidence</dt><dd>{html.escape(', '.join(item['contradicting_evidence']) or 'なし')}</dd>"
         f"<dt>Evidence独立性</dt><dd>{html.escape(item['evidence_independence'])}</dd>"
         f"<dt>代替説明</dt><dd>{html_list(item['alternative_explanations'])}</dd>"
-        f"<dt>適用scope</dt><dd>{html_list(item['scope'])}</dd>"
-        f"<dt>例外</dt><dd>{html_list(item['exceptions'], '未記録')}</dd>"
-        f"<dt>確信度</dt><dd><span class='badge'>{html.escape(item['confidence'])}</span> {html.escape(item['confidence_rationale'])}</dd>"
-        f"<dt>反証状態</dt><dd>{html.escape(item.get('falsification_status', 'unknown'))}</dd>"
-        f"<dt>構造的含意</dt><dd>{html.escape(item['proposed_structural_implication'])}</dd>"
+        f"<dt>制約</dt><dd>{html_list(item['limitations'])}</dd>"
+        f"<dt>確信度</dt><dd>{html.escape(item['confidence'])} — {html.escape(item['confidence_rationale'])}</dd>"
+        f"<dt>反証状態</dt><dd>{html.escape(item['falsification_status'])}</dd>"
         f"<dt>次解析</dt><dd>{html_list(item['recommended_next_analysis'])}</dd>"
-        f"<dt>次化合物の方向性</dt><dd>{html_list(item['recommended_next_compounds'])}</dd>"
-        f"<dt>個別の人間確認事項</dt><dd>{html_list(item['human_review_points'])}</dd>"
         "</dl></article>"
         for item in value["hypotheses"]
-    )
-    if not hypotheses:
-        hypotheses = "<p class='meta'>仮説候補なし、またはAgent未評価。</p>"
-    next_analyses = "".join(
-        f"<li><b>{html.escape(str(item.get('purpose', '')))}</b> — {html.escape(str(item.get('action', '')))} <span class='meta'>({html.escape(str(item.get('source_hypothesis_id', '')))})</span></li>"
+    ) or "<p class='empty'>現時点で、複数Evidenceを統合した仮説候補は設定されていません。</p>"
+    contradiction = value["contradiction_assessment"]
+    contradiction_items = "".join(
+        f"<article class='contradiction'><h3>{html.escape(item['title'])}</h3><p>{html.escape(item['summary'])}</p>{html_list(item['evidence_ids'])}</article>"
+        for item in value["unresolved_contradictions"]
+    ) or "<p class='empty'>個別に記録された未解決矛盾はありません。</p>"
+    next_items = "".join(
+        f"<li><b>{html.escape(item['purpose'])}</b> — {html.escape(item['action'])} <span class='meta'>({html.escape(item['source_id'])})</span></li>"
         for item in value["recommended_next_analysis"]
     )
-    reviews = "".join(f"<li>{html.escape(item)}</li>" for item in value["human_review_points"])
-    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR v4 Interpretation</title><style>:root{{--ink:#172033;--muted:#667085;--line:#d8dee9;--accent:#3157a4;--paper:#fff;--warn:#a13d2d}}*{{box-sizing:border-box}}body{{margin:0;background:#f4f6f9;color:var(--ink);font:15px/1.65 system-ui,sans-serif}}main{{max-width:1200px;margin:32px auto;padding:36px;background:var(--paper);box-shadow:0 8px 30px #1e293b1a}}h1{{font-size:30px;margin:0}}h2{{margin-top:42px;border-bottom:2px solid var(--accent);padding-bottom:8px}}article{{border:1px solid var(--line);border-radius:10px;padding:20px;margin:16px 0}}.contradiction{{border-left:5px solid var(--warn)}}.summary{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:24px 0}}.summary div{{border:1px solid var(--line);border-radius:8px;padding:12px}}.summary b{{display:block;font-size:24px}}.table-wrap{{overflow-x:auto}}table{{border-collapse:collapse;width:100%;font-size:13px}}th,td{{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}}dt{{font-weight:700;margin-top:10px}}dd{{margin-left:0}}pre{{white-space:pre-wrap;word-break:break-word;background:#f7f8fa;padding:12px;border-radius:6px}}.meta{{color:var(--muted)}}.badge{{display:inline-block;background:#e8eefb;color:#23427e;border-radius:999px;padding:2px 10px;font-weight:700}}@media print{{body{{background:#fff}}main{{box-shadow:none;margin:0;max-width:none}}}}</style></head><body><main><header><h1>CONDUCTOR v4 Interpretation Report</h1><p class='meta'>Run {html.escape(value['run_id'])} · Policy {html.escape(value['policy_version'])} · {html.escape(value['created_at'])}</p></header><section class='summary'><div>Stage<b>{html.escape(str(summary.get('stage', 'unknown')))}</b></div><div>Evidence<b>{len(value['evidence_index'])}</b></div><div>Relations<b>{len(value['evidence_relations'])}</b></div><div>Contradictions<b>{len(value['unresolved_contradictions'])}</b></div></section><h2>探索概要</h2>{json_block(summary)}<h2>Evidence index</h2><div class='table-wrap'><table><thead><tr><th>Evidence ID</th><th>Operator</th><th>Scope</th><th>Evaluation</th><th>Grouping</th><th>N</th><th>Warnings</th></tr></thead><tbody>{evidence_rows}</tbody></table></div><h2>注目すべき発見</h2>{findings}<h2>Evidence間関係</h2><div class='table-wrap'><table><thead><tr><th>ID</th><th>関係</th><th>独立性</th><th>Evidence</th><th>根拠</th></tr></thead><tbody>{relations}</tbody></table></div><h2>未解決の矛盾</h2>{contradictions}<h2>仮説・検証候補</h2>{hypotheses}<h2>推奨される次解析</h2><ul>{next_analyses}</ul><h2>人間による確認事項</h2><ul>{reviews}</ul></main></body></html>"""
+    evidence_rows = "".join(
+        f"<tr><td>{html.escape(item['evidence_id'])}</td><td>{html.escape(item['operator_id'])}</td>"
+        f"<td>{html.escape(str((item.get('scope') or {}).get('mode', 'unknown')))}</td>"
+        f"<td>{html.escape(str(item.get('evaluation_representation') or '-'))}</td>"
+        f"<td>{html.escape(str(item.get('grouping_representation') or '-'))}</td><td>{item.get('sample_count', 0)}</td></tr>"
+        for item in value["evidence_index"]
+    )
+    relation_rows = "".join(
+        f"<tr><td>{html.escape(item['relation_id'])}</td><td>{html.escape(item['relation_type'])}</td>"
+        f"<td>{html.escape(str(item.get('candidate_relation') or '-'))}</td><td>{html.escape(item['independence'])}</td>"
+        f"<td>{html.escape(', '.join(item['evidence_ids']))}</td><td>{html.escape(item['rationale'])}</td></tr>"
+        for item in value["evidence_relations"]
+    ) or "<tr><td colspan='6'>比較候補なし。</td></tr>"
+    draft_banner = "<div class='draft-banner'><b>機械下書き</b> — 最終Interpretationではありません。専用Agentによる最終化が必要です。</div>" if value["report_status"] == "draft" else ""
+    css = """:root{--ink:#263640;--muted:#68747b;--line:#d8d5cd;--paper:#f4f2ed;--surface:#fff;--navy:#304957;--blue:#536f80;--blue-soft:#e9eef1;--teal:#4d706b;--teal-soft:#e6eeec;--ochre:#806637;--ochre-soft:#f2ede1;--brick:#85534b;--brick-soft:#f2e8e5;--gray-soft:#eeefed}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.75 "Yu Gothic UI","Segoe UI",sans-serif}main{max-width:1120px;margin:28px auto;padding:44px 52px 64px;background:var(--surface);box-shadow:0 12px 36px #24374618}header{border-bottom:1px solid var(--line);padding-bottom:22px}h1,h2{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;color:var(--navy)}h1{font-size:34px;margin:4px 0 8px}h2{margin-top:48px;padding-bottom:9px;border-bottom:2px solid var(--navy);font-size:23px}.draft-banner{margin:22px 0;padding:14px 18px;border-left:5px solid var(--ochre);background:var(--ochre-soft)}.lead{font-size:17px}.scope{padding:14px 18px;background:var(--blue-soft);border-left:4px solid var(--blue)}.key-messages{padding:18px 24px;background:#f7f8f6;border:1px solid var(--line)}article{border:1px solid var(--line);border-radius:7px;padding:22px 24px;margin:18px 0}.card-head{display:flex;gap:9px}.status-label,.id-label{padding:2px 8px;font-size:12px;font-weight:700;border-radius:3px}.id-label{background:var(--gray-soft);color:var(--muted)}.status-discovery,.hypothesis{border-left:6px solid var(--ochre)}.status-validated{border-left:6px solid var(--teal)}.status-refuted,.contradiction{border-left:6px solid var(--brick)}.status-inconclusive,.status-negative{border-left:6px solid #8b9292}.question b,.claim b{display:block;color:var(--navy);font-size:12px}.context{font-size:13px;color:var(--muted);padding:8px 12px;background:#f6f6f3}.observation{padding:13px 16px;background:#f7f8f7;border-left:4px solid #89969c}.meaning{padding:15px 18px;margin:12px 0;background:var(--teal-soft);border-left:5px solid var(--teal)}.limitations,.claim{padding:12px 16px;background:var(--ochre-soft)}.contradiction-summary{padding:16px 19px;background:var(--brick-soft);border-left:5px solid var(--brick)}.empty,.meta{color:var(--muted)}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}th{background:#f0f1ee}dt{font-weight:700;color:var(--navy);margin-top:10px}dd{margin-left:0}details{margin-top:24px;border-top:1px solid var(--line);padding-top:12px}summary{cursor:pointer;color:var(--navy);font-weight:700}@media(max-width:700px){main{margin:0;padding:26px 20px}}@media print{body{background:#fff}main{box-shadow:none;margin:0;max-width:none}}"""
+    key_messages = html_list(report_summary["key_messages"])
+    limitations = html_list(report_summary["limitations"])
+    next_body = f"<ul>{next_items}</ul>" if next_items else "<p class='empty'>現時点で登録された追加解析要求はありません。</p>"
+    reviews = html_list(value["human_review_points"])
+    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR Interpretation Report</title><style>{css}</style></head><body><main><header><p class='meta'>SAR evidence interpretation</p><h1>CONDUCTOR Interpretation Report</h1><p class='meta'>Run {html.escape(value['run_id'])} · Stage {html.escape(summary['stage'])} · {html.escape(value['created_at'])}</p></header>{draft_banner}<h2>解析の目的と対象</h2><p class='lead'>{html.escape(report_summary['analysis_objective'])}</p><p class='scope'><b>対象範囲</b><br>{html.escape(report_summary['dataset_scope'])}<br><b>Coverage</b><br>{html.escape(report_summary['coverage_summary'])}</p><h2>解釈サマリー</h2><p class='lead'>{html.escape(report_summary['executive_summary'])}</p><div class='key-messages'><b>主要メッセージ</b>{key_messages}</div><div class='limitations'><b>全体の制約</b>{limitations}</div><h2>重要な解釈</h2>{findings}<h2>矛盾・反証・negative result</h2><div class='contradiction-summary'><b>{html.escape(CONTRADICTION_LABELS[contradiction['status']])}</b><p>{html.escape(contradiction['summary'])}</p></div>{contradiction_items}<h2>仮説候補</h2><p class='meta'>HはHypothesis（検証可能な仮説候補）のIDです。単独Evidenceの通し番号ではありません。</p>{hypotheses}<h2>推奨される次解析</h2>{next_body}<details><summary>付録A：Evidence index</summary><div class='table-wrap'><table><thead><tr><th>Evidence</th><th>Operator</th><th>Scope</th><th>Description</th><th>Grouping</th><th>N</th></tr></thead><tbody>{evidence_rows}</tbody></table></div></details><details><summary>付録B：Evidence間関係候補</summary><div class='table-wrap'><table><thead><tr><th>ID</th><th>関係</th><th>候補比較</th><th>独立性</th><th>Evidence</th><th>根拠</th></tr></thead><tbody>{relation_rows}</tbody></table></div></details><details><summary>付録C：探索・監査情報</summary><p>Policy {html.escape(value['policy_version'])} / Seed {html.escape(str(summary.get('seed')))} / Attempted signatures {len(summary.get('attempted_analysis_signatures') or [])}</p><h3>人間による確認事項</h3>{reviews}</details></main></body></html>"""
 
 
 def run() -> int:
@@ -596,7 +718,8 @@ def run() -> int:
     state_info = state_context(state)
     configured_seed = ((state_info.get("exploration") or {}).get("budget") or {}).get("seed")
     seed = args.seed if args.seed is not None else (configured_seed if configured_seed is not None else int(value_hash(run_id)[:8], 16))
-    interpretation = build_interpretation(evidence_items, index, relations, run_id, args.stage, state_info, seed)
+    interpretation_id = f"{run_id}:{args.node_id}" if args.conductor else f"{run_id}:standalone:{value_hash([item['evidence_id'] for item in index])[:12]}"
+    interpretation = build_interpretation(evidence_items, index, relations, run_id, interpretation_id, args.stage, state_info, seed)
     validate(interpretation, "interpretation.schema.json")
     previous = []
     for path_text in args.previous_interpretation:
@@ -651,7 +774,7 @@ def run() -> int:
         for path_text in args.previous_interpretation:
             previous_path = Path(path_text)
             input_components.append({"role": "previous_interpretation", "path": str(previous_path.resolve()), "sha256": file_hash(previous_path)})
-        catalog_path = Path(args.catalog) if args.catalog else find_workspace() / "catalog" / "catalog.json"
+        catalog_path = Path(args.catalog) if args.catalog else default_catalog_path()
         if catalog_path.exists():
             input_components.append({"role": "catalog", "path": str(catalog_path.resolve()), "sha256": file_hash(catalog_path)})
         event = {

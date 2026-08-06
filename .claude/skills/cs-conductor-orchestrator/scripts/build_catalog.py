@@ -138,12 +138,14 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the human-curated CONDUCTOR v4 Catalog.")
-    parser.add_argument("--check", action="store_true", help="Validate metadata and selection without writing.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="Validate metadata and selection without writing (default).")
+    mode.add_argument("--write", action="store_true", help="Explicit maintenance mode: regenerate the packaged Catalog and Markdown.")
     args = parser.parse_args()
     workspace = find_workspace()
     modules = workspace / "CONDUCTOR_modules"
     catalog, markdown = build(workspace)
-    if args.check:
+    if not args.write:
         catalog_path = modules / "catalog" / "catalog.json"
         markdown_path = modules / "docs" / "CONDUCTOR_v4_skill_catalog.md"
         if not catalog_path.exists() or not markdown_path.exists():

@@ -12,7 +12,7 @@
 
 - 通常モードをdefaultとし、`--conductor`を省略する。Description、Clustering、Operatorは主成果物だけを生成する。Interpretationは正本JSON、Agent用context、人間向けMarkdown/HTMLを生成する。
 - CONDUCTORモードは明示的opt-inとする。`--conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID`を一組として必須にし、schema検証済みのrun連携artifactを追加する。
-- Orchestrator実行では同一Skillの複数source／parameter nodeが衝突しないよう、`results/CONDUCTOR/<project>/<run-id>/<stage>/<skill>/<node-id-safe>/`をnode固有`--output-dir`としてStateへ記録する。`node-id-safe`は`:`を`-`へ置換する。
+- Orchestrator実行では同一Skillの複数source／parameter nodeが衝突しないよう、`results/CONDUCTOR/<project>/<run-id>/<stage>/<skill>/<node-id-safe>/`をnode固有`--output-dir`としてStateへ記録する。新規Node IDは段階別の`D###/G###/O###/I###`とし、旧形式IDに`:`がある場合だけ`node-id-safe`で`-`へ置換する。
 - CONDUCTORモードのexecution eventは実引数の`configuration`と`config_hash`を持つ。State nodeに計画parameterがある場合、該当keyが一致しなければeventを記録しない。
 - `--output-dir`は保存場所だけを上書きし、実行モードや成果物種別を変更しない。
 - 通常モードで`--project`または`--node-id`を指定した場合、およびCONDUCTOR contextが不完全な場合は成果物を作らずCLI errorで停止する。
@@ -27,7 +27,7 @@
 
 SMILES直接型はMurcko、MCS、BRICS、RECAPだけであり、Descriptionを内部生成しない。Description-vector型はDescription Skillの数値CSVだけを入力とし、raw SMILESを受け付けない。
 
-CONDUCTORでは各Grouping nodeが`G_<node-id-underscore-safe>_<group-content-hash16>`形式のrun内一意Group IDを生成する（例: `G_C002_001_4A91C2D0870FB6E3`）。hashはGroupラベルとmember集合から決めるため、再計算で同じGroupはIDを維持し、内容が変わったGroupへ既存IDを流用しない。State Managerは成功eventのlong membershipを次のrun共通索引へ反映する。
+CONDUCTORでは各Grouping nodeが`G_<node-id-underscore-safe>_<group-content-hash16>`形式のrun内一意Group IDを生成する（例: `G_G002_4A91C2D0870FB6E3`）。hashはGroupラベルとmember集合から決めるため、再計算で同じGroupはIDを維持し、内容が変わったGroupへ既存IDを流用しない。State Managerは成功eventのlong membershipを次のrun共通索引へ反映する。
 
 - `grouping/group_index/group_registry.csv`: Group ID、ラベル、Grouping Capability、source node、source Description／Grouping、定義、sample数、状態
 - `grouping/group_index/Cpd_Group_matrix_G000000_099999.csv`: 行をcompound ID、列をGroup IDとするBoolean membership matrix
@@ -40,7 +40,11 @@ Group列が10万を超えた場合は次のmatrix shardを追加する。`discar
 
 ## Interpretation
 
-`interpretation.json`を正本とし、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。専用Agentは追加計算を直接行わず、schema-valid `exploration_plan.json`をOrchestratorへ返せる。Planは任意のrequestに明示`scope`を持ち、選択法とcompound ID集合を記録できる。Orchestratorは登録時にmembership内容とは別に選択法と元Groupも含む定義hashを作り、`interpretation/scopes/<group-definition-hash>.csv`へ固定する。同一compound集合の再解析判定には別のcompound-set hashを使う。HTMLは外部CDNに依存しない。CONDUCTORモードだけ`execution_event.json`を追加する。
+`interpretation.json`を正本とし、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。runner直後は`report_status=draft`の機械下書きであり、専用Agentがartifactを比較してObservation、Interpretation、注目理由、制約、矛盾評価を具体化し、`agent_interpreted`へ変更した後に最終renderする。Evidence一件ごとにHypothesisを自動生成しない。人間向けMarkdown/HTMLは解釈を本文、Evidence indexと探索情報を付録に置き、HTMLは外部CDNに依存しない。
+
+Capability `I001`はInterpretation手法を表し、実行roundはrun内Node `I001`、`I002`、...として別directoryへ保存する。`interpretation_id`は`<run-id>:<I###>`とする。再Interpretationは前回Nodeのreportをread-only contextとして保持し、既存reportを上書きしない。
+
+専用Agentは追加計算を直接行わず、schema-valid `exploration_plan.json`をOrchestratorへ返せる。Planは任意のrequestに明示`scope`を持ち、選択法とcompound ID集合を記録できる。Orchestratorは登録時にmembership内容とは別に選択法と元Groupも含む定義hashを作り、`interpretation/scopes/<group-definition-hash>.csv`へ固定する。同一compound集合の再解析判定には別のcompound-set hashを使う。CONDUCTORモードだけ`execution_event.json`を追加し、最終renderでInterpretation artifact hashを更新する。
 
 ## セッション引継ぎ
 

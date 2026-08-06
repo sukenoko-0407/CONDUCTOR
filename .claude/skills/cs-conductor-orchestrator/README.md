@@ -6,7 +6,7 @@ Catalog、Policy、run Stateを参照し、Description、Grouping、Operator、I
 
 ## 想定利用シーン
 
-SAR解析を広く浅い探索から開始し、得られたevidenceに基づいて局所的な深掘り解析を選択する場合。中断runの再開、依存関係、並列上限、高コスト計算の承認管理にも使用する。
+SAR解析を広く浅い探索から開始し、得られたevidenceに基づいて局所的な深掘り解析を選択する場合。中断runの再開、人間指定の部分解析、依存関係、並列上限、高コスト計算の承認管理にも使用する。
 
 ## 環境構築
 
@@ -14,11 +14,13 @@ SAR解析を広く浅い探索から開始し、得られたevidenceに基づい
 
 ## 利用例
 
-Catalogを検証・更新する:
+Catalogを読み取り専用で検証する:
 
 ```bash
-python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --check
 ```
+
+人間がCatalog収載内容を保守するときだけ、`catalog --write`で管理資産を再生成する。通常の解析runでは使用しない。
 
 run Stateを初期化する:
 
@@ -38,6 +40,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state groups -
 ## 制約事項
 
 - `CONDUCTOR_modules/catalog/included_skills.json`に人間が収載したSkillだけを使用する。
+- 通常解析では`CONDUCTOR_modules/`を読み取り専用として扱い、結果・State・handoffを書き込まない。
 - 1 runにつきendpointは一つとし、活性の向きを必須とする。
 - 高コスト処理は原則として人間の明示承認前に実行しない。ただしCatalogで`preauthorized_initial`と明記されたC002 MCSは必須初手として承認待ちなしで実行する。
 - 初手の一部で信号が弱くても残りを打ち切らず、coverage audit後に深掘りへ進む。
@@ -45,11 +48,13 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state groups -
 - Interpretation探索は人間設定のiteration・追加node・walltime・seed内で行い、専用Interpreterのplanを重複署名と反証要求について検証する。
 - random、matched random、交差、差分などの明示scopeは入力IDを検証し、再現可能なmembership CSVへ固定する。
 - Group IDはrun内で一意とし、由来は`group_registry.csv`、全化合物の所属はBooleanの`Cpd_Group_matrix_*.csv`で監査できる。低価値領域は削除せず`discarded`にする。
-- Interpretation nodeは読み取り専用の終端とし、追加解析はOrchestratorが新しいbranchとして登録する。
+- 人間指定の部分解析もSkillを直接起動せず`state add --human-request`で登録する。Node IDは実行段階別の`D###/G###/O###/I###`であり、Capability IDとは別に管理する。Interpretation nodeは読み取り専用の終端とし、再解釈は前回を参照する新しい`I###`として登録する。
 - 分子標準化、活性単位変換、pActivity変換は行わない。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
+| 1.2.0 | 人間指定の部分解析と反復InterpretationのNode管理を追加。 |
+| 1.1.0 | 通常runにおけるmoduleの読み取り専用境界とCatalog保守commandを明記。 |
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |

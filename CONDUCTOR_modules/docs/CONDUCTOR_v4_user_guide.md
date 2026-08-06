@@ -43,11 +43,13 @@ OrchestratorはPolicy、Catalog、Stateを読み、allowlistに収載されたSk
 
 以下の例ではOrchestrator Skillのlauncherを使う。共有Pixiを優先し、Skill-local cacheを設定してから`pixi run`する。未作成なら`<skill>/env/.pixi/envs/default/`を構築し、以後は同じ環境を再利用する。
 
-Catalogの検証・生成:
+Catalogの読み取り専用検証:
 
 ```bash
-python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --check
 ```
+
+`CONDUCTOR_modules/`は通常runでは読み取り専用である。人間が収載内容を変更したpackage保守時だけ`catalog --write`を使用する。
 
 run初期化:
 
@@ -83,23 +85,23 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state groups \
 
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state discard-group \
   --state results/CONDUCTOR/jak2/<run_id>/state.json \
-  --group-id G_C002_001_4A91C2D0870FB6E3 --reason "独立表現で支持されず、十分に検討済み"
+  --group-id G_G002_4A91C2D0870FB6E3 --reason "独立表現で支持されず、十分に検討済み"
 ```
 
-Skill実行後は、Skillが返した`execution_event.json`をStateへ記録する。
+Skill実行後は、Skillが返した`execution_event.json`をStateへ記録する。Capability IDは手法、Node IDはrun内の個別実行を表す。新規Nodeは段階別にDescription=`D###`、Grouping=`G###`、Operator=`O###`、Interpretation=`I###`として自動採番される。
 
 ```bash
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state start \
   --state results/CONDUCTOR/jak2/<run_id>/state.json \
-  --node-id D001:001
+  --node-id D001
 
 # 対応するSkillを実行した後
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state record \
   --state results/CONDUCTOR/jak2/<run_id>/state.json \
-  --event results/CONDUCTOR/jak2/<run_id>/description/<skill>/D001-001/execution_event.json
+  --event results/CONDUCTOR/jak2/<run_id>/description/<skill>/D001/execution_event.json
 ```
 
-初手nodeは同じSkillを異なる上流sourceへ適用する場合がある。Stateの`input_bindings`、source別`parameters`、`output_dir`をそのまま使用し、最初に見つかったDescriptionやGrouping artifact、共通metricへ置き換えない。特に`cs-compute-clustering-vector-*`へ元のSMILES CSVを渡さず、bindingされたDescription CSVを渡す。A006 SALIではD002=`tanimoto`、D013=`manhattan`、D017=`tanimoto`を使用する。node固有directoryではnode IDの`:`を`-`へ変換する。
+初手nodeは同じSkillを異なる上流sourceへ適用する場合がある。Stateの`input_bindings`、source別`parameters`、`output_dir`をそのまま使用し、最初に見つかったDescriptionやGrouping artifact、共通metricへ置き換えない。特に`cs-compute-clustering-vector-*`へ元のSMILES CSVを渡さず、bindingされたDescription CSVを渡す。A006 SALIではD002=`tanimoto`、D013=`manhattan`、D017=`tanimoto`を使用する。旧形式Node IDに`:`が含まれる場合だけdirectory名で`-`へ変換する。
 
 同一algorithmのvariantを比較する場合はcapabilityを増やさず、parameterを持つ別nodeを追加する。JSON keyはCLIの内部名（hyphenをunderscoreへ変換）を使う。
 
@@ -118,9 +120,21 @@ Skillがeventを生成せず異常終了した場合は、実際のエラーを�
 ```bash
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state fail \
   --state results/CONDUCTOR/jak2/<run_id>/state.json \
-  --node-id D001:001 \
+  --node-id D001 \
   --reason "Skill process exited before producing execution_event.json"
 ```
+
+人間が部分的なDescription、Grouping、Operatorを指定する場合も、個別Skillを直接実行しない。Capability、上流Node、parameter、指示理由をStateへ登録してから通常どおりstart・実行・recordする。
+
+```bash
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state add \
+  --state results/CONDUCTOR/jak2/<run_id>/state.json \
+  --capability-id A006 --depends-on D002 \
+  --human-request \
+  --reason "Morgan空間に限定して指定Groupのlandscapeを再評価する"
+```
+
+GroupingがDescription-vector型なら対応するDescription Node、Operatorなら必要なDescription/Grouping Nodeを`--depends-on`へ指定する。StateはCatalogの入力契約と重複signatureを検証し、`phase=human_directed`と人間の理由を履歴へ残す。
 
 再開時は入力hashを再確認する。変更がなければ完了nodeを再実行せず、変更があれば影響する下流nodeを`stale`にする。
 
@@ -136,7 +150,7 @@ Catalogで`high`または`very_high`のSkill、およびデータ規模のため
 ```bash
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state approve \
   --state results/CONDUCTOR/jak2/<run_id>/state.json \
-  --node-id D016:001 \
+  --node-id <承認対象のNode-ID> \
   --approve \
   --rationale "Mordred 3D記述子で立体的な仮説を検証する"
 ```
@@ -196,7 +210,7 @@ CONDUCTOR artifactとして実行するのは、ユーザーがCONDUCTOR利用�
 ```bash
 python .claude/skills/cs-compute-description-morgan/scripts/launch.py \
   --input compounds.csv \
-  --conductor --project project_name --run-id RUN_ID --node-id D002:001
+  --conductor --project project_name --run-id RUN_ID --node-id D002
 ```
 
 `--conductor`は主結果に加え、schema検証済みmanifest、warnings、execution eventを生成する。Operatorは`evidence.json`、Groupingは`group_registry.json`も生成する。
@@ -207,7 +221,7 @@ OperatorをGroup局所へ再適用する例:
 python .claude/skills/cs-analysis-sali/scripts/launch.py \
   --input compounds.csv --property-column pIC50 --higher-is-better \
   --description morgan.csv --membership cluster_membership.csv \
-  --target-group G_C002_001_4A91C2D0870FB6E3 --scope-mode within-group \
+  --target-group G_G002_4A91C2D0870FB6E3 --scope-mode within-group \
   --reference-scope global
 ```
 
@@ -238,7 +252,19 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state configur
   --walltime-minutes 240 --seed 61453
 ```
 
-Interpreterには`evidence.json`だけでなく`state.json`を渡す。I001は`interpretation.json`、`interpretation_context.json`、Markdown、自己完結HTMLを生成する。Agentが追加解析を必要と判断した場合は、各discoveryに反証要求を持つ`exploration_plan.json`を作る。
+Interpreterには`evidence.json`だけでなく`state.json`を渡す。Capability I001のrunnerは`draft`の`interpretation.json`、`interpretation_context.json`、Markdown、自己完結HTMLを準備する。専用Agentは元artifactを確認し、何を解析し、何を観察し、どう解釈し、なぜ注目するかを具体化して`agent_interpreted`へ最終化する。HはHypothesisの追跡IDであり、Evidence一件ごとには生成しない。Agentが追加解析を必要と判断した場合は、各discoveryに反証要求を持つ`exploration_plan.json`を作る。
+
+Interpretationだけを再実行する場合もOrchestratorへ依頼する。既存のOperator NodeをEvidence依存として新しいInterpretation Nodeを登録する。最初のNodeが`I001`なら次は自動的に`I002`となるが、Capabilityはどちらも`I001`である。
+
+```bash
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state add \
+  --state results/CONDUCTOR/PROJECT/RUN_ID/state.json \
+  --capability-id I001 --depends-on O001,O004,O017 \
+  --previous-interpretation-node I001 --human-request \
+  --reason "前回結果を踏まえ、指定された観点だけでEvidenceを再比較する"
+```
+
+前回Interpretationはread-only contextであり実行依存Nodeではない。`I001`のdirectoryやartifactは上書きせず、`I002`へ新しいreportとeventを保存する。
 
 ```bash
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state register-exploration \

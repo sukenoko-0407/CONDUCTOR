@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "policy_version": "1.0.0",
+  "policy_version": "1.1.0",
   "run_id": "R",
   "source_interpretation_id": "R:I001:seed",
   "iteration": 1,

@@ -42,6 +42,78 @@ class StateLogicTests(unittest.TestCase):
         second["human_approval"] = "approved"
         self.assertEqual([second["node_id"]], [node["node_id"] for node in STATE.runnable_nodes(state)])
 
+    def test_execution_node_ids_are_stage_serial_not_capability_ids(self) -> None:
+        state = self.state()
+        low_cost = {"class": "low", "human_approval_required": False}
+        first_description = STATE.add_node(state, {"capability_id": "D013", "skill_name": "shape", "stage": "description", "cost": low_cost})
+        second_description = STATE.add_node(state, {"capability_id": "D013", "skill_name": "shape", "stage": "description", "cost": low_cost}, parameters={"variant": "second"})
+        grouping = STATE.add_node(state, {"capability_id": "C002", "skill_name": "mcs", "stage": "grouping", "cost": low_cost})
+        operator = STATE.add_node(state, {"capability_id": "A006", "skill_name": "sali", "stage": "analysis", "cost": low_cost}, [first_description["node_id"]])
+        interpretation = STATE.add_node(state, {"capability_id": "I001", "skill_name": "interpret", "stage": "interpretation", "cost": low_cost}, [operator["node_id"]])
+        self.assertEqual(["D001", "D002", "G001", "O001", "I001"], [
+            first_description["node_id"], second_description["node_id"], grouping["node_id"], operator["node_id"], interpretation["node_id"],
+        ])
+        self.assertEqual("D013", first_description["capability_id"])
+
+    def test_human_directed_interpretation_allocates_next_round_and_binds_previous(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            state_path = temporary / "state.json"
+            state = self.state()
+            state["run"]["input"] = str((MODULE_ROOT / "tests" / "data" / "small_sar.csv").resolve())
+            capabilities = STATE.catalog_by_id(ROOT)
+            evidence_node = STATE.add_node(state, capabilities["A002"], phase="wide_shallow", coverage_axis="endpoint_distribution")
+            evidence_node.update({"status": "succeeded", "output_dir": str(temporary / "analysis"), "parameters": {}})
+            first = STATE.add_node(state, capabilities["I001"], [evidence_node["node_id"]])
+            first.update({"status": "succeeded", "output_dir": str(temporary / "interpretation" / "I001"), "parameters": {}})
+            state["interpretations"] = [{"interpretation_id": "R:I001", "source_node_id": first["node_id"], "status": "active"}]
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+
+            with redirect_stdout(io.StringIO()):
+                STATE.cmd_add(SimpleNamespace(
+                    state=str(state_path), capability_id="I001", depends_on=evidence_node["node_id"],
+                    reason="Human requested a second interpretation round", parameters_json=None,
+                    require_approval=False, human_request=True, previous_interpretation_node=first["node_id"],
+                    node_id=None,
+                ))
+
+            updated = json.loads(state_path.read_text(encoding="utf-8"))
+            second = updated["execution_graph"]["nodes"][-1]
+            self.assertEqual("I002", second["node_id"])
+            self.assertEqual("I001", second["capability_id"])
+            self.assertEqual("human_directed", second["phase"])
+            self.assertEqual("human", second["request_origin"])
+            self.assertEqual(["I001"], second["previous_interpretation_nodes"])
+            self.assertEqual(
+                [str((temporary / "interpretation" / "I001" / "interpretation.json").resolve())],
+                second["parameters"]["previous_interpretation"],
+            )
+            self.assertNotEqual(first["analysis_signature"], second["analysis_signature"])
+            self.assertEqual("human_directed_analysis", STATE.coarse_run_phase(updated))
+
+            updated["execution_graph"]["nodes"][-1]["status"] = "running"
+            state_path.write_text(json.dumps(updated), encoding="utf-8")
+            output_dir = Path(second["output_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            interpretation_path = output_dir / "interpretation.json"
+            interpretation_path.write_text(json.dumps({
+                "run_id": "R", "interpretation_id": "R:I002", "created_at": "2026-01-02T00:00:00+00:00",
+            }), encoding="utf-8")
+            event_path = output_dir / "execution_event.json"
+            event_path.write_text(json.dumps({
+                "schema_version": "1.0.0", "project": "P", "run_id": "R", "node_id": "I002",
+                "capability_id": "I001", "skill_name": capabilities["I001"]["skill_name"], "status": "succeeded",
+                "input_hash": "1" * 64, "config_hash": "2" * 64, "configuration": second["parameters"],
+                "artifacts": [{"type": "interpretation", "path": "interpretation.json", "sha256": STATE.file_hash(interpretation_path)}],
+                "warnings": [], "started_at": "2026-01-02T00:00:00+00:00", "finished_at": "2026-01-02T00:01:00+00:00",
+            }), encoding="utf-8")
+            STATE.cmd_record(SimpleNamespace(state=str(state_path), event=str(event_path)))
+            recorded = json.loads(state_path.read_text(encoding="utf-8"))
+            interpretation_records = {item["source_node_id"]: item for item in recorded["interpretations"]}
+            self.assertEqual("superseded", interpretation_records["I001"]["status"])
+            self.assertEqual("I002", interpretation_records["I001"]["superseded_by"])
+            self.assertEqual("active", interpretation_records["I002"]["status"])
+
     def test_discarded_group_remains_discarded_when_source_node_is_recorded_again(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
@@ -138,7 +210,7 @@ class StateLogicTests(unittest.TestCase):
             self.assertEqual("rejected", nodes[upstream["node_id"]]["human_approval"])
             self.assertEqual("skipped", nodes[upstream["node_id"]]["status"])
             self.assertEqual("skipped", nodes[dependent["node_id"]]["status"])
-            self.assertIn("D016:001", nodes[dependent["node_id"]]["skip_reason"])
+            self.assertIn(upstream["node_id"], nodes[dependent["node_id"]]["skip_reason"])
 
     def test_downstream_traversal(self) -> None:
         state = self.state()
@@ -234,15 +306,20 @@ class StateLogicTests(unittest.TestCase):
             self.assertEqual({"C001", "C002", "C003", "C005", "C006", "C007", "C009"}, {node["capability_id"] for node in grouping_nodes})
             self.assertEqual(36, len(analysis_nodes))
             self.assertEqual({f"A{index:03d}" for index in range(1, 11)}, {node["capability_id"] for node in analysis_nodes})
+            description_node_by_capability = {
+                node["capability_id"]: node["node_id"]
+                for node in nodes
+                if node["stage"] == "description"
+            }
 
             c005 = [node for node in grouping_nodes if node["capability_id"] == "C005"]
-            self.assertEqual({"D002:001"}, {node["input_bindings"]["description"] for node in c005})
+            self.assertEqual({description_node_by_capability["D002"]}, {node["input_bindings"]["description"] for node in c005})
             c006 = [node for node in grouping_nodes if node["capability_id"] == "C006"]
-            self.assertEqual({"D001:001", "D013:001", "D017:001"}, {node["input_bindings"]["description"] for node in c006})
+            self.assertEqual({description_node_by_capability[value] for value in ["D001", "D013", "D017"]}, {node["input_bindings"]["description"] for node in c006})
             c007 = [node for node in grouping_nodes if node["capability_id"] == "C007"]
-            self.assertEqual({"D001:001"}, {node["input_bindings"]["description"] for node in c007})
+            self.assertEqual({description_node_by_capability["D001"]}, {node["input_bindings"]["description"] for node in c007})
             c009 = [node for node in grouping_nodes if node["capability_id"] == "C009"]
-            self.assertEqual({"D002:001"}, {node["input_bindings"]["description"] for node in c009})
+            self.assertEqual({description_node_by_capability["D002"]}, {node["input_bindings"]["description"] for node in c009})
             mcs = next(node for node in grouping_nodes if node["capability_id"] == "C002")
             self.assertEqual("not_required", mcs["human_approval"])
             self.assertEqual([], mcs["dependencies"])
@@ -253,22 +330,22 @@ class StateLogicTests(unittest.TestCase):
             planned["run"]["parallel_limit"] = 64
             self.assertIn(mcs["node_id"], {node["node_id"] for node in STATE.runnable_nodes(planned)})
             a004 = [node for node in analysis_nodes if node["capability_id"] == "A004"]
-            self.assertEqual({"D001:001", "D013:001"}, {node["input_bindings"]["description"] for node in a004})
+            self.assertEqual({description_node_by_capability[value] for value in ["D001", "D013"]}, {node["input_bindings"]["description"] for node in a004})
             a005 = [node for node in analysis_nodes if node["capability_id"] == "A005"]
             self.assertEqual(
-                {"D004:001": "cosine", "D007:001": "tanimoto"},
+                {description_node_by_capability["D004"]: "cosine", description_node_by_capability["D007"]: "tanimoto"},
                 {node["input_bindings"]["description"]: node["parameters"]["metric"] for node in a005},
             )
             a006 = [node for node in analysis_nodes if node["capability_id"] == "A006"]
-            self.assertEqual({"D002:001", "D013:001", "D017:001"}, {node["input_bindings"]["description"] for node in a006})
+            self.assertEqual({description_node_by_capability[value] for value in ["D002", "D013", "D017"]}, {node["input_bindings"]["description"] for node in a006})
             self.assertEqual(
-                {"D002:001": "tanimoto", "D013:001": "manhattan", "D017:001": "tanimoto"},
+                {description_node_by_capability["D002"]: "tanimoto", description_node_by_capability["D013"]: "manhattan", description_node_by_capability["D017"]: "tanimoto"},
                 {node["input_bindings"]["description"]: node["parameters"]["metric"] for node in a006},
             )
             a001 = [node for node in analysis_nodes if node["capability_id"] == "A001"]
             self.assertEqual({node["node_id"] for node in grouping_nodes}, {node["input_bindings"]["grouping"] for node in a001})
             a009 = [node for node in analysis_nodes if node["capability_id"] == "A009"]
-            self.assertEqual({"C002:001", "C003:001"}, {node["input_bindings"]["grouping"] for node in a009})
+            self.assertEqual({node["node_id"] for node in grouping_nodes if node["capability_id"] in {"C002", "C003"}}, {node["input_bindings"]["grouping"] for node in a009})
 
             output_dirs = [node["output_dir"] for node in nodes]
             self.assertEqual(len(output_dirs), len(set(output_dirs)))

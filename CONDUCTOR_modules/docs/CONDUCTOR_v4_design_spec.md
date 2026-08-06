@@ -125,7 +125,7 @@ results/CONDUCTOR/<project>/<run_id>/
 └── state.json
 ```
 
-`node_id_safe`はWindowsでも利用できるようnode IDの`:`を`-`へ置換する。`--output-dir`は常に既定値より優先するが、モードを変更しない。通常モードはdefaultかつ主成果物だけを返す。CONDUCTORモードは明示的opt-inであり、`--conductor --project <project> --run-id <run_id> --node-id <node_id>`をすべて指定した場合だけ、manifest、warnings、evidenceまたはgroup registry、execution event、schema検証を追加する。通常モードでは`--project`と`--node-id`を受け付けない。
+`node_id_safe`は通常の段階別Node IDと同一である。既存Stateの旧形式IDに`:`が含まれる場合だけWindows互換のため`-`へ置換する。`--output-dir`は常に既定値より優先するが、モードを変更しない。通常モードはdefaultかつ主成果物だけを返す。CONDUCTORモードは明示的opt-inであり、`--conductor --project <project> --run-id <run_id> --node-id <node_id>`をすべて指定した場合だけ、manifest、warnings、evidenceまたはgroup registry、execution event、schema検証を追加する。通常モードでは`--project`と`--node-id`を受け付けない。
 
 Agentはrepository名、Catalog収載、CONDUCTOR互換artifact、`results/CONDUCTOR/`形式の出力先だけを根拠にCONDUCTORモードを推測しない。ユーザーの明示依頼、OrchestratorからのDAG node実行、または既存runへの明示接続がなければ`--conductor`を省略する。意図が曖昧なら実行前に確認し、確認できなければ通常モードを選ぶ。
 
@@ -133,10 +133,22 @@ Agentはrepository名、Catalog収載、CONDUCTOR互換artifact、`results/CONDU
 
 ## 7. ID体系
 
-- Description representation: `D001`から新規附番
+CatalogのCapability IDは「何を実行するか」を表す。
+
+- Description representation capability: `D001`から新規附番
 - Grouping capability: `C001`から新規附番
-- Operator: `A001`から新規附番
-- Interpretation: `I001`から新規附番
+- Operator capability: `A001`から新規附番
+- Interpretation capability: `I001`
+
+StateのExecution Node IDは「このrunで何回目の実行か」を表し、Capability IDとは独立に段階別連番とする。
+
+- Description node: `D001`, `D002`, ...
+- Grouping node: `G001`, `G002`, ...
+- Operator node: `O001`, `O002`, ...
+- Interpretation node: `I001`, `I002`, ...
+
+例えばCapability `I001`を3回実行した場合、Node IDは`I001`、`I002`、`I003`となる。旧形式`<capability-id>:<sequence>`を持つ既存Stateは読み取りと継続を許可するが、新規Nodeには使用しない。
+
 - Evidence: `<run_id>:<operator_id>:<node-or-scope-context>:<sequence>`
 - Group: `G_<source-node-id-safe>_<group-content-hash16>`。hashはGroupラベルとmember集合から決め、再計算で内容が同じGroupは同じID、内容が変わったGroupは新しいIDとする。methodはCatalogのcapability IDとregistryで参照する。
 
@@ -160,12 +172,12 @@ Stateはrunごとに一つのJSONとし、次を保持する。
 - 入力hash、計画parameter、実行configuration、設定hash、上流artifact hash
 - 出力artifact、警告、開始・終了時刻
 - Orchestratorの選択理由と人間承認状態
-- `wide_shallow/deep_dive` phase、coverage axis、上流artifact binding、node固有output directory
+- `wide_shallow/deep_dive/human_directed` phase、request origin、選択理由、coverage axis、上流artifact binding、node固有output directory
 - `interpretation_exploration` phase、Policy version、人間設定budget、seed、iteration、request ledger、analysis signature
 
 SkillはStateを直接更新せず、実行時の`configuration`を含むexecution eventを生成する。Orchestratorのローカルscriptが実行前にnodeを`running`へ遷移させ、project/run/node/capabilityと計画parameterをeventに照合して原子的にStateへ反映する。eventなしで異常終了した場合は専用のfailure遷移へ理由を記録する。上流nodeが失敗または承認拒否で実行不能になった場合、そのnodeだけに依存する未開始下流nodeを理由付き`skipped`へ伝播する。上流hashが変化した場合、下流nodeと対応するdomain/evidence graph nodeを`stale`にする。
 
-実行DAG、group関係graph、evidence依存graphは別オブジェクトとして管理し、ID参照で接続する。同じcapability、上流node、科学的parameterからanalysis signatureを作り、Interpretation探索で同じ解析を再登録しない。
+実行DAG、group関係graph、evidence依存graphは別オブジェクトとして管理し、ID参照で接続する。同じcapability、上流node、科学的parameterからanalysis signatureを作り、Description、Grouping、Operatorの同一解析を再登録しない。Interpretationは同じ固定Evidenceを異なる人間指示や新しい比較視点で再解釈できるため、各`I###` roundと前回Interpretation lineageをsignatureへ含める。
 
 ## 10. Orchestration
 
@@ -185,9 +197,11 @@ Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。�
 
 ## 11. Interpretation
 
-Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Claude Code Agentが担当する。I001 runnerはevidence index、Group候補、provenance、関係候補、失敗、skip、探索ledgerを`interpretation_context.json`へ機械的に整理し、Agentが多面的に比較する。
+Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Claude Code Agentが担当する。Capability I001のrunnerはevidence index、Group候補、provenance、関係候補、失敗、skip、探索ledgerを`interpretation_context.json`へ機械的に整理し、`draft`として明示する。Agentはartifactを多面的に比較してObservationとInterpretationを分離し、人間向け要約、注目理由、制約、矛盾評価、必要な場合だけ検証可能なHypothesisを記載する。品質gateを通過した`agent_interpreted` reportだけを正式成果物とする。
 
 Interpretation nodeはStateを変更しない読み取り専用の終端nodeとする。追加計算は`exploration_plan.json`としてOrchestratorへ返し、Orchestratorだけが人間設定budget、並列上限、Orchestrator指定bounds、重複analysis signature、反証要求、costとapprovalを検証して、新しいDescription–Grouping–Operator branchを作る。そのbranchは別のInterpretation nodeで終える。既存Groupingにない切り出しはPlanにcompound ID集合を持たせ、登録時にrun inputと照合したcontent-addressed membershipへ固定する。
+
+人間が部分的なDescription、Grouping、Operator、Interpretationを指定した場合も、Skillを直接実行せず、Orchestratorが`human_directed` nodeとしてStateへ登録する。上流node、artifact binding、parameter、理由、承認、実行eventは通常nodeと同じ規則で管理する。Interpretation再実行は新しい`I###` nodeを作り、前回`I###`のreportを実行依存edgeではなくread-only lineageとして渡す。
 
 多重探索による発見候補を抑制せず、DiscoveryとValidation、negative result、矛盾、未実行候補、全試行履歴を保持する。一つの整合的仮説へ収束させない。各discoveryには反証、control、または独立replicationを必ず要求する。
 

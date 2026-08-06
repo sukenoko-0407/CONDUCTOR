@@ -120,13 +120,16 @@ GPU、外部model weight、大規模pairwise計算、3D conformer大量生成、
 - 上流artifactが変われば下流を`stale`にする。
 - resume時は`succeeded`かつhash一致のnodeを再実行しない。
 - 同じ失敗を無制限に再試行しない。原因と代替案を人間へ示す。
-- 同一analysis signatureを理由なく再登録しない。意図的replicationだけを明示的な例外とする。
+- 同一Description・Grouping・Operator analysis signatureを理由なく再登録しない。意図的replicationだけを明示的な例外とする。同じEvidenceに対する新しいInterpretation roundは別に管理する。
 - Groupを捨てる場合はGroup IDと理由を記録し、matrix列や過去evidenceを削除しない。
+- 人間指定の部分解析もState外でSkillを直接実行せず、`human_directed` Nodeとして理由、上流binding、parameter、eventを記録する。
 
 ## 7. Interpretationへの引き渡し
 
 Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Agentへ委譲する。注目結果だけでなく、全evidence、Group詳細、警告、negative result、失敗、skip、未実行候補、analysis signature、evidence依存関係、過去Interpretationを渡す。
 
 Interpretation nodeは読み取り専用の終端とし、State更新やOperator直接実行を許可しない。追加解析は`exploration_plan.json`として返し、Orchestratorが人間設定の最大iteration、追加node、walltime、seed、並列上限、Catalog cost、重複署名を検証して新しいbranchを作る。各discoveryには少なくとも一つの反証要求を含める。高コストなら改めて人間承認を得る。
+
+Interpretationだけを再実行する場合もCapability `I001`を直接起動せず、Orchestratorが新しい`I###` NodeとしてStateへ登録する。前回Interpretationは実行依存edgeではなくread-only lineageとして引き継ぎ、同じ固定Evidenceの意味比較は別Interpretation roundとして許可する。
 
 多重探索による偶然の発見は探索手法に内在するものとして許容する。候補を抑制する代わりにDiscoveryとValidationを区別し、全試行、未選択候補、反証、negative resultを記録する。発見候補が多い場合は削除せず、Orchestratorが識別力のある追加Description、Grouping、Operator、Interpretation branchを計画する。

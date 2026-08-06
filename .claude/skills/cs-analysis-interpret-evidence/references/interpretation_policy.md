@@ -1,12 +1,14 @@
 # CONDUCTOR v4 Interpretation Policy
 
-Version: 1.0.0
+Version: 1.1.0
 
 ## 1. 目的
 
 Interpretation Agentは、固定された一つの説明へ収束するためではなく、Operator evidence、Group、Description、scopeの組合せを多面的に比較し、人間が注目すべき一致、相違、矛盾、例外、局所化、再現Cliffを発見するために働く。
 
 Interpretationは読み取りと探索要求の生成に専念する終端stageである。Stateの変更、Operatorの直接実行、計算資源の予約、人間承認の代行は行わない。追加解析は探索要求としてOrchestratorへ返し、OrchestratorがCatalog、State、予算、重複署名、承認条件を検証して新しいbranchを作る。そのbranchも新しいInterpretation nodeで終える。
+
+反復InterpretationはCapability `I001`を新しい実行Node `I001`、`I002`、...として行う。前回reportはread-only lineageとして比較し、上書きしない。同じ固定Evidenceを新しい人間の問いや比較観点で再解釈することは、Description・Grouping・Operatorの重複計算とは区別して許可する。
 
 ## 2. 探索原則
 
@@ -125,4 +127,19 @@ Interpretation Agentはapprovalを決定しない。OrchestratorがCatalogとdat
 - 注目候補が独立解析で再現または反証された
 - 残る候補が高コストで人間判断を必要とする
 
-正本JSONには、evidence index、関係graph、注目結果、未解決矛盾、反証状態、探索履歴、未実行候補、次の探索要求を含める。MarkdownとHTMLには、探索概要、Evidence index、発見、Evidence間関係、未解決の矛盾、仮説、推奨次解析、人間確認事項を省略せず表示する。具体的な新規SMILESは生成しない。
+### 人間向けInterpretation report
+
+`interpretation.md`と`interpretation.html`は作業記録ではなく、本stageの主成果物である。人間が元artifactを開かなくても、少なくとも「何を解析したか」「何を観察したか」「それをどう解釈するか」「なぜ注目するか」「何が制約か」を理解できる記述にする。
+
+- 本文は解析の目的、解釈サマリー、重要な解釈、矛盾・反証・negative result、仮説候補、次解析の順とし、Evidence index、関係候補、探索ledgerは付録へ置く。
+- `F`はFinding、`H`はHypothesis、`R`はEvidence Relationの追跡IDとする。IDより人間が理解できる主張を見出しの中心に置く。
+- ObservationとInterpretationを別フィールドに記録する。`analyzed N rows`やartifact pathだけをInterpretationとして掲載しない。
+- 仮説は検証可能な主張が形成できる場合だけ作る。Evidence一件につき機械的にHを一件作らない。意味のある仮説がなければ空配列を許容する。
+- 解析条件としてOperator、Description、Grouping、scope、Metric、sample数を明示し、主要数値は人間が比較できる桁数へ丸める。
+- 矛盾は`not_assessed`、`none_found`、`found`を区別する。未評価を「矛盾なし」と表現しない。
+- confidenceはsample数だけで決めず、effect size、uncertainty、Evidence依存性、例外、反証、再現性を根拠として説明する。
+- HTMLは外部assetへ依存せず、低彩度の配色とテキストlabelを併用して、支持、探索的仮説、反証、制約、negative resultを視覚的に区別する。
+
+runnerが最初に作るJSON、Markdown、HTMLは`report_status=draft`の機械下書きである。専用Interpretation AgentはartifactとEvidenceを比較して本文を編集し、`agent_review.completed=true`、`report_status=agent_interpreted`へ更新する。final rendererの品質gateを通過したものだけを正式な人間向け成果物とする。
+
+正本JSONには、report summary、evidence index、関係graph、注目結果、矛盾評価、反証状態、探索履歴、未実行候補、次の探索要求を含める。具体的な新規SMILESは生成しない。

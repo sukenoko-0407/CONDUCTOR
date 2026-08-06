@@ -17,6 +17,8 @@
 - 完了した解析Round:
 - 現在のphase:
 - 完了／実行中／未完了／失敗nodeの概要:
+- 最新のInterpretation Node IDと前回Node:
+- 人間指定で追加した`human_directed` Node:
 - Wide analysisのcoverage gap:
 - Exploration budgetの累積消費と現在の上限:
 
@@ -30,6 +32,7 @@
 ## 参照すべきartifact
 
 - 最新の`interpretation.json`:
+- 過去Interpretationとのlineage:
 - 人間向け`interpretation.md` / `interpretation.html`:
 - 未処理の`exploration_plan.json`:
 - 重要な`evidence.json`:

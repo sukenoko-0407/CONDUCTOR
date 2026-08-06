@@ -114,6 +114,53 @@ Groupの詳細が必要なときだけ`group_registry.csv`と必要なGroup列�
 区別して記録してください。停止時には`session_handoff.md`を更新してください。
 ```
 
+## 既存runで部分解析だけを追加する
+
+人間がDescription、Grouping、Operator、Interpretationの一部だけを指定する場合に使用する。CONDUCTOR run内では専門Skillを直接指定せず、Orchestratorを通じてState管理する。
+
+```text
+`cs-conductor-orchestrator` Agentを使用し、次の既存CONDUCTOR runへ
+人間指定の部分解析を追加してください。
+
+State:
+<STATE_JSON_PATH>
+
+追加したい処理:
+- 段階: <Description / Grouping / Operator / Interpretation>
+- 目的: <この処理で確認したいこと>
+- 希望する手法またはCapability: <指定があれば記載>
+- 対象Group・Description・既存Node: <指定があれば記載>
+- parameter: <指定があれば記載>
+
+個別SkillをState外で直接実行しないでください。CatalogからCapabilityを決め、必要な上流Nodeを確認し、
+`state add --human-request --reason ...`で新しいNodeを登録してください。
+Stateが返したNode ID、input binding、output directoryを使ってstart・実行・event recordまで行ってください。
+既存の同一Description、Grouping、Operator signatureは再実行せず、利用可能なartifactを再利用してください。
+```
+
+## Interpretationだけを再実行する
+
+```text
+`cs-conductor-orchestrator` Agentを使用して、次の既存CONDUCTOR runの
+Interpretationだけを新しいRoundとして実行してください。
+
+State:
+<STATE_JSON_PATH>
+
+今回の解釈で重視する観点:
+<前回から変更・追加する問い、比較対象、注目Groupなど>
+
+新しいrunは作成せず、Capability `I001`を新しいInterpretation NodeとしてStateへ登録してください。
+既存の最新Interpretation Nodeをread-onlyの`previous_interpretation`として引き継ぎ、
+今回対象とするsucceeded Operator NodeをEvidence依存として指定してください。
+最初のInterpretationが`I001`なら、新しいNodeは`I002`として作成してください。
+`I001`の既存directoryやartifactは上書きしないでください。
+
+runnerの機械下書きで終了せず、専用`cs-conductor-interpreter` Agentによる意味解釈と
+品質gateを完了し、`agent_interpreted`のinterpretation.json、Markdown、HTMLを生成してから
+execution eventをStateへ記録してください。
+```
+
 ## 中断したCONDUCTOR処理を再開する
 
 ```text
@@ -152,5 +199,7 @@ CONDUCTOR runを作らず、単一の機能だけを利用するときのテン�
 - 同じInputとendpointの追加探索では同じrun IDとStateを継続し、解析Roundだけを進める。
 - 新しいClaude Codeセッションでは、State、handoff、Interpretation、関連evidenceの順に引き継ぐ。
 - 追加予算は既存の消費量を消去せず、累積上限へ換算して管理する。
+- 部分解析もOrchestratorから`human_directed` Nodeとして登録し、State外で専門Skillを直接起動しない。
+- Interpretation再実行はCapability `I001`を新しい`I###` Nodeとして登録し、前回reportを上書きしない。
 - Project内に無関係なファイルがある場合は、解析対象と探索範囲を明示する。
 - 一般利用では「CONDUCTOR runではない」と明記し、`--conductor`を付けない。

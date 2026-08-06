@@ -730,6 +730,7 @@ def main() -> int:
         references = SKILLS_ROOT / interpretation["skill_name"] / "references"
         references.mkdir(parents=True, exist_ok=True)
         shutil.copy2(MODULE_ROOT / "docs" / "CONDUCTOR_v4_interpretation_policy.md", references / "interpretation_policy.md")
+        shutil.copy2(TEMPLATES / "interpretation_render.py", SKILLS_ROOT / interpretation["skill_name"] / "scripts" / "render.py")
     included.append(interpretation["skill_name"])
     selection_path = MODULE_ROOT / "catalog" / "included_skills.json"
     selection = json.loads(selection_path.read_text(encoding="utf-8"))

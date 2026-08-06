@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from contextlib import contextmanager
@@ -22,6 +23,12 @@ GROUP_REGISTRY_FIELDS = [
     "source_grouping_node_ids", "compound_count", "activity_blind", "status", "membership_artifact",
     "definition_json", "created_at", "discard_reason", "discarded_at",
 ]
+STAGE_NODE_PREFIX = {
+    "description": "D",
+    "grouping": "G",
+    "analysis": "O",
+    "interpretation": "I",
+}
 
 
 def find_workspace() -> Path:
@@ -53,7 +60,7 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def default_exploration_state() -> dict[str, Any]:
     return {
-        "policy_version": "1.0.0",
+        "policy_version": "1.1.0",
         "budget": {
             "configured": False,
             "max_iterations": None,
@@ -123,6 +130,25 @@ def catalog_by_id(workspace: Path) -> dict[str, dict[str, Any]]:
 
 def state_nodes(state: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {node["node_id"]: node for node in state["execution_graph"]["nodes"]}
+
+
+def allocate_node_id(state: dict[str, Any], stage: str) -> str:
+    prefix = STAGE_NODE_PREFIX.get(stage)
+    if prefix is None:
+        raise ValueError(f"Stage does not have execution node IDs: {stage}")
+    serial = sum(node.get("stage") == stage for node in state["execution_graph"]["nodes"]) + 1
+    used = set(state_nodes(state))
+    while f"{prefix}{serial:03d}" in used:
+        serial += 1
+    return f"{prefix}{serial:03d}"
+
+
+def validate_explicit_node_id(state: dict[str, Any], stage: str, node_id: str) -> None:
+    prefix = STAGE_NODE_PREFIX[stage]
+    if not re.fullmatch(rf"{prefix}\d{{3,}}", node_id):
+        raise ValueError(f"Explicit {stage} node ID must match {prefix} followed by at least three digits")
+    if node_id in state_nodes(state):
+        raise ValueError(f"Node ID already exists: {node_id}")
 
 
 def infer_run_id_column(header: list[str]) -> str:
@@ -372,11 +398,16 @@ def append_history(state: dict[str, Any], action: str, **details: Any) -> None:
 
 TRANSIENT_PARAMETER_KEYS = {
     "output_dir", "project", "run_id", "node_id", "conductor", "overwrite",
-    "input", "description", "membership", "state", "evidence", "catalog",
+    "input", "description", "membership", "state", "evidence", "catalog", "previous_interpretation",
 }
 
 
-def analysis_signature(capability_id: str, dependencies: list[str], parameters: dict[str, Any]) -> str:
+def analysis_signature(
+    capability_id: str,
+    dependencies: list[str],
+    parameters: dict[str, Any],
+    context: dict[str, Any] | None = None,
+) -> str:
     scientific_parameters = {key: value for key, value in parameters.items() if key not in TRANSIENT_PARAMETER_KEYS}
     if scientific_parameters.get("scope_compound_set_hash"):
         for display_or_path_key in ("membership", "target_group", "comparison_group"):
@@ -386,6 +417,8 @@ def analysis_signature(capability_id: str, dependencies: list[str], parameters: 
         "dependencies": sorted(dependencies),
         "parameters": scientific_parameters,
     }
+    if context:
+        payload["context"] = context
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
@@ -478,6 +511,13 @@ def configure_node_io(
                 evidence_paths.append(str(Path(source_node["output_dir"]) / "evidence.json"))
         if evidence_paths:
             bind_system_parameter(parameters, "evidence", evidence_paths)
+        previous_paths = []
+        for previous_node_id in node.get("previous_interpretation_nodes") or []:
+            previous_node = state_nodes(state)[previous_node_id]
+            previous_capability = capabilities[previous_node["capability_id"]]
+            previous_paths.append(str(primary_artifact_path(previous_node, previous_capability)))
+        if previous_paths:
+            bind_system_parameter(parameters, "previous_interpretation", previous_paths)
         bind_system_parameter(parameters, "state", str((output_root / "state.json").resolve()))
 
 
@@ -592,18 +632,25 @@ def add_node(
     parameters: dict[str, Any] | None = None,
     phase: str = "deep_dive",
     coverage_axis: str | None = None,
+    node_id: str | None = None,
+    request_origin: str = "orchestrator",
+    previous_interpretation_nodes: list[str] | None = None,
 ) -> dict[str, Any]:
-    existing = [node for node in state["execution_graph"]["nodes"] if node["capability_id"] == capability["capability_id"]]
-    node_id = f"{capability['capability_id']}:{len(existing) + 1:03d}"
+    node_id = node_id or allocate_node_id(state, capability["stage"])
+    validate_explicit_node_id(state, capability["stage"], node_id)
     approval = "required" if capability["cost"].get("human_approval_required") else "not_required"
     selected_parameters = dict(capability.get("default_parameters") or {})
     selected_parameters.update(parameters or {})
-    signature = analysis_signature(capability["capability_id"], dependencies or [], selected_parameters)
-    node = {"node_id": node_id, "capability_id": capability["capability_id"], "skill_name": capability["skill_name"], "stage": capability["stage"], "phase": phase, "coverage_axis": coverage_axis, "status": "pending", "dependencies": dependencies or [], "human_approval": approval, "selection_reason": reason, "parameters": selected_parameters, "analysis_signature": signature, "cost": capability["cost"], "artifacts": [], "warnings": []}
+    prior_nodes = previous_interpretation_nodes or []
+    signature_context = {"interpretation_node_id": node_id, "previous_interpretation_nodes": prior_nodes} if capability["stage"] == "interpretation" else None
+    signature = analysis_signature(capability["capability_id"], dependencies or [], selected_parameters, signature_context)
+    node = {"node_id": node_id, "capability_id": capability["capability_id"], "skill_name": capability["skill_name"], "stage": capability["stage"], "phase": phase, "coverage_axis": coverage_axis, "status": "pending", "dependencies": dependencies or [], "human_approval": approval, "selection_reason": reason, "request_origin": request_origin, "requested_at": utc_now(), "parameters": selected_parameters, "analysis_signature": signature, "cost": capability["cost"], "artifacts": [], "warnings": []}
+    if prior_nodes:
+        node["previous_interpretation_nodes"] = prior_nodes
     state["execution_graph"]["nodes"].append(node)
     for dependency in dependencies or []:
         state["execution_graph"]["edges"].append({"source": dependency, "target": node_id, "relation": "depends_on"})
-    append_history(state, "node_added", node_id=node_id, capability_id=capability["capability_id"])
+    append_history(state, "node_added", node_id=node_id, capability_id=capability["capability_id"], request_origin=request_origin, reason=reason)
     return node
 
 
@@ -693,6 +740,10 @@ def cmd_add(args: argparse.Namespace) -> int:
         if not isinstance(parsed, dict):
             raise ValueError("--parameters-json must decode to a JSON object")
         parameters = parsed
+    human_request = bool(getattr(args, "human_request", False))
+    reason = args.reason or ""
+    if human_request and not reason:
+        raise ValueError("--human-request requires --reason so the instruction remains auditable")
     with state_lock(state_path):
         state = read_json(state_path)
         dependencies = [value.strip() for value in (args.depends_on or "").split(",") if value.strip()]
@@ -702,16 +753,40 @@ def cmd_add(args: argparse.Namespace) -> int:
         dependency_nodes = [state_nodes(state)[node_id] for node_id in dependencies]
         if any(item["stage"] == "interpretation" for item in dependency_nodes):
             raise ValueError("Interpretation nodes are terminal and cannot be execution dependencies")
+        previous_interpretation_nodes = [
+            value.strip()
+            for value in (getattr(args, "previous_interpretation_node", None) or "").split(",")
+            if value.strip()
+        ]
+        if previous_interpretation_nodes and capability["stage"] != "interpretation":
+            raise ValueError("--previous-interpretation-node is valid only when adding an Interpretation node")
+        previous_unknown = [value for value in previous_interpretation_nodes if value not in state_nodes(state)]
+        if previous_unknown:
+            raise ValueError(f"Unknown previous Interpretation nodes: {previous_unknown}")
+        for previous_node_id in previous_interpretation_nodes:
+            previous_node = state_nodes(state)[previous_node_id]
+            if previous_node["stage"] != "interpretation" or previous_node["status"] != "succeeded":
+                raise ValueError(f"Previous Interpretation must be a succeeded Interpretation node: {previous_node_id}")
         validate_dependency_contract(capability, dependency_nodes)
         selected_parameters = dict(capability.get("default_parameters") or {})
         selected_parameters.update(parameters)
         validate_analysis_scope_contract(capability, dependency_nodes, selected_parameters)
         signature = analysis_signature(capability["capability_id"], dependencies, selected_parameters)
         duplicate = next((item["node_id"] for item in state["execution_graph"]["nodes"] if item.get("analysis_signature") == signature), None)
-        if duplicate:
+        if duplicate and capability["stage"] != "interpretation":
             raise ValueError(f"Repeated analysis signature is not allowed; existing node={duplicate}")
         bindings = dependency_bindings(dependency_nodes)
-        node = add_node(state, capability, dependencies, args.reason or "Human or Orchestrator selected deep-dive", parameters)
+        node = add_node(
+            state,
+            capability,
+            dependencies,
+            reason or "Orchestrator selected deep-dive",
+            parameters,
+            phase="human_directed" if human_request else "deep_dive",
+            node_id=getattr(args, "node_id", None),
+            request_origin="human" if human_request else "orchestrator",
+            previous_interpretation_nodes=previous_interpretation_nodes,
+        )
         configure_node_io(state, node, capability, capabilities, state_path.parent, bindings)
         if args.require_approval and node["human_approval"] == "not_required":
             node["human_approval"] = "required"
@@ -1003,6 +1078,7 @@ def cmd_register_exploration(args: argparse.Namespace) -> int:
                 selected_parameters,
                 phase="interpretation_exploration",
                 coverage_axis=f"interpretation_{request['purpose']}",
+                request_origin="interpretation_agent",
             )
             configure_node_io(state, node, capability, capabilities, state_path.parent, bindings)
             node["exploration"] = {
@@ -1310,7 +1386,12 @@ def cmd_record(args: argparse.Namespace) -> int:
             if interpretation.get("run_id") != state["run"]["run_id"] or not interpretation.get("interpretation_id"):
                 raise ValueError("Interpretation artifact identity does not match State")
             interpretations = state.setdefault("interpretations", [])
-            record = {"interpretation_id": interpretation["interpretation_id"], "source_node_id": node["node_id"], "artifact_path": str(interpretation_path), "status": "active", "created_at": interpretation.get("created_at")}
+            prior_nodes = node.get("previous_interpretation_nodes") or []
+            record = {"interpretation_id": interpretation["interpretation_id"], "source_node_id": node["node_id"], "artifact_path": str(interpretation_path), "status": "active", "created_at": interpretation.get("created_at"), "previous_interpretation_nodes": prior_nodes}
+            for prior_record in interpretations:
+                if prior_record.get("source_node_id") in prior_nodes and prior_record.get("status") == "active":
+                    prior_record["status"] = "superseded"
+                    prior_record["superseded_by"] = node["node_id"]
             existing = next((item for item in interpretations if item.get("interpretation_id") == interpretation["interpretation_id"]), None)
             if existing:
                 existing.update(record)
@@ -1370,8 +1451,12 @@ def coarse_run_phase(state: dict[str, Any]) -> str:
         return "executing"
     if not wide_shallow_summary(state)["terminal"]:
         return "initial_breadth"
+    if any(node.get("phase") == "human_directed" and node["status"] in {"pending", "stale"} for node in nodes):
+        return "human_directed_analysis"
     if any(node.get("phase") == "interpretation_exploration" and node["status"] in {"pending", "stale"} for node in nodes):
         return "iterative_exploration"
+    if any(node.get("phase") == "deep_dive" and node["status"] in {"pending", "stale"} for node in nodes):
+        return "deep_dive"
     if any(node["stage"] == "interpretation" and node["status"] == "succeeded" for node in nodes):
         return "interpreted"
     return "ready_for_interpretation"
@@ -1467,7 +1552,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--input", required=True); init.add_argument("--endpoint", required=True); init.add_argument("--higher-is-better", action=argparse.BooleanOptionalAction, required=True)
     init.add_argument("--project", required=True); init.add_argument("--parallel-limit", type=int, required=True); init.add_argument("--assay-column"); init.add_argument("--run-id"); init.add_argument("--output-dir"); init.add_argument("--overwrite", action="store_true"); init.set_defaults(func=cmd_init)
     plan = sub.add_parser("plan-wide"); plan.add_argument("--state", required=True); plan.set_defaults(func=cmd_plan_wide)
-    add = sub.add_parser("add"); add.add_argument("--state", required=True); add.add_argument("--capability-id", required=True); add.add_argument("--depends-on"); add.add_argument("--reason"); add.add_argument("--parameters-json", help="JSON object of Skill CLI parameter destinations, for example {\"include_chirality\":true}."); add.add_argument("--require-approval", action="store_true", help="Require human approval because run-specific scale makes this execution expensive."); add.set_defaults(func=cmd_add)
+    add = sub.add_parser("add"); add.add_argument("--state", required=True); add.add_argument("--capability-id", required=True); add.add_argument("--depends-on"); add.add_argument("--reason"); add.add_argument("--parameters-json", help="JSON object of Skill CLI parameter destinations, for example {\"include_chirality\":true}."); add.add_argument("--node-id", help="Optional explicit stage node ID such as I002; normally State allocates it."); add.add_argument("--human-request", action="store_true", help="Record this partial analysis as explicitly requested by a human; requires --reason."); add.add_argument("--previous-interpretation-node", help="Comma-separated succeeded Interpretation node IDs used as read-only context, not execution dependencies."); add.add_argument("--require-approval", action="store_true", help="Require human approval because run-specific scale makes this execution expensive."); add.set_defaults(func=cmd_add)
     configure_exploration = sub.add_parser("configure-exploration"); configure_exploration.add_argument("--state", required=True); configure_exploration.add_argument("--max-iterations", type=int, required=True); configure_exploration.add_argument("--max-additional-nodes", type=int, required=True); configure_exploration.add_argument("--walltime-minutes", type=int, required=True); configure_exploration.add_argument("--seed", type=int, required=True); configure_exploration.set_defaults(func=cmd_configure_exploration)
     register_exploration = sub.add_parser("register-exploration"); register_exploration.add_argument("--state", required=True); register_exploration.add_argument("--plan", required=True); register_exploration.set_defaults(func=cmd_register_exploration)
     approve = sub.add_parser("approve"); approve.add_argument("--state", required=True); approve.add_argument("--node-id", required=True); decision = approve.add_mutually_exclusive_group(required=True); decision.add_argument("--approve", action="store_true"); decision.add_argument("--reject", dest="approve", action="store_false"); approve.add_argument("--rationale", required=True); approve.set_defaults(func=cmd_approve)

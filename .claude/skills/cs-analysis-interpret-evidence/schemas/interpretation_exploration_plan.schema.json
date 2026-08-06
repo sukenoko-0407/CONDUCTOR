@@ -6,7 +6,7 @@
   "required": ["schema_version", "policy_version", "run_id", "source_interpretation_id", "iteration", "seed", "mode", "bounds", "discoveries", "requests", "unselected_candidates", "created_at"],
   "properties": {
     "schema_version": {"const": "1.0.0"},
-    "policy_version": {"const": "1.0.0"},
+    "policy_version": {"const": "1.1.0"},
     "run_id": {"type": "string", "minLength": 1},
     "source_interpretation_id": {"type": "string", "minLength": 1},
     "iteration": {"type": "integer", "minimum": 1},

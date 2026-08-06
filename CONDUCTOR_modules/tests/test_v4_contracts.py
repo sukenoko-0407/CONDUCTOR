@@ -178,6 +178,7 @@ class RepositoryContractTests(unittest.TestCase):
         vectors = [entry for entry in groupings if entry["grouping_kind"] == "description_vector"]
         self.assertEqual(4, len(direct))
         self.assertEqual(6, len(vectors))
+
         self.assertTrue(all(entry["input_contract"] == ["compound_id_smiles_csv"] and not entry["dependencies"] for entry in direct))
         self.assertTrue(all(entry["input_contract"] == ["description_vector_csv"] and entry["dependencies"] == ["description"] for entry in vectors))
         self.assertTrue(all(entry["implementation"]["algorithm"] in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"} for entry in direct))
@@ -185,6 +186,20 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertFalse(by_id["I001"]["default_wide_shallow"])
         self.assertNotIn("D011", by_id)
         self.assertNotIn("D018", by_id)
+
+    def test_catalog_default_command_is_read_only(self) -> None:
+        catalog_path = MODULE_ROOT / "catalog" / "catalog.json"
+        markdown_path = MODULE_ROOT / "docs" / "CONDUCTOR_v4_skill_catalog.md"
+        before = (catalog_path.read_bytes(), markdown_path.read_bytes())
+        completed = subprocess.run(
+            [sys.executable, str(SKILLS / "cs-conductor-orchestrator" / "scripts" / "build_catalog.py")],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertEqual(before, (catalog_path.read_bytes(), markdown_path.read_bytes()))
 
     def test_json_schemas_parse(self) -> None:
         for path in (MODULE_ROOT / "schemas").glob("*.json"):
@@ -221,6 +236,30 @@ class RuntimeSmokeTests(unittest.TestCase):
         environment = dict(os.environ)
         environment["PYTHONUTF8"] = "1"
         return subprocess.run([sys.executable, *arguments], cwd=ROOT, env=environment, check=True, text=True, capture_output=True)
+
+    def finalize_interpretation_fixture(self, path: Path) -> dict:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["report_status"] = "agent_interpreted"
+        value["agent_review"] = {
+            "completed": True,
+            "reviewed_at": "2026-08-06T00:00:00+00:00",
+            "review_scope": "test fixture reviewed across supplied Evidence and artifacts",
+        }
+        value["report_summary"].update({
+            "executive_summary": "対象Evidenceを比較した結果、単独解析の実施記録ではなく、scopeに依存する傾向とその制約を解釈対象として整理した。",
+            "key_messages": ["主要な数値傾向は確認できるが、独立Evidenceによる再現前は探索的に扱う。"],
+            "coverage_summary": f"Evidence {len(value['evidence_index'])}件をartifactとともに確認した。",
+        })
+        for finding in value["notable_findings"]:
+            finding["title"] = f"{finding['analysis_context']['scope_mode']}で観察された数値傾向は追加比較を要する"
+            finding["interpretation"] = "当該scopeの数値傾向は比較候補を示すが、単独EvidenceだけではglobalなSAR機序を確定しない。"
+            finding["why_notable"] = "異なるscopeまたはDescriptionで再現するかを調べることで、局所性と表現依存性を識別できる。"
+        value["contradiction_assessment"] = {
+            "status": "none_found",
+            "summary": "供給されたEvidence間に明瞭な方向矛盾は確認しなかったが、独立性は限定的である。",
+        }
+        path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        return value
 
     def test_description_multiple_smiles_general_mode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -409,9 +448,27 @@ class RuntimeSmokeTests(unittest.TestCase):
                 "--output-dir", str(interpreted), "--run-id", "sali-metric", "--overwrite",
             )
             interpretation = json.loads((interpreted / "interpretation.json").read_text(encoding="utf-8"))
-            self.assertTrue(interpretation["hypotheses"][0]["focus_pairs"])
-            self.assertIn("SALI landscape", interpretation["notable_findings"][0]["observation"])
-            self.assertTrue(any(item["relation_type"] == "localizes" for item in interpretation["evidence_relations"]))
+            self.assertEqual("draft", interpretation["report_status"])
+            self.assertEqual([], interpretation["hypotheses"])
+            self.assertIn("median SALI=", interpretation["notable_findings"][0]["observation"])
+            self.assertNotIn("0.9599999999999989", interpretation["notable_findings"][0]["observation"])
+            self.assertTrue(any(item.get("candidate_relation") == "global_local_contrast" for item in interpretation["evidence_relations"]))
+            rejected_draft = subprocess.run(
+                [sys.executable, str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "render.py"), "--input", str(interpreted / "interpretation.json")],
+                cwd=ROOT, text=True, capture_output=True,
+            )
+            self.assertNotEqual(0, rejected_draft.returncode)
+            self.assertIn("machine draft", rejected_draft.stderr)
+            finalized = self.finalize_interpretation_fixture(interpreted / "interpretation.json")
+            finalized["notable_findings"][0]["title"] = "Group内よりGroup間でSALI upper tailが高い"
+            finalized["notable_findings"][0]["interpretation"] = "同じD002/Tanimoto空間ではGroup間のp95 SALIがGroup内より高く、roughnessが境界側へ偏る可能性がある。"
+            finalized["notable_findings"][0]["why_notable"] = "Groupingによってlandscape解釈が変わる可能性を示し、境界化合物の確認対象を限定できる。"
+            (interpreted / "interpretation.json").write_text(json.dumps(finalized, ensure_ascii=False, indent=2), encoding="utf-8")
+            self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "render.py"), "--input", str(interpreted / "interpretation.json"))
+            rendered = (interpreted / "interpretation.html").read_text(encoding="utf-8")
+            self.assertIn("Group内よりGroup間でSALI upper tailが高い", rendered)
+            for token in ["--teal", "--ochre", "--brick", "付録A：Evidence index", "HはHypothesis"]:
+                self.assertIn(token, rendered)
 
     @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn") and __import__("importlib").util.find_spec("scipy"), "scikit-learn and SciPy are not installed")
     def test_vector_clustering_requires_a_description_vector_and_binary_tanimoto(self) -> None:
@@ -481,9 +538,10 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.run_cli(str(state_manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--project", "unit", "--parallel-limit", "1", "--run-id", run_id, "--output-dir", str(state_root))
             self.run_cli(str(state_manager), "add", "--state", str(state_path), "--capability-id", "D002", "--parameters-json", '{"include_chirality":true}', "--reason", "unit variant contract")
             planned_state = json.loads(state_path.read_text(encoding="utf-8"))
-            outdir = Path(planned_state["execution_graph"]["nodes"][0]["output_dir"])
-            self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", "D002:001")
-            self.run_cli(str(runner), "--input", str(data), "--n-bits", "2048", "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "D002:001", "--overwrite")
+            planned_node = planned_state["execution_graph"]["nodes"][0]
+            outdir = Path(planned_node["output_dir"])
+            self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", planned_node["node_id"])
+            self.run_cli(str(runner), "--input", str(data), "--n-bits", "2048", "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", planned_node["node_id"], "--overwrite")
             rejected = subprocess.run(
                 [sys.executable, str(state_manager), "record", "--state", str(state_path), "--event", str(outdir / "execution_event.json")],
                 cwd=ROOT, text=True, capture_output=True,
@@ -491,7 +549,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertNotEqual(0, rejected.returncode)
             self.assertIn("Event configuration does not match planned node parameters", rejected.stderr)
 
-            self.run_cli(str(runner), "--input", str(data), "--include-chirality", "--n-bits", "2048", "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "D002:001", "--overwrite")
+            self.run_cli(str(runner), "--input", str(data), "--include-chirality", "--n-bits", "2048", "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", planned_node["node_id"], "--overwrite")
             self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(outdir / "execution_event.json"))
             state = json.loads(state_path.read_text(encoding="utf-8"))
             node = state["execution_graph"]["nodes"][0]
@@ -686,8 +744,8 @@ class RuntimeSmokeTests(unittest.TestCase):
             description = Path(description_node["output_dir"])
             grouping_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "C001")
             grouping = Path(grouping_node["output_dir"])
-            self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", "D001:001")
-            self.run_cli(str(SKILLS / "cs-compute-description-rdkit-2d" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(description), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "D001:001", "--overwrite")
+            self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", description_node["node_id"])
+            self.run_cli(str(SKILLS / "cs-compute-description-rdkit-2d" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(description), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", description_node["node_id"], "--overwrite")
             description_event = json.loads((description / "execution_event.json").read_text(encoding="utf-8"))
             self.assertEqual("unit", description_event["project"])
             self.assertIsInstance(description_event["configuration"], dict)
@@ -704,23 +762,37 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", grouping_node["node_id"])
             self.run_cli(str(SKILLS / "cs-compute-clustering-structure-murcko" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(grouping), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", grouping_node["node_id"], "--min-cluster-size", "3", "--overwrite")
             self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(grouping / "execution_event.json"))
-            self.run_cli(str(SKILLS / "cs-analysis-activity-distribution" / "scripts" / "run.py"), "--input", str(data), "--property-column", "pIC50", "--higher-is-better", "--output-dir", str(analysis), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "A002:001", "--overwrite")
-            self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--state", str(state_path), "--output-dir", str(interpretation), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "I001:001", "--overwrite")
+            self.run_cli(str(SKILLS / "cs-analysis-activity-distribution" / "scripts" / "run.py"), "--input", str(data), "--property-column", "pIC50", "--higher-is-better", "--output-dir", str(analysis), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "O001", "--overwrite")
+            self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--state", str(state_path), "--output-dir", str(interpretation), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "I001", "--overwrite")
             standalone_interpretation = temporary / "standalone-interpretation"
             self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--output-dir", str(standalone_interpretation), "--run-id", run_id, "--overwrite")
             self.assertFalse((standalone_interpretation / "execution_event.json").exists())
             for path in [description / "execution_event.json", grouping / "group_registry.json", analysis / "evidence.json", interpretation / "interpretation.json", interpretation / "interpretation.md", interpretation / "interpretation.html"]:
                 self.assertTrue(path.is_file(), path)
+            self.assertEqual(f"{run_id}:I001", json.loads((interpretation / "interpretation.json").read_text(encoding="utf-8"))["interpretation_id"])
             html_report = (interpretation / "interpretation.html").read_text(encoding="utf-8")
-            for heading in ["探索概要", "Evidence index", "注目すべき発見", "Evidence間関係", "未解決の矛盾", "仮説・検証候補", "推奨される次解析", "人間による確認事項"]:
+            for heading in ["機械下書き", "解析の目的と対象", "解釈サマリー", "重要な解釈", "矛盾・反証・negative result", "仮説候補", "推奨される次解析", "付録A：Evidence index"]:
                 self.assertIn(heading, html_report)
-            edited_interpretation = json.loads((interpretation / "interpretation.json").read_text(encoding="utf-8"))
+            edited_interpretation = self.finalize_interpretation_fixture(interpretation / "interpretation.json")
             edited_interpretation["human_review_points"].append("RENDER_SENTINEL")
-            (interpretation / "interpretation.json").write_text(json.dumps(edited_interpretation), encoding="utf-8")
+            (interpretation / "interpretation.json").write_text(json.dumps(edited_interpretation, ensure_ascii=False), encoding="utf-8")
             self.run_cli(
                 str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "render.py"),
                 "--input", str(interpretation / "interpretation.json"),
             )
+            self.assertIn("RENDER_SENTINEL", (interpretation / "interpretation.html").read_text(encoding="utf-8"))
+            second_interpretation = temporary / "interpretation-I002"
+            self.run_cli(
+                str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"),
+                "--evidence", str(analysis / "evidence.json"), "--state", str(state_path),
+                "--previous-interpretation", str(interpretation / "interpretation.json"),
+                "--output-dir", str(second_interpretation), "--conductor", "--project", "unit",
+                "--run-id", run_id, "--node-id", "I002", "--overwrite",
+            )
+            second_value = json.loads((second_interpretation / "interpretation.json").read_text(encoding="utf-8"))
+            second_context = json.loads((second_interpretation / "interpretation_context.json").read_text(encoding="utf-8"))
+            self.assertEqual(f"{run_id}:I002", second_value["interpretation_id"])
+            self.assertEqual([f"{run_id}:I001"], [item["interpretation_id"] for item in second_context["previous_interpretations"]])
             self.assertIn("RENDER_SENTINEL", (interpretation / "interpretation.html").read_text(encoding="utf-8"))
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual("succeeded", state["execution_graph"]["nodes"][0]["status"])
@@ -732,7 +804,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             with matrix_path.open(encoding="utf-8", newline="") as handle:
                 matrix_rows = list(DictReader(handle))
             self.assertEqual(grouping_node["node_id"], registry_rows[0]["source_node_id"])
-            self.assertRegex(registry_rows[0]["group_id"], r"^G_C001_001_[A-F0-9]{16}$")
+            self.assertRegex(registry_rows[0]["group_id"], r"^G_G001_[A-F0-9]{16}$")
             self.assertIn(registry_rows[0]["group_id"], matrix_rows[0])
 
 
