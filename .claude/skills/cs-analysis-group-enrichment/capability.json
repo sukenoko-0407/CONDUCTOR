@@ -42,6 +42,7 @@
   ],
   "output": {
     "filename": "A008_group_enrichment.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

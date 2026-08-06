@@ -602,7 +602,9 @@ def markdown_report(value: dict[str, Any]) -> str:
         lines.append("- 現時点で登録された追加解析要求はない。")
     lines.extend(["", "## 付録A：Evidence index", ""])
     for item in value["evidence_index"]:
-        lines.append(f"- {item['evidence_id']} / Operator={item['operator_id']} / scope={(item.get('scope') or {}).get('mode', 'unknown')} / N={item.get('sample_count', 0)}")
+        operator_report = next((path for path in item.get("artifact_paths") or [] if Path(path).name == "operator_report.html"), None)
+        detail = f" / Operator report={operator_report}" if operator_report else ""
+        lines.append(f"- {item['evidence_id']} / Operator={item['operator_id']} / scope={(item.get('scope') or {}).get('mode', 'unknown')} / N={item.get('sample_count', 0)}{detail}")
     lines.extend(["", "## 付録B：Evidence間関係候補", ""])
     if value["evidence_relations"]:
         for relation in value["evidence_relations"]:
@@ -628,6 +630,25 @@ def html_report(value: dict[str, Any]) -> str:
 
     summary = value["exploration_summary"]
     report_summary = value["report_summary"]
+    evidence_by_id = {item["evidence_id"]: item for item in value["evidence_index"]}
+
+    def operator_report_link(evidence_id: str, compact: bool = False) -> str:
+        item = evidence_by_id.get(evidence_id) or {}
+        report_path = next((path for path in item.get("artifact_paths") or [] if Path(path).name == "operator_report.html"), None)
+        if not report_path:
+            return "-" if compact else ""
+        try:
+            href = Path(report_path).resolve().as_uri()
+        except ValueError:
+            return html.escape(str(report_path))
+        label = "詳細HTML" if compact else f"{item.get('operator_id', 'Operator')} 個別解析レポート"
+        return f"<a class='operator-link' href='{html.escape(href, quote=True)}'>{html.escape(label)}</a>"
+
+    def finding_report_links(item: dict[str, Any]) -> str:
+        links = [operator_report_link(evidence_id) for evidence_id in item.get("evidence_ids") or []]
+        links = [link for link in links if link]
+        return f"<p class='operator-links'><b>個別解析:</b> {' · '.join(links)}</p>" if links else ""
+
     findings = "".join(
         f"<article class='finding status-{html.escape(item['status'])}'>"
         f"<div class='card-head'><span class='status-label'>{html.escape(STATUS_LABELS.get(item['status'], item['status']))}</span><span class='id-label'>{html.escape(item['finding_id'])}</span></div>"
@@ -638,7 +659,7 @@ def html_report(value: dict[str, Any]) -> str:
         f"<div class='meaning'><h4>解釈</h4><p>{html.escape(item['interpretation'])}</p></div>"
         f"<p><b>なぜ注目するか：</b>{html.escape(item['why_notable'])}</p>"
         f"<div class='limitations'><b>制約・代替説明</b>{html_list(item['limitations'])}</div>"
-        f"<p class='meta'>Evidence: {html.escape(', '.join(item['evidence_ids']))}</p></article>"
+        f"<p class='meta'>Evidence: {html.escape(', '.join(item['evidence_ids']))}</p>{finding_report_links(item)}</article>"
         for item in value["notable_findings"]
     ) or "<p class='empty'>現時点で本文に掲載すべき注目結果はありません。</p>"
     hypotheses = "".join(
@@ -675,7 +696,8 @@ def html_report(value: dict[str, Any]) -> str:
         f"<tr><td>{html.escape(item['evidence_id'])}</td><td>{html.escape(item['operator_id'])}</td>"
         f"<td>{html.escape(str((item.get('scope') or {}).get('mode', 'unknown')))}</td>"
         f"<td>{html.escape(str(item.get('evaluation_representation') or '-'))}</td>"
-        f"<td>{html.escape(str(item.get('grouping_representation') or '-'))}</td><td>{item.get('sample_count', 0)}</td></tr>"
+        f"<td>{html.escape(str(item.get('grouping_representation') or '-'))}</td><td>{item.get('sample_count', 0)}</td>"
+        f"<td>{operator_report_link(item['evidence_id'], compact=True)}</td></tr>"
         for item in value["evidence_index"]
     )
     relation_rows = "".join(
@@ -685,12 +707,12 @@ def html_report(value: dict[str, Any]) -> str:
         for item in value["evidence_relations"]
     ) or "<tr><td colspan='6'>比較候補なし。</td></tr>"
     draft_banner = "<div class='draft-banner'><b>機械下書き</b> — 最終Interpretationではありません。専用Agentによる最終化が必要です。</div>" if value["report_status"] == "draft" else ""
-    css = """:root{--ink:#263640;--muted:#68747b;--line:#d8d5cd;--paper:#f4f2ed;--surface:#fff;--navy:#304957;--blue:#536f80;--blue-soft:#e9eef1;--teal:#4d706b;--teal-soft:#e6eeec;--ochre:#806637;--ochre-soft:#f2ede1;--brick:#85534b;--brick-soft:#f2e8e5;--gray-soft:#eeefed}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.75 "Yu Gothic UI","Segoe UI",sans-serif}main{max-width:1120px;margin:28px auto;padding:44px 52px 64px;background:var(--surface);box-shadow:0 12px 36px #24374618}header{border-bottom:1px solid var(--line);padding-bottom:22px}h1,h2{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;color:var(--navy)}h1{font-size:34px;margin:4px 0 8px}h2{margin-top:48px;padding-bottom:9px;border-bottom:2px solid var(--navy);font-size:23px}.draft-banner{margin:22px 0;padding:14px 18px;border-left:5px solid var(--ochre);background:var(--ochre-soft)}.lead{font-size:17px}.scope{padding:14px 18px;background:var(--blue-soft);border-left:4px solid var(--blue)}.key-messages{padding:18px 24px;background:#f7f8f6;border:1px solid var(--line)}article{border:1px solid var(--line);border-radius:7px;padding:22px 24px;margin:18px 0}.card-head{display:flex;gap:9px}.status-label,.id-label{padding:2px 8px;font-size:12px;font-weight:700;border-radius:3px}.id-label{background:var(--gray-soft);color:var(--muted)}.status-discovery,.hypothesis{border-left:6px solid var(--ochre)}.status-validated{border-left:6px solid var(--teal)}.status-refuted,.contradiction{border-left:6px solid var(--brick)}.status-inconclusive,.status-negative{border-left:6px solid #8b9292}.question b,.claim b{display:block;color:var(--navy);font-size:12px}.context{font-size:13px;color:var(--muted);padding:8px 12px;background:#f6f6f3}.observation{padding:13px 16px;background:#f7f8f7;border-left:4px solid #89969c}.meaning{padding:15px 18px;margin:12px 0;background:var(--teal-soft);border-left:5px solid var(--teal)}.limitations,.claim{padding:12px 16px;background:var(--ochre-soft)}.contradiction-summary{padding:16px 19px;background:var(--brick-soft);border-left:5px solid var(--brick)}.empty,.meta{color:var(--muted)}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}th{background:#f0f1ee}dt{font-weight:700;color:var(--navy);margin-top:10px}dd{margin-left:0}details{margin-top:24px;border-top:1px solid var(--line);padding-top:12px}summary{cursor:pointer;color:var(--navy);font-weight:700}@media(max-width:700px){main{margin:0;padding:26px 20px}}@media print{body{background:#fff}main{box-shadow:none;margin:0;max-width:none}}"""
+    css = """:root{--ink:#263640;--muted:#68747b;--line:#d8d5cd;--paper:#f4f2ed;--surface:#fff;--navy:#304957;--blue:#536f80;--blue-soft:#e9eef1;--teal:#4d706b;--teal-soft:#e6eeec;--ochre:#806637;--ochre-soft:#f2ede1;--brick:#85534b;--brick-soft:#f2e8e5;--gray-soft:#eeefed}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.75 "Yu Gothic UI","Segoe UI",sans-serif}main{max-width:1120px;margin:28px auto;padding:44px 52px 64px;background:var(--surface);box-shadow:0 12px 36px #24374618}header{border-bottom:1px solid var(--line);padding-bottom:22px}h1,h2{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;color:var(--navy)}h1{font-size:34px;margin:4px 0 8px}h2{margin-top:48px;padding-bottom:9px;border-bottom:2px solid var(--navy);font-size:23px}.draft-banner{margin:22px 0;padding:14px 18px;border-left:5px solid var(--ochre);background:var(--ochre-soft)}.lead{font-size:17px}.scope{padding:14px 18px;background:var(--blue-soft);border-left:4px solid var(--blue)}.key-messages{padding:18px 24px;background:#f7f8f6;border:1px solid var(--line)}article{border:1px solid var(--line);border-radius:7px;padding:22px 24px;margin:18px 0}.card-head{display:flex;gap:9px}.status-label,.id-label{padding:2px 8px;font-size:12px;font-weight:700;border-radius:3px}.id-label{background:var(--gray-soft);color:var(--muted)}.status-discovery,.hypothesis{border-left:6px solid var(--ochre)}.status-validated{border-left:6px solid var(--teal)}.status-refuted,.contradiction{border-left:6px solid var(--brick)}.status-inconclusive,.status-negative{border-left:6px solid #8b9292}.question b,.claim b{display:block;color:var(--navy);font-size:12px}.context{font-size:13px;color:var(--muted);padding:8px 12px;background:#f6f6f3}.observation{padding:13px 16px;background:#f7f8f7;border-left:4px solid #89969c}.meaning{padding:15px 18px;margin:12px 0;background:var(--teal-soft);border-left:5px solid var(--teal)}.limitations,.claim{padding:12px 16px;background:var(--ochre-soft)}.contradiction-summary{padding:16px 19px;background:var(--brick-soft);border-left:5px solid var(--brick)}.operator-links{padding:8px 11px;background:var(--blue-soft)}.operator-link{color:var(--navy);font-weight:700}.empty,.meta{color:var(--muted)}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}th{background:#f0f1ee}dt{font-weight:700;color:var(--navy);margin-top:10px}dd{margin-left:0}details{margin-top:24px;border-top:1px solid var(--line);padding-top:12px}summary{cursor:pointer;color:var(--navy);font-weight:700}@media(max-width:700px){main{margin:0;padding:26px 20px}}@media print{body{background:#fff}main{box-shadow:none;margin:0;max-width:none}}"""
     key_messages = html_list(report_summary["key_messages"])
     limitations = html_list(report_summary["limitations"])
     next_body = f"<ul>{next_items}</ul>" if next_items else "<p class='empty'>現時点で登録された追加解析要求はありません。</p>"
     reviews = html_list(value["human_review_points"])
-    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR Interpretation Report</title><style>{css}</style></head><body><main><header><p class='meta'>SAR evidence interpretation</p><h1>CONDUCTOR Interpretation Report</h1><p class='meta'>Run {html.escape(value['run_id'])} · Stage {html.escape(summary['stage'])} · {html.escape(value['created_at'])}</p></header>{draft_banner}<h2>解析の目的と対象</h2><p class='lead'>{html.escape(report_summary['analysis_objective'])}</p><p class='scope'><b>対象範囲</b><br>{html.escape(report_summary['dataset_scope'])}<br><b>Coverage</b><br>{html.escape(report_summary['coverage_summary'])}</p><h2>解釈サマリー</h2><p class='lead'>{html.escape(report_summary['executive_summary'])}</p><div class='key-messages'><b>主要メッセージ</b>{key_messages}</div><div class='limitations'><b>全体の制約</b>{limitations}</div><h2>重要な解釈</h2>{findings}<h2>矛盾・反証・negative result</h2><div class='contradiction-summary'><b>{html.escape(CONTRADICTION_LABELS[contradiction['status']])}</b><p>{html.escape(contradiction['summary'])}</p></div>{contradiction_items}<h2>仮説候補</h2><p class='meta'>HはHypothesis（検証可能な仮説候補）のIDです。単独Evidenceの通し番号ではありません。</p>{hypotheses}<h2>推奨される次解析</h2>{next_body}<details><summary>付録A：Evidence index</summary><div class='table-wrap'><table><thead><tr><th>Evidence</th><th>Operator</th><th>Scope</th><th>Description</th><th>Grouping</th><th>N</th></tr></thead><tbody>{evidence_rows}</tbody></table></div></details><details><summary>付録B：Evidence間関係候補</summary><div class='table-wrap'><table><thead><tr><th>ID</th><th>関係</th><th>候補比較</th><th>独立性</th><th>Evidence</th><th>根拠</th></tr></thead><tbody>{relation_rows}</tbody></table></div></details><details><summary>付録C：探索・監査情報</summary><p>Policy {html.escape(value['policy_version'])} / Seed {html.escape(str(summary.get('seed')))} / Attempted signatures {len(summary.get('attempted_analysis_signatures') or [])}</p><h3>人間による確認事項</h3>{reviews}</details></main></body></html>"""
+    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR Interpretation Report</title><style>{css}</style></head><body><main><header><p class='meta'>SAR evidence interpretation</p><h1>CONDUCTOR Interpretation Report</h1><p class='meta'>Run {html.escape(value['run_id'])} · Stage {html.escape(summary['stage'])} · {html.escape(value['created_at'])}</p></header>{draft_banner}<h2>解析の目的と対象</h2><p class='lead'>{html.escape(report_summary['analysis_objective'])}</p><p class='scope'><b>対象範囲</b><br>{html.escape(report_summary['dataset_scope'])}<br><b>Coverage</b><br>{html.escape(report_summary['coverage_summary'])}</p><h2>解釈サマリー</h2><p class='lead'>{html.escape(report_summary['executive_summary'])}</p><div class='key-messages'><b>主要メッセージ</b>{key_messages}</div><div class='limitations'><b>全体の制約</b>{limitations}</div><h2>重要な解釈</h2>{findings}<h2>矛盾・反証・negative result</h2><div class='contradiction-summary'><b>{html.escape(CONTRADICTION_LABELS[contradiction['status']])}</b><p>{html.escape(contradiction['summary'])}</p></div>{contradiction_items}<h2>仮説候補</h2><p class='meta'>HはHypothesis（検証可能な仮説候補）のIDです。単独Evidenceの通し番号ではありません。</p>{hypotheses}<h2>推奨される次解析</h2>{next_body}<details><summary>付録A：Evidence index</summary><div class='table-wrap'><table><thead><tr><th>Evidence</th><th>Operator</th><th>Scope</th><th>Description</th><th>Grouping</th><th>N</th><th>個別解析</th></tr></thead><tbody>{evidence_rows}</tbody></table></div></details><details><summary>付録B：Evidence間関係候補</summary><div class='table-wrap'><table><thead><tr><th>ID</th><th>関係</th><th>候補比較</th><th>独立性</th><th>Evidence</th><th>根拠</th></tr></thead><tbody>{relation_rows}</tbody></table></div></details><details><summary>付録C：探索・監査情報</summary><p>Policy {html.escape(value['policy_version'])} / Seed {html.escape(str(summary.get('seed')))} / Attempted signatures {len(summary.get('attempted_analysis_signatures') or [])}</p><h3>人間による確認事項</h3>{reviews}</details></main></body></html>"""
 
 
 def run() -> int:

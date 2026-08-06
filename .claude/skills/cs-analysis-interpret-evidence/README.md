@@ -29,6 +29,7 @@ python .claude/skills/cs-analysis-interpret-evidence/scripts/launch.py --evidenc
 ## 制約事項
 
 - 専用Policyを読み、Interpretation nodeを読み取り専用の終端として扱います。
+- Interpretation HTMLから各Evidenceの`operator_report.html`へ移動できるようartifact linkを保持します。Operator HTMLはCSV／Evidenceの代替にはしません。
 - 注目した全discoveryに反証要求を付け、同じanalysis signatureを再要求しません。
 - 新しい切り出しはPlanの`scope`にcompound IDと選択法を記録し、membership生成はOrchestratorへ委ねます。
 - 多重探索結果、negative result、矛盾を削除しません。
@@ -42,6 +43,7 @@ python .claude/skills/cs-analysis-interpret-evidence/scripts/launch.py --evidenc
 
 | Version | 変更内容 |
 |---|---|
+| 1.3.0 | InterpretationからOperator個別HTMLへ遡るdrill-down導線を追加。 |
 | 1.2.0 | 反復InterpretationのNode IDと前回report引継ぎを明記。 |
 | 1.1.0 | 機械下書きとAgent解釈済み成果物を分離し、人間向け解釈項目、品質gate、意味別HTML配色を追加。 |
 | 1.0.0 | Policy管理の専用Agent、scope比較、反証探索、探索contextへ対応。 |

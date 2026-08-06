@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -26,6 +27,12 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertTrue((MODULE_ROOT / "README.md").is_file())
         self.assertTrue((MODULE_ROOT / "tools" / "install_into_project.py").is_file())
         self.assertTrue((MODULE_ROOT / "tools" / "verify_package_layout.py").is_file())
+        completed = subprocess.run(
+            [sys.executable, str(MODULE_ROOT / "tools" / "verify_package_layout.py")],
+            cwd=ROOT, text=True, capture_output=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("CONDUCTOR package layout is valid", completed.stdout)
         catalog = json.loads((MODULE_ROOT / "catalog" / "catalog.json").read_text(encoding="utf-8"))
         self.assertEqual("CONDUCTOR_modules/catalog/included_skills.json", catalog["selection_path"])
         for agent_name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"]:
@@ -42,7 +49,7 @@ class RepositoryContractTests(unittest.TestCase):
             "## 変更履歴",
         ]
         skill_directories = sorted(path for path in SKILLS.iterdir() if path.is_dir())
-        self.assertEqual(42, len(skill_directories))
+        self.assertEqual(43, len(skill_directories))
         for skill in skill_directories:
             readme = skill / "README.md"
             self.assertTrue(readme.is_file(), skill.name)
@@ -60,7 +67,7 @@ class RepositoryContractTests(unittest.TestCase):
         selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
         capability_schema = json.loads((MODULE_ROOT / "schemas" / "capability.schema.json").read_text(encoding="utf-8"))
         names = selection["included_skills"]
-        self.assertEqual(42, len(names))
+        self.assertEqual(43, len(names))
         self.assertEqual(len(names), len(set(names)))
         for name in names:
             skill = SKILLS / name
@@ -127,6 +134,9 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertIn("Algorithm-specific options", instructions, name)
             if capability["stage"] in {"description", "grouping", "analysis"}:
                 self.assertTrue((skill / "schemas" / "artifact_manifest.schema.json").is_file(), name)
+            if capability["stage"] == "analysis":
+                self.assertTrue((skill / "scripts" / "operator_report.py").is_file(), name)
+                self.assertEqual("operator_report.html", capability["output"]["report"])
 
     def test_catalog_matches_human_allowlist(self) -> None:
         selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
@@ -184,8 +194,68 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertTrue(all(entry["implementation"]["algorithm"] in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"} for entry in direct))
         self.assertFalse(any((SKILLS / f"cs-compute-clustering-structure-{name}").exists() for name in ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected-components"]))
         self.assertFalse(by_id["I001"]["default_wide_shallow"])
+        self.assertEqual("orchestration", by_id["O002"]["stage"])
+        self.assertEqual("explicit_human_request_only", by_id["O002"]["implementation"]["invocation"])
+        self.assertFalse(by_id["O002"]["default_wide_shallow"])
         self.assertNotIn("D011", by_id)
         self.assertNotIn("D018", by_id)
+
+    def test_state_report_is_explicit_read_only_and_timestamped(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            state_path = temporary / "state.json"
+            state = {
+                "schema_version": "1.0.0",
+                "conductor_version": "4.0.0",
+                "run": {
+                    "run_id": "state-report", "project": "unit", "input": "input.csv",
+                    "input_hash": "0" * 64, "endpoint": "pIC50", "higher_is_better": True,
+                    "parallel_limit": 2, "created_at": "2026-08-06T00:00:00+00:00",
+                },
+                "execution_graph": {
+                    "nodes": [
+                        {"node_id": "D001", "capability_id": "D002", "skill_name": "description", "stage": "description", "status": "succeeded", "dependencies": [], "human_approval": "not_required", "artifacts": []},
+                        {"node_id": "G001", "capability_id": "C002", "skill_name": "grouping", "stage": "grouping", "status": "running", "dependencies": ["D001"], "human_approval": "not_required", "artifacts": []},
+                        {"node_id": "O001", "capability_id": "A006", "skill_name": "operator", "stage": "analysis", "status": "pending", "dependencies": ["G001"], "human_approval": "not_required", "artifacts": []},
+                        {"node_id": "I001", "capability_id": "I001", "skill_name": "interpret", "stage": "interpretation", "status": "succeeded", "dependencies": ["D001"], "human_approval": "not_required", "artifacts": []},
+                        {"node_id": "I002", "capability_id": "I001", "skill_name": "interpret", "stage": "interpretation", "status": "pending", "dependencies": ["O001"], "previous_interpretation_nodes": ["I001"], "human_approval": "required", "artifacts": []},
+                    ],
+                    "edges": [
+                        {"source": "D001", "target": "G001", "relation": "depends_on"},
+                        {"source": "G001", "target": "O001", "relation": "depends_on"},
+                        {"source": "O001", "target": "I002", "relation": "depends_on"},
+                    ],
+                },
+                "domain_graph": {}, "evidence_graph": {},
+                "interpretation_exploration": {
+                    "policy_version": "1.1.0",
+                    "budget": {"configured": False, "max_iterations": None, "max_additional_nodes": None, "walltime_minutes": None, "seed": None, "configured_at": None},
+                    "iterations": [], "ledger": [],
+                },
+                "history": [], "updated_at": "2026-08-06T00:00:00+00:00",
+            }
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            before = state_path.read_bytes()
+            runner = SKILLS / "cs-conductor-state-report" / "scripts" / "run.py"
+            rejected = subprocess.run([sys.executable, str(runner), "--state", str(state_path)], cwd=ROOT, text=True, capture_output=True)
+            self.assertEqual(2, rejected.returncode)
+            self.assertIn("--explicit-request is required", rejected.stderr)
+            completed = subprocess.run(
+                [sys.executable, str(runner), "--state", str(state_path), "--explicit-request"],
+                cwd=ROOT, text=True, capture_output=True, check=True,
+            )
+            report_dir = Path(completed.stdout.strip())
+            self.assertEqual(state_path.parent / "state", report_dir.parent)
+            self.assertRegex(report_dir.name, r"^\d{8}T\d{6}Z(?:-\d{2})?$")
+            for filename in ["state_report.html", "state_dag.svg", "state_nodes.csv", "state_summary.json"]:
+                self.assertTrue((report_dir / filename).is_file(), filename)
+            self.assertEqual(before, state_path.read_bytes())
+            rendered = (report_dir / "state_report.html").read_text(encoding="utf-8")
+            for token in ["実行DAG", "D001", "G001", "O001", "I002", "Interpretation lineage", "<circle", "edge planned"]:
+                self.assertIn(token, rendered)
+            summary = json.loads((report_dir / "state_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(5, summary["node_count"])
+            self.assertEqual(hashlib.sha256(before).hexdigest(), summary["source_state_sha256"])
 
     def test_catalog_default_command_is_read_only(self) -> None:
         catalog_path = MODULE_ROOT / "catalog" / "catalog.json"
@@ -392,11 +462,17 @@ class RuntimeSmokeTests(unittest.TestCase):
             outdir = temporary / "sali"
             self.run_cli(
                 str(sali_runner), "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
-                "--description", str(description), "--evaluation-representation", "D002", "--metric", "auto", "--k", "2",
+                "--description", str(description), "--evaluation-representation", "D002", "--description-node-id", "D001",
+                "--metric", "auto", "--k", "2",
                 "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", "sali-metric",
                 "--node-id", "A006:001", "--overwrite",
             )
             evidence = json.loads((outdir / "evidence.json").read_text(encoding="utf-8"))
+            self.assertTrue((outdir / "operator_report.html").is_file())
+            report = (outdir / "operator_report.html").read_text(encoding="utf-8")
+            for token in ["解析対象と由来", "Description source", "Grouping source", "主要結果", "個別結果", "D002", "D001"]:
+                self.assertIn(token, report)
+            self.assertTrue(any(item.get("type") == "operator_report" for item in evidence["artifacts"]))
             summary = evidence["machine_readable_summary"]
             self.assertEqual("tanimoto", summary["metric"])
             self.assertEqual("auto", summary["requested_metric"])
@@ -419,7 +495,8 @@ class RuntimeSmokeTests(unittest.TestCase):
                 self.run_cli(
                     str(sali_runner), "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
                     "--description", str(description), "--membership", str(membership),
-                    "--evaluation-representation", "D002", "--metric", "auto", "--k", "2",
+                    "--evaluation-representation", "D002", "--description-node-id", "D001",
+                    "--grouping-representation", "C005", "--grouping-node-id", "G001", "--metric", "auto", "--k", "2",
                     "--reference-scope", "global", "--output-dir", str(scoped_outdir), "--conductor",
                     "--project", "unit", "--run-id", "sali-metric", "--node-id", node_id, "--overwrite", *extra,
                 )
@@ -427,6 +504,10 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.assertEqual("within-group", scoped_evidence[0]["scope"]["mode"])
             self.assertEqual(3, scoped_evidence[0]["scope"]["sample_count"])
             self.assertEqual("global", scoped_evidence[0]["scope"]["reference_scope"])
+            self.assertEqual("C005", scoped_evidence[0]["grouping_representation"])
+            scoped_report = (temporary / "within" / "operator_report.html").read_text(encoding="utf-8")
+            for token in ["Grouping source", "C005", "G001"]:
+                self.assertIn(token, scoped_report)
             self.assertEqual("between-groups", scoped_evidence[1]["scope"]["mode"])
             self.assertEqual(6, scoped_evidence[1]["scope"]["sample_count"])
             self.assertEqual(3, len({evidence["evidence_id"], *(item["evidence_id"] for item in scoped_evidence)}))
@@ -467,7 +548,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "render.py"), "--input", str(interpreted / "interpretation.json"))
             rendered = (interpreted / "interpretation.html").read_text(encoding="utf-8")
             self.assertIn("Group内よりGroup間でSALI upper tailが高い", rendered)
-            for token in ["--teal", "--ochre", "--brick", "付録A：Evidence index", "HはHypothesis"]:
+            for token in ["--teal", "--ochre", "--brick", "付録A：Evidence index", "HはHypothesis", "個別解析", "詳細HTML"]:
                 self.assertIn(token, rendered)
 
     @unittest.skipUnless(__import__("importlib").util.find_spec("sklearn") and __import__("importlib").util.find_spec("scipy"), "scikit-learn and SciPy are not installed")
@@ -703,7 +784,7 @@ class RuntimeSmokeTests(unittest.TestCase):
                 "--output-dir", str(outdir), "--run-id", "general", "--overwrite",
             )
             self.assertTrue((outdir / "A002_activity_distribution.csv").is_file())
-            for auxiliary in ["evidence.json", "analysis_manifest.json", "warnings.json", "execution_event.json"]:
+            for auxiliary in ["operator_report.html", "evidence.json", "analysis_manifest.json", "warnings.json", "execution_event.json"]:
                 self.assertFalse((outdir / auxiliary).exists(), auxiliary)
 
             wide_membership = temporary / "wide-membership.csv"
@@ -767,7 +848,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             standalone_interpretation = temporary / "standalone-interpretation"
             self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--output-dir", str(standalone_interpretation), "--run-id", run_id, "--overwrite")
             self.assertFalse((standalone_interpretation / "execution_event.json").exists())
-            for path in [description / "execution_event.json", grouping / "group_registry.json", analysis / "evidence.json", interpretation / "interpretation.json", interpretation / "interpretation.md", interpretation / "interpretation.html"]:
+            for path in [description / "execution_event.json", grouping / "group_registry.json", analysis / "operator_report.html", analysis / "evidence.json", interpretation / "interpretation.json", interpretation / "interpretation.md", interpretation / "interpretation.html"]:
                 self.assertTrue(path.is_file(), path)
             self.assertEqual(f"{run_id}:I001", json.loads((interpretation / "interpretation.json").read_text(encoding="utf-8"))["interpretation_id"])
             html_report = (interpretation / "interpretation.html").read_text(encoding="utf-8")

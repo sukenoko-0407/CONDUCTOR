@@ -104,6 +104,8 @@ Skill名は小文字英数字とハイフンのみ、64文字未満とする。
 - 同じ入力CSVでもendpointが異なれば別runとする。
 - 全Operatorはscope metadataをevidenceへ残す。A003、A005、A006、A007は`global`、`within-group`、`between-groups`、A004はglobalとwithin-groupに対応する。
 - 局所解析はGrouping membershipとtarget Groupを明示し、連続Descriptionの比較ではglobal referenceでfitした前処理を既定とする。
+- 一般利用では主結果CSVだけを生成する。CONDUCTORモードではCSVと機械可読な`evidence.json`に加え、人間が個別解析を掘り下げるための自己完結`operator_report.html`を生成する。
+- `operator_report.html`にはOperator、実行Node、endpoint、Description／GroupingのCapabilityとsource Node、対象scope・Group、主要結果、上位明細、制約、parameterとartifact provenanceを記載する。最終的な意味解釈は行わない。
 
 ## 6. 出力契約
 
@@ -122,10 +124,11 @@ results/CONDUCTOR/<project>/<run_id>/
 ├── analysis/<skill_name>/<node_id_safe>/
 ├── interpretation/<skill_name>/<node_id_safe>/
 ├── events/
+├── state/<timestamp>/              # 人間が明示要求したState可視化snapshot
 └── state.json
 ```
 
-`node_id_safe`は通常の段階別Node IDと同一である。既存Stateの旧形式IDに`:`が含まれる場合だけWindows互換のため`-`へ置換する。`--output-dir`は常に既定値より優先するが、モードを変更しない。通常モードはdefaultかつ主成果物だけを返す。CONDUCTORモードは明示的opt-inであり、`--conductor --project <project> --run-id <run_id> --node-id <node_id>`をすべて指定した場合だけ、manifest、warnings、evidenceまたはgroup registry、execution event、schema検証を追加する。通常モードでは`--project`と`--node-id`を受け付けない。
+`node_id_safe`は通常の段階別Node IDと同一である。既存Stateの旧形式IDに`:`が含まれる場合だけWindows互換のため`-`へ置換する。`--output-dir`は常に既定値より優先するが、モードを変更しない。通常モードはdefaultかつ主成果物だけを返す。CONDUCTORモードは明示的opt-inであり、`--conductor --project <project> --run-id <run_id> --node-id <node_id>`をすべて指定した場合だけ、manifest、warnings、evidenceまたはgroup registry、execution event、schema検証を追加する。Operatorはさらに自己完結`operator_report.html`を出力する。通常モードでは`--project`と`--node-id`を受け付けない。
 
 Agentはrepository名、Catalog収載、CONDUCTOR互換artifact、`results/CONDUCTOR/`形式の出力先だけを根拠にCONDUCTORモードを推測しない。ユーザーの明示依頼、OrchestratorからのDAG node実行、または既存runへの明示接続がなければ`--conductor`を省略する。意図が曖昧なら実行前に確認し、確認できなければ通常モードを選ぶ。
 
@@ -179,6 +182,8 @@ SkillはStateを直接更新せず、実行時の`configuration`を含むexecuti
 
 実行DAG、group関係graph、evidence依存graphは別オブジェクトとして管理し、ID参照で接続する。同じcapability、上流node、科学的parameterからanalysis signatureを作り、Description、Grouping、Operatorの同一解析を再登録しない。Interpretationは同じ固定Evidenceを異なる人間指示や新しい比較視点で再解釈できるため、各`I###` roundと前回Interpretation lineageをsignatureへ含める。
 
+State可視化はCapability `O002`の`cs-conductor-state-report`を人間がState JSON path付きで明示要求した場合だけ実行する。Stateを変更せずDAG nodeにも登録しない読み取り専用snapshotであり、Stateと同じdirectoryの`state/<UTC timestamp>/`へHTML、DAG SVG、node CSV、summary JSONを保存する。DAGは円形Nodeの色でstatusを、Edgeの線種で完了・実行可能・計画・blocked・Interpretation lineageを区別する。
+
 ## 10. Orchestration
 
 Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。現profileはDescription 7 node、Grouping 9 node、Operator 36 nodeの計52 nodeを基本とし、assay条件が複数ならcategorical Groupingと対応Operatorを追加する。Descriptionには2D物性、circular graph、substructure、atom pair、path、2D pharmacophore、3D shape/pharmacophoreを含む。GroupingはSMILES直接型としてMurcko、事前許可済み必須初手MCS、BRICSを、Description-vector型としてButina、hierarchical、DBSCAN、Leidenを含む。vector ClusteringはD001、D002、D013、D017のうちCatalogで宣言されたartifactへ個別bindingする。Operatorは全10種を、意味のある上流sourceだけに接続する。A009は重複所属が重要なC002 MCSとC003 BRICSの双方へ接続する。
@@ -197,7 +202,7 @@ Orchestratorは最初に`representative-family-wide-v1`をDAGへ展開する。�
 
 ## 11. Interpretation
 
-Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Claude Code Agentが担当する。Capability I001のrunnerはevidence index、Group候補、provenance、関係候補、失敗、skip、探索ledgerを`interpretation_context.json`へ機械的に整理し、`draft`として明示する。Agentはartifactを多面的に比較してObservationとInterpretationを分離し、人間向け要約、注目理由、制約、矛盾評価、必要な場合だけ検証可能なHypothesisを記載する。品質gateを通過した`agent_interpreted` reportだけを正式成果物とする。
+Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Claude Code Agentが担当する。Capability I001のrunnerはevidence index、Group候補、provenance、関係候補、失敗、skip、探索ledgerを`interpretation_context.json`へ機械的に整理し、`draft`として明示する。Agentはartifactを多面的に比較してObservationとInterpretationを分離し、人間向け要約、注目理由、制約、矛盾評価、必要な場合だけ検証可能なHypothesisを記載する。品質gateを通過した`agent_interpreted` reportだけを正式成果物とする。Interpretation HTMLは各Evidenceに対応する`operator_report.html`への導線を保持し、人間が集約解釈から個別解析の数値・scope・provenanceへ遡れるようにする。
 
 Interpretation nodeはStateを変更しない読み取り専用の終端nodeとする。追加計算は`exploration_plan.json`としてOrchestratorへ返し、Orchestratorだけが人間設定budget、並列上限、Orchestrator指定bounds、重複analysis signature、反証要求、costとapprovalを検証して、新しいDescription–Grouping–Operator branchを作る。そのbranchは別のInterpretation nodeで終える。既存Groupingにない切り出しはPlanにcompound ID集合を持たせ、登録時にrun inputと照合したcontent-addressed membershipへ固定する。
 

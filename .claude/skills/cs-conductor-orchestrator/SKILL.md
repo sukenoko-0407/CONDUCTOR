@@ -14,6 +14,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 4. Treat `CONDUCTOR_modules/catalog/included_skills.json` as human-managed. Never add a Skill to it autonomously.
 5. Use `state status` for coarse progress. Use `state groups` and the external Group index only when detailed membership/provenance is needed.
 6. When resuming, read `<run-root>/session_handoff.md` if it exists, but verify it against current State, latest Interpretation, and referenced artifacts. State and artifacts remain authoritative.
+7. Use `cs-conductor-state-report` only after an explicit human request with an explicit State path. It is a read-only report Utility, not a State node.
 
 ## Workflow
 
@@ -29,7 +30,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 7. Mark each selected node `running` with `state_manager.py start`; this enforces the human-specified parallel limit.
 8. Invoke the Project Skill with `--conductor`, the State project, the same run ID, the reserved node ID, and the exact node `parameters`. The planned parameters already include node-specific `output_dir` and resolved upstream artifact arguments derived from `input_bindings`. Never omit or replace these CONDUCTOR context arguments.
    A list-valued `input` means repeat `--input` once per artifact; this is used by C012 meta-overlap.
-9. Record each schema-valid `execution_event.json` through `state_manager.py record`. State rejects events whose `configuration` does not match the planned parameter subset. If execution terminates without an event, use `state_manager.py fail` with the concrete error; a failed node is not automatically retried.
+9. Record each schema-valid `execution_event.json` through `state_manager.py record`. For Operator nodes, pass the State-bound Description／Grouping Capability and source Node ID provenance parameters, and verify that the event includes the numeric CSV, `evidence.json`, and `operator_report.html`; the Interpretation HTML uses the report link for human drill-down. State rejects events whose `configuration` does not match the planned parameter subset. If execution terminates without an event, use `state_manager.py fail` with the concrete error; a failed node is not automatically retried.
 10. Complete a coverage audit with `state status`. Do not stop the initial pass because early results lack signal. Replace a failed/inapplicable axis where practical, or preserve its concrete skip rationale. Then invoke the dedicated `cs-conductor-interpreter` Agent; do not duplicate its semantic evidence comparison inside Orchestration.
 11. Before a high/very-high cost node, or a normally medium-cost node made expensive by dataset scale, explain purpose, target, expected information, resources, and alternative; add it with `--require-approval` when necessary, wait for explicit human approval, then record it. The exception is a Catalog capability explicitly marked `approval_policy=preauthorized_initial`.
     C002 MCS is the mandatory central direct-structure axis and carries that policy. Plan it in every initial profile and start it as soon as State reports it runnable; do not request run-specific approval or convert it into an optional deep dive.

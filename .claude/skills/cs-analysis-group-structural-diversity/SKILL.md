@@ -17,10 +17,10 @@ Group structural diversityを実行し、客観的な数値結果とCONDUCTOR ev
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. 入力列と必要な上流artifactを確認し、不明な列は明示指定する。
+2. 入力列と必要な上流artifactを確認し、不明な列は明示指定する。OperatorのCONDUCTOR実行では、Stateが束縛したDescription／Grouping Capabilityとsource Node IDを表す`--evaluation-representation`、`--description-node-id`、`--grouping-representation`、`--grouping-node-id`を該当する上流入力とともに渡す。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
-5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
+5. 実行後に主成果物を確認する。CONDUCTORモードでは`operator_report.html`、manifest、warnings、execution eventも確認し、Orchestratorへ渡す。
 
 ## Algorithm-specific options
 
@@ -40,7 +40,7 @@ Group structural diversityを実行し、客観的な数値結果とCONDUCTOR ev
 ## Output contract
 
 - 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`A010_group_structural_diversity.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、解析由来・主要結果・個別結果を示す`operator_report.html`、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
 

@@ -34,6 +34,7 @@
   ],
   "output": {
     "filename": "A003_pairwise_structure_similarity.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

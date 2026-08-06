@@ -359,7 +359,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         }
         option_guidance = analysis_options[operator]
         output_contract = f'''- 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`{capability["output"]["filename"]}`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、解析由来・主要結果・個別結果を示す`operator_report.html`、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     else:
         purpose = "専用Interpretation Policyに従うClaude Code Agent向けに、複数Operator evidence、Group局所性、依存関係、失敗を読み取り専用で整理する。"
         inputs = "`--evidence`または`--evidence-dir`で同一runのevidenceを指定する。CONDUCTORでは`--state`を必ず指定する。"
@@ -387,7 +387,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. 入力列と必要な上流artifactを確認し、不明な列は明示指定する。
+2. 入力列と必要な上流artifactを確認し、不明な列は明示指定する。OperatorのCONDUCTOR実行では、Stateが束縛したDescription／Grouping Capabilityとsource Node IDを表す`--evaluation-representation`、`--description-node-id`、`--grouping-representation`、`--grouping-node-id`を該当する上流入力とともに渡す。
 3. algorithm固有optionが必要なら`python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
 5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
@@ -543,6 +543,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             general_args += " --membership cluster_membership.csv"
         constraints = ["endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。"]
         constraints.append("数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。")
+        constraints.append("CONDUCTORモードではState由来のDescription／Grouping Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。")
         if operator in {"knn_activity_consistency", "sali"}:
             constraints.append("`--metric auto`はfeature特性から距離を選び、Morgan表現にはTanimoto以外を使用しない。")
         if operator == "sali":
@@ -697,7 +698,7 @@ def main() -> int:
         included.append(name)
     for identifier, name, display, operator, family, cost, status, wide, dependencies in OPERATORS:
         capability = base_capability(identifier, name, display, "analysis", family, cost, status, wide)
-        capability.update({"operator_id": identifier, "dependencies": dependencies, "input_contract": ["endpoint_csv", *dependencies], "output": {"filename": f"{identifier}_{operator}.csv", "evidence": "evidence.json"}, "implementation": {"operator": operator}})
+        capability.update({"operator_id": identifier, "dependencies": dependencies, "input_contract": ["endpoint_csv", *dependencies], "output": {"filename": f"{identifier}_{operator}.csv", "report": "operator_report.html", "evidence": "evidence.json"}, "implementation": {"operator": operator}})
         capability["scope_support"] = {
             "A001": ["global", "within-group"],
             "A002": ["global", "within-group"],
@@ -713,7 +714,10 @@ def main() -> int:
         if identifier == "A006":
             capability["description"] = "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI, preserve high-SALI cliff pairs for interpretation, and generate CONDUCTOR v4 evidence."
         apply_wide_profile(capability)
-        created += create_skill(capability, "analysis", TEMPLATES / "operator_run.py", ["execution_event.schema.json", "evidence.schema.json", "artifact_manifest.schema.json"], args.force)
+        analysis_created = create_skill(capability, "analysis", TEMPLATES / "operator_run.py", ["execution_event.schema.json", "evidence.schema.json", "artifact_manifest.schema.json"], args.force)
+        created += analysis_created
+        if analysis_created:
+            shutil.copy2(TEMPLATES / "operator_report.py", SKILLS_ROOT / name / "scripts" / "operator_report.py")
         included.append(name)
     interpretation = base_capability("I001", "cs-analysis-interpret-evidence", "SAR evidence interpretation", "interpretation", "evidence_integration", "low", "stable", False)
     interpretation.update({

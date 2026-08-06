@@ -39,6 +39,7 @@
   ],
   "output": {
     "filename": "A004_descriptor_activity_correlation.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

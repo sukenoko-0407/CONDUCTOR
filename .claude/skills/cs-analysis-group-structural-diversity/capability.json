@@ -45,6 +45,7 @@
   ],
   "output": {
     "filename": "A010_group_structural_diversity.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

@@ -54,7 +54,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --chec
 
 管理資産は`CONDUCTOR_modules/`に置くが、解析結果はProjectの成果物として`<project-dir>/results/CONDUCTOR/<project>/<run-id>/`へ保存する。一般モードの各Skillも従来どおり`<project-dir>/results/<stage>/`を既定とする。
 
-通常の解析runでは`CONDUCTOR_modules/`を読み取り専用として扱う。State、Group index、Evidence、Interpretation、session handoffを含むrun固有情報はすべて`results/CONDUCTOR/`側へ保存するため、停止中であれば解析履歴を失わずにこのdirectoryを丸ごと差し替えられる。ただし、Project rootの`.claude/skills/`と`.claude/agents/`はmodule内のCatalog・Schema・Policyと同じpackage版へそろえて更新する。
+通常の解析runでは`CONDUCTOR_modules/`を読み取り専用として扱う。State、State可視化snapshot、Group index、Evidence、Operator個別HTML、Interpretation、session handoffを含むrun固有情報はすべて`results/CONDUCTOR/`側へ保存するため、停止中であれば解析履歴を失わずにこのdirectoryを丸ごと差し替えられる。ただし、Project rootの`.claude/skills/`と`.claude/agents/`はmodule内のCatalog・Schema・Policyと同じpackage版へそろえて更新する。
 
 例外は人間が明示的に行うpackage保守操作である。`catalog --write`はCatalogと生成Markdownを更新し、`tools/scaffold_v4_skills.py`はSkill雛形と未設定の収載リストを生成し得る。installer、test、検証toolも導入先やPython cacheへ書き込む場合がある。これらは解析runの一部として実行しない。
 
@@ -66,6 +66,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --chec
 - Interpretation Policy: `docs/CONDUCTOR_v4_interpretation_policy.md`
 - Claude Codeへの解析依頼テンプレート: `docs/prompt/CONDUCTOR_analysis_request_prompt.md`
 - セッション引継ぎテンプレート: `docs/prompt/CONDUCTOR_session_handoff_template.md`
+- State可視化: `.claude/skills/cs-conductor-state-report/`（人間の明示要求時だけ実行）
 - Skill生成・保守: `tools/`と`schemas/`
 
 Catalog収載変更後はOrchestratorの`catalog --write` commandで再生成し、差分を確認する。引数なし、または`--check`は読み取り専用の検証である。

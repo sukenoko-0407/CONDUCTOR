@@ -3,7 +3,7 @@
   "conductor_version": "4.0.0",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-05T11:22:00.699418+00:00",
+  "generated_at": "2026-08-06T05:57:24.192479+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -52,6 +52,7 @@
       ],
       "output": {
         "filename": "A001_group_profile.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -93,6 +94,7 @@
       ],
       "output": {
         "filename": "A002_activity_distribution.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -139,6 +141,7 @@
       ],
       "output": {
         "filename": "A003_pairwise_structure_similarity.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -189,6 +192,7 @@
       ],
       "output": {
         "filename": "A004_descriptor_activity_correlation.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -253,6 +257,7 @@
       ],
       "output": {
         "filename": "A005_knn_activity_consistency.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -321,6 +326,7 @@
       ],
       "output": {
         "filename": "A006_sali.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -369,6 +375,7 @@
       ],
       "output": {
         "filename": "A007_activity_cliff.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -422,6 +429,7 @@
       ],
       "output": {
         "filename": "A008_group_enrichment.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -471,6 +479,7 @@
       ],
       "output": {
         "filename": "A009_group_overlap.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -527,6 +536,7 @@
       ],
       "output": {
         "filename": "A010_group_structural_diversity.csv",
+        "report": "operator_report.html",
         "evidence": "evidence.json"
       },
       "implementation": {
@@ -1837,6 +1847,45 @@
       "implementation": {
         "purpose": "dag_state_and_interpretation_exploration_orchestration",
         "interpretation_execution_authority": "orchestrator_only"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "O002",
+      "skill_name": "cs-conductor-state-report",
+      "display_name": "CONDUCTOR State DAG report",
+      "version": "4.0.0",
+      "stage": "orchestration",
+      "family": "state_reporting",
+      "description": "Use only on an explicit human request with an explicitly supplied state.json path to render a read-only timestamped HTML and SVG execution DAG report.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ]
+      },
+      "dependencies": [],
+      "default_wide_shallow": false,
+      "input_contract": [
+        "explicit_state_json_read_only"
+      ],
+      "output": {
+        "html": "state/<timestamp>/state_report.html",
+        "svg": "state/<timestamp>/state_dag.svg",
+        "nodes": "state/<timestamp>/state_nodes.csv",
+        "summary": "state/<timestamp>/state_summary.json"
+      },
+      "implementation": {
+        "purpose": "read_only_execution_dag_visualization",
+        "state_access": "read_only",
+        "invocation": "explicit_human_request_only",
+        "dag_registration": "forbidden"
       }
     }
   ]

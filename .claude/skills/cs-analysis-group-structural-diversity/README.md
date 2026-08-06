@@ -31,10 +31,13 @@ python .claude/skills/cs-analysis-group-structural-diversity/scripts/launch.py -
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
+- CONDUCTORモードではState由来のDescription／Grouping Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。
 - `--max-pairs`超過時はGroupごとに`--random-seed`でpairを一様ランダム抽出する。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
+| 1.2.0 | Description／GroupingのCapabilityとsource Node IDのprovenance表示を追加。 |
+| 1.1.0 | CONDUCTORモードの人間向けOperator HTMLレポートを追加。 |
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |

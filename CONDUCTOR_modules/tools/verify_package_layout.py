@@ -56,8 +56,15 @@ def main() -> int:
             for relative in ["SKILL.md", "capability.json", "scripts/launch.py", "env/pixi.toml"]:
                 if not (skill / relative).is_file():
                     errors.append(f"{name}: missing {relative}")
+            capability_path = skill / "capability.json"
+            capability = json.loads(capability_path.read_text(encoding="utf-8")) if capability_path.is_file() else {}
+            explicit_state_utility = (
+                capability.get("stage") == "orchestration"
+                and capability.get("implementation", {}).get("invocation") == "explicit_human_request_only"
+                and capability.get("implementation", {}).get("state_access") == "read_only"
+            )
             runner = skill / "scripts" / "run.py"
-            if runner.is_file():
+            if runner.is_file() and not explicit_state_utility:
                 text = runner.read_text(encoding="utf-8")
                 if "CONDUCTOR_modules\" / \"catalog\" / \"catalog.json" not in text:
                     errors.append(f"{name}: runner does not resolve the packaged Catalog")
@@ -65,9 +72,7 @@ def main() -> int:
                     errors.append(f"{name}: runner does not prioritize its installed Project over the caller working directory")
                 if "installed_skill = candidate / \".claude\" / \"skills\" / SKILL_DIR.name" not in text:
                     errors.append(f"{name}: runner does not support standalone general-mode installation")
-            capability_path = skill / "capability.json"
             if capability_path.is_file():
-                capability = json.loads(capability_path.read_text(encoding="utf-8"))
                 if capability.get("skill_name") != name:
                     errors.append(f"{name}: capability skill_name mismatch")
                 if capability.get("stage") in {"description", "grouping", "analysis"}:

@@ -42,6 +42,7 @@
   ],
   "output": {
     "filename": "A001_group_profile.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

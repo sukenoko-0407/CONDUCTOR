@@ -36,6 +36,7 @@
   ],
   "output": {
     "filename": "A007_activity_cliff.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

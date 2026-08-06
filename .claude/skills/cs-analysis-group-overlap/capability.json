@@ -39,6 +39,7 @@
   ],
   "output": {
     "filename": "A009_group_overlap.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

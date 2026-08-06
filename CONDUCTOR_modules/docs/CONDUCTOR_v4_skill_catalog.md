@@ -2,7 +2,7 @@
 
 > この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`で指定する。
 
-Generated: `2026-08-05T11:22:00.699418+00:00`
+Generated: `2026-08-06T05:57:24.192479+00:00`
 
 ## Description
 
@@ -70,3 +70,4 @@ Generated: `2026-08-05T11:22:00.699418+00:00`
 | ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | O001 | `cs-conductor-orchestrator` | CONDUCTOR v4 Orchestrator | - | graph_orchestration | - | catalog_json, policy_markdown, interpretation_policy_markdown, endpoint_csv, optional_interpretation_exploration_plan_json | - | - | low | stable | False |
+| O002 | `cs-conductor-state-report` | CONDUCTOR State DAG report | - | state_reporting | - | explicit_state_json_read_only | - | - | low | stable | False |

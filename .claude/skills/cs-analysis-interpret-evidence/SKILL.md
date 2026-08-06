@@ -31,7 +31,7 @@ Operator evidence、State上のprovenance、Group局所性を読み取り専用�
 ## Required workflow
 
 1. 通常モードかCONDUCTORモードかを決める。
-2. Policy、State、Catalog、全evidenceを読む。CONDUCTORでは初手coverageがterminalであることを確認する。
+2. Policy、State、Catalog、全evidenceを読む。CONDUCTORでは初手coverageがterminalであることを確認する。各Evidenceの`operator_report.html` pathを保持し、人間向けHTMLから個別解析へ移動できるようにする。Operator HTMLだけで判断せず、CSVとEvidenceを正本として読む。
    既存runの再InterpretationではStateが割り当てた新しい`I###` nodeを使用し、前回Interpretationをread-only contextとして比較する。Capability ID `I001`と実行Node IDを混同しない。
 3. runnerで`interpretation_context.json`と`report_status=draft`の`interpretation.json`、下書きMarkdown/HTMLを作る。下書きを最終成果物として扱わない。
 4. contextに記録されたartifact、Group候補、依存性候補、失敗、skip、過去iterationを比較する。

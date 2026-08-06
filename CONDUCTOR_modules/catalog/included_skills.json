@@ -43,6 +43,7 @@
     "cs-analysis-group-overlap",
     "cs-analysis-group-structural-diversity",
     "cs-analysis-interpret-evidence",
-    "cs-conductor-orchestrator"
+    "cs-conductor-orchestrator",
+    "cs-conductor-state-report"
   ]
 }

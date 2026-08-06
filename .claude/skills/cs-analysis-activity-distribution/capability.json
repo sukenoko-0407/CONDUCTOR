@@ -30,6 +30,7 @@
   ],
   "output": {
     "filename": "A002_activity_distribution.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

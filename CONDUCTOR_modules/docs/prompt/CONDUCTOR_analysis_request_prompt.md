@@ -159,6 +159,25 @@ State:
 runnerの機械下書きで終了せず、専用`cs-conductor-interpreter` Agentによる意味解釈と
 品質gateを完了し、`agent_interpreted`のinterpretation.json、Markdown、HTMLを生成してから
 execution eventをStateへ記録してください。
+
+Interpretationで重視した各Evidenceについて、対応するOperator個別HTMLへのlinkを保持し、
+人間がDescription、Grouping、対象Group・scope、数値明細へ遡れるようにしてください。
+```
+
+## State DAGの可視化だけを依頼する
+
+解析処理やState更新を行わず、現時点のDAGを人間向けに確認したい場合に使用する。
+
+```text
+これはState可視化の明示依頼です。
+`cs-conductor-state-report` Skillを使用して、次のState JSONを読み取り専用で可視化してください。
+
+State:
+<STATE_JSON_PATH>
+
+Stateを変更せず、新しいDAG Nodeやexecution eventも登録しないでください。
+出力はState JSONと同じdirectoryの`state/<UTC timestamp>/`へ保存してください。
+生成された`state_report.html`と`state_dag.svg`のpathを示してください。
 ```
 
 ## 中断したCONDUCTOR処理を再開する
@@ -201,5 +220,6 @@ CONDUCTOR runを作らず、単一の機能だけを利用するときのテン�
 - 追加予算は既存の消費量を消去せず、累積上限へ換算して管理する。
 - 部分解析もOrchestratorから`human_directed` Nodeとして登録し、State外で専門Skillを直接起動しない。
 - Interpretation再実行はCapability `I001`を新しい`I###` Nodeとして登録し、前回reportを上書きしない。
+- State可視化は専用SkillへState path付きで明示依頼し、State更新やDAG Node登録を行わない。
 - Project内に無関係なファイルがある場合は、解析対象と探索範囲を明示する。
 - 一般利用では「CONDUCTOR runではない」と明記し、`--conductor`を付けない。

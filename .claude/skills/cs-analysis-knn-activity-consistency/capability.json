@@ -52,6 +52,7 @@
   ],
   "output": {
     "filename": "A005_knn_activity_consistency.csv",
+    "report": "operator_report.html",
     "evidence": "evidence.json"
   },
   "implementation": {

@@ -338,12 +338,14 @@ class StateLogicTests(unittest.TestCase):
             )
             a006 = [node for node in analysis_nodes if node["capability_id"] == "A006"]
             self.assertEqual({description_node_by_capability[value] for value in ["D002", "D013", "D017"]}, {node["input_bindings"]["description"] for node in a006})
+            self.assertTrue(all(node["parameters"]["description_node_id"] == node["input_bindings"]["description"] for node in a006))
             self.assertEqual(
                 {description_node_by_capability["D002"]: "tanimoto", description_node_by_capability["D013"]: "manhattan", description_node_by_capability["D017"]: "tanimoto"},
                 {node["input_bindings"]["description"]: node["parameters"]["metric"] for node in a006},
             )
             a001 = [node for node in analysis_nodes if node["capability_id"] == "A001"]
             self.assertEqual({node["node_id"] for node in grouping_nodes}, {node["input_bindings"]["grouping"] for node in a001})
+            self.assertTrue(all(node["parameters"]["grouping_node_id"] == node["input_bindings"]["grouping"] for node in a001))
             a009 = [node for node in analysis_nodes if node["capability_id"] == "A009"]
             self.assertEqual({node["node_id"] for node in grouping_nodes if node["capability_id"] in {"C002", "C003"}}, {node["input_bindings"]["grouping"] for node in a009})
 

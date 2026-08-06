@@ -496,11 +496,13 @@ def configure_node_io(
             source_capability = capabilities[source_node["capability_id"]]
             bind_system_parameter(parameters, "description", str(primary_artifact_path(source_node, source_capability)))
             bind_system_parameter(parameters, "evaluation_representation", source_node["capability_id"])
+            bind_system_parameter(parameters, "description_node_id", source_node["node_id"])
         if grouping_node_ids:
             source_node = state_nodes(state)[grouping_node_ids[0]]
             source_capability = capabilities[source_node["capability_id"]]
             bind_system_parameter(parameters, "membership", str(primary_artifact_path(source_node, source_capability)))
             bind_system_parameter(parameters, "grouping_representation", source_node["capability_id"])
+            bind_system_parameter(parameters, "grouping_node_id", source_node["node_id"])
         if capability["capability_id"] in {"A003", "A007", "A010"}:
             bind_system_parameter(parameters, "evaluation_representation", "internal_morgan_r2_2048")
     elif stage == "interpretation":

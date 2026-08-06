@@ -77,6 +77,16 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state status \
 
 `status`の`wide_shallow_coverage`には、Description、Grouping、Operatorの軸別状態が表示される。「ヒントなし」と判断する前に、未実行、失敗、skipと代替の要否を確認する。
 
+人間がDAGを視覚確認したい場合だけ、State JSONを明示して読み取り専用reportを生成する。通常のOrchestration中に自動実行したり、DAG nodeとして登録したりしない。
+
+```bash
+python .claude/skills/cs-conductor-state-report/scripts/launch.py \
+  --state results/CONDUCTOR/jak2/<run_id>/state.json \
+  --explicit-request
+```
+
+成果物はStateと同じ場所の`state/<UTC timestamp>/`へ保存される。`state_report.html`は進捗、stage別集計、実行可能node、Group件数、Node詳細をまとめ、`state_dag.svg`は円形Nodeの色とEdgeの線種で実行済み、未実行、失敗、blocked、Interpretation履歴を区別する。`state_nodes.csv`と`state_summary.json`は監査・二次利用向けである。
+
 Groupの詳細は常時Stateへ展開せず、必要なときだけrun共通indexを読む。`groups`は由来と状態を表示し、`discard-group`は低価値領域を自動探索対象から外すが、所属列と履歴は削除しない。
 
 ```bash
@@ -213,7 +223,7 @@ python .claude/skills/cs-compute-description-morgan/scripts/launch.py \
   --conductor --project project_name --run-id RUN_ID --node-id D002
 ```
 
-`--conductor`は主結果に加え、schema検証済みmanifest、warnings、execution eventを生成する。Operatorは`evidence.json`、Groupingは`group_registry.json`も生成する。
+`--conductor`は主結果に加え、schema検証済みmanifest、warnings、execution eventを生成する。Operatorは`evidence.json`と自己完結`operator_report.html`、Groupingは`group_registry.json`も生成する。Operator reportにはDescription／GroupingのCapabilityとsource Node、対象scope・Group、主要指標、上位明細、制約、parameterを記載し、Interpretationから個別結果を掘り下げる入口とする。
 
 OperatorをGroup局所へ再適用する例:
 
@@ -252,7 +262,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state configur
   --walltime-minutes 240 --seed 61453
 ```
 
-Interpreterには`evidence.json`だけでなく`state.json`を渡す。Capability I001のrunnerは`draft`の`interpretation.json`、`interpretation_context.json`、Markdown、自己完結HTMLを準備する。専用Agentは元artifactを確認し、何を解析し、何を観察し、どう解釈し、なぜ注目するかを具体化して`agent_interpreted`へ最終化する。HはHypothesisの追跡IDであり、Evidence一件ごとには生成しない。Agentが追加解析を必要と判断した場合は、各discoveryに反証要求を持つ`exploration_plan.json`を作る。
+Interpreterには`evidence.json`だけでなく`state.json`を渡す。Capability I001のrunnerは`draft`の`interpretation.json`、`interpretation_context.json`、Markdown、自己完結HTMLを準備する。専用Agentは元artifactを確認し、何を解析し、何を観察し、どう解釈し、なぜ注目するかを具体化して`agent_interpreted`へ最終化する。HはHypothesisの追跡IDであり、Evidence一件ごとには生成しない。Agentが追加解析を必要と判断した場合は、各discoveryに反証要求を持つ`exploration_plan.json`を作る。Interpretation HTMLの「個別解析」linkから対応するOperator HTMLを開き、集約された解釈の根拠となる表現、Group、scope、数値明細を確認できる。
 
 Interpretationだけを再実行する場合もOrchestratorへ依頼する。既存のOperator NodeをEvidence依存として新しいInterpretation Nodeを登録する。最初のNodeが`I001`なら次は自動的に`I002`となるが、Capabilityはどちらも`I001`である。
 
