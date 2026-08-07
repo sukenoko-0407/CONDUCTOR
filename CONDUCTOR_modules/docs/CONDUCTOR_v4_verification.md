@@ -1,95 +1,72 @@
-# CONDUCTOR v4 検証記録
+# CONDUCTOR 4.3.0 検証記録
 
-検証日: 2026-08-05
+## 1. 結果概要
 
-## 自動試験
+2026-08-07にWindows開発環境で自動試験を実施し、**34件すべて合格**した。Catalog検証、Package配置検証、Skill環境を除くPython実装の構文検査も合格した。
 
-Windows、Python 3.12.12の既存`.venv`で、State、Repository契約、Runtime smokeを分割して実行した。OneDrive配下ではSkillごとのprocess起動が遅いため、Runtime smokeは全methodを複数batchに分けた。
-
-```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s CONDUCTOR_modules/tests -p "test_state_manager.py" -v
-.\.venv\Scripts\python.exe -m unittest discover -s CONDUCTOR_modules/tests -p "test_v4_contracts.py" -v
-# RuntimeSmokeTestsの全methodを複数batchで実行
+```text
+Ran 34 tests in 368.551s
+OK
+Validated 43 allowlisted capabilities
+CONDUCTOR package layout is valid
 ```
 
-結果: 34 tests passed（State 12、Repository契約7、Runtime smoke 15）。
+本記録は、新しいRunを対象とするcontrol plane、代表的な科学計算Smoke、一般利用／CONDUCTOR利用の契約を確認した結果である。旧Stateのmigrationや後方互換は対象外である。
 
-確認範囲:
+## 2. 確認済み項目
 
-- allowlist収載42 Skillの自己完結構成、命名、Linux/Windows Pixi platform
-- Project直下の`.claude/`と`CONDUCTOR_modules/`に分離したpackage配置、Catalog参照、Skill自身のProjectを優先するpath解決
-- Catalogと人間管理allowlistの一致、capability ID一意性、高コスト承認属性、およびC002の`preauthorized_initial`例外
-- root JSON Schemaの構文
-- CSVと複数SMILES入力
-- Description、Clustering、Operator、Interpretationの通常モードがCONDUCTOR補助artifactを出さないこと
-- 不完全な`--conductor` context、通常モードへの`--project`／`--node-id`混入、廃止済み`--metadata`をCLIが拒否すること
-- D001 → C001 → A002 → I001のCONDUCTOR artifact chain
-- execution eventがproject、run ID、node IDを持ち、State contextと照合されること
-- State dependency、承認gate、downstream traversal
-- `representative-family-wide-v1`がDescription 7、Grouping 9、Operator 36の計52 nodeへ展開され、3DのD013と承認不要の必須初手C002 MCSを含むこと
-- C005、C006、C007、C009、A001、A004、A006等がCatalog指定sourceへ個別bindingされ、vector Clusteringがrun元CSVや最初のDescriptionへ暗黙接続されないこと
-- A005/A006の表現別parameter overrideがStateへ保存され、初手でD004→cosine、D007→Tanimoto、D002→Tanimoto、D013→Manhattan、D017→Tanimotoとなること
-- vector Clusteringの`auto` Metricが表現に追従し、binaryまたは既知のbit fingerprintへTanimoto以外を拒否すること
-- MCS pair capがseed付き一様ランダム非復元抽出であり、先頭pair抽出を行わないこと
-- pairwise構造Operatorのpair capもseed付き一様ランダム非復元抽出であること
-- direct structure Grouping 4 Skillがcompound-ID/SMILES CSV必須かつDescription非依存で、inline SMILESを拒否すること。Description-vector Clustering 6 SkillがDescription CSV入力かつDescription依存であること
-- 旧SMILES-to-Morgan clustering wrapper 6 Skillが現役directoryとallowlistに存在しないこと
-- 初手DAGの再計画がnodeを重複生成せず、node固有`<node-id-safe>`出力先が衝突しないこと
-- `wide_shallow` nodeが`deep_dive`より優先され、初手がterminalになるまでInterpretationを開始できないこと
-- manifest、evidence、execution event、InterpretationのJSON Schema検証
-- `chemble_jak2.csv`全231行のD001 regression
-- Orchestrator SubagentのSkill呼出し権限と人間確認権限
-- invalid SMILESのDescription／Grouping行保持と重複ID拒否
-- C012 meta-overlapがoverlapを持つlong形式membership、およびcompound IDがshard間で反復するBoolean wide matrixを受理すること
-- binary DescriptionへのTanimoto clustering、binary vectorへの非Tanimoto metric拒否、raw SMILESのvector Skill入力拒否
-- 承認対象の高コストnodeの拒否または上流失敗時に、実行不能な下流nodeを理由付き`skipped`へ伝播すること
-- Stateの`start`による並列slot消費、`failed`の自動再試行抑止
-- 上流変更時のdomain/evidence graph node stale化
-- Morgan chiralityとGobbi Pharm2D SVDが統合Skillのparameter variantとして動作すること
-- Stateが計画と異なるvariant configurationを拒否すること
-- Group IDがrun内で一意であり、`group_registry.csv`とBoolean `Cpd_Group_matrix_*.csv`へ記録され、discardが履歴を削除しないこと
-- A006がMorgan表現をTanimotoへ自動解決し、Morganへのcosine指定を拒否すること。SALIの中央値・上側分位点・上位pairがevidenceへ残り、I001へfocus pairとして伝わること
-- A006をglobal、within-group、between-groupsで実行し、scope、標本数、global前処理基準、固有evidence ID、およびI001のglobal-local関係候補が保持されること
-- 専用Interpretation Agent、正本Interpretation Policy、Skill内Policy snapshot、探索Plan schemaの整合
-- Interpretation探索budget、seed、iteration、必須反証、analysis signature重複拒否、terminal Interpretation依存拒否のState制御
-- matched random等の明示compound scopeがrun inputと照合され、content-addressed membershipとして記録され、同一scopeの再登録が拒否されること
-- capability別`--help`が無関係なalgorithm optionを表示しないこと
-- 全42 Skillの人間向けREADMEが指定6 section、利用例、version 1.0.0の変更履歴を持ち、60行以内であること
+| 領域 | 確認内容 |
+|---|---|
+| State／DAG | schema検証、atomic write、lock、cycle拒否、依存関係、stale処理 |
+| Round／ID | 複数Round、checkpoint/handoff、`ND/NG/NO/NI`、Run-global `G/E/F/H/Q/REL/REQ`の継続 |
+| 基本計算 | 全Description計画、Direct structure Grouping、代表Description × Vector Clustering、高コスト一括gate |
+| 初期・追加探索 | Global全Operator role、代表Group local計画、seed付きbalanced非復元抽出、重複signature回避 |
+| 深掘り | Question gate、対象Group、兄弟Group、Global、Group間controlの比較bundle |
+| Group管理 | Run-global Group ID、単一Boolean matrix、registry、compound ID保持 |
+| MCS | `max_pairs <= 1000`、seed付きランダムpair sampling、`max_core_groups=300`既定 |
+| Metric | 表現semantics優先。binary fingerprint=Tanimoto、D001=Euclidean、D017 SVD=Cosine |
+| Operator | 一般モードの主要CSVのみ、CONDUCTORモードのCSV／Evidence／digest／HTML／manifest／event |
+| Interpretation | State予約ID、selective Evidence、Markdown／HTML、Agent finalization、State ledger登録 |
+| Package更新 | hash差分検出、未承認時のNode計画・実行停止、承認後の新snapshotと履歴 |
+| 説明HTML | inline CSS、base64画像、主要なRun／Round／DAG／解析phase記載 |
+| End-to-end | Description → Grouping → Operator → Interpretation → State登録の一連動作 |
 
-追加の静的確認:
+## 3. 回帰確認の範囲
 
-- `.claude`、`tools`、`tests`の現役Python 94 fileに対する書込みなし構文検査
-- 全42 Pixi manifestのTOML parse
-- 全Pixi manifestが`linux-64`と`win-64`を宣言
-- Catalog builderによる42 capability metadata検証とGrouping taxonomy検証
-- 全41個別実行Skillのmode文書、algorithm固有option、CLI guard、runner/template/schema整合
-- 全41個別実行Skillと開発templateのCONDUCTOR既定出力が`<skill>/<node-id-safe>/`で一致すること
-- 全41実行Skillの`--help`およびOrchestrator管理CLIのhelp成功
-- UTF-8 modeでSkill Creator validatorを実行し、全42 Skillが成功
+- 複数SMILES入力、invalid SMILES保持、重複compound ID拒否を確認した。
+- Description variant、MCS乱択、Vector Clustering metric、SALI landscape Evidenceを確認した。
+- JAK2 fixtureによるDescription回帰と、小規模SAR fixtureによる全体連鎖を確認した。
+- Description／Grouping／Operatorの計算Kernelは、Metric判定の不備修正を除き変更していない。
+- D001中の`FpDensityMorgan*`列名をfingerprintと誤認しないよう、Metric判定を列名依存からCatalog表現semantics優先へ修正した。
 
-## 手動smoke test
+## 4. 静的整合性
 
-`tests/data/small_sar.csv`と`chemble_jak2.csv`を使用した。Grouping整理後、実Description artifactを生成して現役Groupingを横断smoke testした。
+- 43のallowlisted Skillが自己完結に必要な`SKILL.md`、`README.md`、code、schema、Pixi定義を持つ。
+- `analysis_profile.json`が基本計算と初期探索の唯一の実行profileであり、旧`wide_shallow`固定選択はCapability metadata、Catalog、scaffoldから除去した。
+- State、Evidence、Interpretation、profileの正本schemaとSkill内copyを同期した。
+- `CONDUCTOR_modules/`はruntime read-onlyで、Run artifactは指定Run rootへ出力する。
 
-- Description: D001～D010、D012～D015、D017 folded、D017 SVD
-- Grouping: C001～C011を実Descriptionまたは元SMILES／カテゴリ入力で実行。C002 MCSは必須初手かつ承認不要であることをsmall SAR入力で確認。C012 meta-overlapはlong membership fixtureとBoolean wide matrix shardで実行
-- Operator: A001～A010
-- Interpretation: I001のJSON、Markdown、HTML生成、HTMLの全監査section、およびJSON編集後の再render。代表reportをローカルEdgeで描画し、探索概要、発見候補、矛盾、反証、negative result、監査情報の視認性を目視確認
-- State: init、plan-wide、record、runnable、resume、入力・設定変更による下流stale化
-- State: 承認対象高コストnodeの承認拒否と上流failureによるblocked descendant skip伝播
-- domain graphへのgroup登録とevidence graphへのevidence依存登録
-- 一般モードでのMorgan chiral variantとGobbi Pharm2D SVD variant
-- CONDUCTOR Stateでのvariant parameter記録、event configuration照合、mismatch拒否
-- D002 Morgan bit CSVからC005/C008/C009/C010へTanimoto入力し、D001のdense continuous CSVからC006/C007へ標準化Euclideanを自動選択するartifact chain
+## 5. 未実施の環境検証
 
-## 意図的に未実行の項目
+次はWindows開発機では確認できていない。Linux HPCへ配置後の受入試験として実施する。
 
-- D016 Mordred 3D: 高コスト
-- D019 pretrained embedding: GPUおよびローカルmodel weightが必要
-- D020 tblite/xTB: 非常に高コスト
+- 共有Pixi binary `/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi`
+- Skill `env/`内のPixi環境、Pixi cache、uv cacheの実作成と複数利用者共有
+- CPU 64 coreでの並列実行
+- A100 1枚＋CPU 8 coreでのD019
+- D020／tbliteのHPC実行
+- shared filesystem上のlock、中断、長時間Roundのpause/resume
+- 1,000～2,000化合物、多数Node／Evidenceでの性能benchmark
 
-上記はPolicyにより人間承認前に実行していない。C002 MCSはこの対象から外し、承認不要の必須初手として実行検証した。実装、capability別CLI、manifest、Catalog収載、Pixi環境定義は静的検証対象に含めた。D011とD018はそれぞれD002、D017へ統合したため実行対象の欠落ではなく、IDを欠番として保持している。旧`structure-butina`等6 SkillはMorgan生成とvector Clusteringの責務重複を解消するため、`CONDUCTOR_modules/Archive/v4-retired-clustering-wrappers/`へ退避した。
+また、説明HTMLはDOM文字列、埋込み画像、link構造を自動検証したが、この環境ではbrowser接続を利用できなかったため実ブラウザでの目視確認は未実施である。
 
-## 環境に関する制約
+## 6. 既知の注意点
 
-検証WindowsマシンにはPixi実行ファイルがなく、Linux用共有パスも存在しないため、各`pixi.toml`の実solveと環境作成は未検証である。全launcherが共有Pixiを優先し、Skill内manifestを絶対パス指定し、Pixi/uv等のcacheと一時領域を`<skill>/env/`配下へ強制することは静的検証した。受入時にLinux HPC/SIFでlauncher経由の`--help`と代表Skillのsmoke testを行い、`<skill>/env/.pixi/envs/default/`と`<skill>/env/cache/`が作成されること、processのfile write監査でworking directory外への書込みがないことを確認する。Windows対応を検証する場合はPATH上にPixiを導入して同じ試験を行う。
+- 全Description、特に高コスト3D／学習済み／量子化学表現の全組合せgolden試験はHPC側で追加確認する。
+- Package差分を同一Runへ承認して混在させる場合、以前のsnapshotも履歴へ残る。科学的比較ではNodeごとのRound、Capability version、artifact provenanceを確認する。
+- `routine`分類は削除や永久除外ではない。新しいRelationや人間指示により再昇格できる。
+- 多重探索による候補増加は設計上許容するが、Findingには比較経路、制約、反証状況を残す。
+
+## 7. Linux HPC受入後の完了条件
+
+未実施項目をHPCで確認し、環境差による既知問題を記録する。失敗時は科学計算Kernelとadapter／環境問題を分離して修正し、該当試験と全契約試験を再実行する。

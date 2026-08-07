@@ -129,6 +129,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id")
     parser.add_argument("--project")
     parser.add_argument("--node-id")
+    parser.add_argument("--round-id", help="Reserved CONDUCTOR Round ID.")
+    parser.add_argument("--evidence-id", help="Run-global Evidence ID reserved by the State Manager.")
     parser.add_argument("--conductor", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     if operator in {"knn_activity_consistency", "sali"}:
@@ -145,11 +147,11 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument("--random-seed", type=int, default=61453, help="Seed for uniform random sampling when eligible pairs exceed --max-pairs.")
     args = parser.parse_args()
     if args.conductor:
-        missing = [name for name in ("project", "run_id", "node_id") if not getattr(args, name)]
+        missing = [name for name in ("project", "run_id", "node_id", "round_id", "evidence_id") if not getattr(args, name)]
         if missing:
-            parser.error("--conductor requires --project, --run-id, and --node-id")
-    elif args.project or args.node_id:
-        parser.error("--project and --node-id are valid only with --conductor")
+            parser.error("--conductor requires --project, --run-id, --node-id, --round-id, and --evidence-id")
+    elif args.project or args.node_id or args.round_id or args.evidence_id:
+        parser.error("--project, --node-id, --round-id, and --evidence-id are valid only with --conductor")
     if hasattr(args, "k") and args.k < 1:
         parser.error("--k must be >= 1")
     if hasattr(args, "max_pairs") and args.max_pairs < 1:
@@ -467,10 +469,15 @@ def resolve_metric(matrix: np.ndarray, features: list[str], args: argparse.Names
     representation = str(args.evaluation_representation or "").upper()
     feature_names = [str(feature).lower() for feature in features]
     fingerprint_ids = {"D002", "D003", "D007", "D008", "D009", "D010"}
-    is_fingerprint = representation in fingerprint_ids or any("morgan" in name for name in feature_names)
-    is_binary = bool(matrix.size) and bool(np.all((matrix == 0) | (matrix == 1)))
-    is_usr = representation == "D013" or any(name.startswith(("usr__", "usrcat__")) for name in feature_names)
     is_latent = representation == "D019" or any("embedding" in name or "svd" in name for name in feature_names)
+    declared_binary = representation in fingerprint_ids or (representation == "D017" and not is_latent)
+    inferred_binary = not representation and bool(matrix.size) and bool(np.all((matrix == 0) | (matrix == 1)))
+    is_fingerprint = declared_binary or (
+        not representation and bool(feature_names)
+        and all(name.startswith(("morgan_", "maccs_", "rdkitfp_", "patternfp_", "layeredfp_")) for name in feature_names)
+    )
+    is_binary = declared_binary or inferred_binary
+    is_usr = representation == "D013" or any(name.startswith(("usr__", "usrcat__")) for name in feature_names)
     nonnegative_integer = bool(matrix.size) and bool(np.all(matrix >= 0) and np.allclose(matrix, np.round(matrix)))
     sparse = bool(matrix.size) and float(np.count_nonzero(matrix)) / float(matrix.size) < 0.5
 
@@ -703,7 +710,7 @@ def run() -> int:
     if outdir.exists() and any(outdir.iterdir()):
         if not args.overwrite:
             raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
-        for name in [CAPABILITY["output"]["filename"], "operator_report.html", "analysis_manifest.json", "evidence.json", "warnings.json", "execution_event.json"]:
+        for name in [CAPABILITY["output"]["filename"], "operator_report.html", "analysis_manifest.json", "evidence.json", "evidence_digest.json", "warnings.json", "execution_event.json"]:
             (outdir / name).unlink(missing_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
     result, summary, warnings = execute(operator, property_table, groups, description, features, args, reference_description)
@@ -736,10 +743,10 @@ def run() -> int:
     else:
         human_summary = f"{CAPABILITY['display_name']} analyzed scope={scope['mode']} with {scope['sample_count']} endpoint rows. See {result_path.name}."
         uncertainty = None
-    evidence_context = str(args.node_id or f"{args.evaluation_representation or 'NA'}:{scope['compound_set_hash'][:12]}").replace(" ", "_")
     evidence = {
-        "schema_version": "1.0.0", "evidence_id": f"{run_id}:{CAPABILITY['operator_id']}:{evidence_context}:0001",
+        "schema_version": "2.0.0", "evidence_id": args.evidence_id or f"standalone:{value_hash([run_id, CAPABILITY['operator_id'], scope['compound_set_hash']])[:16]}",
         "operator_id": CAPABILITY["operator_id"], "operator_name": CAPABILITY["display_name"], "operator_version": CAPABILITY["version"], "run_id": run_id,
+        "round_id": args.round_id, "source_node_id": args.node_id,
         "target_group_id": target_group, "grouping_representation": args.grouping_representation, "evaluation_representation": args.evaluation_representation,
         "input_features": features, "sample_count": int(scope["sample_count"]), "scope": scope, "result_type": operator, "result_values": summary,
         "statistical_significance": {key: value for key, value in summary.items() if "pvalue" in key or "qvalue" in key} or None,
@@ -750,7 +757,7 @@ def run() -> int:
         "artifacts": [{"type": "operator_result", "path": result_path.name, "sha256": file_hash(result_path)}], "created_at": utc_now()
     }
     config = {key: value for key, value in vars(args).items()}
-    manifest = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now()}
+    manifest = {"schema_version": "1.0.0", "conductor_version": "4.3.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now()}
     if args.conductor:
         report_path = outdir / "operator_report.html"
         report_path.write_text(
@@ -766,7 +773,20 @@ def run() -> int:
     if args.conductor:
         validate_json(evidence, "evidence.schema.json")
         write_json(outdir / "evidence.json", evidence)
-        event = {"schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id, "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded", "input_hash": input_hash, "config_hash": value_hash(config), "configuration": config, "artifacts": [{"type": "operator_result", "path": result_path.name, "sha256": file_hash(result_path)}, {"type": "operator_report", "path": "operator_report.html", "sha256": file_hash(outdir / "operator_report.html")}, {"type": "evidence", "path": "evidence.json", "sha256": file_hash(outdir / "evidence.json")}, {"type": "manifest", "path": "analysis_manifest.json", "sha256": file_hash(outdir / "analysis_manifest.json")}], "warnings": warnings, "started_at": started_at, "finished_at": utc_now()}
+        digest = {
+            "schema_version": "1.0.0", "evidence_id": evidence["evidence_id"], "source_node_id": args.node_id,
+            "round_id": args.round_id, "operator_id": evidence["operator_id"], "scope_mode": scope["mode"],
+            "sample_count": int(scope["sample_count"]), "target_group_id": target_group,
+            "evaluation_representation": args.evaluation_representation, "grouping_representation": args.grouping_representation,
+            "metric": summary.get("metric"), "summary": human_summary, "warnings": warnings,
+            "key_statistics": {key: clean_json(value) for key, value in summary.items() if isinstance(value, (str, int, float, bool))},
+            "artifact_path": str((outdir / "evidence.json").resolve()),
+            "comparison_keys": {"operator_id": evidence["operator_id"], "scope_mode": scope["mode"], "target_group_id": target_group, "evaluation_representation": args.evaluation_representation, "grouping_representation": args.grouping_representation, "metric": summary.get("metric")},
+            "created_at": utc_now(),
+        }
+        validate_json(digest, "evidence_digest.schema.json")
+        write_json(outdir / "evidence_digest.json", digest)
+        event = {"schema_version": "1.0.0", "project": args.project, "run_id": run_id, "round_id": args.round_id, "node_id": args.node_id, "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded", "input_hash": input_hash, "config_hash": value_hash(config), "configuration": config, "artifacts": [{"type": "operator_result", "path": result_path.name, "sha256": file_hash(result_path)}, {"type": "operator_report", "path": "operator_report.html", "sha256": file_hash(outdir / "operator_report.html")}, {"type": "evidence", "path": "evidence.json", "sha256": file_hash(outdir / "evidence.json")}, {"type": "evidence_digest", "path": "evidence_digest.json", "sha256": file_hash(outdir / "evidence_digest.json")}, {"type": "manifest", "path": "analysis_manifest.json", "sha256": file_hash(outdir / "analysis_manifest.json")}], "warnings": warnings, "started_at": started_at, "finished_at": utc_now()}
         validate_json(event, "execution_event.schema.json")
         write_json(outdir / "execution_event.json", event)
     print(result_path)

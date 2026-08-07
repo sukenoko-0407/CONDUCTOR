@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -35,10 +36,9 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
     high_cost = value["cost"].get("class") in {"high", "very_high"}
     approval_required = bool(value["cost"].get("human_approval_required"))
     if approval_policy == "preauthorized_initial":
-        if not high_cost or approval_required or not value.get("default_wide_shallow"):
+        if not high_cost or approval_required:
             raise ValueError(
-                f"{expected_name}: preauthorized_initial requires a high-cost, "
-                "approval-free default_wide_shallow capability"
+                f"{expected_name}: preauthorized_initial requires a high-cost, approval-free capability"
             )
     elif high_cost and not approval_required:
         raise ValueError(f"{expected_name}: high-cost capability must require human approval unless explicitly preauthorized")
@@ -63,21 +63,21 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
 
 
 def render_markdown(catalog: dict[str, Any]) -> str:
-    lines = ["# CONDUCTOR v4 Skill Catalog", "", "> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`で指定する。", "", f"Generated: `{catalog['generated_at']}`", ""]
+    lines = ["# CONDUCTOR 4.3.0 Skill Catalog", "", "> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。", "", f"Profile: `{catalog['profile_id']}`", f"Generated: `{catalog['generated_at']}`", ""]
     for stage in ["description", "grouping", "analysis", "interpretation", "orchestration"]:
         entries = [entry for entry in catalog["capabilities"] if entry["stage"] == stage]
         if not entries:
             continue
-        lines.extend([f"## {stage.title()}", "", "| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Wide axis | Wide sources | Cost | Status | Human approval |", "|---|---|---|---|---|---|---|---|---|---|---|---|"])
+        lines.extend([f"## {stage.title()}", "", "| ID | Skill | Capability | Variants | Family | Grouping kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |", "|---|---|---|---|---|---|---|---|---|---|---|---|"])
         for entry in entries:
             variants = ", ".join(item["id"] for item in entry.get("variants") or []) or "-"
             if entry.get("default_variant"):
                 variants += f" (default: {entry['default_variant']})"
-            axis = entry.get("wide_shallow_axis") or "-"
-            sources = "; ".join(f"{role}: {', '.join(values)}" for role, values in (entry.get("wide_shallow_sources") or {}).items()) or "-"
+            semantics = entry.get("value_semantics") or "-"
+            metric = entry.get("natural_metric") or "-"
             grouping_kind = entry.get("grouping_kind") or "-"
             input_contract = ", ".join(entry.get("input_contract") or []) or "-"
-            lines.append(f"| {entry['capability_id']} | `{entry['skill_name']}` | {entry['display_name']} | {variants} | {entry['family']} | {grouping_kind} | {input_contract} | {axis} | {sources} | {entry['cost']['class']} | {entry['applicability']['status']} | {entry['cost']['human_approval_required']} |")
+            lines.append(f"| {entry['capability_id']} | `{entry['skill_name']}` | {entry['display_name']} | {variants} | {entry['family']} | {grouping_kind} | {input_contract} | {semantics} | {metric} | {entry['cost']['class']} | {entry['applicability']['status']} | {entry['cost']['human_approval_required']} |")
         lines.append("")
     return "\n".join(lines)
 
@@ -89,6 +89,13 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
     names = selection.get("included_skills") or []
     if len(names) != len(set(names)):
         raise ValueError("included_skills contains duplicates")
+    profile_path = modules / "catalog" / "analysis_profile.json"
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    try:
+        import jsonschema
+    except ImportError as exc:
+        raise RuntimeError("jsonschema is required to validate the analysis profile") from exc
+    jsonschema.validate(profile, json.loads((modules / "schemas" / "analysis_profile.schema.json").read_text(encoding="utf-8")))
     capabilities = []
     for name in names:
         path = workspace / ".claude" / "skills" / name / "capability.json"
@@ -96,43 +103,25 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
             raise FileNotFoundError(f"Allowlisted Skill metadata not found: {path}")
         value = json.loads(path.read_text(encoding="utf-8"))
         validate_capability(value, name)
+        value = dict(value)
+        semantics = (profile.get("description_semantics") or {}).get(value["capability_id"])
+        if semantics:
+            value.update(semantics)
         capabilities.append(value)
     capabilities.sort(key=lambda item: item["capability_id"])
     ids = [item["capability_id"] for item in capabilities]
     if len(ids) != len(set(ids)):
         raise ValueError("Capability IDs must be unique")
-    by_id = {item["capability_id"]: item for item in capabilities}
-    for capability in capabilities:
-        if not capability.get("default_wide_shallow"):
-            continue
-        if not capability.get("wide_shallow_axis"):
-            raise ValueError(f"{capability['capability_id']}: default wide-shallow capability requires wide_shallow_axis")
-        sources = capability.get("wide_shallow_sources") or {}
-        parameter_overrides = capability.get("wide_shallow_parameter_overrides") or {}
-        for dependency_stage in (stage for stage in capability.get("dependencies") or [] if stage != "evidence"):
-            if dependency_stage not in sources:
-                raise ValueError(f"{capability['capability_id']}: default wide-shallow dependency {dependency_stage} requires explicit wide_shallow_sources")
-            for source_id in sources[dependency_stage]:
-                if source_id == "*":
-                    continue
-                source = by_id.get(source_id)
-                if source is None:
-                    raise ValueError(f"{capability['capability_id']}: unknown wide-shallow source {source_id}")
-                if source["stage"] != dependency_stage:
-                    raise ValueError(f"{capability['capability_id']}: source {source_id} is not stage {dependency_stage}")
-                if not source.get("default_wide_shallow"):
-                    raise ValueError(f"{capability['capability_id']}: source {source_id} is not in the default wide-shallow plan")
-        for dependency_stage, source_overrides in parameter_overrides.items():
-            if dependency_stage not in (capability.get("dependencies") or []):
-                raise ValueError(f"{capability['capability_id']}: parameter override stage {dependency_stage} is not a dependency")
-            allowed_sources = sources.get(dependency_stage) or []
-            for source_id in source_overrides:
-                source = by_id.get(source_id)
-                if source is None or source["stage"] != dependency_stage:
-                    raise ValueError(f"{capability['capability_id']}: invalid parameter override source {source_id}")
-                if "*" not in allowed_sources and source_id not in allowed_sources:
-                    raise ValueError(f"{capability['capability_id']}: parameter override source {source_id} is not declared in wide_shallow_sources")
-    catalog = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
+    known = set(ids)
+    referenced = set()
+    for key in ["description_capabilities", "direct_structure_grouping", "vector_grouping_capabilities", "vector_grouping_representations", "conditional_grouping", "high_cost_bundle"]:
+        referenced.update(item for item in profile["basic_compute"][key] if item != "*")
+    for key in ["description_master_panel", "global_operator_capabilities", "local_operator_capabilities"]:
+        referenced.update(profile["initial_exploration"][key])
+    unknown = sorted(referenced - known)
+    if unknown:
+        raise ValueError(f"Analysis profile references unknown capabilities: {unknown}")
+    catalog = {"schema_version": "1.1.0", "conductor_version": "4.3.0", "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
     return catalog, render_markdown(catalog)
 
 

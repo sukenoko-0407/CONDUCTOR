@@ -1,52 +1,64 @@
 # CONDUCTOR Session Handoff
 
-> この文書はセッション間の案内索引であり、実行状態の正本は`state.json`、科学的根拠の正本は各artifactである。新しいセッションでは必ず両者を再確認する。
+このMarkdownは人間向けnavigationである。正本は`state.json`、各Round artifact、各科学計算artifactとする。通常は`round_summary.json`と`next_round_brief.json`から再生成する。
 
 ## Run identity
 
-- Project:
+- State:
 - Run ID:
-- State path:
-- Input path / input hash:
-- Endpoint / higher_is_better:
-- Handoff updated at:
-- State updated_at at handoff:
+- Project:
+- Input:
+- Endpoint:
+- Higher is better:
+- Package／profile snapshot:
 
-## 現在地
+## Round
 
-- 完了した解析Round:
-- 現在のphase:
-- 完了／実行中／未完了／失敗nodeの概要:
-- 最新のInterpretation Node IDと前回Node:
-- 人間指定で追加した`human_directed` Node:
-- Wide analysisのcoverage gap:
-- Exploration budgetの累積消費と現在の上限:
+- Activeまたは直近Round:
+- Status:
+- 次に期待するRound:
+- 開始時の人間指示:
+- Stop reason:
 
-## 前回までの重要な観察
+## Coverage
 
-- 注目候補:
-- 反証結果・negative evidence:
-- 未解決の矛盾:
-- 深掘り済みで優先度を下げた領域:
+- Basic compute:
+- Initial global:
+- Initial local:
+- Additional exploration:
+- Deep dive:
+- Failed／unavailable／waived:
 
-## 参照すべきartifact
+## Knowledge frontier
 
-- 最新の`interpretation.json`:
-- 過去Interpretationとのlineage:
-- 人間向け`interpretation.md` / `interpretation.html`:
-- 未処理の`exploration_plan.json`:
-- 重要な`evidence.json`:
-- `group_registry.csv`:
+- Priority Finding:
+- Active Hypothesis:
+- Active Question:
+- Human-skipped／deferred Question:
+- Unresolved contradiction:
+- Human-pinned Evidence:
 
-## 人間からの指示
+## Pending work
 
-- 今回までに受けた指示:
-- 次回の優先課題:
-- 避ける解析または対象外範囲:
-- 保留中の承認事項:
+- Runnable Node:
+- Approval待ち:
+- HPC job:
+- Coverage gap:
+- Reopen recommendation:
 
-## 次のセッションへの提案
+## 参照artifact
 
-- 最初に確認する事項:
-- 次に実行可能なbranch:
-- 必要な追加予算または承認:
+- Latest `state_summary.json`:
+- Latest `round_summary.json`:
+- Latest `next_round_brief.json`:
+- Latest `interpretation.html`:
+- Operator report:
+
+## 次のセッション
+
+```text
+`cs-conductor-orchestrator` Agentを使用して、既存CONDUCTOR Runの解析Round <RND####>を開始してください。
+同Roundがactiveなら再開してください。
+State: <ABSOLUTE_STATE_JSON_PATH>
+今回の重点: <任意>
+```

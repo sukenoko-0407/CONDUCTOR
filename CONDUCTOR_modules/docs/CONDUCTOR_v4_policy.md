@@ -1,135 +1,92 @@
-# CONDUCTOR v4 Orchestration Policy
+# CONDUCTOR 4.3.0 Orchestration Policy
 
 ## 1. 役割
 
-Orchestration Agentは、Catalogに収載されたSkillだけを使い、run StateのDAGを更新しながら、広く浅い解析から情報価値の高い局所解析へ進む。固定的な総当たり手順ではなく、得られたevidenceと利用可能資源に応じて計画を更新する。
+Orchestratorは、Catalogで人間が許可したSkillだけを使い、Run内のRound、coverage、DAG、Question、salienceを管理する。科学計算をSkill外へ複製せず、機械的coverageと探索的判断を分離する。
 
 ## 2. 絶対条件
 
-- 人間が指定したendpointを1 runにつき一つだけ扱う。
-- run開始前に`higher_is_better`を確認する。
-- 活性値の単位変換やpActivity化を暗黙に行わない。
-- 分子標準化を行わない。入力構造を人間が準備したものとして扱う。
-- 重複IDがあれば停止する。invalid SMILESは保持して警告する。
-- Catalog allowlist外のSkillをCONDUCTOR実行に使用しない。
-- State DAG nodeとしてSkillを実行するときは`--conductor`、Stateのproject、run ID、予約済みnode IDを必ず一組で渡す。execution eventが期待contextと一致しなければ完了扱いにしない。
-- capability内のvariantまたはparameter setを変える場合は別nodeを作り、Stateの`parameters`へ記録する。execution eventの`configuration`が計画値と一致しなければ完了扱いにしない。
-- 個別計算の依頼をrepository名や互換artifactだけからCONDUCTOR実行と推測しない。CONDUCTORの明示がなければ個別Skillの通常モードとする。
-- CONDUCTOR実行が明示されているがrun contextが未作成なら、個別Skillを先行実行せずStateとnodeを初期化する。識別子の捏造や通常モードへの黙示的降格を行わない。
-- 高コスト処理は原則として、目的、対象、概算資源、期待する情報を提示して人間の承認を得る。ただし人間管理Catalogで`approval_policy=preauthorized_initial`と明記されたC002 MCSは、必須初手としてrunごとの承認を不要とする。
-- 並列数は人間が指定した上限を超えない。
-- Operatorの数値的観察とInterpretationの推論を混同しない。
-- 相関を因果として断定しない。
+- 1 Runは一つのendpointと`higher_is_better`を扱う。
+- input、endpoint、方向を黙示的に変更しない。
+- 分子標準化、単位変換、pActivity化を暗黙に行わない。
+- 重複compound IDでは停止する。invalid SMILESは保持して警告する。
+- Catalog外Capabilityを使わない。
+- CONDUCTOR Nodeは必ず予約後に`--conductor`、project、run ID、Node ID、設定、output directoryを渡して実行する。
+- 同じanalysis signatureを理由なく再実行しない。
+- 高コスト基本計算はRunごとに一括承認し、承認scopeを記録する。
+- 新しい高コスト深掘りは目的、対象、資源、期待情報を示して別途確認する。
+- 人間指定parallel limitを超えない。
+- 同じStateを複数Orchestratorが同時に更新しない。
+- 相関、局所傾向、SALIを因果や機序として断定しない。
 
-## 3. 広く浅い探索
+## 3. Round lifecycle
 
-初手は「計算量を最小化するpass」ではなく「深掘り対象となるヒントを取りこぼさないpass」である。低～中コストの一種類だけで結論を出す狭く浅い解析を禁止し、互いに異なる情報軸、Grouping原理、Operator観点を最初から計画する。一定の計算コストは網羅性のための基礎費用として受け入れる。
+人間が新規または継続Round番号とState pathを指定する。番号がStateの`next_round`と一致すれば開始し、同番号がactiveなら再開する。完了済み番号、欠番、別active Roundがある場合は書き込まず報告する。
 
-初手の標準profileを`representative-family-wide-v1`とし、Catalog metadataの`default_wide_shallow`、`wide_shallow_axis`、`wide_shallow_sources`を正本とする。現行profileは次を必須代表とする。
+Roundは既定resource envelopeをsnapshotする。人間の追加指示がなければ、未完了mandatory coverage、前Roundの`next_round_brief`、active Question、coverage gapに基づいて進める。承認応答は新Roundに数えない。
 
-### 3.0 状態認識とGroup管理
+## 4. Phase gate
 
-Orchestratorの通常判断では、run phase、nodeの完了／未完了、初手coverage、runnable node、active/discarded Group数という粗い状態を優先する。個々の化合物所属やGroup由来は、候補選択、比較、反証を行う時だけ詳細索引から読む。State本体へ巨大なmembershipを埋め込まない。
+1. `basic_compute`を初期探索より優先する。
+2. 基本計算の失敗は再試行・代替を確認し、解決不能なら人間の`waived`なしに黙って探索へ進まない。
+3. `initial_global`と`initial_local`がterminalになるまで、自動`additional_exploration`と`deep_dive`を開始しない。人間の明示的overrideは理由付きで許容する。
+4. `not_applicable`は成功の代用ではなく、科学的・技術的理由を持つcoverage状態とする。
 
-全Groupはrun内で一意なGroup IDを持つ。化合物所属は`grouping/group_index/Cpd_Group_matrix_G000000_099999.csv`形式の横持ちBoolean matrix、Group由来は`grouping/group_index/group_registry.csv`で管理する。Group列が10万を超える場合だけ次のmatrix shardを追加する。
+## 5. 基本計算
 
-詳細索引の完全な常時把握は要求しない。十分に検討して情報価値が低い領域は、理由を記録してGroupを`discarded`にできる。discardは履歴とmembership列を削除せず、以後の自動優先候補から外す操作とする。
+Catalog profileに含まれる全Descriptionを計画する。高コストを無言で除外しない。runtime preflightでbinary、model weight、GPU、3D／quantum依存を確認し、`succeeded/failed/unavailable/waived`を区別する。
 
-### 3.1 Description
+Groupingはdirect structureとDescription-vectorを混同しない。vector metricは入力表現から決定し、binary fingerprintはTanimotoを必須とする。MCSの制限pairはseed付き一様ランダム非復元抽出とする。
 
-- D001 RDKit 2D: 2D物性・topological scalar
-- D002 Morgan: 局所circular graph
-- D003 MACCS: curated substructure key
-- D004 Atom Pair: 長距離topological atom pair
-- D007 RDKit Path: path・subgraph
-- D013 USR/USRCAT: 3D shape・3D pharmacophore。3Dを初手から除外しない
-- D017 Gobbi Pharm2D folded: 2D pharmacophore
+## 6. 初期探索
 
-高コストmodel依存・量子化学表現はこの標準profileへ自動投入しないが、D019、D020を含む未実行軸をcoverage auditへ明記する。追加価値が見込まれる場合は、初手結果の有無にかかわらず人間承認候補として提示する。
+### 6.1 Global wave
 
-### 3.2 Grouping
+全体scopeで全applicable Operator roleを実行する。Description依存Operatorは共通master panelを互換性でfilterする。Grouping-wide Operatorは全Grouping artifactをscreenし、Group size、Endpoint分散、enrichment、構造凝集性、overlap semanticsをcompact summaryへ出す。
 
-Groupingは、入力と責務が異なる二系統を混同しない。
+### 6.2 Local wave
 
-- direct structure Groupingはrunのcompound-ID/SMILES CSVを必須入力とし、そのSMILESを直接処理する。inline SMILESは受け付けず、Description vectorを生成・消費しない。
-  - C001 Murcko: scaffold rule
-  - C002 MCS: maximum common substructure。構造Groupingの中心的な確認軸として全runの初手に必ず計画・実行する。高コストだが`preauthorized_initial`であり、runごとの事前承認は不要。pair上限時は記録されたseedによる一様ランダム非復元抽出を行う
+各Grouping Nodeから、十分なNで局所性を保つGroup、中程度Group、構造凝集性の高いGroup、Endpoint dispersion極値、既選択と低重複のGroupを選ぶ。Endpoint依存選択はdiscovery biasとして記録する。
 
-pairwise構造Operatorもpair上限超過時に先頭から切らず、Stateへ記録したseedでeligible pairを一様ランダム非復元抽出する。
-  - C003 BRICS: fragment decomposition
-- Description-vector ClusteringはDescription SkillのCSV artifactだけを入力し、raw SMILESや内部生成fingerprintを使わない。
-  - C005 vector Butina: D002 MorganをTanimotoのbinary vector空間で分割
-  - C006 vector hierarchical: D001、D013、D017の各表現で別nodeとして実行
-  - C007 vector DBSCAN: D001の連続値空間でdensity-based grouping
-  - C009 vector Leiden: D002 Morganの類似graphでcommunity検出
-- assay条件が複数ならC011 categoricalを追加する。
+代表Groupには全applicable local Operator roleを計画する。A009のような単一Group非対応Operatorを無理に実行しない。Grouping-wide出力の既存行で同じcoverageを満たせる場合は重複Nodeを作らない。
 
-同一algorithmを全Descriptionへ総当たりしない一方、物性、2D fingerprint、3D shape、pharmacophoreという異なるvector空間と、similarity partition、hierarchy、density、graph communityという異なる原理を初手から観測する。各vector nodeは上流Descriptionを明示的にbindingし、最初に生成されたDescriptionへ暗黙接続しない。`structure-butina`のようにSMILESからfingerprintをSkill内部で生成する複合ラッパーはCatalogへ収載しない。
+排他的partitionのGroup間比較は、同じendpoint、同じDescription、同じmetricで行う。重複Groupを母集団partitionとして扱わない。
 
-vector ClusteringのMetricはAlgorithmではなく入力Description表現から決定する。binaryおよびMorganはTanimotoを必須とし、USR/USRCATはManhattan、疎なcount vectorとembedding/SVDはCosine、その他の連続descriptorは標準化Euclideanを基本とする。`metric=auto`とStateの`input_representation`を正本とし、binaryまたは既知のbit fingerprintへTanimoto以外が明示された場合は停止する。
+## 7. 追加探索
 
-### 3.3 Operator
+未実行かつ有効なanalysis cellをfamily、Operator、scopeで層化し、実施数の少ない層を優先してseed付きランダム非復元抽出する。candidate pool hash、seed、採択順、除外理由を記録する。Agentの仮説でrandom探索を歪めない。
 
-- A002 endpoint distribution、A003 pairwise structure space、A007 structure-based activity cliffを全体に実行する。
-- A004 descriptor-activity associationをD001とD013へ実行する。
-- A005 kNN activity consistencyをD004とD007へ実行する。
-- A006 SALIをD002、D013、D017へ実行する。
-- A001 group profileとA008 group enrichmentを初手の全Grouping nodeへ実行する。
-- A009 group overlapを、重複MCS Groupを持ち得るC002とfragment Groupを持つC003へ実行する。
-- A010 group structural diversityをC001、C002、C003および各C006 nodeへ実行する。
+## 8. 深掘り
 
-Description空間を使うOperatorのmetricは表現特性に従う。A006 SALIはD002 MorganにTanimoto、D013 USR/USRCATにManhattan、D017 folded Pharm2DにTanimotoを使用し、一律のmetricへ置換しない。SALIは上位pairだけでなくmedianとupper tailを合わせてlandscapeの平滑性・起伏として評価する。高SALI pairは局所Cliff候補として構造差、pharmacophore差、Grouping、assay条件、他表現で意味を検証する。異なるmetric間のraw SALI値は直接比較しない。
+深掘りNodeは原則Questionへ所属し、単独Nodeではなく比較bundleとして計画する。Questionの人間decisionが`skip`なら自動実行しない。`defer`は保留し、`allow`または未reviewでresource envelope内なら候補にできる。
 
-これは全Description × 全Grouping × 全Operatorの総当たりではない。各情報軸を少なくとも一度観測し、重要な局所関係を独立表現で照合できる最小の網羅profileである。
+注目結果には反証、control、異Description、global／local、sibling Groupの少なくとも一つを検討する。すべてを無理に実行するのではなく、代替説明を識別できる比較を優先する。
 
-### 3.4 Coverage audit
+## 9. Evidenceの読込
 
-各初手nodeはStateで`phase=wide_shallow`と`coverage_axis`を持つ。OrchestratorはDescription、Grouping、Operatorの必須軸とsource bindingを確認し、初手nodeの未実行、失敗、skipを明示する。ある軸のSkillが失敗した場合は、同じ軸の代替Skillを検討してからcoverage不足を受容する。
+全Evidenceの存在、digest、provenance、coverageは保持する。毎Round全文を再読込しない。標準読込順は次とする。
 
-「有望なヒントがない」という判断は、初手profileの成功または説明付き代替・skipを確認した後に限る。初手の一部結果だけを見て残りを打ち切らない。dataset規模によりmedium costが実質的に高コスト化する場合も、無言で除外せず、対象分割、近似、代替または人間承認を選ぶ。
+1. `state_summary.json`
+2. 最新Round summaryと`next_round_brief`
+3. untriaged、priority、human-pinned、active Question関連digest
+4. 新Evidenceとindex keyが一致するroutine digest
+5. 必要な完全Evidence、CSV、Operator HTML
 
-Stateはrunnable nodeのうち`wide_shallow` phaseを`deep_dive`より優先する。Interpretation nodeは全初手nodeが`succeeded/failed/skipped`のいずれかへ到達するまで開始できない。C002 MCSは承認待ちにせず実行し、失敗した場合は具体的な理由を記録して、それだけに依存する下流nodeを理由付き`skipped`にする。
+全EvidenceペアのCartesian comparisonは禁止する。
 
-## 4. 深掘り判断
+## 10. Salience
 
-次のいずれかが観察された局所を深掘り候補とする。
+Operator artifactはimmutableとし、importanceは可変indexで管理する。`routine`は削除、忘却、coverage除外を意味しない。新しいRelation、Question、人間指示、反証候補により再昇格できる。human pinは人間が解除するまで自動降格しない。
 
-- 十分なsample数を持つgroupで実用的なactivity shiftがある。
-- 近傍で大きなactivity差があり、cliffが一件だけでなく再現している。
-- 異なる表現familyまたは異なる原理のOperatorが同じ方向を支持する。
-- 支持evidenceと矛盾evidenceが併存し、追加解析で識別可能である。
-- 構造的に多様だがactivityが揃う、または構造的に近いのにactivityが割れる。
-- 欠損やassay条件混在では説明できない例外が残る。
+## 11. 失敗・再開・変更検出
 
-effect size、p値、固定閾値だけで自動判定しない。dataset size、測定精度、group定義、evidence依存性を併記して判断する。
-
-## 5. 高コスト判定と人間確認
-
-GPU、外部model weight、大規模pairwise計算、3D conformer大量生成、量子化学計算、Catalogで`high`または`very_high`とされたSkillは高コストとして扱う。原則として実行前に次を人間へ提示する。C002 MCSだけは、人間がCatalog方針として初手実行を事前許可した例外であり、dataset規模にかかわらずrunごとの承認を求めない。
-
-- Skill名と対象node/group
-- なぜ今必要か
-- 既存evidenceでは何が不足しているか
-- CPU/GPU、並列数、概算時間と保存量
-- 実行しない場合の代替案
-
-## 6. 失敗と再開
-
-- optional Skillの失敗はrun全体を直ちに失敗させず、Stateへ記録して代替を検討する。
-- 必須入力、ID一意性、endpoint、State整合性の失敗は停止する。
 - 上流artifactが変われば下流を`stale`にする。
-- resume時は`succeeded`かつhash一致のnodeを再実行しない。
-- 同じ失敗を無制限に再試行しない。原因と代替案を人間へ示す。
-- 同一Description・Grouping・Operator analysis signatureを理由なく再登録しない。意図的replicationだけを明示的な例外とする。同じEvidenceに対する新しいInterpretation roundは別に管理する。
-- Groupを捨てる場合はGroup IDと理由を記録し、matrix列や過去evidenceを削除しない。
-- 人間指定の部分解析もState外でSkillを直接実行せず、`human_directed` Nodeとして理由、上流binding、parameter、eventを記録する。
+- 同じ失敗を無制限に再試行しない。
+- active Round、running Node、lock、pending approvalを再開時に検査する。
+- package、Catalog、profile、Policy hashが変わった場合は差分を提示し、承認なく混在させない。
+- Derived index不整合時はimmutable artifactとStateから再構築する。
+- 旧Stateはimportしない。新規Runとして開始する。
 
-## 7. Interpretationへの引き渡し
+## 12. Round終了
 
-Interpretationは`CONDUCTOR_modules/docs/CONDUCTOR_v4_interpretation_policy.md`に従う専用Agentへ委譲する。注目結果だけでなく、全evidence、Group詳細、警告、negative result、失敗、skip、未実行候補、analysis signature、evidence依存関係、過去Interpretationを渡す。
-
-Interpretation nodeは読み取り専用の終端とし、State更新やOperator直接実行を許可しない。追加解析は`exploration_plan.json`として返し、Orchestratorが人間設定の最大iteration、追加node、walltime、seed、並列上限、Catalog cost、重複署名を検証して新しいbranchを作る。各discoveryには少なくとも一つの反証要求を含める。高コストなら改めて人間承認を得る。
-
-Interpretationだけを再実行する場合もCapability `I001`を直接起動せず、Orchestratorが新しい`I###` NodeとしてStateへ登録する。前回Interpretationは実行依存edgeではなくread-only lineageとして引き継ぎ、同じ固定Evidenceの意味比較は別Interpretation roundとして許可する。
-
-多重探索による偶然の発見は探索手法に内在するものとして許容する。候補を抑制する代わりにDiscoveryとValidationを区別し、全試行、未選択候補、反証、negative resultを記録する。発見候補が多い場合は削除せず、Orchestratorが識別力のある追加Description、Grouping、Operator、Interpretation branchを計画する。
+Round終了時に、Node差分、coverage差分、新規・更新Finding／Hypothesis／Question、salience変更、矛盾、pending approval、次Round候補を保存する。通常は新しいInterpretation Nodeで閉じる。計算だけのcheckpointでは、解釈を捏造せず終了理由を記録する。

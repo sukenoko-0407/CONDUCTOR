@@ -62,6 +62,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --chec
 
 - Skill収載対象: `catalog/included_skills.json`
 - 機械Catalog: `catalog/catalog.json`
+- 基本計算・初期探索・追加探索の人間管理profile: `catalog/analysis_profile.json`
 - Orchestration Policy: `docs/CONDUCTOR_v4_policy.md`
 - Interpretation Policy: `docs/CONDUCTOR_v4_interpretation_policy.md`
 - Claude Codeへの解析依頼テンプレート: `docs/prompt/CONDUCTOR_analysis_request_prompt.md`

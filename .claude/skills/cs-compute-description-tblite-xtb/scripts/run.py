@@ -18,6 +18,17 @@ import pandas as pd
 SKILL_DIR = Path(__file__).resolve().parents[1]
 CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
 COMMON_COLUMNS = ["compound_id", "input_smiles", "mol_parse_ok", "description_error"]
+DESCRIPTION_SEMANTICS = {
+    "D001": ("dense_continuous", "euclidean"), "D002": ("binary_fingerprint", "tanimoto"),
+    "D003": ("binary_fingerprint", "tanimoto"), "D004": ("sparse_count", "cosine"),
+    "D005": ("sparse_count", "cosine"), "D006": ("sparse_count", "cosine"),
+    "D007": ("binary_fingerprint", "tanimoto"), "D008": ("binary_fingerprint", "tanimoto"),
+    "D009": ("binary_fingerprint", "tanimoto"), "D010": ("binary_fingerprint", "tanimoto"),
+    "D012": ("dense_continuous", "euclidean"), "D013": ("dense_shape_moment", "manhattan"),
+    "D014": ("dense_continuous", "euclidean"), "D015": ("dense_continuous", "euclidean"),
+    "D016": ("dense_continuous", "euclidean"), "D017": ("binary_fingerprint", "tanimoto"),
+    "D019": ("dense_embedding", "cosine"), "D020": ("dense_continuous", "euclidean"),
+}
 
 
 def utc_now() -> str:
@@ -489,6 +500,8 @@ def run() -> int:
         rows.append(row)
     algorithm = CAPABILITY["implementation"]["algorithm"]
     metadata: dict[str, Any] = {"algorithm": algorithm}
+    value_semantics, natural_metric = DESCRIPTION_SEMANTICS.get(CAPABILITY["capability_id"], ("dense_continuous", "euclidean"))
+    metadata.update({"representation_family": CAPABILITY.get("family"), "value_semantics": value_semantics, "natural_metric": natural_metric})
     if algorithm == "morgan":
         metadata["representation_variant"] = "chiral" if args.include_chirality else "standard"
     elif algorithm == "gobbi_pharm2d":
@@ -516,7 +529,7 @@ def run() -> int:
         warnings.append(f"{len(errors)} row-level errors were recorded")
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     manifest = {
-        "schema_version": "1.0.0", "conductor_version": "4.0.0", "run_id": run_id,
+        "schema_version": "1.0.0", "conductor_version": "4.3.0", "run_id": run_id,
         "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"],
         "representation_id": CAPABILITY["representation_id"], "input": args.input or "inline_smiles", "input_hash": input_hash,
         "row_count": int(len(result)), "valid_molecule_count": int(result["mol_parse_ok"].sum()), "feature_count": len(features),

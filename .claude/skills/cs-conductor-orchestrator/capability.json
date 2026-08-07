@@ -3,7 +3,7 @@
   "capability_id": "O001",
   "skill_name": "cs-conductor-orchestrator",
   "display_name": "CONDUCTOR v4 Orchestrator",
-  "version": "4.0.0",
+  "version": "4.3.0",
   "stage": "orchestration",
   "family": "graph_orchestration",
   "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, orchestration and Interpretation Policies, execution DAG, exploration ledger, and execution events.",
@@ -14,19 +14,29 @@
   },
   "applicability": {
     "status": "stable",
-    "platforms": ["linux-64", "win-64"]
+    "platforms": [
+      "linux-64",
+      "win-64"
+    ]
   },
   "dependencies": [],
-  "default_wide_shallow": false,
-  "input_contract": ["catalog_json", "policy_markdown", "interpretation_policy_markdown", "endpoint_csv", "optional_interpretation_exploration_plan_json"],
+  "input_contract": [
+    "catalog_json",
+    "analysis_profile_json",
+    "policy_markdown",
+    "interpretation_policy_markdown",
+    "endpoint_csv",
+    "round_request"
+  ],
   "output": {
     "state": "state.json",
     "catalog": "CONDUCTOR_modules/catalog/catalog.json",
-    "exploration_ledger": "state.json#/interpretation_exploration",
-    "materialized_scopes": "interpretation/scopes/*.csv"
+    "rounds": "rounds/RND####/",
+    "indices": "indices/",
+    "summaries": "summaries/state_summary.json"
   },
   "implementation": {
-    "purpose": "dag_state_and_interpretation_exploration_orchestration",
+    "purpose": "multiround_dag_state_and_analysis_orchestration",
     "interpretation_execution_authority": "orchestrator_only"
   }
 }

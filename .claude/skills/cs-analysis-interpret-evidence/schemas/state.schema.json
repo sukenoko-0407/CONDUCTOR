@@ -1,29 +1,70 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/state.schema.json",
-  "title": "CONDUCTOR v4 run state",
+  "title": "CONDUCTOR 4.3 run state",
   "type": "object",
-  "required": ["schema_version", "conductor_version", "run", "execution_graph", "domain_graph", "evidence_graph", "interpretation_exploration", "history", "updated_at"],
+  "required": ["schema_version", "conductor_version", "run", "round_control", "id_counters", "execution_graph", "indices", "history", "updated_at"],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "conductor_version": {"const": "4.0.0"},
+    "schema_version": {"const": "2.0.0"},
+    "conductor_version": {"const": "4.3.0"},
     "run": {
       "type": "object",
-      "required": ["run_id", "project", "input", "input_hash", "endpoint", "higher_is_better", "parallel_limit", "created_at"],
+      "required": ["run_id", "project", "input", "input_hash", "endpoint", "higher_is_better", "parallel_limit", "row_count", "id_column", "profile_id", "package_snapshot", "package_change_gate", "high_cost_bundle", "created_at"],
       "properties": {
-        "run_id": {"type": "string"},
-        "project": {"type": "string"},
-        "input": {"type": "string"},
+        "run_id": {"type": "string", "minLength": 1},
+        "project": {"type": "string", "minLength": 1},
+        "input": {"type": "string", "minLength": 1},
         "input_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "endpoint": {"type": "string"},
+        "endpoint": {"type": "string", "minLength": 1},
         "higher_is_better": {"type": "boolean"},
         "parallel_limit": {"type": "integer", "minimum": 1},
         "row_count": {"type": "integer", "minimum": 0},
         "id_column": {"type": "string", "minLength": 1},
         "assay_column": {"type": ["string", "null"]},
         "assay_level_count": {"type": "integer", "minimum": 0},
+        "profile_id": {"type": "string", "minLength": 1},
+        "package_snapshot": {"type": "object"},
+        "package_snapshot_history": {"type": "array", "items": {"type": "object"}},
+        "package_change_gate": {
+          "type": "object",
+          "required": ["status", "checked_at", "differences"],
+          "properties": {
+            "status": {"enum": ["clear", "approval_required", "rejected"]},
+            "checked_at": {"type": "string", "format": "date-time"},
+            "differences": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+          },
+          "additionalProperties": true
+        },
+        "high_cost_bundle": {
+          "type": "object",
+          "required": ["capability_ids", "status", "scope", "scope_hash"],
+          "properties": {
+            "capability_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+            "status": {"enum": ["pending", "approved", "rejected"]},
+            "scope": {"type": "object"},
+            "scope_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "decided_scope_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+          },
+          "additionalProperties": true
+        },
         "created_at": {"type": "string", "format": "date-time"}
-      }
+      },
+      "additionalProperties": true
+    },
+    "round_control": {
+      "type": "object",
+      "required": ["active_round_id", "next_round_number", "rounds"],
+      "properties": {
+        "active_round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4,}$"},
+        "next_round_number": {"type": "integer", "minimum": 1},
+        "rounds": {"type": "array", "items": {"$ref": "#/$defs/round"}}
+      },
+      "additionalProperties": false
+    },
+    "id_counters": {
+      "type": "object",
+      "required": ["description_node", "grouping_node", "operator_node", "interpretation_node", "group", "evidence", "finding", "hypothesis", "question", "relation", "request", "scope", "salience_event"],
+      "additionalProperties": {"type": "integer", "minimum": 0}
     },
     "execution_graph": {
       "type": "object",
@@ -31,81 +72,47 @@
       "properties": {
         "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
         "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}}
-      }
-    },
-    "domain_graph": {"type": "object"},
-    "evidence_graph": {"type": "object"},
-    "group_index": {
-      "type": "object",
-      "required": ["registry_path", "matrix_shards", "group_count", "active_group_count", "discarded_group_count", "updated_at"],
-      "properties": {
-        "registry_path": {"type": "string"},
-        "matrix_shards": {"type": "array", "items": {"type": "object"}},
-        "group_count": {"type": "integer", "minimum": 0},
-        "active_group_count": {"type": "integer", "minimum": 0},
-        "discarded_group_count": {"type": "integer", "minimum": 0},
-        "updated_at": {"type": "string", "format": "date-time"}
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
-    "interpretations": {"type": "array", "items": {"type": "object"}},
-    "interpretation_exploration": {
-      "type": "object",
-      "required": ["policy_version", "budget", "iterations", "ledger"],
-      "properties": {
-        "policy_version": {"const": "1.1.0"},
-        "budget": {
-          "type": "object",
-          "required": ["configured", "max_iterations", "max_additional_nodes", "walltime_minutes", "seed", "configured_at"],
-          "properties": {
-            "configured": {"type": "boolean"},
-            "max_iterations": {"type": ["integer", "null"], "minimum": 1},
-            "max_additional_nodes": {"type": ["integer", "null"], "minimum": 1},
-            "walltime_minutes": {"type": ["integer", "null"], "minimum": 1},
-            "seed": {"type": ["integer", "null"], "minimum": 0},
-            "configured_at": {"type": ["string", "null"], "format": "date-time"}
-          },
-          "additionalProperties": true
-        },
-        "iterations": {"type": "array", "items": {"type": "object"}},
-        "ledger": {"type": "array", "items": {"type": "object"}}
-      },
-      "additionalProperties": true
-    },
+    "indices": {"type": "object"},
     "history": {"type": "array", "items": {"type": "object"}},
     "updated_at": {"type": "string", "format": "date-time"}
   },
+  "additionalProperties": false,
   "$defs": {
+    "round": {
+      "type": "object",
+      "required": ["round_id", "number", "status", "request", "resource_envelope", "started_at"],
+      "properties": {
+        "round_id": {"type": "string", "pattern": "^RND[0-9]{4,}$"},
+        "number": {"type": "integer", "minimum": 1},
+        "status": {"enum": ["active", "paused", "checkpoint", "completed"]},
+        "request": {"type": "string"},
+        "resource_envelope": {"type": "object"},
+        "started_at": {"type": "string", "format": "date-time"},
+        "ended_at": {"type": ["string", "null"], "format": "date-time"}
+      },
+      "additionalProperties": true
+    },
     "node": {
       "type": "object",
-      "required": ["node_id", "capability_id", "skill_name", "stage", "status", "dependencies", "human_approval"],
+      "required": ["node_id", "capability_id", "skill_name", "stage", "phase", "round_id", "status", "dependencies", "input_bindings", "parameters", "analysis_signature", "human_approval", "output_dir", "requested_at"],
       "properties": {
-        "node_id": {"type": "string"},
-        "capability_id": {"type": "string"},
-        "skill_name": {"type": "string"},
+        "node_id": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"},
+        "capability_id": {"type": "string", "pattern": "^[DCAI][0-9]{3}$"},
+        "skill_name": {"type": "string", "minLength": 1},
         "stage": {"enum": ["description", "grouping", "analysis", "interpretation"]},
-        "phase": {"enum": ["wide_shallow", "deep_dive", "human_directed", "interpretation_exploration"]},
-        "coverage_axis": {"type": ["string", "null"]},
-        "status": {"enum": ["pending", "running", "succeeded", "failed", "skipped", "stale"]},
-        "dependencies": {"type": "array", "items": {"type": "string"}},
-        "request_origin": {"enum": ["orchestrator", "human", "interpretation_agent"]},
-        "requested_at": {"type": "string", "format": "date-time"},
-        "selection_reason": {"type": "string"},
-        "previous_interpretation_nodes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "input_bindings": {
-          "type": "object",
-          "additionalProperties": {
-            "oneOf": [
-              {"type": "string"},
-              {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}
-            ]
-          }
-        },
-        "output_dir": {"type": "string"},
+        "phase": {"enum": ["basic_compute", "initial_global", "initial_local", "additional_exploration", "deep_dive", "human_directed"]},
+        "round_id": {"type": "string", "pattern": "^RND[0-9]{4,}$"},
+        "status": {"enum": ["pending", "running", "succeeded", "failed", "unavailable", "waived", "not_applicable", "stale", "skipped"]},
+        "dependencies": {"type": "array", "items": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"}, "uniqueItems": true},
+        "input_bindings": {"type": "object"},
         "parameters": {"type": "object"},
         "analysis_signature": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "configuration": {"type": "object"},
-        "human_approval": {"enum": ["not_required", "required", "approved", "rejected"]}
+        "human_approval": {"enum": ["not_required", "bundle_pending", "approved", "rejected", "required"]},
+        "output_dir": {"type": "string", "minLength": 1},
+        "requested_at": {"type": "string", "format": "date-time"}
       },
       "additionalProperties": true
     },
@@ -113,10 +120,11 @@
       "type": "object",
       "required": ["source", "target", "relation"],
       "properties": {
-        "source": {"type": "string"},
-        "target": {"type": "string"},
-        "relation": {"enum": ["depends_on", "produces_for", "invalidates"]}
-      }
+        "source": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"},
+        "target": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"},
+        "relation": {"enum": ["depends_on", "invalidates"]}
+      },
+      "additionalProperties": false
     }
   }
 }

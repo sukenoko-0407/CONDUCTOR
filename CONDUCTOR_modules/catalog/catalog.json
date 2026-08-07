@@ -1,9 +1,12 @@
 {
-  "schema_version": "1.0.0",
-  "conductor_version": "4.0.0",
+  "schema_version": "1.1.0",
+  "conductor_version": "4.3.0",
+  "profile_id": "comprehensive-multiround-v1",
+  "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json",
+  "profile_hash": "6083f0477d2747b84be150e9caabe20cafb370eede72b1692f5ee12d9d5d3e3c",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-06T05:57:24.192479+00:00",
+  "generated_at": "2026-08-07T12:58:08.852729+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -27,17 +30,10 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group"
       ],
-      "wide_shallow_axis": "group_activity_profile",
-      "wide_shallow_sources": {
-        "grouping": [
-          "*"
-        ]
-      },
       "operator_id": "A001",
       "default_parameters": {
         "high_quantile": 0.8,
@@ -81,12 +77,10 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group"
       ],
-      "wide_shallow_axis": "endpoint_distribution",
       "operator_id": "A002",
       "dependencies": [],
       "input_contract": [
@@ -123,13 +117,11 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group",
         "between-groups"
       ],
-      "wide_shallow_axis": "pairwise_structure_space",
       "operator_id": "A003",
       "default_parameters": {
         "max_pairs": 200000,
@@ -170,18 +162,10 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group"
       ],
-      "wide_shallow_axis": "descriptor_activity_association",
-      "wide_shallow_sources": {
-        "description": [
-          "D001",
-          "D013"
-        ]
-      },
       "operator_id": "A004",
       "dependencies": [
         "description"
@@ -221,29 +205,11 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group",
         "between-groups"
       ],
-      "wide_shallow_axis": "neighborhood_activity_consistency",
-      "wide_shallow_sources": {
-        "description": [
-          "D004",
-          "D007"
-        ]
-      },
-      "wide_shallow_parameter_overrides": {
-        "description": {
-          "D004": {
-            "metric": "cosine"
-          },
-          "D007": {
-            "metric": "tanimoto"
-          }
-        }
-      },
       "operator_id": "A005",
       "default_parameters": {
         "k": 10
@@ -286,33 +252,11 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group",
         "between-groups"
       ],
-      "wide_shallow_axis": "representation_specific_activity_cliffs",
-      "wide_shallow_sources": {
-        "description": [
-          "D002",
-          "D013",
-          "D017"
-        ]
-      },
-      "wide_shallow_parameter_overrides": {
-        "description": {
-          "D002": {
-            "metric": "tanimoto"
-          },
-          "D013": {
-            "metric": "manhattan"
-          },
-          "D017": {
-            "metric": "tanimoto"
-          }
-        }
-      },
       "operator_id": "A006",
       "default_parameters": {
         "k": 10
@@ -355,13 +299,11 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group",
         "between-groups"
       ],
-      "wide_shallow_axis": "structure_activity_cliffs",
       "operator_id": "A007",
       "default_parameters": {
         "similarity_threshold": 0.8,
@@ -404,17 +346,10 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group"
       ],
-      "wide_shallow_axis": "group_activity_enrichment",
-      "wide_shallow_sources": {
-        "grouping": [
-          "*"
-        ]
-      },
       "operator_id": "A008",
       "default_parameters": {
         "high_quantile": 0.8,
@@ -458,17 +393,9 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global"
       ],
-      "wide_shallow_axis": "overlapping_group_structure",
-      "wide_shallow_sources": {
-        "grouping": [
-          "C002",
-          "C003"
-        ]
-      },
       "operator_id": "A009",
       "dependencies": [
         "grouping"
@@ -508,20 +435,10 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
       "scope_support": [
         "global",
         "within-group"
       ],
-      "wide_shallow_axis": "group_structural_diversity",
-      "wide_shallow_sources": {
-        "grouping": [
-          "C001",
-          "C002",
-          "C003",
-          "C006"
-        ]
-      },
       "operator_id": "A010",
       "default_parameters": {
         "max_pairs": 200000,
@@ -566,8 +483,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "scaffold_rule",
       "clustering_id": "C001",
       "default_parameters": {
         "min_cluster_size": 3
@@ -608,8 +523,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "maximum_common_substructure",
       "clustering_id": "C002",
       "default_parameters": {
         "min_cluster_size": 3,
@@ -652,8 +565,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "fragment_decomposition",
       "clustering_id": "C003",
       "default_parameters": {
         "min_cluster_size": 3
@@ -693,7 +604,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "clustering_id": "C004",
       "dependencies": [],
       "input_contract": [
@@ -729,13 +639,6 @@
           "win-64"
         ],
         "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "vector_similarity_partition",
-      "wide_shallow_sources": {
-        "description": [
-          "D002"
-        ]
       },
       "clustering_id": "C005",
       "default_parameters": {
@@ -780,15 +683,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "vector_hierarchical",
-      "wide_shallow_sources": {
-        "description": [
-          "D001",
-          "D013",
-          "D017"
-        ]
-      },
       "clustering_id": "C006",
       "default_parameters": {
         "min_cluster_size": 3,
@@ -831,13 +725,6 @@
           "win-64"
         ],
         "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "vector_density_clustering",
-      "wide_shallow_sources": {
-        "description": [
-          "D001"
-        ]
       },
       "clustering_id": "C007",
       "default_parameters": {
@@ -883,7 +770,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "default_parameters": {
         "min_cluster_size": 3,
         "metric": "auto",
@@ -928,13 +814,6 @@
           "win-64"
         ],
         "molecule_standardization": "out_of_scope"
-      },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "vector_graph_community",
-      "wide_shallow_sources": {
-        "description": [
-          "D002"
-        ]
       },
       "clustering_id": "C009",
       "default_parameters": {
@@ -981,7 +860,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "default_parameters": {
         "min_cluster_size": 3,
         "metric": "auto",
@@ -1025,8 +903,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
-      "wide_shallow_axis": "assay_context_groups",
       "clustering_id": "C011",
       "dependencies": [],
       "input_contract": [
@@ -1063,7 +939,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "clustering_id": "C012",
       "dependencies": [
         "grouping"
@@ -1101,8 +976,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "physicochemical_2d",
       "representation_id": "D001",
       "dependencies": [],
       "input_contract": [
@@ -1113,7 +986,9 @@
       },
       "implementation": {
         "algorithm": "rdkit_2d"
-      }
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
     },
     {
       "schema_version": "1.0.0",
@@ -1137,8 +1012,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "local_circular_graph",
       "representation_id": "D002",
       "dependencies": [],
       "input_contract": [
@@ -1169,7 +1042,9 @@
           "cli": "--include-chirality",
           "description": "The same Morgan algorithm with chirality invariants enabled."
         }
-      ]
+      ],
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
     },
     {
       "schema_version": "1.0.0",
@@ -1193,8 +1068,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "curated_substructure_keys",
       "representation_id": "D003",
       "dependencies": [],
       "input_contract": [
@@ -1205,7 +1078,9 @@
       },
       "implementation": {
         "algorithm": "maccs"
-      }
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
     },
     {
       "schema_version": "1.0.0",
@@ -1229,8 +1104,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "topological_atom_pairs",
       "representation_id": "D004",
       "default_parameters": {
         "n_bits": 2048
@@ -1244,7 +1117,9 @@
       },
       "implementation": {
         "algorithm": "atom_pair"
-      }
+      },
+      "value_semantics": "sparse_count",
+      "natural_metric": "cosine"
     },
     {
       "schema_version": "1.0.0",
@@ -1268,7 +1143,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D005",
       "dependencies": [],
       "input_contract": [
@@ -1279,7 +1153,9 @@
       },
       "implementation": {
         "algorithm": "topological_torsion"
-      }
+      },
+      "value_semantics": "sparse_count",
+      "natural_metric": "cosine"
     },
     {
       "schema_version": "1.0.0",
@@ -1303,7 +1179,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D006",
       "dependencies": [],
       "input_contract": [
@@ -1314,7 +1189,9 @@
       },
       "implementation": {
         "algorithm": "rdkit_fragment"
-      }
+      },
+      "value_semantics": "sparse_count",
+      "natural_metric": "cosine"
     },
     {
       "schema_version": "1.0.0",
@@ -1338,8 +1215,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "topological_paths",
       "representation_id": "D007",
       "default_parameters": {
         "n_bits": 2048
@@ -1353,7 +1228,9 @@
       },
       "implementation": {
         "algorithm": "rdkit_path"
-      }
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
     },
     {
       "schema_version": "1.0.0",
@@ -1377,7 +1254,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D008",
       "dependencies": [],
       "input_contract": [
@@ -1388,7 +1264,9 @@
       },
       "implementation": {
         "algorithm": "rdkit_pattern"
-      }
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
     },
     {
       "schema_version": "1.0.0",
@@ -1412,7 +1290,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D009",
       "dependencies": [],
       "input_contract": [
@@ -1423,7 +1300,9 @@
       },
       "implementation": {
         "algorithm": "rdkit_layered"
-      }
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
     },
     {
       "schema_version": "1.0.0",
@@ -1447,7 +1326,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D010",
       "dependencies": [],
       "input_contract": [
@@ -1458,7 +1336,9 @@
       },
       "implementation": {
         "algorithm": "avalon"
-      }
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
     },
     {
       "schema_version": "1.0.0",
@@ -1482,7 +1362,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D012",
       "dependencies": [],
       "input_contract": [
@@ -1493,7 +1372,9 @@
       },
       "implementation": {
         "algorithm": "rdkit_3d"
-      }
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
     },
     {
       "schema_version": "1.0.0",
@@ -1517,8 +1398,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "shape_and_3d_pharmacophore",
       "representation_id": "D013",
       "default_parameters": {
         "num_confs": 20,
@@ -1533,7 +1412,9 @@
       },
       "implementation": {
         "algorithm": "usr_usrcat"
-      }
+      },
+      "value_semantics": "dense_shape_moment",
+      "natural_metric": "manhattan"
     },
     {
       "schema_version": "1.0.0",
@@ -1557,7 +1438,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D014",
       "dependencies": [],
       "input_contract": [
@@ -1568,7 +1448,9 @@
       },
       "implementation": {
         "algorithm": "shape"
-      }
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
     },
     {
       "schema_version": "1.0.0",
@@ -1592,7 +1474,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D015",
       "dependencies": [],
       "input_contract": [
@@ -1603,7 +1484,9 @@
       },
       "implementation": {
         "algorithm": "mordred_2d"
-      }
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
     },
     {
       "schema_version": "1.0.0",
@@ -1627,7 +1510,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D016",
       "dependencies": [],
       "input_contract": [
@@ -1638,7 +1520,9 @@
       },
       "implementation": {
         "algorithm": "mordred_3d"
-      }
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
     },
     {
       "schema_version": "1.0.0",
@@ -1662,8 +1546,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": true,
-      "wide_shallow_axis": "pharmacophore_2d",
       "representation_id": "D017",
       "dependencies": [],
       "input_contract": [
@@ -1691,7 +1573,9 @@
           "cli": "--reduction svd --svd-dim 256",
           "description": "Fit TruncatedSVD to the run cohort's raw Gobbi Pharm2D signature matrix."
         }
-      ]
+      ],
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
     },
     {
       "schema_version": "1.0.0",
@@ -1715,7 +1599,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D019",
       "dependencies": [],
       "input_contract": [
@@ -1726,7 +1609,9 @@
       },
       "implementation": {
         "algorithm": "pretrained_embedding"
-      }
+      },
+      "value_semantics": "dense_embedding",
+      "natural_metric": "cosine"
     },
     {
       "schema_version": "1.0.0",
@@ -1750,7 +1635,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "representation_id": "D020",
       "dependencies": [],
       "input_contract": [
@@ -1761,14 +1645,16 @@
       },
       "implementation": {
         "algorithm": "tblite_xtb"
-      }
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
     },
     {
       "schema_version": "1.0.0",
       "capability_id": "I001",
       "skill_name": "cs-analysis-interpret-evidence",
       "display_name": "SAR evidence interpretation",
-      "version": "4.0.0",
+      "version": "4.3.0",
       "stage": "interpretation",
       "family": "evidence_integration",
       "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
@@ -1785,7 +1671,6 @@
         ],
         "molecule_standardization": "out_of_scope"
       },
-      "default_wide_shallow": false,
       "interpretation_id": "I001",
       "dependencies": [
         "evidence"
@@ -1793,17 +1678,21 @@
       "input_contract": [
         "evidence_json",
         "optional_state_json_read_only",
-        "interpretation_policy_markdown"
+        "interpretation_policy_markdown",
+        "conductor_interpretation_id_reservation"
       ],
       "output": {
         "json": "interpretation.json",
         "markdown": "interpretation.md",
         "html": "interpretation.html",
         "context": "interpretation_context.json",
-        "exploration_plan": "exploration_plan.json"
+        "questions": "question_updates.json",
+        "relations": "relation_updates.json",
+        "analysis_requests": "analysis_requests.json",
+        "triage": "triage_updates.json"
       },
       "implementation": {
-        "purpose": "policy_guided_iterative_evidence_exploration",
+        "purpose": "policy_guided_multiround_evidence_interpretation",
         "state_access": "read_only",
         "execution_authority": "orchestrator_only"
       }
@@ -1813,7 +1702,7 @@
       "capability_id": "O001",
       "skill_name": "cs-conductor-orchestrator",
       "display_name": "CONDUCTOR v4 Orchestrator",
-      "version": "4.0.0",
+      "version": "4.3.0",
       "stage": "orchestration",
       "family": "graph_orchestration",
       "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, orchestration and Interpretation Policies, execution DAG, exploration ledger, and execution events.",
@@ -1830,22 +1719,23 @@
         ]
       },
       "dependencies": [],
-      "default_wide_shallow": false,
       "input_contract": [
         "catalog_json",
+        "analysis_profile_json",
         "policy_markdown",
         "interpretation_policy_markdown",
         "endpoint_csv",
-        "optional_interpretation_exploration_plan_json"
+        "round_request"
       ],
       "output": {
         "state": "state.json",
         "catalog": "CONDUCTOR_modules/catalog/catalog.json",
-        "exploration_ledger": "state.json#/interpretation_exploration",
-        "materialized_scopes": "interpretation/scopes/*.csv"
+        "rounds": "rounds/RND####/",
+        "indices": "indices/",
+        "summaries": "summaries/state_summary.json"
       },
       "implementation": {
-        "purpose": "dag_state_and_interpretation_exploration_orchestration",
+        "purpose": "multiround_dag_state_and_analysis_orchestration",
         "interpretation_execution_authority": "orchestrator_only"
       }
     },
@@ -1871,7 +1761,6 @@
         ]
       },
       "dependencies": [],
-      "default_wide_shallow": false,
       "input_contract": [
         "explicit_state_json_read_only"
       ],

@@ -1,145 +1,97 @@
-# CONDUCTOR v4 Interpretation Policy
-
-Version: 1.1.0
+# CONDUCTOR 4.3.0 Interpretation Policy
 
 ## 1. 目的
 
-Interpretation Agentは、固定された一つの説明へ収束するためではなく、Operator evidence、Group、Description、scopeの組合せを多面的に比較し、人間が注目すべき一致、相違、矛盾、例外、局所化、再現Cliffを発見するために働く。
+Interpretationは作業記録ではなく、Operator Evidenceを全体／局所、Description、Grouping、Operator、Roundの違いから比較し、人間が検討すべき観察、矛盾、例外、仮説候補、未解決Questionを提示する科学的レポートである。
 
-Interpretationは読み取りと探索要求の生成に専念する終端stageである。Stateの変更、Operatorの直接実行、計算資源の予約、人間承認の代行は行わない。追加解析は探索要求としてOrchestratorへ返し、OrchestratorがCatalog、State、予算、重複署名、承認条件を検証して新しいbranchを作る。そのbranchも新しいInterpretation nodeで終える。
+一つの整った物語を強制しない。局所化による変化と、説明できない差異を価値ある結果として保持する。
 
-反復InterpretationはCapability `I001`を新しい実行Node `I001`、`I002`、...として行う。前回reportはread-only lineageとして比較し、上書きしない。同じ固定Evidenceを新しい人間の問いや比較観点で再解釈することは、Description・Grouping・Operatorの重複計算とは区別して許可する。
+## 2. 役割境界
 
-## 2. 探索原則
+Interpreterは計算Nodeを実行せず、State、artifact、salienceを直接変更しない。Finding、Hypothesis、Question、Relation、salience update、追加解析要求を提案する。OrchestratorとState ManagerがID予約、検証、State登録、Node作成を行う。
 
-- Observation、comparison、interpretation、hypothesisを区別する。
-- 一貫した単一仮説を作ることを目的にしない。両立しない説明や未解決の矛盾を並列に保持する。
-- 発見候補が多いこと自体を失敗としない。人間が処理できない場合はOrchestratorへ追加の識別解析を要求する。
-- 多重探索による偶然の発見を理由に探索を抑制しない。ただし、探索的発見であること、試行履歴、依存性、反証結果を隠さない。
-- 同じcapability、入力scope、上流artifact、parameterの解析を繰り返さない。Stateのanalysis signatureと探索ledgerを確認する。
-- randomまたは確率的選択ではseed、候補集合、選択理由、未選択候補を記録する。
-- 高いscoreだけを追わない。弱い結果、negative result、失敗、skip、coverage gapも比較対象にする。
+Interpretation NodeはRun内の一時点におけるread-only reviewであり、過去reportを上書きしない。
 
-## 3. 二つの探索モード
+## 3. 入力の段階読込
 
-### 自律探索
+1. 全Evidenceのcompact digestとcoverageを確認する。
+2. 新規、untriaged、priority、human-pinned、active Question関連Evidenceを詳細確認する。
+3. indexed joinで成立したglobal/local、cross-Description、sibling Group、cross-Operator、counterexample候補を確認する。
+4. 必要な数値CSV、supporting compound／pair、Operator HTMLへdrill-downする。
 
-人間が設定したwall time、最大iteration、最大追加node数、並列上限、利用可能capabilityの範囲で候補scopeを確率的に選ぶ。全Cartesian productは作らず、未探索の関係タイプと期待情報利得を優先する。
+過去Interpretation全文を無条件に連結せず、最新ledger、Round summary、`next_round_brief`を入口にする。routine Evidenceもdigest検索対象に残す。
 
-### Orchestrator限定探索
+## 4. 必須比較軸
 
-Orchestratorが対象Group、Description family、Cliff近傍、Operator familyなどの境界を指定する。Interpretation Agentは境界外へ拡張せず、その内部で切り出しと比較を反復提案する。
+- 同一Operator・同一評価Descriptionのglobal対local
+- 同一Group・同一Operatorの異Description family
+- 同一Group・異Operator
+- sibling Groupとglobal comparator
+- Group内、Group外、between、boundary、overlap／difference scope
+- Grouping生成表現と評価表現の依存性
+- 同じ傾向を支持する独立Evidenceと、当然似る従属Evidence
+- positive result、negative result、矛盾、例外、反証
 
-どちらのモードでも高コスト処理と委譲予算外の処理は人間承認対象である。
+異metric、異endpoint scale、異なる統計量のraw値を直接統合しない。比較不能は`incomparable`として記録する。
 
-## 4. 比較軸
+## 5. Entity
 
-少なくとも次を候補として検討する。
+### Finding
 
-- global、within-group、between-groups、group-boundary
-- Groupの交差、差分、包含、重複
-- 同一Operator × 異なるDescription family
-- 同一Description × 異なるOperator
-- 同一Group × 異なる評価表現
-- 同一または類似Cliff pairの表現間再現
-- 全体傾向と局所例外
-- 構造的に近いがpropertyが割れる領域
-- 構造的に多様だがpropertyが揃うGroup
-- assay条件、欠損、測定誤差で説明できる見かけの差
-- 成功、失敗、skip、未実行軸
+Evidenceから読み取れる具体的観察である。Operatorを実行した事実や解析件数だけをFindingにしない。Observation、Interpretation、notable reason、limitationsを分離する。
 
-## 5. evidenceの依存性
+### Hypothesis
 
-異なるOperator名だけを根拠に独立と判断しない。共通するDescription、Metric、Group、compound集合、pair、endpoint、assay、前処理、上流nodeを記録する。
+検証可能な説明候補である。Findingごとに生成せず、十分な観察と反証可能性がある場合だけ作る。支持Evidence、反対Evidence、代替説明、適用scope、例外を明記する。
 
-- 同一Descriptionのparameter variantは強く依存する。
-- 同じfingerprint familyまたは同じ近傍edgeを使う結果は依存性が高い。
-- 同じGroupを評価するprofileとenrichmentは補完的だが完全には独立でない。
-- 2D物性、graph fingerprint、substructure、pharmacophore、3D shapeなど異原理の一致は相対的に注目度が高い。
-- Group membershipが大きく重なる場合、別Grouping名でも独立支持として数えない。
+### Relation
 
-関係は`corroborates`、`duplicates`、`refines`、`localizes`、`conditionalizes`、`contradicts`、`apparent_contradiction`、`exception`、`incomparable`のいずれか、または未確定として記録する。
+EvidenceやFinding間の`corroborates`、`localizes`、`conditionalizes`、`contradicts`、`refines`、`exception`、`incomparable`などの関係である。全ペアへ機械生成せず、比較keyまたはQuestionにより意味のある組だけを作る。
 
-## 6. Groupの優先順位
+### Question
 
-Group sizeは固定閾値だけで選別せず、全体に対する割合、構造凝集性、property range、pair数、他Groupとの重複を併記する。
+追加解析で識別したい問いである。すべてを深掘りしない。Agentの`deep_dive_potential`、priority、人間の`human_decision`、statusを持つ。人間の`skip`はhard gateとする。
 
-- 原則としてsample数が多く、安定した比較が可能なGroupを優先する。
-- 全体の30%以上を占めるGroupは局所性が弱まり始めるため注意を付ける。
-- 全体の50%を超えるGroupはglobal解析に近い可能性を明示し、より局所的な分割または差分scopeも検討する。
-- 小Groupでも構造類似性が高い、明確なMCSを持つ、同一変換seriesを構成する、または反復Cliffを含む場合は優先候補になり得る。
-- 小Groupの非検出を「現象がない」と解釈しない。sample数、pair数、effective k、一化合物感度を確認する。
+## 6. Run-global IDとrevision
 
-Group IDはrun共通`group_registry.csv`を正本とし、必要な候補だけ横持ち`Cpd_Group_matrix_*.csv`からmembershipを読む。`discarded` Groupは新しい自動探索候補から外すが、過去evidenceの説明と人間監査には残す。Interpretationが新しいrandom、intersection、difference、boundary scopeを提案した場合、そのGroup IDとmembershipの登録はOrchestratorへ委ねる。
+Finding、Hypothesis、Question、RelationのIDはRun内通番であり、Roundごとにリセットしない。同じentityの評価変更は同じIDのrevisionとして扱い、主張や対象が別物なら新IDを作る。詳細は[識別子リファレンス](CONDUCTOR_identifier_reference.md)に従う。
 
-## 7. 反証探索
+## 7. Groupの扱い
 
-注目ポイントを発見した場合は、必ず少なくとも一つの反証探索を探索要求へ含める。反証候補がまだ実行できない場合は、その理由を未解決事項として残す。
+sample数だけで順位を決めない。全体の30～50%を超えるGroupは局所性低下を注意し、小Groupでも構造凝集性、明確なMCS、反復Cliff、人間解釈への接続性が高ければ候補にできる。
 
-反証には次を利用する。
+排他的partitionと重複Groupを区別する。重複GroupのGroup間分散を母集団分割として解釈しない。Endpointを使った代表Group選択は探索的選択であり、独立検証ではないことを記載する。
 
-- 異なるDescription familyでの再評価
-- Group外またはmatched random subsetでの比較
-- Groupの交差ではなく差分部分での比較
-- assay条件別解析
-- bootstrap、leave-one-out、sample-size matched control
-- 別Operatorで同じ現象が再現するか
-- 逆方向の例外、Cliff、境界edgeの探索
+## 8. SALIとLandscape
 
-反証された仮説とnegative resultを削除しない。探索履歴と最終reportに残す。
+SALIは空間の平滑性・起伏を評価する。median、upper tail、有効pair数、top pairを併記する。globalで高くlocalで低い場合は、Groupingにより滑らかな局所Landscapeへ分解された可能性を検討する。異metricのraw SALI値は直接比較しない。
 
-## 8. SALIとCliff
+Cliffには構造差、pharmacophore差、assay条件、別Description、sibling Group、反証例を照合する。高SALIだけで機序を断定しない。
 
-SALIは同じendpoint scale、Description、Metric、前処理基準の範囲で比較する。連続Descriptionのscope比較ではglobal referenceでfitした前処理を既定とし、local再fitは別の問いとして明示する。
+## 9. Salience update
 
-globalとlocalの差を評価するときは、raw SALIだけでなく次を比較する。
+`attention_class`は`untriaged/routine/candidate/priority`、科学的roleは`signal/no_signal/support/contradiction/falsification/control/exception/inconclusive`を使用する。分類は可変であり、変更理由、Round、Interpretation、Questionをeventへ記録する。
 
-- median、upper tail、近傍property整合性
-- within-group、between-groups、group-boundary edge
-- property range、sample数、pair数、effective k
-- 同じCliff pairまたは構造変換の再現性
-- A007、Grouping、別Description familyとの対応
+明確なsignalがなくてもglobal comparator、反証、controlなら高い価値を持ち得る。新しいEvidenceとの関係からroutine Evidenceを再昇格できる。
 
-全体でroughだが各Group内でsmoothな場合、Group間境界へのroughness局在、複数local landscapeの混合、property range縮小、近傍構成変化を代替説明として並列に保持する。
+## 10. 追加解析要求
 
-## 9. 探索要求とOrchestrator
+深掘り要求には、Question、目的、対象scope、Capability、依存Node、比較bundle内のrole、期待する識別情報、代替説明、cost classを含める。孤立Nodeではなく、何と何を比較するかを明示する。
 
-探索要求には次を含める。
+追加探索のbalanced random NodeはInterpreterが科学的に選ばず、Orchestratorのcoverage plannerへ委ねる。
 
-- request IDとiteration
-- discoveryまたは未解決事項との対応
-- `characterize`、`falsify`、`control`、`replicate`の目的
-- capability ID、既存上流nodeまたはplan内で先に定義したrequest ID、scope、parameter
-- 期待する情報と識別したい代替説明
-- seedとanalysis signature
-- 予想costと承認要否は未確定としてよい
+## 11. Human report
 
-既存Grouping artifactにないrandom、matched random、交差、差分、boundary scopeを要求するときは、`scope_id`、選択法、target/comparisonのcompound ID集合、元Group、選択理由をPlanへ明記する。OrchestratorはIDをrun inputと照合し、content-addressed membership CSVへ固定してからOperator nodeへ渡す。同じcompound集合、capability、上流node、科学的parameterの組合せは、request IDを変えても再登録しない。
+`interpretation.md`と`interpretation.html`は少なくとも次を含む。
 
-Interpretation Agentはapprovalを決定しない。OrchestratorがCatalogとdataset規模から決定する。
+- 対象RunとRound、解析目的、coverage
+- 新規または更新されたFinding
+- Hypothesisと支持／反対Evidence
+- global/local、cross-Description、Group間の主要contrast
+- 矛盾、例外、negative result
+- Question一覧、deep-dive potential、人間decision
+- 重要度変更
+- 不足している比較と次Round候補
+- Operator HTMLへの導線
 
-## 10. 停止と出力
-
-探索は次を考慮して停止する。
-
-- 委譲予算への到達
-- 新しい関係タイプまたは識別可能な問いが増えない
-- 注目候補が独立解析で再現または反証された
-- 残る候補が高コストで人間判断を必要とする
-
-### 人間向けInterpretation report
-
-`interpretation.md`と`interpretation.html`は作業記録ではなく、本stageの主成果物である。人間が元artifactを開かなくても、少なくとも「何を解析したか」「何を観察したか」「それをどう解釈するか」「なぜ注目するか」「何が制約か」を理解できる記述にする。
-
-- 本文は解析の目的、解釈サマリー、重要な解釈、矛盾・反証・negative result、仮説候補、次解析の順とし、Evidence index、関係候補、探索ledgerは付録へ置く。
-- `F`はFinding、`H`はHypothesis、`R`はEvidence Relationの追跡IDとする。IDより人間が理解できる主張を見出しの中心に置く。
-- ObservationとInterpretationを別フィールドに記録する。`analyzed N rows`やartifact pathだけをInterpretationとして掲載しない。
-- 仮説は検証可能な主張が形成できる場合だけ作る。Evidence一件につき機械的にHを一件作らない。意味のある仮説がなければ空配列を許容する。
-- 解析条件としてOperator、Description、Grouping、scope、Metric、sample数を明示し、主要数値は人間が比較できる桁数へ丸める。
-- 矛盾は`not_assessed`、`none_found`、`found`を区別する。未評価を「矛盾なし」と表現しない。
-- confidenceはsample数だけで決めず、effect size、uncertainty、Evidence依存性、例外、反証、再現性を根拠として説明する。
-- HTMLは外部assetへ依存せず、低彩度の配色とテキストlabelを併用して、支持、探索的仮説、反証、制約、negative resultを視覚的に区別する。
-
-runnerが最初に作るJSON、Markdown、HTMLは`report_status=draft`の機械下書きである。専用Interpretation AgentはartifactとEvidenceを比較して本文を編集し、`agent_review.completed=true`、`report_status=agent_interpreted`へ更新する。final rendererの品質gateを通過したものだけを正式な人間向け成果物とする。
-
-正本JSONには、report summary、evidence index、関係graph、注目結果、矛盾評価、反証状態、探索履歴、未実行候補、次の探索要求を含める。具体的な新規SMILESは生成しない。
+各entityにID、初出Round、最終更新Round、revision、statusを表示する。IDだけを並べず、人間が解析内容と意味を理解できる文章を記載する。

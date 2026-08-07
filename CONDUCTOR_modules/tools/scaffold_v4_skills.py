@@ -66,34 +66,26 @@ OPERATORS = [
 ]
 
 
-WIDE_PROFILE: dict[str, dict[str, Any]] = {
-    "D001": {"wide_shallow_axis": "physicochemical_2d"},
-    "D002": {"wide_shallow_axis": "local_circular_graph"},
-    "D003": {"wide_shallow_axis": "curated_substructure_keys"},
-    "D004": {"wide_shallow_axis": "topological_atom_pairs", "default_parameters": {"n_bits": 2048}},
-    "D007": {"wide_shallow_axis": "topological_paths", "default_parameters": {"n_bits": 2048}},
-    "D013": {"wide_shallow_axis": "shape_and_3d_pharmacophore", "default_parameters": {"num_confs": 20, "random_seed": 61453}},
-    "D017": {"wide_shallow_axis": "pharmacophore_2d"},
-    "C001": {"wide_shallow_axis": "scaffold_rule", "default_parameters": {"min_cluster_size": 3}},
-    "C002": {"wide_shallow_axis": "maximum_common_substructure", "default_parameters": {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300, "random_seed": 61453}},
-    "C003": {"wide_shallow_axis": "fragment_decomposition", "default_parameters": {"min_cluster_size": 3}},
-    "C005": {"wide_shallow_axis": "vector_similarity_partition", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55}},
-    "C006": {"wide_shallow_axis": "vector_hierarchical", "wide_shallow_sources": {"description": ["D001", "D013", "D017"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "distance_threshold": 0.7}},
-    "C007": {"wide_shallow_axis": "vector_density_clustering", "wide_shallow_sources": {"description": ["D001"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "eps": 0.5, "min_samples": 3}},
+CAPABILITY_DEFAULTS: dict[str, dict[str, Any]] = {
+    "D004": {"default_parameters": {"n_bits": 2048}},
+    "D007": {"default_parameters": {"n_bits": 2048}},
+    "D013": {"default_parameters": {"num_confs": 20, "random_seed": 61453}},
+    "C001": {"default_parameters": {"min_cluster_size": 3}},
+    "C002": {"default_parameters": {"min_cluster_size": 3, "max_pairs": 1000, "max_core_groups": 300, "random_seed": 61453}},
+    "C003": {"default_parameters": {"min_cluster_size": 3}},
+    "C005": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55}},
+    "C006": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "distance_threshold": 0.7}},
+    "C007": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "eps": 0.5, "min_samples": 3}},
     "C008": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
-    "C009": {"wide_shallow_axis": "vector_graph_community", "wide_shallow_sources": {"description": ["D002"]}, "default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
+    "C009": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
     "C010": {"default_parameters": {"min_cluster_size": 3, "metric": "auto", "similarity_threshold": 0.55}},
-    "C011": {"wide_shallow_axis": "assay_context_groups"},
-    "A001": {"wide_shallow_axis": "group_activity_profile", "wide_shallow_sources": {"grouping": ["*"]}, "default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
-    "A002": {"wide_shallow_axis": "endpoint_distribution"},
-    "A003": {"wide_shallow_axis": "pairwise_structure_space", "default_parameters": {"max_pairs": 200000, "random_seed": 61453}},
-    "A004": {"wide_shallow_axis": "descriptor_activity_association", "wide_shallow_sources": {"description": ["D001", "D013"]}},
-    "A005": {"wide_shallow_axis": "neighborhood_activity_consistency", "wide_shallow_sources": {"description": ["D004", "D007"]}, "wide_shallow_parameter_overrides": {"description": {"D004": {"metric": "cosine"}, "D007": {"metric": "tanimoto"}}}, "default_parameters": {"k": 10}},
-    "A006": {"wide_shallow_axis": "representation_specific_activity_cliffs", "wide_shallow_sources": {"description": ["D002", "D013", "D017"]}, "wide_shallow_parameter_overrides": {"description": {"D002": {"metric": "tanimoto"}, "D013": {"metric": "manhattan"}, "D017": {"metric": "tanimoto"}}}, "default_parameters": {"k": 10}},
-    "A007": {"wide_shallow_axis": "structure_activity_cliffs", "default_parameters": {"similarity_threshold": 0.8, "activity_delta_threshold": 1.0, "max_pairs": 200000, "random_seed": 61453}},
-    "A008": {"wide_shallow_axis": "group_activity_enrichment", "wide_shallow_sources": {"grouping": ["*"]}, "default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
-    "A009": {"wide_shallow_axis": "overlapping_group_structure", "wide_shallow_sources": {"grouping": ["C002", "C003"]}},
-    "A010": {"wide_shallow_axis": "group_structural_diversity", "wide_shallow_sources": {"grouping": ["C001", "C002", "C003", "C006"]}, "default_parameters": {"max_pairs": 200000, "random_seed": 61453}},
+    "A001": {"default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
+    "A003": {"default_parameters": {"max_pairs": 200000, "random_seed": 61453}},
+    "A005": {"default_parameters": {"k": 10}},
+    "A006": {"default_parameters": {"k": 10}},
+    "A007": {"default_parameters": {"similarity_threshold": 0.8, "activity_delta_threshold": 1.0, "max_pairs": 200000, "random_seed": 61453}},
+    "A008": {"default_parameters": {"high_quantile": 0.8, "low_quantile": 0.2}},
+    "A010": {"default_parameters": {"max_pairs": 200000, "random_seed": 61453}},
 }
 
 
@@ -102,13 +94,12 @@ def dump_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def apply_wide_profile(capability: dict[str, Any]) -> None:
-    profile = WIDE_PROFILE.get(capability["capability_id"])
+def apply_capability_defaults(capability: dict[str, Any]) -> None:
+    profile = CAPABILITY_DEFAULTS.get(capability["capability_id"])
     if not profile:
         return
     defaults = dict(capability.get("default_parameters") or {})
     defaults.update(profile.get("default_parameters") or {})
-    capability.update({key: value for key, value in profile.items() if key != "default_parameters"})
     if defaults:
         capability["default_parameters"] = defaults
 
@@ -340,7 +331,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             dependency_text += " `--membership`でGrouping membershipを必ず指定する。"
         base_args = f"--input compounds.csv --property-column pIC50 --higher-is-better{extra}"
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID --round-id RND0001 --evidence-id E000001'
         inputs = f"元CSV、endpoint列、`--higher-is-better`または`--no-higher-is-better`を必ず指定する。{dependency_text}"
         operator = capability["implementation"]["operator"]
         if operator == "sali":
@@ -364,9 +355,9 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         purpose = "専用Interpretation Policyに従うClaude Code Agent向けに、複数Operator evidence、Group局所性、依存関係、失敗を読み取り専用で整理する。"
         inputs = "`--evidence`または`--evidence-dir`で同一runのevidenceを指定する。CONDUCTORでは`--state`を必ず指定する。"
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --evidence-dir path/to/evidence --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --evidence-dir results/CONDUCTOR/PROJECT/RUN_ID/analysis --state results/CONDUCTOR/PROJECT/RUN_ID/state.json --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID'
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --state results/CONDUCTOR/PROJECT/RUN_ID/state.json --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID --round-id RND0001 --id-reservation results/CONDUCTOR/PROJECT/RUN_ID/interpretation/{name}/NODE_ID/id_reservation.json'
         output_contract = '''- 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へ`interpretation.json`、`interpretation_context.json`、`interpretation.md`、`interpretation.html`を生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/<node-id-safe>/`へ同じ成果物とschema検証済み`execution_event.json`を生成する。専用Agentは必要に応じて`exploration_plan.json`を追加する。'''
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/interpretation/<skill>/<node-id-safe>/`へ同じ成果物、Question・Relation・Analysis Request・triageのsidecar、schema検証済み`execution_event.json`を生成する。'''
         option_guidance = "`references/interpretation_policy.md`を完全に読む。`--state`から失敗、skip、依存性、探索ledgerを読み、矛盾とnegative resultを保持する。全discoveryに反証要求を付ける。既存Groupingにないrandom、matched random、交差、差分、boundaryはPlanの`scope`へcompound IDと選択法を記録し、membership生成とOperator実行はOrchestratorへ委ねる。"
     return f'''---
 name: {name}
@@ -454,6 +445,10 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         "Linuxでは共有Pixiを優先し、cacheと環境はこのSkillの`env/`配下に置かれる。"
     )
     conductor_args = "--conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID"
+    if kind == "analysis":
+        conductor_args += " --round-id RND0001 --evidence-id E000001"
+    elif kind == "interpretation":
+        conductor_args += " --round-id RND0001 --id-reservation path/to/id_reservation.json"
 
     if kind == "description":
         algorithm = capability["implementation"]["algorithm"]
@@ -603,19 +598,18 @@ CONDUCTORのState nodeとして利用する場合:
 '''
 
 
-def base_capability(identifier: str, name: str, display: str, stage: str, family: str, cost: str, status: str, wide: bool) -> dict[str, Any]:
+def base_capability(identifier: str, name: str, display: str, stage: str, family: str, cost: str, status: str, _legacy_wide: bool) -> dict[str, Any]:
     return {
         "schema_version": "1.0.0",
         "capability_id": identifier,
         "skill_name": name,
         "display_name": display,
-        "version": "4.0.0",
+        "version": "4.3.0",
         "stage": stage,
         "family": family,
         "description": f"Use when Claude Code needs to run {display} from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
         "cost": {"class": cost, "human_approval_required": cost in {"high", "very_high"}, "hpc_profile": "cpu64" if cost not in {"very_high"} else "a100_cpu8"},
         "applicability": {"status": status, "platforms": ["linux-64", "win-64"], "molecule_standardization": "out_of_scope"},
-        "default_wide_shallow": wide,
     }
 
 
@@ -670,7 +664,7 @@ def main() -> int:
                     {"id": "svd", "cli": "--reduction svd --svd-dim 256", "description": "Fit TruncatedSVD to the run cohort's raw Gobbi Pharm2D signature matrix."},
                 ],
             })
-        apply_wide_profile(capability)
+        apply_capability_defaults(capability)
         created += create_skill(capability, "description", TEMPLATES / "description_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
     for identifier, name, display, algorithm, family, cost, status, wide in CLUSTERINGS:
@@ -693,12 +687,12 @@ def main() -> int:
         capability.update({"grouping_kind": grouping_kind, "description": description, "clustering_id": identifier, "dependencies": dependency, "input_contract": input_contract, "output": {"membership": "cluster_membership.csv", "summary": "cluster_summary.csv"}, "implementation": {"algorithm": algorithm}})
         if identifier == "C002":
             capability["description"] = "Group compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval."
-        apply_wide_profile(capability)
+        apply_capability_defaults(capability)
         created += create_skill(capability, "clustering", TEMPLATES / "clustering_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
     for identifier, name, display, operator, family, cost, status, wide, dependencies in OPERATORS:
         capability = base_capability(identifier, name, display, "analysis", family, cost, status, wide)
-        capability.update({"operator_id": identifier, "dependencies": dependencies, "input_contract": ["endpoint_csv", *dependencies], "output": {"filename": f"{identifier}_{operator}.csv", "report": "operator_report.html", "evidence": "evidence.json"}, "implementation": {"operator": operator}})
+        capability.update({"operator_id": identifier, "dependencies": dependencies, "input_contract": ["endpoint_csv", *dependencies], "output": {"filename": f"{identifier}_{operator}.csv", "report": "operator_report.html", "evidence": "evidence.json", "evidence_digest": "evidence_digest.json"}, "implementation": {"operator": operator}})
         capability["scope_support"] = {
             "A001": ["global", "within-group"],
             "A002": ["global", "within-group"],
@@ -713,8 +707,8 @@ def main() -> int:
         }[identifier]
         if identifier == "A006":
             capability["description"] = "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI, preserve high-SALI cliff pairs for interpretation, and generate CONDUCTOR v4 evidence."
-        apply_wide_profile(capability)
-        analysis_created = create_skill(capability, "analysis", TEMPLATES / "operator_run.py", ["execution_event.schema.json", "evidence.schema.json", "artifact_manifest.schema.json"], args.force)
+        apply_capability_defaults(capability)
+        analysis_created = create_skill(capability, "analysis", TEMPLATES / "operator_run.py", ["execution_event.schema.json", "evidence.schema.json", "evidence_digest.schema.json", "artifact_manifest.schema.json"], args.force)
         created += analysis_created
         if analysis_created:
             shutil.copy2(TEMPLATES / "operator_report.py", SKILLS_ROOT / name / "scripts" / "operator_report.py")
@@ -724,11 +718,11 @@ def main() -> int:
         "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
         "interpretation_id": "I001",
         "dependencies": ["evidence"],
-        "input_contract": ["evidence_json", "optional_state_json_read_only", "interpretation_policy_markdown"],
-        "output": {"json": "interpretation.json", "markdown": "interpretation.md", "html": "interpretation.html", "context": "interpretation_context.json", "exploration_plan": "exploration_plan.json"},
-        "implementation": {"purpose": "policy_guided_iterative_evidence_exploration", "state_access": "read_only", "execution_authority": "orchestrator_only"},
+        "input_contract": ["evidence_digest_jsonl", "selected_evidence_json", "state_json_read_only", "interpretation_policy_markdown", "state_reserved_entity_ids"],
+        "output": {"json": "interpretation.json", "markdown": "interpretation.md", "html": "interpretation.html", "context": "interpretation_context.json", "questions": "question_updates.json", "relations": "relation_updates.json", "requests": "analysis_requests.json", "triage": "triage_updates.json"},
+        "implementation": {"purpose": "policy_guided_iterative_evidence_exploration", "state_access": "read_only", "execution_authority": "orchestrator_only", "requires_dedicated_agent_review": True},
     })
-    interpretation_created = create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "interpretation_exploration_plan.schema.json", "evidence.schema.json"], args.force)
+    interpretation_created = create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "interpretation_id_reservation.schema.json", "analysis_profile.schema.json", "evidence.schema.json", "evidence_digest.schema.json", "state.schema.json"], args.force)
     created += interpretation_created
     if interpretation_created:
         references = SKILLS_ROOT / interpretation["skill_name"] / "references"

@@ -24,7 +24,7 @@
     "capability_id": {"type": "string", "pattern": "^[DCAIO][0-9]{3}$"},
     "skill_name": {"type": "string", "pattern": "^[a-z0-9-]{1,63}$"},
     "display_name": {"type": "string", "minLength": 1},
-    "version": {"const": "4.0.0"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
     "stage": {
       "enum": ["description", "grouping", "analysis", "interpretation", "orchestration"]
     },
@@ -55,30 +55,7 @@
       },
       "additionalProperties": true
     },
-    "default_wide_shallow": {"type": "boolean"},
     "approval_policy": {"enum": ["standard", "preauthorized_initial"]},
-    "wide_shallow_axis": {"type": "string", "minLength": 1},
-    "wide_shallow_sources": {
-      "type": "object",
-      "propertyNames": {"enum": ["description", "grouping", "evidence"]},
-      "additionalProperties": {
-        "type": "array",
-        "items": {"type": "string", "pattern": "^(\\*|[DCAIO][0-9]{3})$"},
-        "minItems": 1,
-        "uniqueItems": true
-      }
-    },
-    "wide_shallow_parameter_overrides": {
-      "type": "object",
-      "propertyNames": {"enum": ["description", "grouping", "evidence"]},
-      "additionalProperties": {
-        "type": "object",
-        "patternProperties": {
-          "^[DCAIO][0-9]{3}$": {"type": "object"}
-        },
-        "additionalProperties": false
-      }
-    },
     "default_variant": {"type": "string", "minLength": 1},
     "default_parameters": {"type": "object"},
     "scope_support": {

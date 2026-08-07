@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/evidence_digest.schema.json",
+  "title": "CONDUCTOR evidence digest",
+  "type": "object",
+  "required": ["schema_version", "evidence_id", "source_node_id", "round_id", "operator_id", "scope_mode", "sample_count", "artifact_path", "comparison_keys", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "evidence_id": {"type": "string", "pattern": "^E[0-9]{6,}$"},
+    "source_node_id": {"type": "string", "pattern": "^NO[0-9]{4,}$"},
+    "round_id": {"type": "string", "pattern": "^RND[0-9]{4,}$"},
+    "operator_id": {"type": "string", "pattern": "^A[0-9]{3}$"},
+    "scope_mode": {"type": "string"},
+    "sample_count": {"type": "integer", "minimum": 0},
+    "artifact_path": {"type": "string"},
+    "comparison_keys": {"type": "object"},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": true
+}

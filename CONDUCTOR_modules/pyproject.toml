@@ -1,7 +1,7 @@
 [project]
 name = "conductor-v4-workspace"
-version = "4.0.0"
-description = "Development and acceptance-test environment for CONDUCTOR v4"
+version = "4.3.0"
+description = "Development and acceptance-test environment for the multi-Round CONDUCTOR architecture"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "jinja2>=3.1",

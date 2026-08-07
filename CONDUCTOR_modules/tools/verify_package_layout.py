@@ -16,12 +16,20 @@ def main() -> int:
     required_module_files = [
         "catalog/catalog.json",
         "catalog/included_skills.json",
+        "catalog/analysis_profile.json",
         "docs/CONDUCTOR_v4_policy.md",
         "docs/CONDUCTOR_v4_design_spec.md",
         "docs/CONDUCTOR_v4_interpretation_policy.md",
         "docs/prompt/CONDUCTOR_analysis_request_prompt.md",
         "docs/prompt/CONDUCTOR_session_handoff_template.md",
         "schemas/capability.schema.json",
+        "schemas/state.schema.json",
+        "schemas/evidence.schema.json",
+        "schemas/evidence_digest.schema.json",
+        "schemas/interpretation.schema.json",
+        "schemas/interpretation_id_reservation.schema.json",
+        "schemas/analysis_profile.schema.json",
+        "tools/templates/state_manager.py",
         "pyproject.toml",
         "uv.lock",
     ]
@@ -78,6 +86,13 @@ def main() -> int:
                 if capability.get("stage") in {"description", "grouping", "analysis"}:
                     if not (skill / "schemas" / "execution_event.schema.json").is_file():
                         errors.append(f"{name}: execution event schema is missing")
+                if capability.get("stage") == "analysis":
+                    if not (skill / "schemas" / "evidence_digest.schema.json").is_file():
+                        errors.append(f"{name}: Evidence digest schema is missing")
+                    runner_text = (skill / "scripts" / "run.py").read_text(encoding="utf-8") if (skill / "scripts" / "run.py").is_file() else ""
+                    for token in ["--round-id", "--evidence-id", "evidence_digest.json", "operator_report.html"]:
+                        if token not in runner_text:
+                            errors.append(f"{name}: Operator runner is missing {token}")
 
     legacy_roots = ["catalog", "docs", "schemas", "tests", "tools"]
     for name in legacy_roots:
@@ -93,9 +108,20 @@ def main() -> int:
         for required in [
             "CONDUCTOR_modules/docs/CONDUCTOR_v4_policy.md",
             "CONDUCTOR_modules/catalog/catalog.json",
+            "CONDUCTOR_modules/catalog/analysis_profile.json",
         ]:
             if required not in text:
                 errors.append(f"Orchestrator Agent does not reference {required}")
+
+    profile_path = MODULE_ROOT / "catalog" / "analysis_profile.json"
+    if profile_path.is_file():
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        if profile.get("profile_id") != "comprehensive-multiround-v1":
+            errors.append("unexpected analysis_profile profile_id")
+        if not profile.get("basic_compute", {}).get("description_capabilities"):
+            errors.append("analysis_profile has no basic Description panel")
+        if not profile.get("initial_exploration", {}).get("global_operator_capabilities"):
+            errors.append("analysis_profile has no initial global Operator panel")
 
     for warning in warnings:
         print(f"WARNING: {warning}")

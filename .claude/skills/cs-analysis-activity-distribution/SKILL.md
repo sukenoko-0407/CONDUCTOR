@@ -32,15 +32,15 @@ Activity distributionを実行し、客観的な数値結果とCONDUCTOR evidenc
 
 - 通常モードをdefaultとする。ユーザーが単にこの計算・解析を依頼した場合は`--conductor`を付けない。
 - `--conductor`を付けるのは、ユーザーがCONDUCTORまたはCONDUCTOR v4での実行を明示した場合、OrchestratorがDAG nodeとして呼び出した場合、または既存CONDUCTOR runへの接続が明示され完全なrun contextが与えられた場合だけとする。
-- CONDUCTOR利用は明示されているがproject、run ID、node IDが未確定なら実行しない。Orchestratorでrun/nodeを初期化するか不足情報を確認し、IDを捏造したり通常モードへ黙って降格したりしない。
+- CONDUCTOR利用は明示されているがproject、run ID、node ID、Round ID、Evidence ID、Round ID、Evidence IDが未確定なら実行しない。Orchestratorでrun/nodeを初期化するか不足情報を確認し、IDを捏造したり通常モードへ黙って降格したりしない。
 - repository名、利用可能なCONDUCTOR artifact、Catalog収載、`results/CONDUCTOR/`形式の`--output-dir`だけを根拠にCONDUCTORモードを推測しない。
 - 意図が曖昧なら、出力契約が変わることを示して実行前に確認する。確認できない場合は通常モードとして`--conductor`を省略する。
-- 通常モードでは`--project`と`--node-id`を指定しない。CONDUCTORモードでは`--conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID`をすべて指定する。CLIもこの組合せを検証する。
+- 通常モードでは`--project`と`--node-id`を指定しない。CONDUCTORモードでは`--conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID --round-id ROUND_ID --evidence-id EVIDENCE_ID`をすべて指定する。CLIもこの組合せを検証する。
 
 ## Output contract
 
 - 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`A002_activity_distribution.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、解析由来・主要結果・個別結果を示す`operator_report.html`、`evidence.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/`へ主成果物、解析由来・主要結果・個別結果を示す`operator_report.html`、`evidence.json`、`evidence_digest.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
 
@@ -60,10 +60,10 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-
 
 ## CONDUCTOR mode command
 
-明示的なCONDUCTOR利用で、project、run、nodeが確定している場合だけこちらを使う。
+明示的なCONDUCTOR利用で、project、run、node、Round、Evidenceが確定している場合だけこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-column pIC50 --higher-is-better --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-column pIC50 --higher-is-better --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID --round-id ROUND_ID --evidence-id EVIDENCE_ID
 ```
 
 ## Boundaries

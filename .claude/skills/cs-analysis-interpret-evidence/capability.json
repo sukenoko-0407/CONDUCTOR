@@ -3,7 +3,7 @@
   "capability_id": "I001",
   "skill_name": "cs-analysis-interpret-evidence",
   "display_name": "SAR evidence interpretation",
-  "version": "4.0.0",
+  "version": "4.3.0",
   "stage": "interpretation",
   "family": "evidence_integration",
   "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
@@ -20,7 +20,6 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
-  "default_wide_shallow": false,
   "interpretation_id": "I001",
   "dependencies": [
     "evidence"
@@ -28,17 +27,21 @@
   "input_contract": [
     "evidence_json",
     "optional_state_json_read_only",
-    "interpretation_policy_markdown"
+    "interpretation_policy_markdown",
+    "conductor_interpretation_id_reservation"
   ],
   "output": {
     "json": "interpretation.json",
     "markdown": "interpretation.md",
     "html": "interpretation.html",
     "context": "interpretation_context.json",
-    "exploration_plan": "exploration_plan.json"
+    "questions": "question_updates.json",
+    "relations": "relation_updates.json",
+    "analysis_requests": "analysis_requests.json",
+    "triage": "triage_updates.json"
   },
   "implementation": {
-    "purpose": "policy_guided_iterative_evidence_exploration",
+    "purpose": "policy_guided_multiround_evidence_interpretation",
     "state_access": "read_only",
     "execution_authority": "orchestrator_only"
   }

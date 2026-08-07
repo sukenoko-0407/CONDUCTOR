@@ -14,11 +14,15 @@
   },
   "applicability": {
     "status": "stable",
-    "platforms": ["linux-64", "win-64"]
+    "platforms": [
+      "linux-64",
+      "win-64"
+    ]
   },
   "dependencies": [],
-  "default_wide_shallow": false,
-  "input_contract": ["explicit_state_json_read_only"],
+  "input_contract": [
+    "explicit_state_json_read_only"
+  ],
   "output": {
     "html": "state/<timestamp>/state_report.html",
     "svg": "state/<timestamp>/state_dag.svg",

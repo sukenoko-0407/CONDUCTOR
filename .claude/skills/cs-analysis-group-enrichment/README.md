@@ -24,7 +24,7 @@ python .claude/skills/cs-analysis-group-enrichment/scripts/launch.py --input com
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-analysis-group-enrichment/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --membership cluster_membership.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-analysis-group-enrichment/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --membership cluster_membership.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID --round-id ROUND_ID --evidence-id EVIDENCE_ID
 ```
 
 ## 制約事項

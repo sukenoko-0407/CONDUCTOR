@@ -6,15 +6,14 @@ import html
 import json
 import sys
 from datetime import datetime, timezone
-from itertools import combinations
 from pathlib import Path
 from typing import Any
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
-SCHEMA_VERSION = "1.1.0"
-POLICY_VERSION = "1.1.0"
+SCHEMA_VERSION = "2.0.0"
+POLICY_VERSION = "2.0.0"
 
 
 def utc_now() -> str:
@@ -88,19 +87,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project")
     parser.add_argument("--output-dir")
     parser.add_argument("--node-id")
+    parser.add_argument("--round-id")
+    parser.add_argument("--id-reservation", help="State Manager generated id_reservation.json.")
+    parser.add_argument("--max-full-evidence", type=int, default=200)
+    parser.add_argument("--interpretation-focus", help="Optional State-recorded perspective for this Interpretation Node.")
     parser.add_argument("--conductor", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
     if args.conductor:
-        missing = [name for name in ("project", "run_id", "node_id") if not getattr(args, name)]
+        missing = [name for name in ("project", "run_id", "node_id", "round_id", "id_reservation") if not getattr(args, name)]
         if missing:
-            parser.error("--conductor requires --project, --run-id, and --node-id")
+            parser.error("--conductor requires --project, --run-id, --node-id, --round-id, and --id-reservation")
         if not args.state:
             parser.error("--conductor Interpretation requires --state")
-    elif args.project or args.node_id:
-        parser.error("--project and --node-id are valid only with --conductor")
+    elif args.project or args.node_id or args.round_id or args.id_reservation:
+        parser.error("--project, --node-id, --round-id, and --id-reservation are valid only with --conductor")
     if args.seed is not None and args.seed < 0:
         parser.error("--seed must be >= 0")
+    if args.max_full_evidence < 1:
+        parser.error("--max-full-evidence must be >= 1")
     return args
 
 
@@ -115,9 +120,32 @@ def evidence_paths(args: argparse.Namespace) -> list[Path]:
         if resolved not in seen:
             unique.append(path)
             seen.add(resolved)
-    if not unique:
-        raise ValueError("Provide at least one --evidence or --evidence-dir")
-    return unique
+    if unique:
+        return unique[: args.max_full_evidence]
+    if not args.state:
+        raise ValueError("Provide at least one --evidence, --evidence-dir, or a CONDUCTOR --state with Evidence index")
+    state = json.loads(Path(args.state).read_text(encoding="utf-8"))
+    digest_path = Path(state["indices"]["evidence_digest"]["path"])
+    digests = [json.loads(line) for line in digest_path.read_text(encoding="utf-8").splitlines() if line.strip()] if digest_path.exists() else []
+    salience_path = Path(state["indices"]["salience"]["view_path"])
+    salience = {item["evidence_id"]: item for item in ([json.loads(line) for line in salience_path.read_text(encoding="utf-8").splitlines() if line.strip()] if salience_path.exists() else [])}
+    questions_path = Path(state["indices"]["questions"]["path"])
+    questions = [json.loads(line) for line in questions_path.read_text(encoding="utf-8").splitlines() if line.strip()] if questions_path.exists() else []
+    question_evidence = {evidence_id for question in questions if question.get("status") in {"open", "in_progress"} and question.get("human_decision") != "skip" for evidence_id in question.get("evidence_ids") or []}
+    ranked = sorted(
+        digests,
+        key=lambda item: (
+            item.get("round_id") != args.round_id,
+            (salience.get(item["evidence_id"]) or {}).get("attention_class") not in {"priority", "candidate"},
+            not (salience.get(item["evidence_id"]) or {}).get("human_pinned", False),
+            item["evidence_id"] not in question_evidence,
+            item["evidence_id"],
+        ),
+    )
+    result = [Path(item["artifact_path"]) for item in ranked[: args.max_full_evidence] if Path(item["artifact_path"]).is_file()]
+    if not result:
+        raise ValueError("State contains no readable Evidence artifacts")
+    return result
 
 
 def load_optional_json(path_text: str | None) -> dict[str, Any] | None:
@@ -141,27 +169,28 @@ def load_catalog(path_text: str | None) -> dict[str, dict[str, Any]]:
 
 def state_context(state: dict[str, Any] | None) -> dict[str, Any]:
     if state is None:
-        return {"available": False, "failures": [], "skips": [], "pending": [], "attempted_analysis_signatures": [], "exploration": None, "group_index": None}
+        return {"available": False, "failures": [], "skips": [], "pending": [], "attempted_analysis_signatures": [], "round_control": None, "group_index": None, "coverage_index": None}
     nodes = state.get("execution_graph", {}).get("nodes", [])
     return {
         "available": True,
-        "failures": [{"node_id": n["node_id"], "capability_id": n["capability_id"], "reason": n.get("error")} for n in nodes if n.get("status") == "failed"],
-        "skips": [{"node_id": n["node_id"], "capability_id": n["capability_id"], "reason": n.get("skip_reason")} for n in nodes if n.get("status") == "skipped"],
+        "failures": [{"node_id": n["node_id"], "capability_id": n["capability_id"], "reason": n.get("terminal_reason") or n.get("error")} for n in nodes if n.get("status") == "failed"],
+        "skips": [{"node_id": n["node_id"], "capability_id": n["capability_id"], "reason": n.get("terminal_reason") or n.get("skip_reason")} for n in nodes if n.get("status") == "skipped"],
         "pending": [{"node_id": n["node_id"], "capability_id": n["capability_id"], "status": n.get("status")} for n in nodes if n.get("status") in {"pending", "running", "stale"}],
         "attempted_analysis_signatures": sorted({n["analysis_signature"] for n in nodes if n.get("analysis_signature")}),
-        "exploration": state.get("interpretation_exploration"),
-        "group_index": state.get("group_index"),
-        "wide_shallow_plan": state.get("wide_shallow_plan"),
+        "round_control": state.get("round_control"),
+        "group_index": (state.get("indices") or {}).get("group"),
+        "coverage_index": (state.get("indices") or {}).get("coverage"),
+        "interpretation_ledgers": {
+            name: (state.get("indices") or {}).get(name)
+            for name in ("findings", "hypotheses", "questions", "relations", "requests")
+        },
     }
 
 
 def source_node_for_evidence(state: dict[str, Any] | None, evidence_id: str) -> dict[str, Any] | None:
     if state is None:
         return None
-    graph_node = next((item for item in state.get("evidence_graph", {}).get("nodes", []) if item.get("evidence_id") == evidence_id), None)
-    if graph_node is None:
-        return None
-    return next((item for item in state.get("execution_graph", {}).get("nodes", []) if item.get("node_id") == graph_node.get("source_node_id")), None)
+    return next((item for item in state.get("execution_graph", {}).get("nodes", []) if item.get("evidence_id") == evidence_id), None)
 
 
 def resolved_artifacts(evidence: dict[str, Any], evidence_path: Path) -> list[str]:
@@ -225,9 +254,31 @@ def build_evidence_index(
     return items
 
 
-def build_relations(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_relations(index: list[dict[str, Any]], relation_ids: list[str]) -> list[dict[str, Any]]:
+    """Build meaningful candidates through indexed joins, never a Cartesian evidence scan."""
+    buckets: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for item in index:
+        scope = item.get("scope") or {}
+        keys = [
+            ("operator_eval", item.get("operator_id"), item.get("evaluation_representation")),
+            ("target_operator", item.get("target_group_id"), item.get("operator_id")),
+            ("scope_operator", scope.get("compound_set_hash"), item.get("operator_id")),
+        ]
+        for key in keys:
+            if all(part is not None for part in key[1:]):
+                buckets.setdefault(key, []).append(item)
+    candidate_pairs: dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any]]] = {}
+    for values in buckets.values():
+        ordered = sorted(values, key=lambda item: item["evidence_id"])
+        globals_ = [item for item in ordered if (item.get("scope") or {}).get("mode") == "global"]
+        locals_ = [item for item in ordered if (item.get("scope") or {}).get("mode") != "global"]
+        for left in globals_[:1]:
+            for right in locals_:
+                candidate_pairs[tuple(sorted((left["evidence_id"], right["evidence_id"])))] = (left, right)
+        for left, right in zip(ordered, ordered[1:]):
+            candidate_pairs.setdefault(tuple(sorted((left["evidence_id"], right["evidence_id"]))), (left, right))
     relations = []
-    for number, (left, right) in enumerate(combinations(index, 2), start=1):
+    for relation_id, (_, (left, right)) in zip(relation_ids, sorted(candidate_pairs.items())):
         same_operator = left["operator_id"] == right["operator_id"]
         same_evaluation = bool(left.get("evaluation_representation")) and left.get("evaluation_representation") == right.get("evaluation_representation")
         same_grouping = bool(left.get("grouping_representation")) and left.get("grouping_representation") == right.get("grouping_representation")
@@ -237,8 +288,6 @@ def build_relations(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
         shared_dependencies = sorted(set(left.get("source_dependencies") or []) & set(right.get("source_dependencies") or []))
         shared_pairs = len(pair_keys(left) & pair_keys(right))
         global_local = same_operator and same_evaluation and {left.get("scope", {}).get("mode"), right.get("scope", {}).get("mode")} == {"global", "within-group"}
-        if not any((same_operator, same_evaluation, same_grouping, same_scope, same_target, shared_pairs, global_local)):
-            continue
         if same_signature:
             relation_type = "duplicates"
         else:
@@ -273,7 +322,8 @@ def build_relations(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if shared_dependencies:
             reasons.append(f"shared upstream nodes: {', '.join(shared_dependencies)}")
         relations.append({
-            "relation_id": f"R{number:05d}",
+            "relation_id": relation_id,
+            "revision": 1,
             "evidence_ids": [left["evidence_id"], right["evidence_id"]],
             "relation_type": relation_type,
             "independence": independence,
@@ -446,9 +496,14 @@ def build_interpretation(
     stage: str,
     state_info: dict[str, Any],
     seed: int,
+    round_id: str | None,
+    finding_ids: list[str],
+    question_ids: list[str],
+    request_ids: list[str],
 ) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
-    for number, (evidence, indexed) in enumerate(zip(evidence_items, evidence_index), start=1):
+    for finding_id, evidence, indexed in zip(finding_ids, evidence_items, evidence_index):
+        number = len(findings) + 1
         evidence_id = str(evidence.get("evidence_id", f"UNKNOWN_{number:04d}"))
         machine = evidence.get("machine_readable_summary") or {}
         observation = evidence.get("human_readable_summary") or f"Evidence {evidence_id}"
@@ -465,7 +520,10 @@ def build_interpretation(
             question = f"{evidence.get('operator_name', 'このOperator')}は対象scopeにどのような傾向、差、または例外を示すか。"
         limitations = list(evidence.get("warnings") or []) or ["単一Evidenceのため、独立性、比較対象、effect size、例外をまだ評価していない。"]
         findings.append({
-            "finding_id": f"F{number:04d}",
+            "finding_id": finding_id,
+            "revision": 1,
+            "origin_round_id": round_id,
+            "last_updated_round_id": round_id,
             "title": str(evidence.get("operator_name", "Operator evidence")),
             "scientific_question": question,
             "analysis_context": context,
@@ -481,11 +539,30 @@ def build_interpretation(
         })
     scope_modes = sorted({str((item.get("scope") or {}).get("mode", "global")) for item in evidence_index})
     operator_ids = sorted({str(item.get("operator_id")) for item in evidence_index})
+    questions = []
+    requests = []
+    for question_id, request_id, finding in zip(question_ids, request_ids, findings):
+        questions.append({
+            "question_id": question_id, "revision": 1,
+            "title": f"{finding['title']}の局所性・再現性を識別する",
+            "rationale": f"{finding['finding_id']}は単独Evidenceの機械下書きであり、global/local、別Description、反証との比較が必要。",
+            "deep_dive_potential": True, "agent_priority": "medium", "human_decision": "unreviewed", "status": "open",
+            "reopen_recommended": False, "evidence_ids": finding["evidence_ids"],
+            "target_group_ids": [finding["analysis_context"]["target_group_id"]] if finding["analysis_context"].get("target_group_id") else [],
+            "operator_ids": [finding["analysis_context"]["operator_id"]], "origin_round_id": round_id, "last_updated_round_id": round_id,
+        })
+        requests.append({
+            "request_id": request_id, "revision": 1, "question_id": question_id, "source_id": finding_id,
+            "action": "同一scopeの別Description、global comparator、sibling Group、反証候補を比較する。",
+            "purpose": "falsify", "status": "proposed", "round_id": round_id,
+        })
     return {
         "schema_version": SCHEMA_VERSION,
         "policy_version": POLICY_VERSION,
         "run_id": run_id,
         "interpretation_id": interpretation_id,
+        "round_id": round_id,
+        "revision": 1,
         "report_status": "draft",
         "agent_review": {"completed": False, "reviewed_at": None, "review_scope": "not_started"},
         "report_summary": {
@@ -512,7 +589,9 @@ def build_interpretation(
         },
         "notable_findings": findings,
         "hypotheses": [],
-        "recommended_next_analysis": [],
+        "questions": questions,
+        "analysis_requests": requests,
+        "recommended_next_analysis": [{"source_id": item["source_id"], "action": item["action"], "purpose": item["purpose"], "approval_status": "orchestrator_must_determine"} for item in requests],
         "human_review_points": [
             "専用Interpretation Agentが全artifactを確認し、ObservationとInterpretationを明示的に分ける。",
             "注目候補だけを本文に残し、単なる実行記録はEvidence indexへ移す。",
@@ -528,7 +607,8 @@ def markdown_report(value: dict[str, Any]) -> str:
     if value["report_status"] == "draft":
         lines.extend(["> **機械下書き — 最終Interpretationではありません。** 専用Interpretation Agentによる意味解釈と最終化が必要です。", ""])
     lines.extend([
-        f"- Run ID: {value['run_id']} / Stage: {value['exploration_summary']['stage']}",
+        f"- Run ID: {value['run_id']} / Round ID: {value.get('round_id') or '-'} / Interpretation ID: {value['interpretation_id']}",
+        f"- Stage: {value['exploration_summary']['stage']}",
         f"- Report status: {value['report_status']} / Generated: {value['created_at']}",
         "", "## 解析の目的と対象", "", summary["analysis_objective"], "",
         f"**対象範囲:** {summary['dataset_scope']}", "",
@@ -594,6 +674,18 @@ def markdown_report(value: dict[str, Any]) -> str:
         lines.extend(["", "個別の人間確認事項:", ""])
         lines.extend(f"- {item}" for item in hypothesis["human_review_points"])
         lines.append("")
+    lines.extend(["## Questions", "", "Qは次Round以降で検討できる問いのIDであり、深掘りを義務付けるものではない。", ""])
+    if value["questions"]:
+        for item in value["questions"]:
+            lines.extend([
+                f"### {item['question_id']} {item['title']}", "", item["rationale"], "",
+                f"- 深掘り余地: {'あり' if item['deep_dive_potential'] else 'なし'}",
+                f"- 人間判断: {item['human_decision']}",
+                f"- 状態: {item['status']}",
+                f"- Evidence: {', '.join(item['evidence_ids']) or 'なし'}", "",
+            ])
+    else:
+        lines.extend(["- 現時点で登録されたQuestionはない。", ""])
     lines.extend(["## 推奨される次解析", ""])
     if value["recommended_next_analysis"]:
         for item in value["recommended_next_analysis"]:
@@ -692,6 +784,19 @@ def html_report(value: dict[str, Any]) -> str:
         f"<li><b>{html.escape(item['purpose'])}</b> — {html.escape(item['action'])} <span class='meta'>({html.escape(item['source_id'])})</span></li>"
         for item in value["recommended_next_analysis"]
     )
+    question_cards = "".join(
+        "<article class='question-card'>"
+        f"<div class='card-head'><span class='status-label'>Question</span><span class='id-label'>{html.escape(item['question_id'])}</span></div>"
+        f"<h3>{html.escape(item['title'])}</h3><p>{html.escape(item['rationale'])}</p>"
+        f"<dl><dt>深掘り余地</dt><dd>{'あり' if item['deep_dive_potential'] else 'なし'}</dd>"
+        f"<dt>人間判断</dt><dd>{html.escape(item['human_decision'])}</dd><dt>状態</dt><dd>{html.escape(item['status'])}</dd>"
+        f"<dt>Evidence</dt><dd>{html.escape(', '.join(item['evidence_ids']) or 'なし')}</dd></dl></article>"
+        for item in value["questions"]
+    ) or "<p class='empty'>現時点で登録されたQuestionはありません。</p>"
+    questions_section = (
+        "<h2>Questions</h2><p class='meta'>Qは次Round以降で検討できる問いです。"
+        "人間は深掘り、保留、スキップを選択できます。</p>" + question_cards
+    )
     evidence_rows = "".join(
         f"<tr><td>{html.escape(item['evidence_id'])}</td><td>{html.escape(item['operator_id'])}</td>"
         f"<td>{html.escape(str((item.get('scope') or {}).get('mode', 'unknown')))}</td>"
@@ -710,7 +815,8 @@ def html_report(value: dict[str, Any]) -> str:
     css = """:root{--ink:#263640;--muted:#68747b;--line:#d8d5cd;--paper:#f4f2ed;--surface:#fff;--navy:#304957;--blue:#536f80;--blue-soft:#e9eef1;--teal:#4d706b;--teal-soft:#e6eeec;--ochre:#806637;--ochre-soft:#f2ede1;--brick:#85534b;--brick-soft:#f2e8e5;--gray-soft:#eeefed}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.75 "Yu Gothic UI","Segoe UI",sans-serif}main{max-width:1120px;margin:28px auto;padding:44px 52px 64px;background:var(--surface);box-shadow:0 12px 36px #24374618}header{border-bottom:1px solid var(--line);padding-bottom:22px}h1,h2{font-family:"Yu Mincho","Hiragino Mincho ProN",serif;color:var(--navy)}h1{font-size:34px;margin:4px 0 8px}h2{margin-top:48px;padding-bottom:9px;border-bottom:2px solid var(--navy);font-size:23px}.draft-banner{margin:22px 0;padding:14px 18px;border-left:5px solid var(--ochre);background:var(--ochre-soft)}.lead{font-size:17px}.scope{padding:14px 18px;background:var(--blue-soft);border-left:4px solid var(--blue)}.key-messages{padding:18px 24px;background:#f7f8f6;border:1px solid var(--line)}article{border:1px solid var(--line);border-radius:7px;padding:22px 24px;margin:18px 0}.card-head{display:flex;gap:9px}.status-label,.id-label{padding:2px 8px;font-size:12px;font-weight:700;border-radius:3px}.id-label{background:var(--gray-soft);color:var(--muted)}.status-discovery,.hypothesis{border-left:6px solid var(--ochre)}.status-validated{border-left:6px solid var(--teal)}.status-refuted,.contradiction{border-left:6px solid var(--brick)}.status-inconclusive,.status-negative{border-left:6px solid #8b9292}.question b,.claim b{display:block;color:var(--navy);font-size:12px}.context{font-size:13px;color:var(--muted);padding:8px 12px;background:#f6f6f3}.observation{padding:13px 16px;background:#f7f8f7;border-left:4px solid #89969c}.meaning{padding:15px 18px;margin:12px 0;background:var(--teal-soft);border-left:5px solid var(--teal)}.limitations,.claim{padding:12px 16px;background:var(--ochre-soft)}.contradiction-summary{padding:16px 19px;background:var(--brick-soft);border-left:5px solid var(--brick)}.operator-links{padding:8px 11px;background:var(--blue-soft)}.operator-link{color:var(--navy);font-weight:700}.empty,.meta{color:var(--muted)}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}th{background:#f0f1ee}dt{font-weight:700;color:var(--navy);margin-top:10px}dd{margin-left:0}details{margin-top:24px;border-top:1px solid var(--line);padding-top:12px}summary{cursor:pointer;color:var(--navy);font-weight:700}@media(max-width:700px){main{margin:0;padding:26px 20px}}@media print{body{background:#fff}main{box-shadow:none;margin:0;max-width:none}}"""
     key_messages = html_list(report_summary["key_messages"])
     limitations = html_list(report_summary["limitations"])
-    next_body = f"<ul>{next_items}</ul>" if next_items else "<p class='empty'>現時点で登録された追加解析要求はありません。</p>"
+    request_body = f"<ul>{next_items}</ul>" if next_items else "<p class='empty'>現時点で登録された追加解析要求はありません。</p>"
+    next_body = questions_section + "<h2>Analysis requests</h2>" + request_body
     reviews = html_list(value["human_review_points"])
     return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR Interpretation Report</title><style>{css}</style></head><body><main><header><p class='meta'>SAR evidence interpretation</p><h1>CONDUCTOR Interpretation Report</h1><p class='meta'>Run {html.escape(value['run_id'])} · Stage {html.escape(summary['stage'])} · {html.escape(value['created_at'])}</p></header>{draft_banner}<h2>解析の目的と対象</h2><p class='lead'>{html.escape(report_summary['analysis_objective'])}</p><p class='scope'><b>対象範囲</b><br>{html.escape(report_summary['dataset_scope'])}<br><b>Coverage</b><br>{html.escape(report_summary['coverage_summary'])}</p><h2>解釈サマリー</h2><p class='lead'>{html.escape(report_summary['executive_summary'])}</p><div class='key-messages'><b>主要メッセージ</b>{key_messages}</div><div class='limitations'><b>全体の制約</b>{limitations}</div><h2>重要な解釈</h2>{findings}<h2>矛盾・反証・negative result</h2><div class='contradiction-summary'><b>{html.escape(CONTRADICTION_LABELS[contradiction['status']])}</b><p>{html.escape(contradiction['summary'])}</p></div>{contradiction_items}<h2>仮説候補</h2><p class='meta'>HはHypothesis（検証可能な仮説候補）のIDです。単独Evidenceの通し番号ではありません。</p>{hypotheses}<h2>推奨される次解析</h2>{next_body}<details><summary>付録A：Evidence index</summary><div class='table-wrap'><table><thead><tr><th>Evidence</th><th>Operator</th><th>Scope</th><th>Description</th><th>Grouping</th><th>N</th><th>個別解析</th></tr></thead><tbody>{evidence_rows}</tbody></table></div></details><details><summary>付録B：Evidence間関係候補</summary><div class='table-wrap'><table><thead><tr><th>ID</th><th>関係</th><th>候補比較</th><th>独立性</th><th>Evidence</th><th>根拠</th></tr></thead><tbody>{relation_rows}</tbody></table></div></details><details><summary>付録C：探索・監査情報</summary><p>Policy {html.escape(value['policy_version'])} / Seed {html.escape(str(summary.get('seed')))} / Attempted signatures {len(summary.get('attempted_analysis_signatures') or [])}</p><h3>人間による確認事項</h3>{reviews}</details></main></body></html>"""
 
@@ -736,12 +842,37 @@ def run() -> int:
         raise ValueError("State run_id does not match Interpretation run_id")
     catalog = load_catalog(args.catalog)
     index = build_evidence_index(records, catalog, state)
-    relations = build_relations(index)
+    if args.conductor:
+        reservation = load_optional_json(args.id_reservation)
+        if reservation is None:
+            raise ValueError("Interpretation ID reservation could not be loaded")
+        validate(reservation, "interpretation_id_reservation.schema.json")
+        if reservation["run_id"] != run_id or reservation["node_id"] != args.node_id or reservation["round_id"] != args.round_id:
+            raise ValueError("Interpretation ID reservation identity does not match requested Run/Round/Node")
+        finding_ids = reservation["finding_ids"]
+        question_ids = reservation["question_ids"]
+        request_ids = reservation["request_ids"]
+        relation_ids = reservation["relation_ids"]
+    else:
+        finding_ids = [f"F{number:04d}" for number in range(1, len(index) + 1)]
+        question_ids = [f"Q{number:04d}" for number in range(1, len(index) + 1)]
+        request_ids = [f"REQ{number:04d}" for number in range(1, len(index) + 1)]
+        relation_ids = [f"REL{number:04d}" for number in range(1, max(1, len(index) * 3) + 1)]
+    if len(finding_ids) < len(index) or len(question_ids) < len(index) or len(request_ids) < len(index):
+        raise ValueError("ID reservation is too small for the selected Evidence set")
+    relations = build_relations(index, relation_ids)
     state_info = state_context(state)
-    configured_seed = ((state_info.get("exploration") or {}).get("budget") or {}).get("seed")
+    round_items = ((state_info.get("round_control") or {}).get("rounds") or [])
+    round_item = next((item for item in round_items if item.get("round_id") == args.round_id), None)
+    configured_seed = ((round_item or {}).get("resource_envelope") or {}).get("seed")
     seed = args.seed if args.seed is not None else (configured_seed if configured_seed is not None else int(value_hash(run_id)[:8], 16))
-    interpretation_id = f"{run_id}:{args.node_id}" if args.conductor else f"{run_id}:standalone:{value_hash([item['evidence_id'] for item in index])[:12]}"
-    interpretation = build_interpretation(evidence_items, index, relations, run_id, interpretation_id, args.stage, state_info, seed)
+    interpretation_id = args.node_id if args.conductor else f"standalone-{value_hash([item['evidence_id'] for item in index])[:12]}"
+    interpretation = build_interpretation(
+        evidence_items, index, relations, run_id, interpretation_id, args.stage, state_info, seed,
+        args.round_id, finding_ids, question_ids, request_ids,
+    )
+    if args.interpretation_focus:
+        interpretation["report_summary"]["analysis_objective"] = args.interpretation_focus
     validate(interpretation, "interpretation.schema.json")
     previous = []
     for path_text in args.previous_interpretation:
@@ -752,9 +883,12 @@ def run() -> int:
         previous.append(prior)
     dataset_count = int((state or {}).get("run", {}).get("row_count") or max((item["sample_count"] for item in index), default=0))
     context = {
-        "schema_version": "1.0.0",
+        "schema_version": SCHEMA_VERSION,
         "policy_version": POLICY_VERSION,
         "run_id": run_id,
+        "round_id": args.round_id,
+        "interpretation_id": interpretation_id,
+        "interpretation_focus": args.interpretation_focus,
         "seed": seed,
         "state_context": state_info,
         "evidence_index": index,
@@ -776,10 +910,11 @@ def run() -> int:
         outdir = find_workspace() / "results" / "CONDUCTOR" / args.project / run_id / "interpretation" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-")
     else:
         outdir = find_workspace() / "results" / "interpretation" / "standalone" / CAPABILITY["skill_name"] / run_id
-    if outdir.exists() and any(outdir.iterdir()):
+    existing_outputs = [path for path in outdir.iterdir() if path.name != "id_reservation.json"] if outdir.exists() else []
+    if existing_outputs:
         if not args.overwrite:
             raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
-        for name in ["interpretation.json", "interpretation.md", "interpretation.html", "interpretation_context.json", "exploration_plan.json", "execution_event.json"]:
+        for name in ["interpretation.json", "interpretation.md", "interpretation.html", "interpretation_context.json", "triage_updates.json", "question_updates.json", "relation_updates.json", "analysis_requests.json", "execution_event.json"]:
             (outdir / name).unlink(missing_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
     targets = [outdir / "interpretation.json", outdir / "interpretation.md", outdir / "interpretation.html", outdir / "interpretation_context.json"]
@@ -787,12 +922,22 @@ def run() -> int:
     targets[1].write_text(markdown_report(interpretation), encoding="utf-8")
     targets[2].write_text(html_report(interpretation), encoding="utf-8")
     write_json(targets[3], context)
+    sidecars = [
+        outdir / "triage_updates.json", outdir / "question_updates.json",
+        outdir / "relation_updates.json", outdir / "analysis_requests.json",
+    ]
+    write_json(sidecars[0], {"run_id": run_id, "round_id": args.round_id, "updates": []})
+    write_json(sidecars[1], {"run_id": run_id, "round_id": args.round_id, "questions": interpretation["questions"]})
+    write_json(sidecars[2], {"run_id": run_id, "round_id": args.round_id, "relations": interpretation["evidence_relations"]})
+    write_json(sidecars[3], {"run_id": run_id, "round_id": args.round_id, "analysis_requests": interpretation["analysis_requests"]})
     if args.conductor:
         config = vars(args)
         input_components = [{"role": "evidence", "path": str(path.resolve()), "sha256": file_hash(path)} for path in paths]
         if args.state:
             state_path = Path(args.state)
             input_components.append({"role": "state", "path": str(state_path.resolve()), "sha256": file_hash(state_path)})
+        reservation_path = Path(args.id_reservation)
+        input_components.append({"role": "id_reservation", "path": str(reservation_path.resolve()), "sha256": file_hash(reservation_path)})
         for path_text in args.previous_interpretation:
             previous_path = Path(path_text)
             input_components.append({"role": "previous_interpretation", "path": str(previous_path.resolve()), "sha256": file_hash(previous_path)})
@@ -800,10 +945,10 @@ def run() -> int:
         if catalog_path.exists():
             input_components.append({"role": "catalog", "path": str(catalog_path.resolve()), "sha256": file_hash(catalog_path)})
         event = {
-            "schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id,
+            "schema_version": "1.0.0", "project": args.project, "run_id": run_id, "round_id": args.round_id, "node_id": args.node_id,
             "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded",
             "input_hash": value_hash(input_components), "config_hash": value_hash(config), "configuration": config,
-            "artifacts": [{"type": "interpretation_context" if path.name.endswith("context.json") else "interpretation", "path": path.name, "sha256": file_hash(path)} for path in targets],
+            "artifacts": [{"type": "interpretation_context" if path.name.endswith("context.json") else "interpretation", "path": path.name, "sha256": file_hash(path)} for path in [*targets, *sidecars]],
             "warnings": [], "started_at": started_at, "finished_at": utc_now(),
         }
         validate(event, "execution_event.schema.json")

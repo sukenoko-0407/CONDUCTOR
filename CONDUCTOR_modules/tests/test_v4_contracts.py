@@ -127,8 +127,8 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertIn('skill_candidates = [SKILL_DIR, *SKILL_DIR.parents]', runner, name)
                 self.assertIn('installed_skill = candidate / ".claude" / "skills" / SKILL_DIR.name', runner, name)
                 self.assertIn('candidate / "CONDUCTOR_modules" / "catalog" / "catalog.json"', runner, name)
-                self.assertIn("--conductor requires --project, --run-id, and --node-id", runner, name)
-                self.assertIn("--project and --node-id are valid only with --conductor", runner, name)
+                self.assertIn("--conductor requires", runner, name)
+                self.assertIn("valid only with --conductor", runner, name)
                 self.assertIn('str(args.node_id).replace(":", "-")', runner, name)
                 self.assertIn("<node-id-safe>", instructions, name)
                 self.assertIn("Algorithm-specific options", instructions, name)
@@ -147,13 +147,13 @@ class RepositoryContractTests(unittest.TestCase):
         ids = [entry["capability_id"] for entry in catalog["capabilities"]]
         self.assertEqual(len(ids), len(set(ids)))
         by_id = {entry["capability_id"]: entry for entry in catalog["capabilities"]}
+        profile = json.loads((MODULE_ROOT / "catalog" / "analysis_profile.json").read_text(encoding="utf-8"))
         preauthorized = []
         for entry in catalog["capabilities"]:
             if entry.get("approval_policy") == "preauthorized_initial":
                 preauthorized.append(entry["capability_id"])
                 self.assertIn(entry["cost"]["class"], {"high", "very_high"})
                 self.assertFalse(entry["cost"]["human_approval_required"])
-                self.assertTrue(entry["default_wide_shallow"])
             elif entry["cost"]["class"] in {"high", "very_high"}:
                 self.assertTrue(entry["cost"]["human_approval_required"])
         self.assertEqual(["C002"], preauthorized)
@@ -163,25 +163,16 @@ class RepositoryContractTests(unittest.TestCase):
         )
         self.assertEqual({"standard", "chiral"}, {item["id"] for item in by_id["D002"]["variants"]})
         self.assertEqual({"folded", "svd"}, {item["id"] for item in by_id["D017"]["variants"]})
-        self.assertEqual({"D001", "D002", "D003", "D004", "D007", "D013", "D017"}, {entry["capability_id"] for entry in catalog["capabilities"] if entry["stage"] == "description" and entry.get("default_wide_shallow")})
-        self.assertEqual({"C001", "C002", "C003", "C005", "C006", "C007", "C009"}, {entry["capability_id"] for entry in catalog["capabilities"] if entry["stage"] == "grouping" and entry.get("default_wide_shallow")})
-        self.assertEqual({f"A{index:03d}" for index in range(1, 11)}, {entry["capability_id"] for entry in catalog["capabilities"] if entry["stage"] == "analysis" and entry.get("default_wide_shallow")})
-        self.assertEqual({"description": ["D002"]}, by_id["C005"]["wide_shallow_sources"])
-        self.assertEqual({"description": ["D001", "D013", "D017"]}, by_id["C006"]["wide_shallow_sources"])
-        self.assertEqual({"description": ["D001"]}, by_id["C007"]["wide_shallow_sources"])
-        self.assertEqual({"description": ["D002"]}, by_id["C009"]["wide_shallow_sources"])
-        self.assertEqual(
-            {"description": {"D004": {"metric": "cosine"}, "D007": {"metric": "tanimoto"}}},
-            by_id["A005"]["wide_shallow_parameter_overrides"],
-        )
-        self.assertEqual(
-            {"description": {"D002": {"metric": "tanimoto"}, "D013": {"metric": "manhattan"}, "D017": {"metric": "tanimoto"}}},
-            by_id["A006"]["wide_shallow_parameter_overrides"],
-        )
+        self.assertEqual("comprehensive-multiround-v1", catalog["profile_id"])
+        self.assertEqual(["*"], profile["basic_compute"]["description_capabilities"])
+        self.assertEqual(["C001", "C002", "C003", "C004"], profile["basic_compute"]["direct_structure_grouping"])
+        self.assertEqual([f"A{index:03d}" for index in range(1, 11)], profile["initial_exploration"]["global_operator_capabilities"])
+        self.assertIn("D013", profile["initial_exploration"]["description_master_panel"])
+        self.assertEqual("tanimoto", profile["description_semantics"]["D002"]["natural_metric"])
+        self.assertEqual("tanimoto", profile["description_semantics"]["D017"]["natural_metric"])
         self.assertEqual(["global", "within-group"], by_id["A002"]["scope_support"])
         self.assertEqual(["global", "within-group", "between-groups"], by_id["A006"]["scope_support"])
         self.assertEqual(["global"], by_id["A009"]["scope_support"])
-        self.assertEqual({"grouping": ["C002", "C003"]}, by_id["A009"]["wide_shallow_sources"])
         groupings = [entry for entry in catalog["capabilities"] if entry["stage"] == "grouping"]
         self.assertEqual([f"C{index:03d}" for index in range(1, 13)], sorted(entry["capability_id"] for entry in groupings))
         direct = [entry for entry in groupings if entry["grouping_kind"] == "direct_structure"]
@@ -193,48 +184,22 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertTrue(all(entry["input_contract"] == ["description_vector_csv"] and entry["dependencies"] == ["description"] for entry in vectors))
         self.assertTrue(all(entry["implementation"]["algorithm"] in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"} for entry in direct))
         self.assertFalse(any((SKILLS / f"cs-compute-clustering-structure-{name}").exists() for name in ["butina", "hierarchical", "dbscan", "louvain", "leiden", "connected-components"]))
-        self.assertFalse(by_id["I001"]["default_wide_shallow"])
         self.assertEqual("orchestration", by_id["O002"]["stage"])
         self.assertEqual("explicit_human_request_only", by_id["O002"]["implementation"]["invocation"])
-        self.assertFalse(by_id["O002"]["default_wide_shallow"])
         self.assertNotIn("D011", by_id)
         self.assertNotIn("D018", by_id)
 
     def test_state_report_is_explicit_read_only_and_timestamped(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
-            state_path = temporary / "state.json"
-            state = {
-                "schema_version": "1.0.0",
-                "conductor_version": "4.0.0",
-                "run": {
-                    "run_id": "state-report", "project": "unit", "input": "input.csv",
-                    "input_hash": "0" * 64, "endpoint": "pIC50", "higher_is_better": True,
-                    "parallel_limit": 2, "created_at": "2026-08-06T00:00:00+00:00",
-                },
-                "execution_graph": {
-                    "nodes": [
-                        {"node_id": "D001", "capability_id": "D002", "skill_name": "description", "stage": "description", "status": "succeeded", "dependencies": [], "human_approval": "not_required", "artifacts": []},
-                        {"node_id": "G001", "capability_id": "C002", "skill_name": "grouping", "stage": "grouping", "status": "running", "dependencies": ["D001"], "human_approval": "not_required", "artifacts": []},
-                        {"node_id": "O001", "capability_id": "A006", "skill_name": "operator", "stage": "analysis", "status": "pending", "dependencies": ["G001"], "human_approval": "not_required", "artifacts": []},
-                        {"node_id": "I001", "capability_id": "I001", "skill_name": "interpret", "stage": "interpretation", "status": "succeeded", "dependencies": ["D001"], "human_approval": "not_required", "artifacts": []},
-                        {"node_id": "I002", "capability_id": "I001", "skill_name": "interpret", "stage": "interpretation", "status": "pending", "dependencies": ["O001"], "previous_interpretation_nodes": ["I001"], "human_approval": "required", "artifacts": []},
-                    ],
-                    "edges": [
-                        {"source": "D001", "target": "G001", "relation": "depends_on"},
-                        {"source": "G001", "target": "O001", "relation": "depends_on"},
-                        {"source": "O001", "target": "I002", "relation": "depends_on"},
-                    ],
-                },
-                "domain_graph": {}, "evidence_graph": {},
-                "interpretation_exploration": {
-                    "policy_version": "1.1.0",
-                    "budget": {"configured": False, "max_iterations": None, "max_additional_nodes": None, "walltime_minutes": None, "seed": None, "configured_at": None},
-                    "iterations": [], "ledger": [],
-                },
-                "history": [], "updated_at": "2026-08-06T00:00:00+00:00",
-            }
-            state_path.write_text(json.dumps(state), encoding="utf-8")
+            state_root = temporary / "run"
+            state_path = state_root / "state.json"
+            manager = SKILLS / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
+            data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
+            subprocess.run([sys.executable, str(manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--project", "unit", "--parallel-limit", "2", "--run-id", "state-report", "--output-dir", str(state_root), "--request", "state report test"], cwd=ROOT, check=True, text=True, capture_output=True)
+            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "D002", "--reason", "report fixture"], cwd=ROOT, check=True, text=True, capture_output=True)
+            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "C002", "--reason", "report fixture"], cwd=ROOT, check=True, text=True, capture_output=True)
+            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "A002", "--reason", "report fixture"], cwd=ROOT, check=True, text=True, capture_output=True)
             before = state_path.read_bytes()
             runner = SKILLS / "cs-conductor-state-report" / "scripts" / "run.py"
             rejected = subprocess.run([sys.executable, str(runner), "--state", str(state_path)], cwd=ROOT, text=True, capture_output=True)
@@ -251,11 +216,29 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertTrue((report_dir / filename).is_file(), filename)
             self.assertEqual(before, state_path.read_bytes())
             rendered = (report_dir / "state_report.html").read_text(encoding="utf-8")
-            for token in ["実行DAG", "D001", "G001", "O001", "I002", "Interpretation lineage", "<circle", "edge planned"]:
+            for token in ["実行DAG", "ND0001", "NG0001", "NO0001", "<circle", ".edge.planned"]:
                 self.assertIn(token, rendered)
             summary = json.loads((report_dir / "state_summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(5, summary["node_count"])
+            self.assertEqual(3, summary["node_count"])
             self.assertEqual(hashlib.sha256(before).hexdigest(), summary["source_state_sha256"])
+
+    def test_explanation_html_is_current_and_self_contained(self) -> None:
+        explanation = MODULE_ROOT / "docs" / "CONDUCTOR_explanation"
+        expected = [
+            "CONDUCTOR_v4_overview.html",
+            "CONDUCTOR_v4_description_features.html",
+            "CONDUCTOR_v4_clustering_features.html",
+            "CONDUCTOR_v4_operator_features.html",
+            "CONDUCTOR_v4_description_relationships_and_coverage.html",
+        ]
+        for name in expected:
+            text = (explanation / name).read_text(encoding="utf-8")
+            self.assertIn("data:image/png;base64,", text, name)
+            self.assertIn("<style>", text, name)
+            self.assertNotIn('src="A1_style_set/', text, name)
+        overview = (explanation / "CONDUCTOR_v4_overview.html").read_text(encoding="utf-8")
+        for term in ["Run", "Round", "DAG", "basic_compute", "Interpretation"]:
+            self.assertIn(term, overview)
 
     def test_catalog_default_command_is_read_only(self) -> None:
         catalog_path = MODULE_ROOT / "catalog" / "catalog.json"
@@ -281,8 +264,8 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("Skill", definition)
         self.assertIn("AskUserQuestion", definition)
         self.assertIn("  - cs-conductor-orchestrator", definition)
-        self.assertIn("C002 MCS is the sole initial exception", definition)
-        self.assertIn("without asking for run-specific approval", definition)
+        self.assertIn("MCS is mandatory basic computation", definition)
+        self.assertIn("one human decision", definition)
         self.assertTrue((MODULE_ROOT / "pyproject.toml").is_file())
         self.assertTrue((MODULE_ROOT / "uv.lock").is_file())
 
@@ -293,11 +276,11 @@ class RepositoryContractTests(unittest.TestCase):
         capability = json.loads((SKILLS / "cs-analysis-interpret-evidence" / "capability.json").read_text(encoding="utf-8"))
         self.assertEqual(policy, snapshot)
         self.assertIn("read-only terminal stage", agent)
-        self.assertIn("Never request a computation whose signature already appears", agent)
+        self.assertIn("read-only terminal stage", agent)
         self.assertIn("falsification", agent.lower())
-        self.assertIn("compound ID", agent)
-        self.assertIn("exploration_plan", capability["output"])
-        self.assertTrue((SKILLS / "cs-analysis-interpret-evidence" / "schemas" / "interpretation_exploration_plan.schema.json").is_file())
+        self.assertIn("Run-global IDs", agent)
+        self.assertIn("questions", capability["output"])
+        self.assertTrue((SKILLS / "cs-analysis-interpret-evidence" / "schemas" / "interpretation_id_reservation.schema.json").is_file())
 
 
 @unittest.skipUnless(__import__("importlib").util.find_spec("rdkit"), "RDKit is not installed")
@@ -305,7 +288,13 @@ class RuntimeSmokeTests(unittest.TestCase):
     def run_cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         environment = dict(os.environ)
         environment["PYTHONUTF8"] = "1"
-        return subprocess.run([sys.executable, *arguments], cwd=ROOT, env=environment, check=True, text=True, capture_output=True)
+        completed = subprocess.run([sys.executable, *arguments], cwd=ROOT, env=environment, check=False, text=True, capture_output=True)
+        if completed.returncode != 0:
+            self.fail(
+                f"Command failed ({completed.returncode}): {[sys.executable, *arguments]}\n"
+                f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+            )
+        return completed
 
     def finalize_interpretation_fixture(self, path: Path) -> dict:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -465,7 +454,7 @@ class RuntimeSmokeTests(unittest.TestCase):
                 "--description", str(description), "--evaluation-representation", "D002", "--description-node-id", "D001",
                 "--metric", "auto", "--k", "2",
                 "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", "sali-metric",
-                "--node-id", "A006:001", "--overwrite",
+                "--node-id", "NO0001", "--round-id", "RND0001", "--evidence-id", "E000001", "--overwrite",
             )
             evidence = json.loads((outdir / "evidence.json").read_text(encoding="utf-8"))
             self.assertTrue((outdir / "operator_report.html").is_file())
@@ -487,9 +476,9 @@ class RuntimeSmokeTests(unittest.TestCase):
 
             membership = MODULE_ROOT / "tests" / "data" / "scope_membership.csv"
             scoped_evidence = []
-            for label, node_id, extra in [
-                ("within", "A006:002", ["--target-group", "G_ALIPHATIC", "--scope-mode", "within-group"]),
-                ("between", "A006:003", ["--target-group", "G_ALIPHATIC", "--comparison-group", "G_AROMATIC", "--scope-mode", "between-groups"]),
+            for label, node_id, evidence_id, extra in [
+                ("within", "NO0002", "E000002", ["--target-group", "G_ALIPHATIC", "--scope-mode", "within-group"]),
+                ("between", "NO0003", "E000003", ["--target-group", "G_ALIPHATIC", "--comparison-group", "G_AROMATIC", "--scope-mode", "between-groups"]),
             ]:
                 scoped_outdir = temporary / label
                 self.run_cli(
@@ -498,7 +487,8 @@ class RuntimeSmokeTests(unittest.TestCase):
                     "--evaluation-representation", "D002", "--description-node-id", "D001",
                     "--grouping-representation", "C005", "--grouping-node-id", "G001", "--metric", "auto", "--k", "2",
                     "--reference-scope", "global", "--output-dir", str(scoped_outdir), "--conductor",
-                    "--project", "unit", "--run-id", "sali-metric", "--node-id", node_id, "--overwrite", *extra,
+                    "--project", "unit", "--run-id", "sali-metric", "--node-id", node_id,
+                    "--round-id", "RND0001", "--evidence-id", evidence_id, "--overwrite", *extra,
                 )
                 scoped_evidence.append(json.loads((scoped_outdir / "evidence.json").read_text(encoding="utf-8")))
             self.assertEqual("within-group", scoped_evidence[0]["scope"]["mode"])
@@ -628,7 +618,7 @@ class RuntimeSmokeTests(unittest.TestCase):
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertNotEqual(0, rejected.returncode)
-            self.assertIn("Event configuration does not match planned node parameters", rejected.stderr)
+            self.assertIn("Event configuration does not match planned parameters", rejected.stderr)
 
             self.run_cli(str(runner), "--input", str(data), "--include-chirality", "--n-bits", "2048", "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", planned_node["node_id"], "--overwrite")
             self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(outdir / "execution_event.json"))
@@ -764,7 +754,8 @@ class RuntimeSmokeTests(unittest.TestCase):
                 str(SKILLS / "cs-analysis-pairwise-structure-similarity" / "scripts" / "run.py"),
                 "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
                 "--max-pairs", "5", "--random-seed", "321", "--output-dir", str(operator_outdir),
-                "--conductor", "--project", "unit", "--run-id", "pair-random", "--node-id", "A003:001", "--overwrite",
+                "--conductor", "--project", "unit", "--run-id", "pair-random", "--node-id", "NO0001",
+                "--round-id", "RND0001", "--evidence-id", "E000001", "--overwrite",
             )
             operator_evidence = json.loads((operator_outdir / "evidence.json").read_text(encoding="utf-8"))
             operator_summary = operator_evidence["machine_readable_summary"]
@@ -808,22 +799,14 @@ class RuntimeSmokeTests(unittest.TestCase):
         data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
-            description = temporary / "description"
-            analysis = temporary / "analysis"
-            interpretation = temporary / "interpretation"
             state_root = temporary / "state-run"
             state_path = state_root / "state.json"
             run_id = "unit_e2e"
             state_manager = SKILLS / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
-            self.run_cli(str(state_manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--assay-column", "assay", "--project", "unit", "--parallel-limit", "2", "--run-id", run_id, "--output-dir", str(state_root))
-            self.run_cli(str(state_manager), "plan-wide", "--state", str(state_path))
-            planned_state = json.loads(state_path.read_text(encoding="utf-8"))
-            assay_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "C011")
-            self.assertEqual("assay", assay_node["parameters"]["columns"])
-            self.assertEqual(str(data), assay_node["parameters"]["input"])
-            description_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "D001")
+            self.run_cli(str(state_manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--assay-column", "assay", "--project", "unit", "--parallel-limit", "2", "--run-id", run_id, "--output-dir", str(state_root), "--request", "Round 1 e2e")
+            description_node = json.loads(self.run_cli(str(state_manager), "add", "--state", str(state_path), "--capability-id", "D001", "--reason", "e2e description").stdout)["node"]
+            grouping_node = json.loads(self.run_cli(str(state_manager), "add", "--state", str(state_path), "--capability-id", "C001", "--reason", "e2e grouping").stdout)["node"]
             description = Path(description_node["output_dir"])
-            grouping_node = next(node for node in planned_state["execution_graph"]["nodes"] if node["capability_id"] == "C001")
             grouping = Path(grouping_node["output_dir"])
             self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", description_node["node_id"])
             self.run_cli(str(SKILLS / "cs-compute-description-rdkit-2d" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(description), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", description_node["node_id"], "--overwrite")
@@ -843,16 +826,55 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", grouping_node["node_id"])
             self.run_cli(str(SKILLS / "cs-compute-clustering-structure-murcko" / "scripts" / "run.py"), "--input", str(data), "--output-dir", str(grouping), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", grouping_node["node_id"], "--min-cluster-size", "3", "--overwrite")
             self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(grouping / "execution_event.json"))
-            self.run_cli(str(SKILLS / "cs-analysis-activity-distribution" / "scripts" / "run.py"), "--input", str(data), "--property-column", "pIC50", "--higher-is-better", "--output-dir", str(analysis), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "O001", "--overwrite")
-            self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--state", str(state_path), "--output-dir", str(interpretation), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", "I001", "--overwrite")
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            registry_path = Path(state["indices"]["group"]["registry_path"])
+            with registry_path.open(encoding="utf-8", newline="") as handle:
+                group_id = next(DictReader(handle))["group_id"]
+            operator_node = json.loads(self.run_cli(
+                str(state_manager), "add", "--state", str(state_path), "--capability-id", "A006",
+                "--depends-on", f"{description_node['node_id']},{grouping_node['node_id']}",
+                "--parameters-json", json.dumps({"scope_mode": "within-group", "target_group": group_id}),
+                "--reason", "e2e local SALI",
+            ).stdout)["node"]
+            analysis = Path(operator_node["output_dir"])
+            description_csv = description / "D001_rdkit_2d.csv"
+            membership = Path(json.loads(state_path.read_text(encoding="utf-8"))["indices"]["group"]["by_node"][grouping_node["node_id"]])
+            self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", operator_node["node_id"])
+            self.run_cli(
+                str(SKILLS / "cs-analysis-sali" / "scripts" / "run.py"),
+                "--input", str(data), "--property-column", "pIC50", "--higher-is-better",
+                "--description", str(description_csv), "--membership", str(membership),
+                "--evaluation-representation", "D001", "--description-node-id", description_node["node_id"],
+                "--grouping-representation", "C001", "--grouping-node-id", grouping_node["node_id"],
+                "--scope-mode", "within-group", "--target-group", group_id, "--k", "10",
+                "--metric", operator_node["parameters"]["metric"],
+                "--output-dir", str(analysis), "--conductor", "--project", "unit", "--run-id", run_id,
+                "--node-id", operator_node["node_id"], "--round-id", operator_node["round_id"],
+                "--evidence-id", operator_node["evidence_id"], "--overwrite",
+            )
+            self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(analysis / "execution_event.json"))
+            interpretation_node = json.loads(self.run_cli(
+                str(state_manager), "add-interpretation", "--state", str(state_path),
+                "--evidence-node", operator_node["node_id"], "--phase", "human_directed",
+                "--reason", "e2e interpretation",
+            ).stdout)["node"]
+            interpretation = Path(interpretation_node["output_dir"])
+            self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", interpretation_node["node_id"])
+            self.run_cli(
+                str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"),
+                "--evidence", str(analysis / "evidence.json"), "--state", str(state_path),
+                "--output-dir", str(interpretation), "--conductor", "--project", "unit", "--run-id", run_id,
+                "--node-id", interpretation_node["node_id"], "--round-id", interpretation_node["round_id"],
+                "--id-reservation", interpretation_node["id_reservation_path"], "--overwrite",
+            )
             standalone_interpretation = temporary / "standalone-interpretation"
             self.run_cli(str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"), "--evidence", str(analysis / "evidence.json"), "--output-dir", str(standalone_interpretation), "--run-id", run_id, "--overwrite")
             self.assertFalse((standalone_interpretation / "execution_event.json").exists())
-            for path in [description / "execution_event.json", grouping / "group_registry.json", analysis / "operator_report.html", analysis / "evidence.json", interpretation / "interpretation.json", interpretation / "interpretation.md", interpretation / "interpretation.html"]:
+            for path in [description / "execution_event.json", grouping / "group_registry.json", analysis / "operator_report.html", analysis / "evidence.json", analysis / "evidence_digest.json", interpretation / "interpretation.json", interpretation / "interpretation.md", interpretation / "interpretation.html"]:
                 self.assertTrue(path.is_file(), path)
-            self.assertEqual(f"{run_id}:I001", json.loads((interpretation / "interpretation.json").read_text(encoding="utf-8"))["interpretation_id"])
+            self.assertEqual(interpretation_node["node_id"], json.loads((interpretation / "interpretation.json").read_text(encoding="utf-8"))["interpretation_id"])
             html_report = (interpretation / "interpretation.html").read_text(encoding="utf-8")
-            for heading in ["機械下書き", "解析の目的と対象", "解釈サマリー", "重要な解釈", "矛盾・反証・negative result", "仮説候補", "推奨される次解析", "付録A：Evidence index"]:
+            for heading in ["機械下書き", "解析の目的と対象", "解釈サマリー", "重要な解釈", "矛盾・反証・negative result", "仮説候補", "Questions", "付録A：Evidence index"]:
                 self.assertIn(heading, html_report)
             edited_interpretation = self.finalize_interpretation_fixture(interpretation / "interpretation.json")
             edited_interpretation["human_review_points"].append("RENDER_SENTINEL")
@@ -862,31 +884,17 @@ class RuntimeSmokeTests(unittest.TestCase):
                 "--input", str(interpretation / "interpretation.json"),
             )
             self.assertIn("RENDER_SENTINEL", (interpretation / "interpretation.html").read_text(encoding="utf-8"))
-            second_interpretation = temporary / "interpretation-I002"
-            self.run_cli(
-                str(SKILLS / "cs-analysis-interpret-evidence" / "scripts" / "run.py"),
-                "--evidence", str(analysis / "evidence.json"), "--state", str(state_path),
-                "--previous-interpretation", str(interpretation / "interpretation.json"),
-                "--output-dir", str(second_interpretation), "--conductor", "--project", "unit",
-                "--run-id", run_id, "--node-id", "I002", "--overwrite",
-            )
-            second_value = json.loads((second_interpretation / "interpretation.json").read_text(encoding="utf-8"))
-            second_context = json.loads((second_interpretation / "interpretation_context.json").read_text(encoding="utf-8"))
-            self.assertEqual(f"{run_id}:I002", second_value["interpretation_id"])
-            self.assertEqual([f"{run_id}:I001"], [item["interpretation_id"] for item in second_context["previous_interpretations"]])
-            self.assertIn("RENDER_SENTINEL", (interpretation / "interpretation.html").read_text(encoding="utf-8"))
+            self.run_cli(str(state_manager), "record", "--state", str(state_path), "--event", str(interpretation / "execution_event.json"))
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            self.assertEqual("succeeded", state["execution_graph"]["nodes"][0]["status"])
-            self.assertEqual(1, state["group_index"]["group_count"])
-            registry_path = Path(state["group_index"]["registry_path"])
-            matrix_path = Path(state["group_index"]["matrix_shards"][0]["path"])
-            with registry_path.open(encoding="utf-8", newline="") as handle:
-                registry_rows = list(DictReader(handle))
+            self.assertEqual("succeeded", next(node for node in state["execution_graph"]["nodes"] if node["node_id"] == interpretation_node["node_id"])["status"])
+            self.assertEqual(1, state["indices"]["group"]["group_count"])
+            matrix_path = Path(state["indices"]["group"]["matrix_shards"][0]["path"])
             with matrix_path.open(encoding="utf-8", newline="") as handle:
                 matrix_rows = list(DictReader(handle))
-            self.assertEqual(grouping_node["node_id"], registry_rows[0]["source_node_id"])
-            self.assertRegex(registry_rows[0]["group_id"], r"^G_G001_[A-F0-9]{16}$")
-            self.assertIn(registry_rows[0]["group_id"], matrix_rows[0])
+            self.assertRegex(group_id, r"^G[0-9]{6}$")
+            self.assertIn(group_id, matrix_rows[0])
+            self.assertEqual(1, state["indices"]["findings"]["count"])
+            self.assertEqual(1, state["indices"]["questions"]["count"])
 
 
 if __name__ == "__main__":

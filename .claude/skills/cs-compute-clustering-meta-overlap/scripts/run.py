@@ -95,12 +95,9 @@ def validate_json(value: dict[str, Any], schema_name: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=f"Run {CAPABILITY['skill_name']}.")
     algorithm = CAPABILITY["implementation"]["algorithm"]
-    parser.set_defaults(smiles=None, compound_id=None, id_column=None, smiles_column=None, columns=None)
+    parser.set_defaults(id_column=None, smiles_column=None, columns=None)
     if algorithm.startswith("structure_"):
-        source = parser.add_mutually_exclusive_group(required=True)
-        source.add_argument("--input", help="CSV input containing compound IDs and SMILES.")
-        source.add_argument("--smiles", action="append", help="SMILES; repeat for multiple compounds.")
-        parser.add_argument("--compound-id", action="append")
+        parser.add_argument("--input", required=True, help="CSV input containing compound IDs and SMILES.")
         parser.add_argument("--id-column")
         parser.add_argument("--smiles-column")
     else:
@@ -175,24 +172,15 @@ def infer_named(columns: list[str], kind: str) -> str | None:
 
 
 def load_input(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
-    if args.input:
-        paths = [Path(value) for value in args.input] if isinstance(args.input, list) else [Path(args.input)]
-        frames = []
-        for path in paths:
-            header = pd.read_csv(path, nrows=0)
-            candidate_id = args.id_column or infer_named(list(header.columns), "id")
-            frames.append(pd.read_csv(path, dtype={candidate_id: "string"} if candidate_id else None))
-        df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
-        source_name = paths[0].stem if len(paths) == 1 else "multiple_memberships"
-        digest = value_hash([{"path": str(path.resolve()), "sha256": file_hash(path)} for path in paths])
-    else:
-        smiles = list(args.smiles or [])
-        ids = list(args.compound_id or [])
-        if ids and len(ids) != len(smiles):
-            raise ValueError("--compound-id count must match --smiles count")
-        df = pd.DataFrame({"compound_id": ids or [f"CMPD_{i:06d}" for i in range(1, len(smiles) + 1)], "smiles": smiles})
-        source_name = "smiles"
-        digest = value_hash({"compound_ids": df["compound_id"].astype(str).tolist(), "smiles": smiles})
+    paths = [Path(value) for value in args.input] if isinstance(args.input, list) else [Path(args.input)]
+    frames = []
+    for path in paths:
+        header = pd.read_csv(path, nrows=0)
+        candidate_id = args.id_column or infer_named(list(header.columns), "id")
+        frames.append(pd.read_csv(path, dtype={candidate_id: "string"} if candidate_id else None))
+    df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
+    source_name = paths[0].stem if len(paths) == 1 else "multiple_memberships"
+    digest = value_hash([{"path": str(path.resolve()), "sha256": file_hash(path)} for path in paths])
     if df.empty:
         raise ValueError("At least one input row is required")
     id_column = args.id_column or infer_named(list(df.columns), "id")
@@ -587,7 +575,7 @@ def run() -> int:
     summary.to_csv(summary_path, index=False)
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     input_label = ";".join(args.input) if isinstance(args.input, list) else (args.input or "inline_smiles")
-    manifest = {"schema_version": "1.0.0", "conductor_version": "4.0.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name], "created_at": utc_now()}
+    manifest = {"schema_version": "1.0.0", "conductor_version": "4.3.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name], "created_at": utc_now()}
     if args.conductor:
         validate_json(manifest, "artifact_manifest.schema.json")
         write_json(outdir / "grouping_manifest.json", manifest)

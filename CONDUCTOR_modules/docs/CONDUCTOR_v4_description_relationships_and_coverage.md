@@ -1,7 +1,7 @@
-# CONDUCTOR v4 Description間の関係性とカバー範囲
+# CONDUCTOR 4.3.0 Description間の関係性とカバー範囲
 
 作成日: 2026-08-03  
-対象: CONDUCTOR v4 Catalogに収載されたDescription Skill 18件
+対象: CONDUCTOR 4.3.0 target Catalogに収載されたDescription Skill 18件
 
 ## 1. 要約
 
@@ -106,27 +106,28 @@ D002、D004、D005はいずれも2D graph由来だが、局所環境、距離関
 | supervised task-specific representation | 未対応 | なし | endpointを使って学習するembeddingは対象外 |
 | protein/pocket/interaction | 対象外 | なし | SBDDは将来拡張用schemaのみ |
 
-## 7. 広く浅い解析での代表選択
+## 7. 基本計算と初期探索での使用
 
-初期探索はSkill数ではなく、情報familyの多様性とヒントの取りこぼし防止を優先する。CONDUCTORの`representative-family-wide-v1`では、次の7種類を初手の固定代表とする。
+新仕様では、少数の固定代表だけを「初手」として計算する方式を採らない。人間から明示的な省略指示がない限り、Catalog profileで有効かつ実行可能な**全Description**を`basic_compute`で一度生成する。D016、D019、D020などの高コスト表現も対象に含め、Run開始時に一括bundleとして承認する。
 
-| 役割 | 初手の固定代表 | 代替・深掘り候補 |
+ただし、全Descriptionを生成することと、全Description × 全Grouping × 全Operatorの直積を最初から実行することは別である。初期探索では、生成済み表現から情報familyの異なる共通master panelを選び、全applicable Operator roleを一定の規則で適用する。Vector Clusteringでも、人間管理profileがfamilyごとの代表を宣言し、特定Operator専用のsource集合を埋め込まない。
+
+| 情報family | 初期master panelで必要な観点 | 代表の選択方針 |
 |---|---|---|
-| 低コスト2D scalar | D001 | D015 |
-| local graph | D002 standard | D002 chiral/feature/count variant |
-| interpretable substructure | D003 | D008、focused viewとしてD006 |
-| graph上の距離・sequence | D004 | D005を局所再評価に使用 |
-| path/subgraph | D007 | 結果が不安定な場合にD009またはD010を追加 |
-| 2D pharmacophore | D017 folded | D017 SVDは下流algorithmとの相性を変えたい場合 |
-| 3D | D013 | D012、D016。D014は限定shape表が必要な場合 |
-| learned/quantum | 初期探索では通常見送る | 情報価値と計算資源を説明し、人間承認後にD019/D020 |
+| 2D scalar | 解釈可能な物性・topology | D001を基準とし、広域表が必要ならD015も使用 |
+| local graph | 局所置換と近傍 | D002の互換variantをprofileで指定 |
+| substructure | 定義済みkeyとgeneric pattern | D003、D006、D008の冗長性を記録して選択 |
+| distance/path | 原子対、torsion、path | D004/D005とD007/D009/D010から異なる観測単位を選択 |
+| pharmacophore | 2D機能配置 | D017の出力variantとmetricを明示 |
+| 3D | shapeと3D pharmacophore | D012/D013/D014/D016の包含関係を考慮して最低一軸以上を使用 |
+| learned/quantum | 学習済み・電子状態 | 利用可能性と承認scope内でD019/D020を比較軸に含める |
 
-3Dは必要性が見えてから追加する軸ではなく、初手からヒントを探索する必須軸である。初手の一部に信号がなくても残りの代表を打ち切らない。
+代表選択はCatalog／profileの宣言データで変更でき、Orchestrator codeへ固定しない。追加探索では未実施cellをfamily、Grouping、Operator、scopeで層化し、偏りを抑えたseed付きランダム非復元抽出を行う。
 
 ## 8. 現時点の総合評価
 
 - 古典的Ligand-only 2D SAR表現のbreadthは高い。
-- fingerprintは選択肢が多く、初期探索での総当たりより代表選択が重要である。
+- fingerprintは選択肢が多い。基本計算では全表現を生成し、初期Operator適用ではfamilyの広さと冗長性の両方を管理する。
 - D006、D014、D017 SVDは独立情報源ではなく、解釈性、出力粒度、下流処理との相性を変える役割が強い。
 - 3Dはglobal shapeとMordredを持つが、conformer ensemble、explicit 3D pharmacophore、electrostatic fieldは不足している。
 - D019とD020は異なる情報軸を追加できるが、現在の実効coverageは限定的または外部model依存である。
