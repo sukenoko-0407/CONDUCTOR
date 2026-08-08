@@ -22,6 +22,13 @@
 - `CONDUCTOR_v4_skill_catalog.md`はCapability一覧であり、Catalog生成物と照合して更新する。
 - Description計算、Grouping計算、Operator数値Kernelの科学的仕様は現行Skillを基準とし、今回のcontrol-plane refactorでは原則変更しない。
 
+## プロンプト集
+
+- [新規・継続解析依頼](prompt/CONDUCTOR_analysis_request_prompt.md)
+- [セッション引継ぎ](prompt/CONDUCTOR_session_handoff_template.md)
+- [v4.3.0からv4.3.1への一回限りのMigration](prompt/CONDUCTOR_v430_to_v431_migration_prompt.md)
+- [Migration直後の安全確認](prompt/CONDUCTOR_post_migration_audit_prompt.md)
+
 ## 互換性
 
 4.3.1の通常Runtimeは4.3.0 Stateを暗黙更新しない。例外として、一回限りのMigration Agent／Skillが `scan → 人間承認 → apply → verify` により、旧run rootを変更せず別の新run rootを作成できる。検証済みDescription／Grouping／Operator artifactだけをactive DAGへ取り込み、旧Interpretationは参照用に保持して新Roundで作り直す。

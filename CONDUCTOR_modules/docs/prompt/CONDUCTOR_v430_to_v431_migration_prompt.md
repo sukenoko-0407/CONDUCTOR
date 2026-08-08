@@ -18,14 +18,16 @@ scanの説明を確認した後は、同じセッションで次のように指�
 提示されたmigration planを承認します。そのplanをapplyし、続けてverifyしてください。verifyが失敗した場合は、新run rootを利用可能とは扱わず、失敗内容を報告してください。
 ```
 
-成功後の解析再開例:
+成功後は、Orchestratorを直ちに起動せず、まず[Migration直後の安全確認プロンプト](CONDUCTOR_post_migration_audit_prompt.md)で移行先を監査する。
+
+監査合格後の解析再開例:
 
 ```text
 cs-conductor-orchestrator を使用してください。
 state.json: <新run root>/state.json
 Round: RND0002
 
-移行済みEvidenceに対する新しいInterpretationを最初に完成させ、その後はorchestrator_brief.jsonに従って解析を継続してください。
+RND0002を通常のRoundとして実行してください。追加するDescription、Grouping、Operatorを実行した後、Roundの最後に移行済みEvidenceとRND0002のEvidenceを対象とするInterpretationを完成させてください。
 ```
 
 ## 移行で引き継ぐもの
