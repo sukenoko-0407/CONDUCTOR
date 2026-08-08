@@ -154,6 +154,12 @@ bootstrap時はQuick Auditを行う。Agent停止、lease takeover、Quick Audit
 
 失敗Nodeの再実行は同じNode IDに新しいexecution attemptを追加する。別Nodeを作って番号を消費しない。`running` Nodeを残してAgentが停止した場合は、event／artifactを照合してから再試行可否を決める。
 
-## 13. v4.3.0 Runの一回限り移行
+## 13. 完了済み結果を詳しく確認する
+
+Round完了後、既存解析を動かさずにFinding、仮説、Question、Evidence、Node、Group、Operator結果を詳しく確認する場合は`cs-conductor-result-concierge`を使う。出力は`<run_root>/concierge/CRQ######/`に限定され、State、DAG、科学artifactを変更しない。
+
+コンシェルジュが提示した追加解析案は自動実行されない。採用する内容と人間の見解を、次Round開始時のOrchestrator依頼へ添付する。これにより見解と依頼全文がRound requestとしてState側へ正式に引き継がれる。依頼例は`docs/prompt/CONDUCTOR_result_concierge_prompt.md`を参照する。
+
+## 14. v4.3.0 Runの一回限り移行
 
 通常Orchestratorで旧Stateを開かない。`cs-conductor-v430-migrator` にsourceと未作成targetを指定し、scan結果を人間が確認した後だけapplyする。Migrationは`RND0001` checkpoint、active Roundなし、明示的handoff待ちで終了する。Migration AgentはbootstrapやOrchestratorを起動しない。別の人間指示を受けたOrchestratorがRND0002を開始し、移行済み基本計算を再利用して不足分だけを計画する。詳細は `docs/prompt/CONDUCTOR_v430_to_v431_migration_prompt.md` を参照する。

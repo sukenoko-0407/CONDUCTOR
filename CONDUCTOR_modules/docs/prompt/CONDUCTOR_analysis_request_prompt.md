@@ -97,6 +97,21 @@ State: <ABSOLUTE_STATE_JSON_PATH>
 解析NodeとしてDAGへ登録しないでください。
 ```
 
+## 既存結果だけを詳しく確認する
+
+```text
+`cs-conductor-result-concierge` Skillを使用してください。
+State: <ABSOLUTE_STATE_JSON_PATH>
+
+確認したい内容: <具体的な質問>
+注目ID: <Finding / Hypothesis / Question / Evidence / Node / Group ID、任意>
+
+解析とStateを完全にFreezeし、既存artifactだけから説明・比較・再可視化してください。
+追加解析案は実行せず、次Round用promptとして分離してください。
+```
+
+詳細は`CONDUCTOR_result_concierge_prompt.md`を参照する。
+
 ## 異常停止後に再開する
 
 ```text

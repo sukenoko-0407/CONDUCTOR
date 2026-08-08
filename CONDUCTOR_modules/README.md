@@ -31,9 +31,9 @@ python CONDUCTOR_modules/tools/install_into_project.py --target /path/to/project
 python CONDUCTOR_modules/tools/install_into_project.py --target /path/to/project --apply
 ```
 
-installerは既存の`.claude/`自体を置換せず、通常Orchestrator／Interpreterと一回限りMigration Agent、allowlist収載Skill、maintenance Skill、`CONDUCTOR_modules/`だけを追加する。同名のAgent、Skill、moduleがすでに存在する場合は停止するため、既存内容とのmergeは人間が判断する。
+installerは既存の`.claude/`自体を置換せず、通常Orchestrator／Interpreterと一回限りMigration Agent、allowlist収載Skill、maintenance Skill、support Skill、`CONDUCTOR_modules/`だけを追加する。同名のAgent、Skill、moduleがすでに存在する場合は停止するため、既存内容とのmergeは人間が判断する。
 
-手動導入では、Project rootへ`.claude/agents/cs-conductor-*.md`、allowlist収載された`.claude/skills/cs-*`、`CONDUCTOR_modules/`を同じ相対配置でコピーする。
+手動導入では、Project rootへ`.claude/agents/cs-conductor-*.md`、allowlist／maintenance／supportに収載された`.claude/skills/cs-*`、`CONDUCTOR_modules/`を同じ相対配置でコピーする。
 
 一般利用だけが目的なら、必要な個別Skillを`.claude/skills/`へ単独コピーして実行できる。Skillは自身が置かれた最も近いProjectを出力先として認識する。`--conductor`を使う全体運用では、Agent群と`CONDUCTOR_modules/`を含む完全配置を使用する。
 
@@ -70,6 +70,7 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py catalog --check
 - State可視化: `.claude/skills/cs-conductor-state-report/`（人間の明示要求時だけ実行）
 - State制御: `.claude/skills/cs-conductor-runtime/`（通常はOrchestrator Agentから内部利用）
 - Quick／Full Audit: `.claude/skills/cs-conductor-run-audit/`
+- 凍結済み結果の人間向け解説: `.claude/skills/cs-conductor-result-concierge/`（明示要求時のみ。State/DAG非変更）
 - 一回限りv4.3.0移行: `.claude/agents/cs-conductor-v430-migrator.md` と `.claude/skills/cs-conductor-migrate-v430-run/`
 - Skill生成・保守: `tools/`と`schemas/`
 

@@ -1,0 +1,1931 @@
+{
+  "schema_version": "1.1.0",
+  "conductor_version": "4.3.0",
+  "profile_id": "comprehensive-multiround-v1",
+  "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json",
+  "profile_hash": "483b5a553c8bbb9e38d1bdf1dce0beb897609d6d8c572c95bb2e3a9026044f66",
+  "selection_managed_by": "human",
+  "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
+  "generated_at": "2026-08-07T11:02:29.608800+00:00",
+  "capabilities": [
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A001",
+      "skill_name": "cs-analysis-group-profile",
+      "display_name": "Group profile",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "group_profile",
+      "description": "Use when Claude Code needs to run Group profile from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
+      "wide_shallow_axis": "group_activity_profile",
+      "wide_shallow_sources": {
+        "grouping": [
+          "*"
+        ]
+      },
+      "operator_id": "A001",
+      "default_parameters": {
+        "high_quantile": 0.8,
+        "low_quantile": 0.2
+      },
+      "dependencies": [
+        "grouping"
+      ],
+      "input_contract": [
+        "endpoint_csv",
+        "grouping"
+      ],
+      "output": {
+        "filename": "A001_group_profile.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "group_profile"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A002",
+      "skill_name": "cs-analysis-activity-distribution",
+      "display_name": "Activity distribution",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "property_profile",
+      "description": "Use when Claude Code needs to run Activity distribution from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
+      "wide_shallow_axis": "endpoint_distribution",
+      "operator_id": "A002",
+      "dependencies": [],
+      "input_contract": [
+        "endpoint_csv"
+      ],
+      "output": {
+        "filename": "A002_activity_distribution.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "activity_distribution"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A003",
+      "skill_name": "cs-analysis-pairwise-structure-similarity",
+      "display_name": "Pairwise structure similarity",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "feature_space",
+      "description": "Use when Claude Code needs to run Pairwise structure similarity from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
+      "wide_shallow_axis": "pairwise_structure_space",
+      "operator_id": "A003",
+      "default_parameters": {
+        "max_pairs": 200000,
+        "random_seed": 61453
+      },
+      "dependencies": [],
+      "input_contract": [
+        "endpoint_csv"
+      ],
+      "output": {
+        "filename": "A003_pairwise_structure_similarity.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "pairwise_structure_similarity"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A004",
+      "skill_name": "cs-analysis-descriptor-activity-correlation",
+      "display_name": "Descriptor-activity correlation",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "interpretable_association",
+      "description": "Use when Claude Code needs to run Descriptor-activity correlation from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
+      "wide_shallow_axis": "descriptor_activity_association",
+      "wide_shallow_sources": {
+        "description": [
+          "D001",
+          "D013"
+        ]
+      },
+      "operator_id": "A004",
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "endpoint_csv",
+        "description"
+      ],
+      "output": {
+        "filename": "A004_descriptor_activity_correlation.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "descriptor_activity_correlation"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A005",
+      "skill_name": "cs-analysis-knn-activity-consistency",
+      "display_name": "kNN activity consistency",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "feature_space",
+      "description": "Use when Claude Code needs to run kNN activity consistency from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
+      "wide_shallow_axis": "neighborhood_activity_consistency",
+      "wide_shallow_sources": {
+        "description": [
+          "D004",
+          "D007"
+        ]
+      },
+      "wide_shallow_parameter_overrides": {
+        "description": {
+          "D004": {
+            "metric": "cosine"
+          },
+          "D007": {
+            "metric": "tanimoto"
+          }
+        }
+      },
+      "operator_id": "A005",
+      "default_parameters": {
+        "k": 10
+      },
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "endpoint_csv",
+        "description"
+      ],
+      "output": {
+        "filename": "A005_knn_activity_consistency.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "knn_activity_consistency"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A006",
+      "skill_name": "cs-analysis-sali",
+      "display_name": "Extended structure-activity landscape index",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "landscape",
+      "description": "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI, preserve high-SALI cliff pairs for interpretation, and generate CONDUCTOR v4 evidence.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
+      "wide_shallow_axis": "representation_specific_activity_cliffs",
+      "wide_shallow_sources": {
+        "description": [
+          "D002",
+          "D013",
+          "D017"
+        ]
+      },
+      "wide_shallow_parameter_overrides": {
+        "description": {
+          "D002": {
+            "metric": "tanimoto"
+          },
+          "D013": {
+            "metric": "manhattan"
+          },
+          "D017": {
+            "metric": "tanimoto"
+          }
+        }
+      },
+      "operator_id": "A006",
+      "default_parameters": {
+        "k": 10
+      },
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "endpoint_csv",
+        "description"
+      ],
+      "output": {
+        "filename": "A006_sali.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "sali"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A007",
+      "skill_name": "cs-analysis-activity-cliff",
+      "display_name": "Activity cliff detection",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "landscape",
+      "description": "Use when Claude Code needs to run Activity cliff detection from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group",
+        "between-groups"
+      ],
+      "wide_shallow_axis": "structure_activity_cliffs",
+      "operator_id": "A007",
+      "default_parameters": {
+        "similarity_threshold": 0.8,
+        "activity_delta_threshold": 1.0,
+        "max_pairs": 200000,
+        "random_seed": 61453
+      },
+      "dependencies": [],
+      "input_contract": [
+        "endpoint_csv"
+      ],
+      "output": {
+        "filename": "A007_activity_cliff.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "activity_cliff"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A008",
+      "skill_name": "cs-analysis-group-enrichment",
+      "display_name": "Group activity enrichment",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "group_profile",
+      "description": "Use when Claude Code needs to run Group activity enrichment from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
+      "wide_shallow_axis": "group_activity_enrichment",
+      "wide_shallow_sources": {
+        "grouping": [
+          "*"
+        ]
+      },
+      "operator_id": "A008",
+      "default_parameters": {
+        "high_quantile": 0.8,
+        "low_quantile": 0.2
+      },
+      "dependencies": [
+        "grouping"
+      ],
+      "input_contract": [
+        "endpoint_csv",
+        "grouping"
+      ],
+      "output": {
+        "filename": "A008_group_enrichment.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "group_enrichment"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A009",
+      "skill_name": "cs-analysis-group-overlap",
+      "display_name": "Group overlap",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "group_quality",
+      "description": "Use when Claude Code needs to run Group overlap from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global"
+      ],
+      "wide_shallow_axis": "overlapping_group_structure",
+      "wide_shallow_sources": {
+        "grouping": [
+          "C002",
+          "C003"
+        ]
+      },
+      "operator_id": "A009",
+      "dependencies": [
+        "grouping"
+      ],
+      "input_contract": [
+        "endpoint_csv",
+        "grouping"
+      ],
+      "output": {
+        "filename": "A009_group_overlap.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "group_overlap"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "A010",
+      "skill_name": "cs-analysis-group-structural-diversity",
+      "display_name": "Group structural diversity",
+      "version": "4.0.0",
+      "stage": "analysis",
+      "family": "group_quality",
+      "description": "Use when Claude Code needs to run Group structural diversity from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "scope_support": [
+        "global",
+        "within-group"
+      ],
+      "wide_shallow_axis": "group_structural_diversity",
+      "wide_shallow_sources": {
+        "grouping": [
+          "C001",
+          "C002",
+          "C003",
+          "C006"
+        ]
+      },
+      "operator_id": "A010",
+      "default_parameters": {
+        "max_pairs": 200000,
+        "random_seed": 61453
+      },
+      "dependencies": [
+        "grouping"
+      ],
+      "input_contract": [
+        "endpoint_csv",
+        "grouping"
+      ],
+      "output": {
+        "filename": "A010_group_structural_diversity.csv",
+        "report": "operator_report.html",
+        "evidence": "evidence.json"
+      },
+      "implementation": {
+        "operator": "group_structural_diversity"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C001",
+      "skill_name": "cs-compute-clustering-structure-murcko",
+      "display_name": "Murcko scaffold clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by Murcko scaffold, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "scaffold_rule",
+      "clustering_id": "C001",
+      "default_parameters": {
+        "min_cluster_size": 3
+      },
+      "dependencies": [],
+      "input_contract": [
+        "compound_id_smiles_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "structure_murcko"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C002",
+      "skill_name": "cs-compute-clustering-structure-mcs",
+      "display_name": "MCS clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval.",
+      "cost": {
+        "class": "high",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "approval_policy": "preauthorized_initial",
+      "applicability": {
+        "status": "experimental",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "maximum_common_substructure",
+      "clustering_id": "C002",
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "max_pairs": 1000,
+        "max_core_groups": 300,
+        "random_seed": 61453
+      },
+      "dependencies": [],
+      "input_contract": [
+        "compound_id_smiles_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "structure_mcs"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C003",
+      "skill_name": "cs-compute-clustering-structure-brics",
+      "display_name": "BRICS fragment clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by shared BRICS fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "fragment_decomposition",
+      "clustering_id": "C003",
+      "default_parameters": {
+        "min_cluster_size": 3
+      },
+      "dependencies": [],
+      "input_contract": [
+        "compound_id_smiles_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "structure_brics"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C004",
+      "skill_name": "cs-compute-clustering-structure-recap",
+      "display_name": "RECAP fragment clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "direct_structure",
+      "grouping_kind": "direct_structure",
+      "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by shared RECAP fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "clustering_id": "C004",
+      "dependencies": [],
+      "input_contract": [
+        "compound_id_smiles_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "structure_recap"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C005",
+      "skill_name": "cs-compute-clustering-vector-butina",
+      "display_name": "Vector Butina clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply Butina clustering to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate fingerprints internally.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_similarity_partition",
+      "wide_shallow_sources": {
+        "description": [
+          "D002"
+        ]
+      },
+      "clustering_id": "C005",
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "similarity_threshold": 0.55
+      },
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "description_vector_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "vector_butina"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C006",
+      "skill_name": "cs-compute-clustering-vector-hierarchical",
+      "display_name": "Vector hierarchical clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply hierarchical clustering to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_hierarchical",
+      "wide_shallow_sources": {
+        "description": [
+          "D001",
+          "D013",
+          "D017"
+        ]
+      },
+      "clustering_id": "C006",
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "distance_threshold": 0.7
+      },
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "description_vector_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "vector_hierarchical"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C007",
+      "skill_name": "cs-compute-clustering-vector-dbscan",
+      "display_name": "Vector DBSCAN clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply DBSCAN to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_density_clustering",
+      "wide_shallow_sources": {
+        "description": [
+          "D001"
+        ]
+      },
+      "clustering_id": "C007",
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "eps": 0.5,
+        "min_samples": 3
+      },
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "description_vector_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "vector_dbscan"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C008",
+      "skill_name": "cs-compute-clustering-vector-louvain",
+      "display_name": "Vector Louvain clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply Louvain community detection to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "similarity_threshold": 0.55,
+        "resolution": 1.0,
+        "random_seed": 61453
+      },
+      "clustering_id": "C008",
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "description_vector_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "vector_louvain"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C009",
+      "skill_name": "cs-compute-clustering-vector-leiden",
+      "display_name": "Vector Leiden clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to apply Leiden community detection to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "vector_graph_community",
+      "wide_shallow_sources": {
+        "description": [
+          "D002"
+        ]
+      },
+      "clustering_id": "C009",
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "similarity_threshold": 0.55,
+        "resolution": 1.0,
+        "random_seed": 61453
+      },
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "description_vector_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "vector_leiden"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C010",
+      "skill_name": "cs-compute-clustering-vector-connected-components",
+      "display_name": "Vector connected-component clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "description_vector",
+      "grouping_kind": "description_vector",
+      "description": "Use when Claude Code needs to form connected components from a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "default_parameters": {
+        "min_cluster_size": 3,
+        "metric": "auto",
+        "similarity_threshold": 0.55
+      },
+      "clustering_id": "C010",
+      "dependencies": [
+        "description"
+      ],
+      "input_contract": [
+        "description_vector_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "vector_connected_components"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C011",
+      "skill_name": "cs-compute-clustering-categorical",
+      "display_name": "Categorical-column clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "human_context",
+      "grouping_kind": "categorical",
+      "description": "Use when Claude Code needs to run Categorical-column clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "wide_shallow_axis": "assay_context_groups",
+      "clustering_id": "C011",
+      "dependencies": [],
+      "input_contract": [
+        "categorical_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "categorical"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "C012",
+      "skill_name": "cs-compute-clustering-meta-overlap",
+      "display_name": "Overlap-based meta clustering",
+      "version": "4.0.0",
+      "stage": "grouping",
+      "family": "meta",
+      "grouping_kind": "meta",
+      "description": "Use when Claude Code needs to run Overlap-based meta clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "experimental",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "clustering_id": "C012",
+      "dependencies": [
+        "grouping"
+      ],
+      "input_contract": [
+        "group_membership_csv"
+      ],
+      "output": {
+        "membership": "cluster_membership.csv",
+        "summary": "cluster_summary.csv"
+      },
+      "implementation": {
+        "algorithm": "meta_overlap"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D001",
+      "skill_name": "cs-compute-description-rdkit-2d",
+      "display_name": "RDKit 2D descriptors",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "physicochemical",
+      "description": "Use when Claude Code needs to run RDKit 2D descriptors from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "physicochemical_2d",
+      "representation_id": "D001",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D001_rdkit_2d"
+      },
+      "implementation": {
+        "algorithm": "rdkit_2d"
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D002",
+      "skill_name": "cs-compute-description-morgan",
+      "display_name": "Morgan fingerprint (optional chirality)",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "2d_fingerprint",
+      "description": "Use when Claude Code needs to run Morgan fingerprint (optional chirality) from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "local_circular_graph",
+      "representation_id": "D002",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D002_morgan"
+      },
+      "implementation": {
+        "algorithm": "morgan"
+      },
+      "default_variant": "standard",
+      "default_parameters": {
+        "include_chirality": false,
+        "radius": 2,
+        "n_bits": 2048,
+        "encoding": "bit",
+        "use_features": false
+      },
+      "variants": [
+        {
+          "id": "standard",
+          "cli": "--no-include-chirality",
+          "description": "Morgan fingerprint without chirality invariants."
+        },
+        {
+          "id": "chiral",
+          "cli": "--include-chirality",
+          "description": "The same Morgan algorithm with chirality invariants enabled."
+        }
+      ],
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D003",
+      "skill_name": "cs-compute-description-maccs",
+      "display_name": "MACCS keys",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "2d_fingerprint",
+      "description": "Use when Claude Code needs to run MACCS keys from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "curated_substructure_keys",
+      "representation_id": "D003",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D003_maccs"
+      },
+      "implementation": {
+        "algorithm": "maccs"
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D004",
+      "skill_name": "cs-compute-description-atom-pair",
+      "display_name": "Hashed atom-pair fingerprint",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "2d_fingerprint",
+      "description": "Use when Claude Code needs to run Hashed atom-pair fingerprint from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "topological_atom_pairs",
+      "representation_id": "D004",
+      "default_parameters": {
+        "n_bits": 2048
+      },
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D004_atom_pair"
+      },
+      "implementation": {
+        "algorithm": "atom_pair"
+      },
+      "value_semantics": "sparse_count",
+      "natural_metric": "cosine"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D005",
+      "skill_name": "cs-compute-description-topological-torsion",
+      "display_name": "Hashed topological-torsion fingerprint",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "2d_fingerprint",
+      "description": "Use when Claude Code needs to run Hashed topological-torsion fingerprint from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D005",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D005_topological_torsion"
+      },
+      "implementation": {
+        "algorithm": "topological_torsion"
+      },
+      "value_semantics": "sparse_count",
+      "natural_metric": "cosine"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D006",
+      "skill_name": "cs-compute-description-rdkit-fragment",
+      "display_name": "RDKit fragment counts",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "substructure",
+      "description": "Use when Claude Code needs to run RDKit fragment counts from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D006",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D006_rdkit_fragment"
+      },
+      "implementation": {
+        "algorithm": "rdkit_fragment"
+      },
+      "value_semantics": "sparse_count",
+      "natural_metric": "cosine"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D007",
+      "skill_name": "cs-compute-description-rdkit-path-fingerprint",
+      "display_name": "RDKit path fingerprint",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "2d_fingerprint",
+      "description": "Use when Claude Code needs to run RDKit path fingerprint from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "topological_paths",
+      "representation_id": "D007",
+      "default_parameters": {
+        "n_bits": 2048
+      },
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D007_rdkit_path"
+      },
+      "implementation": {
+        "algorithm": "rdkit_path"
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D008",
+      "skill_name": "cs-compute-description-rdkit-pattern-fingerprint",
+      "display_name": "RDKit pattern fingerprint",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "substructure",
+      "description": "Use when Claude Code needs to run RDKit pattern fingerprint from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D008",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D008_rdkit_pattern"
+      },
+      "implementation": {
+        "algorithm": "rdkit_pattern"
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D009",
+      "skill_name": "cs-compute-description-rdkit-layered-fingerprint",
+      "display_name": "RDKit layered fingerprint",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "2d_fingerprint",
+      "description": "Use when Claude Code needs to run RDKit layered fingerprint from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D009",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D009_rdkit_layered"
+      },
+      "implementation": {
+        "algorithm": "rdkit_layered"
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D010",
+      "skill_name": "cs-compute-description-avalon-fingerprint",
+      "display_name": "Avalon fingerprint",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "2d_fingerprint",
+      "description": "Use when Claude Code needs to run Avalon fingerprint from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D010",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D010_avalon"
+      },
+      "implementation": {
+        "algorithm": "avalon"
+      },
+      "value_semantics": "binary_fingerprint",
+      "natural_metric": "tanimoto"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D012",
+      "skill_name": "cs-compute-description-rdkit-3d",
+      "display_name": "RDKit 3D descriptors",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "3d_shape",
+      "description": "Use when Claude Code needs to run RDKit 3D descriptors from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D012",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D012_rdkit_3d"
+      },
+      "implementation": {
+        "algorithm": "rdkit_3d"
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D013",
+      "skill_name": "cs-compute-description-usr-usrcat",
+      "display_name": "USR and USRCAT",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "3d_shape",
+      "description": "Use when Claude Code needs to run USR and USRCAT from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "shape_and_3d_pharmacophore",
+      "representation_id": "D013",
+      "default_parameters": {
+        "num_confs": 20,
+        "random_seed": 61453
+      },
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D013_usr_usrcat"
+      },
+      "implementation": {
+        "algorithm": "usr_usrcat"
+      },
+      "value_semantics": "dense_shape_moment",
+      "natural_metric": "manhattan"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D014",
+      "skill_name": "cs-compute-description-shape",
+      "display_name": "Basic 3D shape descriptors",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "3d_shape",
+      "description": "Use when Claude Code needs to run Basic 3D shape descriptors from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D014",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D014_shape"
+      },
+      "implementation": {
+        "algorithm": "shape"
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D015",
+      "skill_name": "cs-compute-description-mordred-2d",
+      "display_name": "Mordred 2D descriptors",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "physicochemical",
+      "description": "Use when Claude Code needs to run Mordred 2D descriptors from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "experimental",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D015",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D015_mordred_2d"
+      },
+      "implementation": {
+        "algorithm": "mordred_2d"
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D016",
+      "skill_name": "cs-compute-description-mordred-3d",
+      "display_name": "Mordred 3D descriptors",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "3d_shape",
+      "description": "Use when Claude Code needs to run Mordred 3D descriptors from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "high",
+        "human_approval_required": true,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "experimental",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D016",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D016_mordred_3d"
+      },
+      "implementation": {
+        "algorithm": "mordred_3d"
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D017",
+      "skill_name": "cs-compute-description-gobbi-pharm2d",
+      "display_name": "Gobbi 2D pharmacophore fingerprint (optional SVD)",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "pharmacophore",
+      "description": "Use when Claude Code needs to run Gobbi 2D pharmacophore fingerprint (optional SVD) from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "medium",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": true,
+      "wide_shallow_axis": "pharmacophore_2d",
+      "representation_id": "D017",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D017_gobbi_pharm2d"
+      },
+      "implementation": {
+        "algorithm": "gobbi_pharm2d"
+      },
+      "default_variant": "folded",
+      "default_parameters": {
+        "reduction": "none",
+        "n_bits": 2048
+      },
+      "variants": [
+        {
+          "id": "folded",
+          "cli": "--reduction none --n-bits 2048",
+          "description": "Fold the sparse Gobbi Pharm2D signature into a fixed-width bit vector."
+        },
+        {
+          "id": "svd",
+          "cli": "--reduction svd --svd-dim 256",
+          "description": "Fit TruncatedSVD to the run cohort's raw Gobbi Pharm2D signature matrix."
+        }
+      ],
+      "value_semantics": "pharmacophore_vector",
+      "natural_metric": "cosine"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D019",
+      "skill_name": "cs-compute-description-pretrained-embedding",
+      "display_name": "Local pretrained molecular embedding",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "pretrained_embedding",
+      "description": "Use when Claude Code needs to run Local pretrained molecular embedding from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "high",
+        "human_approval_required": true,
+        "hpc_profile": "a100_cpu8"
+      },
+      "applicability": {
+        "status": "experimental",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D019",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D019_pretrained_embedding"
+      },
+      "implementation": {
+        "algorithm": "pretrained_embedding"
+      },
+      "value_semantics": "dense_embedding",
+      "natural_metric": "cosine"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "D020",
+      "skill_name": "cs-compute-description-tblite-xtb",
+      "display_name": "GFN2-xTB single-point descriptors",
+      "version": "4.0.0",
+      "stage": "description",
+      "family": "quantum",
+      "description": "Use when Claude Code needs to run GFN2-xTB single-point descriptors from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+      "cost": {
+        "class": "very_high",
+        "human_approval_required": true,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "experimental",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "representation_id": "D020",
+      "dependencies": [],
+      "input_contract": [
+        "csv_or_smiles"
+      ],
+      "output": {
+        "basename": "D020_tblite_xtb"
+      },
+      "implementation": {
+        "algorithm": "tblite_xtb"
+      },
+      "value_semantics": "dense_continuous",
+      "natural_metric": "euclidean"
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "I001",
+      "skill_name": "cs-analysis-interpret-evidence",
+      "display_name": "SAR evidence interpretation",
+      "version": "4.0.0",
+      "stage": "interpretation",
+      "family": "evidence_integration",
+      "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "default_wide_shallow": false,
+      "interpretation_id": "I001",
+      "dependencies": [
+        "evidence"
+      ],
+      "input_contract": [
+        "evidence_json",
+        "optional_state_json_read_only",
+        "interpretation_policy_markdown"
+      ],
+      "output": {
+        "json": "interpretation.json",
+        "markdown": "interpretation.md",
+        "html": "interpretation.html",
+        "context": "interpretation_context.json",
+        "exploration_plan": "exploration_plan.json"
+      },
+      "implementation": {
+        "purpose": "policy_guided_iterative_evidence_exploration",
+        "state_access": "read_only",
+        "execution_authority": "orchestrator_only"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "O001",
+      "skill_name": "cs-conductor-orchestrator",
+      "display_name": "CONDUCTOR v4 Orchestrator",
+      "version": "4.0.0",
+      "stage": "orchestration",
+      "family": "graph_orchestration",
+      "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, orchestration and Interpretation Policies, execution DAG, exploration ledger, and execution events.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ]
+      },
+      "dependencies": [],
+      "default_wide_shallow": false,
+      "input_contract": [
+        "catalog_json",
+        "policy_markdown",
+        "interpretation_policy_markdown",
+        "endpoint_csv",
+        "optional_interpretation_exploration_plan_json"
+      ],
+      "output": {
+        "state": "state.json",
+        "catalog": "CONDUCTOR_modules/catalog/catalog.json",
+        "exploration_ledger": "state.json#/interpretation_exploration",
+        "materialized_scopes": "interpretation/scopes/*.csv"
+      },
+      "implementation": {
+        "purpose": "dag_state_and_interpretation_exploration_orchestration",
+        "interpretation_execution_authority": "orchestrator_only"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "O002",
+      "skill_name": "cs-conductor-state-report",
+      "display_name": "CONDUCTOR State DAG report",
+      "version": "4.0.0",
+      "stage": "orchestration",
+      "family": "state_reporting",
+      "description": "Use only on an explicit human request with an explicitly supplied state.json path to render a read-only timestamped HTML and SVG execution DAG report.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ]
+      },
+      "dependencies": [],
+      "default_wide_shallow": false,
+      "input_contract": [
+        "explicit_state_json_read_only"
+      ],
+      "output": {
+        "html": "state/<timestamp>/state_report.html",
+        "svg": "state/<timestamp>/state_dag.svg",
+        "nodes": "state/<timestamp>/state_nodes.csv",
+        "summary": "state/<timestamp>/state_summary.json"
+      },
+      "implementation": {
+        "purpose": "read_only_execution_dag_visualization",
+        "state_access": "read_only",
+        "invocation": "explicit_human_request_only",
+        "dag_registration": "forbidden"
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "run_id": "qa_run",
+  "round_id": null,
+  "questions": [
+    {
+      "question_id": "Q0001",
+      "revision": 1,
+      "title": "Activity distributionの局所性・再現性を識別する",
+      "rationale": "F0001は単独Evidenceの機械下書きであり、global/local、別Description、反証との比較が必要。",
+      "deep_dive_potential": true,
+      "agent_priority": "medium",
+      "human_decision": "unreviewed",
+      "status": "open",
+      "reopen_recommended": false,
+      "evidence_ids": [
+        "E000001"
+      ],
+      "target_group_ids": [],
+      "operator_ids": [
+        "A002"
+      ],
+      "origin_round_id": null,
+      "last_updated_round_id": null
+    }
+  ]
+}

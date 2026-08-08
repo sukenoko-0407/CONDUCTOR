@@ -23,6 +23,7 @@ def main() -> int:
         "docs/prompt/CONDUCTOR_analysis_request_prompt.md",
         "docs/prompt/CONDUCTOR_session_handoff_template.md",
         "docs/prompt/CONDUCTOR_v430_to_v431_migration_prompt.md",
+        "docs/prompt/CONDUCTOR_result_concierge_prompt.md",
         "schemas/capability.schema.json",
         "schemas/state.schema.json",
         "schemas/evidence.schema.json",
@@ -54,13 +55,16 @@ def main() -> int:
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
         names = selection.get("included_skills") or []
         maintenance_names = selection.get("maintenance_skills") or []
+        support_names = selection.get("support_skills") or []
         catalog_names = [entry.get("skill_name") for entry in catalog.get("capabilities") or []]
         if len(names) != len(set(names)):
             errors.append("included_skills contains duplicates")
         if len(maintenance_names) != len(set(maintenance_names)):
             errors.append("maintenance_skills contains duplicates")
-        if set(names) & set(maintenance_names):
-            errors.append("scientific/control Catalog and maintenance skill lists overlap")
+        if len(support_names) != len(set(support_names)):
+            errors.append("support_skills contains duplicates")
+        if (set(names) & set(maintenance_names)) or (set(names) & set(support_names)) or (set(maintenance_names) & set(support_names)):
+            errors.append("scientific/control Catalog, maintenance, and support skill lists overlap")
         if set(names) != set(catalog_names):
             errors.append("catalog capabilities do not match included_skills")
         if catalog.get("selection_path") != "CONDUCTOR_modules/catalog/included_skills.json":
@@ -105,6 +109,22 @@ def main() -> int:
             for relative in ["SKILL.md", "README.md", "capability.json", "scripts/launch.py", "env/pixi.toml"]:
                 if not (skill / relative).is_file():
                     errors.append(f"{name}: missing maintenance file {relative}")
+        for name in support_names:
+            skill = PROJECT_ROOT / ".claude" / "skills" / name
+            for relative in ["SKILL.md", "README.md", "capability.json", "scripts/launch.py", "scripts/run.py", "env/pixi.toml"]:
+                if not (skill / relative).is_file():
+                    errors.append(f"{name}: missing support file {relative}")
+            capability_path = skill / "capability.json"
+            capability = json.loads(capability_path.read_text(encoding="utf-8")) if capability_path.is_file() else {}
+            implementation = capability.get("implementation", {})
+            if capability.get("skill_name") != name:
+                errors.append(f"{name}: capability skill_name mismatch")
+            if implementation.get("state_access") != "read_only":
+                errors.append(f"{name}: support Skill must use read_only State access")
+            if implementation.get("dag_registration") != "forbidden":
+                errors.append(f"{name}: support Skill must be excluded from the DAG")
+            if implementation.get("invocation") != "explicit_human_request_only":
+                errors.append(f"{name}: support Skill must require an explicit human request")
 
     legacy_roots = ["catalog", "docs", "schemas", "tests", "tools"]
     for name in legacy_roots:

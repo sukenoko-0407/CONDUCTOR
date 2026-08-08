@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "run": {
+    "run_id": "20260807T000000Z",
+    "project": "smoke",
+    "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+    "endpoint": "pIC50",
+    "higher_is_better": true,
+    "row_count": 6,
+    "profile_id": "comprehensive-multiround-v1"
+  },
+  "round_control": {
+    "active_round_id": "RND0001",
+    "next_round_number": 2,
+    "rounds": [
+      {
+        "round_id": "RND0001",
+        "status": "active",
+        "started_at": "2026-08-07T11:19:24.478481+00:00",
+        "ended_at": "2026-08-07T11:20:00.211236+00:00"
+      }
+    ]
+  },
+  "node_count": 64,
+  "status_counts": {
+    "pending": 64
+  },
+  "phase_counts": {
+    "basic_compute": {
+      "pending": 64
+    }
+  },
+  "runnable_node_ids": [
+    "ND0001",
+    "ND0002"
+  ],
+  "group_index": {
+    "registry_path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\group_index\\group_registry.csv",
+    "matrix_shards": [],
+    "by_node": {},
+    "group_count": 0,
+    "active_group_count": 0,
+    "deprioritized_group_count": 0
+  },
+  "evidence_count": 0,
+  "priority_evidence": [],
+  "active_questions": [],
+  "human_skipped_questions": [],
+  "failed_or_unavailable": [],
+  "updated_at": "2026-08-07T11:20:01.171579+00:00"
+}

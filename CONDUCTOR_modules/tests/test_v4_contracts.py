@@ -50,7 +50,12 @@ class RepositoryContractTests(unittest.TestCase):
         ]
         skill_directories = sorted(path for path in SKILLS.iterdir() if path.is_dir())
         selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
-        self.assertEqual(len(selection["included_skills"]) + len(selection.get("maintenance_skills", [])), len(skill_directories))
+        self.assertEqual(
+            len(selection["included_skills"])
+            + len(selection.get("maintenance_skills", []))
+            + len(selection.get("support_skills", [])),
+            len(skill_directories),
+        )
         for skill in skill_directories:
             readme = skill / "README.md"
             self.assertTrue(readme.is_file(), skill.name)
@@ -138,6 +143,25 @@ class RepositoryContractTests(unittest.TestCase):
             if capability["stage"] == "analysis":
                 self.assertTrue((skill / "scripts" / "operator_report.py").is_file(), name)
                 self.assertEqual("operator_report.html", capability["output"]["report"])
+
+    def test_support_skills_are_packaged_but_not_in_scientific_catalog(self) -> None:
+        import jsonschema
+
+        selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
+        catalog = json.loads((MODULE_ROOT / "catalog" / "catalog.json").read_text(encoding="utf-8"))
+        capability_schema = json.loads((MODULE_ROOT / "schemas" / "capability.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(["cs-conductor-result-concierge"], selection["support_skills"])
+        catalog_names = {entry["skill_name"] for entry in catalog["capabilities"]}
+        for name in selection["support_skills"]:
+            self.assertNotIn(name, catalog_names)
+            skill = SKILLS / name
+            for relative in ["SKILL.md", "README.md", "capability.json", "scripts/launch.py", "scripts/run.py", "env/pixi.toml"]:
+                self.assertTrue((skill / relative).is_file(), f"{name}: {relative}")
+            capability = json.loads((skill / "capability.json").read_text(encoding="utf-8"))
+            jsonschema.validate(capability, capability_schema)
+            self.assertEqual("read_only", capability["implementation"]["state_access"])
+            self.assertEqual("forbidden", capability["implementation"]["dag_registration"])
+            self.assertEqual("explicit_human_request_only", capability["implementation"]["invocation"])
 
     def test_catalog_matches_human_allowlist(self) -> None:
         selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))

@@ -1,0 +1,108 @@
+{
+  "schema_version": "2.0.0",
+  "policy_version": "2.0.0",
+  "run_id": "qa_run",
+  "round_id": null,
+  "interpretation_id": "standalone-32fba0597ce8",
+  "interpretation_focus": null,
+  "seed": 1218707426,
+  "state_context": {
+    "available": false,
+    "failures": [],
+    "skips": [],
+    "pending": [],
+    "attempted_analysis_signatures": [],
+    "round_control": null,
+    "group_index": null,
+    "coverage_index": null
+  },
+  "evidence_index": [
+    {
+      "evidence_id": "E000001",
+      "operator_id": "A002",
+      "operator_name": "Activity distribution",
+      "scope": {
+        "mode": "global",
+        "target_group_id": null,
+        "comparison_group_id": null,
+        "sample_count": 6,
+        "sample_fraction": 1.0,
+        "compound_set_hash": "b31078af917d4d01e6aa7e2e53ff59b854b147b81d6cb4d94750649d169a3f28",
+        "reference_scope": "global"
+      },
+      "sample_count": 6,
+      "evaluation_representation": null,
+      "evaluation_family": null,
+      "grouping_representation": null,
+      "grouping_family": null,
+      "target_group_id": null,
+      "artifact_paths": [
+        "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43-html\\operator\\A002_activity_distribution.csv",
+        "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43-html\\operator\\operator_report.html"
+      ],
+      "evidence_path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43-html\\operator\\evidence.json",
+      "result_values": {
+        "analyzed_scope_count": 1,
+        "global_median": 6.0,
+        "scope": {
+          "mode": "global",
+          "target_group_id": null,
+          "comparison_group_id": null,
+          "sample_count": 6,
+          "sample_fraction": 1.0,
+          "compound_set_hash": "b31078af917d4d01e6aa7e2e53ff59b854b147b81d6cb4d94750649d169a3f28",
+          "reference_scope": "global"
+        }
+      },
+      "generated_evidence": [
+        {
+          "record_id": "activity_distribution:0",
+          "values": {
+            "group_id": "GLOBAL",
+            "sample_count": 6,
+            "mean": 6.05,
+            "median": 6.0,
+            "std": 0.758287544405155,
+            "min": 5.1,
+            "q25": 5.5,
+            "q75": 6.65,
+            "max": 7.0,
+            "missing_count": 0
+          }
+        }
+      ],
+      "warnings": [],
+      "supporting_pairs": [],
+      "source_node_id": null,
+      "source_dependencies": [],
+      "analysis_signature": null
+    }
+  ],
+  "evidence_relations": [],
+  "group_scope_candidates": [
+    {
+      "candidate_id": "group:UNKNOWN:GLOBAL",
+      "grouping_representation": "UNKNOWN",
+      "group_id": "GLOBAL",
+      "evidence_ids": [
+        "E000001"
+      ],
+      "priority_reasons": [],
+      "cautions": [
+        "group exceeds 50% of dataset and is close to a global view",
+        "small group requires stability and leave-one-out checks"
+      ],
+      "sample_count": 6,
+      "sample_fraction": 1.0
+    }
+  ],
+  "previous_interpretations": [],
+  "agent_requirements": {
+    "read_only_terminal": true,
+    "preserve_multiple_discoveries": true,
+    "falsification_for_every_discovery": true,
+    "never_repeat_analysis_signature": true,
+    "orchestrator_decides_execution_cost_and_approval": true
+  },
+  "created_at": "2026-08-07T12:14:31.853359+00:00"
+}

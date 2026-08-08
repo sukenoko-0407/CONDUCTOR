@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0.0",
+  "project": "qa",
+  "run_id": "qa_run",
+  "round_id": "RND0001",
+  "node_id": "NO0001",
+  "capability_id": "A002",
+  "skill_name": "cs-analysis-activity-distribution",
+  "status": "succeeded",
+  "input_hash": "eac5062506ec607fa106264086735d28bc4d8719cd4e074da718cdf5b6e01e2e",
+  "config_hash": "5b6886d4304ba4575ef8c2b039d2c35c78c31353ba243d2633ed2d4fac3f20d9",
+  "configuration": {
+    "input": "CONDUCTOR_modules/tests/data/small_sar.csv",
+    "property_column": "pIC50",
+    "id_column": null,
+    "higher_is_better": true,
+    "membership": null,
+    "target_group": null,
+    "comparison_group": null,
+    "scope_mode": "global",
+    "reference_scope": "global",
+    "grouping_representation": null,
+    "evaluation_representation": null,
+    "grouping_node_id": null,
+    "description_node_id": null,
+    "scope_compound_set_hash": null,
+    "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43-html\\operator",
+    "run_id": "qa_run",
+    "project": "qa",
+    "node_id": "NO0001",
+    "round_id": "RND0001",
+    "evidence_id": "E000001",
+    "conductor": true,
+    "overwrite": true,
+    "description": null,
+    "smiles_column": null
+  },
+  "artifacts": [
+    {
+      "type": "operator_result",
+      "path": "A002_activity_distribution.csv",
+      "sha256": "330a7d6f8cb3c9b1e252cfff747ff21225d117b0c97abae2ece27f747580d28c"
+    },
+    {
+      "type": "operator_report",
+      "path": "operator_report.html",
+      "sha256": "5e50ba9e8e8b0159ee713b9f8b8a3cc082f1ab147f6d5f302e2dd869899e37b0"
+    },
+    {
+      "type": "evidence",
+      "path": "evidence.json",
+      "sha256": "0533ff3056eaa610483eab87ef6e4bed3d34fc2e1091a0b69dc3e6283e7eff90"
+    },
+    {
+      "type": "evidence_digest",
+      "path": "evidence_digest.json",
+      "sha256": "3280ee3f7e247447f60a5f48a03e88f74cbb7a7fd5181377e8ffb04ab90fb82d"
+    },
+    {
+      "type": "manifest",
+      "path": "analysis_manifest.json",
+      "sha256": "a33e2ee188c09f39b475043f4be00b30dbf68a6f818da94306f344c440480c52"
+    }
+  ],
+  "warnings": [],
+  "started_at": "2026-08-07T12:14:30.490433+00:00",
+  "finished_at": "2026-08-07T12:14:30.845504+00:00"
+}

@@ -1,0 +1,91 @@
+{
+  "schema_version": "2.0.0",
+  "evidence_id": "E000001",
+  "operator_id": "A002",
+  "operator_name": "Activity distribution",
+  "operator_version": "4.0.0",
+  "run_id": "qa_run",
+  "round_id": "RND0001",
+  "source_node_id": "NO0001",
+  "target_group_id": null,
+  "grouping_representation": null,
+  "evaluation_representation": null,
+  "input_features": [],
+  "sample_count": 6,
+  "scope": {
+    "mode": "global",
+    "target_group_id": null,
+    "comparison_group_id": null,
+    "sample_count": 6,
+    "sample_fraction": 1.0,
+    "compound_set_hash": "b31078af917d4d01e6aa7e2e53ff59b854b147b81d6cb4d94750649d169a3f28",
+    "reference_scope": "global"
+  },
+  "result_type": "activity_distribution",
+  "result_values": {
+    "analyzed_scope_count": 1,
+    "global_median": 6.0,
+    "scope": {
+      "mode": "global",
+      "target_group_id": null,
+      "comparison_group_id": null,
+      "sample_count": 6,
+      "sample_fraction": 1.0,
+      "compound_set_hash": "b31078af917d4d01e6aa7e2e53ff59b854b147b81d6cb4d94750649d169a3f28",
+      "reference_scope": "global"
+    }
+  },
+  "statistical_significance": null,
+  "uncertainty": null,
+  "applicability_conditions": [
+    "endpoint=pIC50",
+    "higher_is_better=True"
+  ],
+  "warnings": [],
+  "supporting_compounds": [],
+  "supporting_pairs": [],
+  "generated_evidence": [
+    {
+      "record_id": "activity_distribution:0",
+      "values": {
+        "group_id": "GLOBAL",
+        "sample_count": 6,
+        "mean": 6.05,
+        "median": 6.0,
+        "std": 0.758287544405155,
+        "min": 5.1,
+        "q25": 5.5,
+        "q75": 6.65,
+        "max": 7.0,
+        "missing_count": 0
+      }
+    }
+  ],
+  "machine_readable_summary": {
+    "analyzed_scope_count": 1,
+    "global_median": 6.0,
+    "scope": {
+      "mode": "global",
+      "target_group_id": null,
+      "comparison_group_id": null,
+      "sample_count": 6,
+      "sample_fraction": 1.0,
+      "compound_set_hash": "b31078af917d4d01e6aa7e2e53ff59b854b147b81d6cb4d94750649d169a3f28",
+      "reference_scope": "global"
+    }
+  },
+  "human_readable_summary": "Activity distribution analyzed scope=global with 6 endpoint rows. See A002_activity_distribution.csv.",
+  "artifacts": [
+    {
+      "type": "operator_result",
+      "path": "A002_activity_distribution.csv",
+      "sha256": "330a7d6f8cb3c9b1e252cfff747ff21225d117b0c97abae2ece27f747580d28c"
+    },
+    {
+      "type": "operator_report",
+      "path": "operator_report.html",
+      "sha256": "5e50ba9e8e8b0159ee713b9f8b8a3cc082f1ab147f6d5f302e2dd869899e37b0"
+    }
+  ],
+  "created_at": "2026-08-07T12:14:30.553619+00:00"
+}

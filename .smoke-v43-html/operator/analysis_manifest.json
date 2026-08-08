@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "conductor_version": "4.3.0",
+  "run_id": "qa_run",
+  "capability_id": "A002",
+  "operator_id": "A002",
+  "skill_name": "cs-analysis-activity-distribution",
+  "skill_version": "4.0.0",
+  "input": "CONDUCTOR_modules/tests/data/small_sar.csv",
+  "input_hash": "eac5062506ec607fa106264086735d28bc4d8719cd4e074da718cdf5b6e01e2e",
+  "id_column": "compound_id",
+  "property_column": "pIC50",
+  "higher_is_better": true,
+  "description": null,
+  "membership": null,
+  "scope": {
+    "mode": "global",
+    "target_group_id": null,
+    "comparison_group_id": null,
+    "sample_count": 6,
+    "sample_fraction": 1.0,
+    "compound_set_hash": "b31078af917d4d01e6aa7e2e53ff59b854b147b81d6cb4d94750649d169a3f28",
+    "reference_scope": "global"
+  },
+  "output": "A002_activity_distribution.csv",
+  "warnings": [],
+  "created_at": "2026-08-07T12:14:30.553619+00:00",
+  "report": "operator_report.html"
+}

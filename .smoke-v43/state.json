@@ -1,0 +1,3217 @@
+{
+  "schema_version": "2.0.0",
+  "conductor_version": "4.3.0",
+  "run": {
+    "run_id": "20260807T000000Z",
+    "project": "smoke",
+    "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+    "input_hash": "8525d526503caf23a944090303f5ecc0641624f28f921035846000a2e61b7eb7",
+    "endpoint": "pIC50",
+    "higher_is_better": true,
+    "parallel_limit": 2,
+    "id_column": "compound_id",
+    "row_count": 6,
+    "assay_level_count": 0,
+    "assay_column": null,
+    "profile_id": "comprehensive-multiround-v1",
+    "package_snapshot": {
+      "profile_id": "comprehensive-multiround-v1",
+      "files": {
+        "catalog": {
+          "source": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\catalog\\catalog.json",
+          "snapshot": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\snapshots\\catalog.json",
+          "sha256": "94fb224438325c688f301a3404c3ece97a98e2604447b3a005a1578d2e4edf34"
+        },
+        "profile": {
+          "source": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\catalog\\analysis_profile.json",
+          "snapshot": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\snapshots\\analysis_profile.json",
+          "sha256": "483b5a553c8bbb9e38d1bdf1dce0beb897609d6d8c572c95bb2e3a9026044f66"
+        },
+        "orchestration_policy": {
+          "source": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\docs\\CONDUCTOR_v4_policy.md",
+          "snapshot": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\snapshots\\CONDUCTOR_v4_policy.md",
+          "sha256": "b303184faa50aa077e4c55f0f59a21b312f8d53655756a69e856ca265616c274"
+        },
+        "interpretation_policy": {
+          "source": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\docs\\CONDUCTOR_v4_interpretation_policy.md",
+          "snapshot": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\snapshots\\CONDUCTOR_v4_interpretation_policy.md",
+          "sha256": "85f923ce881990537ea381e66ceddbf85b9312712ad4265903c545cc4be0a8cb"
+        }
+      },
+      "snapshot_hash": "ee2cb5274c19119db2405bd6a675697222fd845c9aad4913dfae10ecfea37b15",
+      "created_at": "2026-08-07T11:19:24.471550+00:00"
+    },
+    "high_cost_bundle": {
+      "capability_ids": [
+        "D016",
+        "D019",
+        "D020"
+      ],
+      "status": "pending"
+    },
+    "created_at": "2026-08-07T11:19:24.428409+00:00"
+  },
+  "round_control": {
+    "active_round_id": "RND0001",
+    "next_round_number": 2,
+    "rounds": [
+      {
+        "round_id": "RND0001",
+        "number": 1,
+        "status": "active",
+        "request": "Round 1 smoke test",
+        "request_path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\rounds\\RND0001\\round_request.md",
+        "resource_envelope": {
+          "walltime_minutes": 480,
+          "max_additional_nodes": 300,
+          "interpretation_iterations": 3
+        },
+        "sampling_events": [],
+        "started_at": "2026-08-07T11:19:24.478481+00:00",
+        "ended_at": "2026-08-07T11:20:00.211236+00:00",
+        "end_reason": "smoke pause"
+      }
+    ]
+  },
+  "id_counters": {
+    "description_node": 18,
+    "grouping_node": 46,
+    "operator_node": 0,
+    "interpretation_node": 0,
+    "group": 0,
+    "evidence": 0,
+    "finding": 0,
+    "hypothesis": 0,
+    "question": 0,
+    "relation": 0,
+    "request": 0,
+    "scope": 0,
+    "salience_event": 0
+  },
+  "execution_graph": {
+    "nodes": [
+      {
+        "node_id": "ND0001",
+        "capability_id": "D001",
+        "skill_name": "cs-compute-description-rdkit-2d",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "17f12cae28e7dd7d3d23d5813b700af23dad8e80f7903892e8a3168c3c3cb51b",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.092889+00:00"
+      },
+      {
+        "node_id": "ND0002",
+        "capability_id": "D002",
+        "skill_name": "cs-compute-description-morgan",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "include_chirality": false,
+          "radius": 2,
+          "n_bits": 2048,
+          "encoding": "bit",
+          "use_features": false,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "8608b1126fe6c6fecb0ec22455bcc94f6356994d173b3bc7ebe888b23bdfa6b1",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.092889+00:00"
+      },
+      {
+        "node_id": "ND0003",
+        "capability_id": "D003",
+        "skill_name": "cs-compute-description-maccs",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-maccs\\ND0003",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "4b60e6e3745b396d1cb591c65359e502b834a05d3aef2bfd2e760bcbeca753d0",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-maccs\\ND0003",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.092889+00:00"
+      },
+      {
+        "node_id": "ND0004",
+        "capability_id": "D004",
+        "skill_name": "cs-compute-description-atom-pair",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "n_bits": 2048,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "18f52949f41610321de5cae59a40cb67f0ea59f2b94828b13a48a3e34b3a4328",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.092889+00:00"
+      },
+      {
+        "node_id": "ND0005",
+        "capability_id": "D005",
+        "skill_name": "cs-compute-description-topological-torsion",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-topological-torsion\\ND0005",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "27bb2419c8f90213b2c8cd3715f7ecd52b359aaf5abd38798c85a672ddea7fab",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-topological-torsion\\ND0005",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.092889+00:00"
+      },
+      {
+        "node_id": "ND0006",
+        "capability_id": "D006",
+        "skill_name": "cs-compute-description-rdkit-fragment",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-fragment\\ND0006",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "e4c39fd286d327575ab01d5d97e0d01a6103070150d99276a41a382ad3a404b2",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-fragment\\ND0006",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0007",
+        "capability_id": "D007",
+        "skill_name": "cs-compute-description-rdkit-path-fingerprint",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "n_bits": 2048,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-path-fingerprint\\ND0007",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "d5082f7bb47266c4cb71b0b7e5c223a8d283a1e628154612c7fabf52c514a5db",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-path-fingerprint\\ND0007",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0008",
+        "capability_id": "D008",
+        "skill_name": "cs-compute-description-rdkit-pattern-fingerprint",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-pattern-fingerprint\\ND0008",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "d8b81aaddec446e3696859e92ab9762023ea60a5ee95d95e551373e53e3afe3d",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-pattern-fingerprint\\ND0008",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0009",
+        "capability_id": "D009",
+        "skill_name": "cs-compute-description-rdkit-layered-fingerprint",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-layered-fingerprint\\ND0009",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "64bd3cdd187d2b989a99af8d2d89ccba13cd744d2df3b728917d80fd904dd564",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-layered-fingerprint\\ND0009",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0010",
+        "capability_id": "D010",
+        "skill_name": "cs-compute-description-avalon-fingerprint",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-avalon-fingerprint\\ND0010",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "b9ec134609c096769c8a767a30227b346461df22d0c8650e39bfe96823f52bc3",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-avalon-fingerprint\\ND0010",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0011",
+        "capability_id": "D012",
+        "skill_name": "cs-compute-description-rdkit-3d",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-3d\\ND0011",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "fd5aa1a6773b26d7705056634a7146820a647abc8d5923c67263a579c5c161b7",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-3d\\ND0011",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0012",
+        "capability_id": "D013",
+        "skill_name": "cs-compute-description-usr-usrcat",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "num_confs": 20,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "b3ce3187b93be00b27b60b04db6c6058ed9161386283db62523a0015358bfc69",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0013",
+        "capability_id": "D014",
+        "skill_name": "cs-compute-description-shape",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-shape\\ND0013",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "0b0266b4be82d87c0388ea256741ee335761e234027d3810f6f002769d84f2d7",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-shape\\ND0013",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0014",
+        "capability_id": "D015",
+        "skill_name": "cs-compute-description-mordred-2d",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-mordred-2d\\ND0014",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "bdda8797adbb8fdd9de89505d6b7449ca7ff2190878c84a920ae2de3b08002d2",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-mordred-2d\\ND0014",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0015",
+        "capability_id": "D016",
+        "skill_name": "cs-compute-description-mordred-3d",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-mordred-3d\\ND0015",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "c0d1a160f3e89dfd54465d39f10d173f445a3fd5a0311a83c0791f2301612c05",
+        "human_approval": "bundle_pending",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-mordred-3d\\ND0015",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "high",
+          "human_approval_required": true,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0016",
+        "capability_id": "D017",
+        "skill_name": "cs-compute-description-gobbi-pharm2d",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "reduction": "none",
+          "n_bits": 2048,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "3c073d952926c53183aef369eccad18588e47218b1a98ac903f2ba183c8973f4",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0017",
+        "capability_id": "D019",
+        "skill_name": "cs-compute-description-pretrained-embedding",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "08d4121fcfabcfad1495dc0d490ed2c79312f982fe668a8c532529ad1fd791bb",
+        "human_approval": "bundle_pending",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "high",
+          "human_approval_required": true,
+          "hpc_profile": "a100_cpu8"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "ND0018",
+        "capability_id": "D020",
+        "skill_name": "cs-compute-description-tblite-xtb",
+        "stage": "description",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv",
+          "format": "csv"
+        },
+        "analysis_signature": "97497be266ac0cc39f670e9f9e8f52e975490c6d392d337dab771e0d1f1f560d",
+        "human_approval": "bundle_pending",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018",
+        "selection_reason": "基本計算として全Descriptionを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "very_high",
+          "human_approval_required": true,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "NG0001",
+        "capability_id": "C001",
+        "skill_name": "cs-compute-clustering-structure-murcko",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "min_cluster_size": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-murcko\\NG0001",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv"
+        },
+        "analysis_signature": "8f60f07f25606e633decc5b64aad0279acb8e58b6364e75feba34925b2170800",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-murcko\\NG0001",
+        "selection_reason": "Direct structure基本Groupingを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "low",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "NG0002",
+        "capability_id": "C002",
+        "skill_name": "cs-compute-clustering-structure-mcs",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "min_cluster_size": 3,
+          "max_pairs": 1000,
+          "max_core_groups": 300,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-mcs\\NG0002",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv"
+        },
+        "analysis_signature": "6f8591ee0a5ca67d15b66c23bd473abe9239214cb8f9cd74b9f290ea4b462fee",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-mcs\\NG0002",
+        "selection_reason": "Direct structure基本Groupingを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "high",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "NG0003",
+        "capability_id": "C003",
+        "skill_name": "cs-compute-clustering-structure-brics",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "min_cluster_size": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-brics\\NG0003",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv"
+        },
+        "analysis_signature": "599345595dafc3ee1153322c05d63addd63e8682cb28a92171d282229cfb1589",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-brics\\NG0003",
+        "selection_reason": "Direct structure基本Groupingを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "NG0004",
+        "capability_id": "C004",
+        "skill_name": "cs-compute-clustering-structure-recap",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [],
+        "input_bindings": {},
+        "parameters": {
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-recap\\NG0004",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\CONDUCTOR_modules\\tests\\data\\small_sar.csv"
+        },
+        "analysis_signature": "8185184aa0bff767030d5a78e8e372e83d3f52c65f2f03a2be0fb4547795acee",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-structure-recap\\NG0004",
+        "selection_reason": "Direct structure基本Groupingを生成する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "NG0005",
+        "capability_id": "C005",
+        "skill_name": "cs-compute-clustering-vector-butina",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0001"
+        ],
+        "input_bindings": {
+          "description": "ND0001"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0005",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001\\D001_rdkit_2d.csv",
+          "input_representation": "D001"
+        },
+        "analysis_signature": "72e74bfb295e58cf3c6832a535826cbc70fd9132a7f36cfc2d6f8ae5a79bccd4",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0005",
+        "selection_reason": "表現family代表D001へVector Clustering C005を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "NG0006",
+        "capability_id": "C005",
+        "skill_name": "cs-compute-clustering-vector-butina",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0002"
+        ],
+        "input_bindings": {
+          "description": "ND0002"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0006",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002\\D002_morgan.csv",
+          "input_representation": "D002"
+        },
+        "analysis_signature": "3e832336a18ebb6eea803d0e51887596b46b56b542c80dd5e7a546ba7e3f20bf",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0006",
+        "selection_reason": "表現family代表D002へVector Clustering C005を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.107301+00:00"
+      },
+      {
+        "node_id": "NG0007",
+        "capability_id": "C005",
+        "skill_name": "cs-compute-clustering-vector-butina",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0004"
+        ],
+        "input_bindings": {
+          "description": "ND0004"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0007",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004\\D004_atom_pair.csv",
+          "input_representation": "D004"
+        },
+        "analysis_signature": "e7835418c1a9155850e5398d4ca07970d1c8a363e2df46856ed82498d74d209c",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0007",
+        "selection_reason": "表現family代表D004へVector Clustering C005を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0008",
+        "capability_id": "C005",
+        "skill_name": "cs-compute-clustering-vector-butina",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0012"
+        ],
+        "input_bindings": {
+          "description": "ND0012"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0008",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012\\D013_usr_usrcat.csv",
+          "input_representation": "D013"
+        },
+        "analysis_signature": "b17f375a9df8024a5435627c2c8eb99fcdb9df21b584f18d82d2e839f6624182",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0008",
+        "selection_reason": "表現family代表D013へVector Clustering C005を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0009",
+        "capability_id": "C005",
+        "skill_name": "cs-compute-clustering-vector-butina",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0016"
+        ],
+        "input_bindings": {
+          "description": "ND0016"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0009",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016\\D017_gobbi_pharm2d.csv",
+          "input_representation": "D017"
+        },
+        "analysis_signature": "09e21f65865d8efd511ef3b87ba71921844a2b67b4b25a22f198435bfa84a59c",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0009",
+        "selection_reason": "表現family代表D017へVector Clustering C005を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0010",
+        "capability_id": "C005",
+        "skill_name": "cs-compute-clustering-vector-butina",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0017"
+        ],
+        "input_bindings": {
+          "description": "ND0017"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0010",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017\\D019_pretrained_embedding.csv",
+          "input_representation": "D019"
+        },
+        "analysis_signature": "7b9581e2d4dc06def09cd794723ac2d2d612216e0b179ed5b82a545cacf2a2b4",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0010",
+        "selection_reason": "表現family代表D019へVector Clustering C005を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0011",
+        "capability_id": "C005",
+        "skill_name": "cs-compute-clustering-vector-butina",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0018"
+        ],
+        "input_bindings": {
+          "description": "ND0018"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0011",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018\\D020_tblite_xtb.csv",
+          "input_representation": "D020"
+        },
+        "analysis_signature": "740457049d0c2a9af598fc8c8ac49da0294190aad3c84f667d2a4da8e160c8d3",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-butina\\NG0011",
+        "selection_reason": "表現family代表D020へVector Clustering C005を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0012",
+        "capability_id": "C006",
+        "skill_name": "cs-compute-clustering-vector-hierarchical",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0001"
+        ],
+        "input_bindings": {
+          "description": "ND0001"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "distance_threshold": 0.7,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0012",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001\\D001_rdkit_2d.csv",
+          "input_representation": "D001"
+        },
+        "analysis_signature": "d3680601260c00a9b7790f347312c2fe6485b945c02ead15a78e54e2dc6cc43f",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0012",
+        "selection_reason": "表現family代表D001へVector Clustering C006を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0013",
+        "capability_id": "C006",
+        "skill_name": "cs-compute-clustering-vector-hierarchical",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0002"
+        ],
+        "input_bindings": {
+          "description": "ND0002"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "distance_threshold": 0.7,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0013",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002\\D002_morgan.csv",
+          "input_representation": "D002"
+        },
+        "analysis_signature": "a871ffba9b33899e9053036e2fe995194dc3a486359d1702d62a0f2c0dd06e70",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0013",
+        "selection_reason": "表現family代表D002へVector Clustering C006を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0014",
+        "capability_id": "C006",
+        "skill_name": "cs-compute-clustering-vector-hierarchical",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0004"
+        ],
+        "input_bindings": {
+          "description": "ND0004"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "distance_threshold": 0.7,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0014",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004\\D004_atom_pair.csv",
+          "input_representation": "D004"
+        },
+        "analysis_signature": "af9f2aeb5818394540b8e99650339c7eee537475dc0a931c7349f2bf3ed33c04",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0014",
+        "selection_reason": "表現family代表D004へVector Clustering C006を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0015",
+        "capability_id": "C006",
+        "skill_name": "cs-compute-clustering-vector-hierarchical",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0012"
+        ],
+        "input_bindings": {
+          "description": "ND0012"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "distance_threshold": 0.7,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0015",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012\\D013_usr_usrcat.csv",
+          "input_representation": "D013"
+        },
+        "analysis_signature": "cafee4d83bd016468458c67e3247c4a51f42e4f8f52647bfd563fe23f3a8c454",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0015",
+        "selection_reason": "表現family代表D013へVector Clustering C006を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0016",
+        "capability_id": "C006",
+        "skill_name": "cs-compute-clustering-vector-hierarchical",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0016"
+        ],
+        "input_bindings": {
+          "description": "ND0016"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "distance_threshold": 0.7,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0016",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016\\D017_gobbi_pharm2d.csv",
+          "input_representation": "D017"
+        },
+        "analysis_signature": "bfb146ab330de3d32d0edb39d08042bf00af4673f4c817047476fb98db15bd37",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0016",
+        "selection_reason": "表現family代表D017へVector Clustering C006を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0017",
+        "capability_id": "C006",
+        "skill_name": "cs-compute-clustering-vector-hierarchical",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0017"
+        ],
+        "input_bindings": {
+          "description": "ND0017"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "distance_threshold": 0.7,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0017",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017\\D019_pretrained_embedding.csv",
+          "input_representation": "D019"
+        },
+        "analysis_signature": "e5652ceb57c833c8862ba5dcf13ab90b2f756b50decfd388cfea00a90d96b540",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0017",
+        "selection_reason": "表現family代表D019へVector Clustering C006を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0018",
+        "capability_id": "C006",
+        "skill_name": "cs-compute-clustering-vector-hierarchical",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0018"
+        ],
+        "input_bindings": {
+          "description": "ND0018"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "distance_threshold": 0.7,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0018",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018\\D020_tblite_xtb.csv",
+          "input_representation": "D020"
+        },
+        "analysis_signature": "b8bfc639ca63a6bfc482ff1bed37799de9ce71efeba715562b229b7bcc5dc3c4",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-hierarchical\\NG0018",
+        "selection_reason": "表現family代表D020へVector Clustering C006を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0019",
+        "capability_id": "C007",
+        "skill_name": "cs-compute-clustering-vector-dbscan",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0001"
+        ],
+        "input_bindings": {
+          "description": "ND0001"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "eps": 0.5,
+          "min_samples": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0019",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001\\D001_rdkit_2d.csv",
+          "input_representation": "D001"
+        },
+        "analysis_signature": "4cf733db8da9346e70d3ed16b2114734a0edea5089abce814d28a1995f21ff8c",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0019",
+        "selection_reason": "表現family代表D001へVector Clustering C007を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0020",
+        "capability_id": "C007",
+        "skill_name": "cs-compute-clustering-vector-dbscan",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0002"
+        ],
+        "input_bindings": {
+          "description": "ND0002"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "eps": 0.5,
+          "min_samples": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0020",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002\\D002_morgan.csv",
+          "input_representation": "D002"
+        },
+        "analysis_signature": "29658e282f7daa124aeafbcf34d592c9414174ad9771da930e8a091c932732f8",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0020",
+        "selection_reason": "表現family代表D002へVector Clustering C007を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0021",
+        "capability_id": "C007",
+        "skill_name": "cs-compute-clustering-vector-dbscan",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0004"
+        ],
+        "input_bindings": {
+          "description": "ND0004"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "eps": 0.5,
+          "min_samples": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0021",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004\\D004_atom_pair.csv",
+          "input_representation": "D004"
+        },
+        "analysis_signature": "e289e2b6eefdee3db3fa7aeadcc8ca3d6a3d77428690ce8c08454ba6c853a40d",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0021",
+        "selection_reason": "表現family代表D004へVector Clustering C007を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0022",
+        "capability_id": "C007",
+        "skill_name": "cs-compute-clustering-vector-dbscan",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0012"
+        ],
+        "input_bindings": {
+          "description": "ND0012"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "eps": 0.5,
+          "min_samples": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0022",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012\\D013_usr_usrcat.csv",
+          "input_representation": "D013"
+        },
+        "analysis_signature": "31290e60825e7561c1c48cdb6eb90828ee0132e5de303c86dac677b9adcc309b",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0022",
+        "selection_reason": "表現family代表D013へVector Clustering C007を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0023",
+        "capability_id": "C007",
+        "skill_name": "cs-compute-clustering-vector-dbscan",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0016"
+        ],
+        "input_bindings": {
+          "description": "ND0016"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "eps": 0.5,
+          "min_samples": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0023",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016\\D017_gobbi_pharm2d.csv",
+          "input_representation": "D017"
+        },
+        "analysis_signature": "cf65082df2d51906b166f5b6f1ec15993125f8bc23e73b7e121bcf130607974a",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0023",
+        "selection_reason": "表現family代表D017へVector Clustering C007を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0024",
+        "capability_id": "C007",
+        "skill_name": "cs-compute-clustering-vector-dbscan",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0017"
+        ],
+        "input_bindings": {
+          "description": "ND0017"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "eps": 0.5,
+          "min_samples": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0024",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017\\D019_pretrained_embedding.csv",
+          "input_representation": "D019"
+        },
+        "analysis_signature": "b8562535199037af341ed8d842ba54d6157a3f0a4750cb01e1301ab6209bcfbe",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0024",
+        "selection_reason": "表現family代表D019へVector Clustering C007を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0025",
+        "capability_id": "C007",
+        "skill_name": "cs-compute-clustering-vector-dbscan",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0018"
+        ],
+        "input_bindings": {
+          "description": "ND0018"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "eps": 0.5,
+          "min_samples": 3,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0025",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018\\D020_tblite_xtb.csv",
+          "input_representation": "D020"
+        },
+        "analysis_signature": "f556eeef7af2266092d483115c33917267e4637e03f83f7e5b96d6267d89f450",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-dbscan\\NG0025",
+        "selection_reason": "表現family代表D020へVector Clustering C007を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0026",
+        "capability_id": "C008",
+        "skill_name": "cs-compute-clustering-vector-louvain",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0001"
+        ],
+        "input_bindings": {
+          "description": "ND0001"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0026",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001\\D001_rdkit_2d.csv",
+          "input_representation": "D001"
+        },
+        "analysis_signature": "e42872e9e22325664e097ad45e56bcac3aaa7d547a4cbeccff92c52eb81e5bcc",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0026",
+        "selection_reason": "表現family代表D001へVector Clustering C008を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0027",
+        "capability_id": "C008",
+        "skill_name": "cs-compute-clustering-vector-louvain",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0002"
+        ],
+        "input_bindings": {
+          "description": "ND0002"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0027",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002\\D002_morgan.csv",
+          "input_representation": "D002"
+        },
+        "analysis_signature": "81af214715a69db39b8327534b8b2cac8604ca3262153fb5c020568991a17581",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0027",
+        "selection_reason": "表現family代表D002へVector Clustering C008を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.124089+00:00"
+      },
+      {
+        "node_id": "NG0028",
+        "capability_id": "C008",
+        "skill_name": "cs-compute-clustering-vector-louvain",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0004"
+        ],
+        "input_bindings": {
+          "description": "ND0004"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0028",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004\\D004_atom_pair.csv",
+          "input_representation": "D004"
+        },
+        "analysis_signature": "ee453c067d379c370fd3806ed3ba896960c86710e39496b9080d37dbc804a1f9",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0028",
+        "selection_reason": "表現family代表D004へVector Clustering C008を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0029",
+        "capability_id": "C008",
+        "skill_name": "cs-compute-clustering-vector-louvain",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0012"
+        ],
+        "input_bindings": {
+          "description": "ND0012"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0029",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012\\D013_usr_usrcat.csv",
+          "input_representation": "D013"
+        },
+        "analysis_signature": "5a9db92dedb814337cdba192b965ae56baccc87085a1c0e29c78711ce85a0e85",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0029",
+        "selection_reason": "表現family代表D013へVector Clustering C008を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0030",
+        "capability_id": "C008",
+        "skill_name": "cs-compute-clustering-vector-louvain",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0016"
+        ],
+        "input_bindings": {
+          "description": "ND0016"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0030",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016\\D017_gobbi_pharm2d.csv",
+          "input_representation": "D017"
+        },
+        "analysis_signature": "f1308477b141458976c0cbb7a6c9a2981eb7156aab2f936789762501f4715e20",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0030",
+        "selection_reason": "表現family代表D017へVector Clustering C008を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0031",
+        "capability_id": "C008",
+        "skill_name": "cs-compute-clustering-vector-louvain",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0017"
+        ],
+        "input_bindings": {
+          "description": "ND0017"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0031",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017\\D019_pretrained_embedding.csv",
+          "input_representation": "D019"
+        },
+        "analysis_signature": "35fcb6cd7406cbd30e3d6f83d105dbe162b86cd1a1ad7817085f3c9fd1f7ae2b",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0031",
+        "selection_reason": "表現family代表D019へVector Clustering C008を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0032",
+        "capability_id": "C008",
+        "skill_name": "cs-compute-clustering-vector-louvain",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0018"
+        ],
+        "input_bindings": {
+          "description": "ND0018"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0032",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018\\D020_tblite_xtb.csv",
+          "input_representation": "D020"
+        },
+        "analysis_signature": "38c3f4bbeb961812616d9cf286c693f4bb13cdc361ed6da659e4567e4eec0377",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-louvain\\NG0032",
+        "selection_reason": "表現family代表D020へVector Clustering C008を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0033",
+        "capability_id": "C009",
+        "skill_name": "cs-compute-clustering-vector-leiden",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0001"
+        ],
+        "input_bindings": {
+          "description": "ND0001"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0033",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001\\D001_rdkit_2d.csv",
+          "input_representation": "D001"
+        },
+        "analysis_signature": "0ad56eeea7b6f40d059189f55ca8c0dc37cca0400963666ca3bba28f7b101ee0",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0033",
+        "selection_reason": "表現family代表D001へVector Clustering C009を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0034",
+        "capability_id": "C009",
+        "skill_name": "cs-compute-clustering-vector-leiden",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0002"
+        ],
+        "input_bindings": {
+          "description": "ND0002"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0034",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002\\D002_morgan.csv",
+          "input_representation": "D002"
+        },
+        "analysis_signature": "95378a6b921b2b5ad5d3aa501f94d57658555ceffef67c67783b7715627a768c",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0034",
+        "selection_reason": "表現family代表D002へVector Clustering C009を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0035",
+        "capability_id": "C009",
+        "skill_name": "cs-compute-clustering-vector-leiden",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0004"
+        ],
+        "input_bindings": {
+          "description": "ND0004"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0035",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004\\D004_atom_pair.csv",
+          "input_representation": "D004"
+        },
+        "analysis_signature": "12f397f83a87c943fdf521cc1347e21beabcc8d00c780135447ae86b40facf62",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0035",
+        "selection_reason": "表現family代表D004へVector Clustering C009を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0036",
+        "capability_id": "C009",
+        "skill_name": "cs-compute-clustering-vector-leiden",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0012"
+        ],
+        "input_bindings": {
+          "description": "ND0012"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0036",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012\\D013_usr_usrcat.csv",
+          "input_representation": "D013"
+        },
+        "analysis_signature": "6d1ad517f71f7bb75dfb189fa14b82e1fc9222903792b6d2b03e90119c0b8cd5",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0036",
+        "selection_reason": "表現family代表D013へVector Clustering C009を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0037",
+        "capability_id": "C009",
+        "skill_name": "cs-compute-clustering-vector-leiden",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0016"
+        ],
+        "input_bindings": {
+          "description": "ND0016"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0037",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016\\D017_gobbi_pharm2d.csv",
+          "input_representation": "D017"
+        },
+        "analysis_signature": "9f988cce6793e276310b3239cef65a1b15399ed9f74fd81520bbf3943cd41368",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0037",
+        "selection_reason": "表現family代表D017へVector Clustering C009を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0038",
+        "capability_id": "C009",
+        "skill_name": "cs-compute-clustering-vector-leiden",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0017"
+        ],
+        "input_bindings": {
+          "description": "ND0017"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0038",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017\\D019_pretrained_embedding.csv",
+          "input_representation": "D019"
+        },
+        "analysis_signature": "66ce1c986a2eee80faadee89c471cf733a365c1c567e1e97e2411e5d77eeb6d3",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0038",
+        "selection_reason": "表現family代表D019へVector Clustering C009を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0039",
+        "capability_id": "C009",
+        "skill_name": "cs-compute-clustering-vector-leiden",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0018"
+        ],
+        "input_bindings": {
+          "description": "ND0018"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "resolution": 1.0,
+          "random_seed": 61453,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0039",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018\\D020_tblite_xtb.csv",
+          "input_representation": "D020"
+        },
+        "analysis_signature": "e965155ea1fd2b965e8a3a40e4f1daad1fb17eec4b151b14397d68a8444ab223",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-leiden\\NG0039",
+        "selection_reason": "表現family代表D020へVector Clustering C009を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0040",
+        "capability_id": "C010",
+        "skill_name": "cs-compute-clustering-vector-connected-components",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0001"
+        ],
+        "input_bindings": {
+          "description": "ND0001"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0040",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-rdkit-2d\\ND0001\\D001_rdkit_2d.csv",
+          "input_representation": "D001"
+        },
+        "analysis_signature": "b24aefbada92a16f229e0809c987033712e8f1c77ec654910f37d6156131a2cb",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0040",
+        "selection_reason": "表現family代表D001へVector Clustering C010を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0041",
+        "capability_id": "C010",
+        "skill_name": "cs-compute-clustering-vector-connected-components",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0002"
+        ],
+        "input_bindings": {
+          "description": "ND0002"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0041",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-morgan\\ND0002\\D002_morgan.csv",
+          "input_representation": "D002"
+        },
+        "analysis_signature": "83df7170fb63987626200029470176c553b52bb61f5cdce338c30ba84fb1a0ed",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0041",
+        "selection_reason": "表現family代表D002へVector Clustering C010を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0042",
+        "capability_id": "C010",
+        "skill_name": "cs-compute-clustering-vector-connected-components",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0004"
+        ],
+        "input_bindings": {
+          "description": "ND0004"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0042",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-atom-pair\\ND0004\\D004_atom_pair.csv",
+          "input_representation": "D004"
+        },
+        "analysis_signature": "be7ba955fc788da20e0e24963ab01c885306e3aa61faec5a57da38ec317796aa",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0042",
+        "selection_reason": "表現family代表D004へVector Clustering C010を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0043",
+        "capability_id": "C010",
+        "skill_name": "cs-compute-clustering-vector-connected-components",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0012"
+        ],
+        "input_bindings": {
+          "description": "ND0012"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0043",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-usr-usrcat\\ND0012\\D013_usr_usrcat.csv",
+          "input_representation": "D013"
+        },
+        "analysis_signature": "265e76712f111ae3bf8b92c4895f301f85d24821d2dfcc5cc699f3024e683e5a",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0043",
+        "selection_reason": "表現family代表D013へVector Clustering C010を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0044",
+        "capability_id": "C010",
+        "skill_name": "cs-compute-clustering-vector-connected-components",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0016"
+        ],
+        "input_bindings": {
+          "description": "ND0016"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0044",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-gobbi-pharm2d\\ND0016\\D017_gobbi_pharm2d.csv",
+          "input_representation": "D017"
+        },
+        "analysis_signature": "9e6fdc0bd40fbaa36306b463e3f1240f4fe11686d5d2b33e71c6a9d51abb80d3",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0044",
+        "selection_reason": "表現family代表D017へVector Clustering C010を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.140737+00:00"
+      },
+      {
+        "node_id": "NG0045",
+        "capability_id": "C010",
+        "skill_name": "cs-compute-clustering-vector-connected-components",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0017"
+        ],
+        "input_bindings": {
+          "description": "ND0017"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0045",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-pretrained-embedding\\ND0017\\D019_pretrained_embedding.csv",
+          "input_representation": "D019"
+        },
+        "analysis_signature": "511d8cddb0c78f887e877ea3de8b33c3e16041cb03e8694c5c9bfc4d77c3eab1",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0045",
+        "selection_reason": "表現family代表D019へVector Clustering C010を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.156423+00:00"
+      },
+      {
+        "node_id": "NG0046",
+        "capability_id": "C010",
+        "skill_name": "cs-compute-clustering-vector-connected-components",
+        "stage": "grouping",
+        "phase": "basic_compute",
+        "round_id": "RND0001",
+        "status": "pending",
+        "dependencies": [
+          "ND0018"
+        ],
+        "input_bindings": {
+          "description": "ND0018"
+        },
+        "parameters": {
+          "min_cluster_size": 3,
+          "metric": "auto",
+          "similarity_threshold": 0.55,
+          "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0046",
+          "input": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\description\\cs-compute-description-tblite-xtb\\ND0018\\D020_tblite_xtb.csv",
+          "input_representation": "D020"
+        },
+        "analysis_signature": "9976120b8430638bf18e38a9fb5bfd0407d26bbff6344b17e98cef257e74444a",
+        "human_approval": "not_required",
+        "output_dir": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\cs-compute-clustering-vector-connected-components\\NG0046",
+        "selection_reason": "表現family代表D020へVector Clustering C010を適用する。",
+        "request_origin": "orchestrator",
+        "question_ids": [],
+        "cost": {
+          "class": "medium",
+          "human_approval_required": false,
+          "hpc_profile": "cpu64"
+        },
+        "artifacts": [],
+        "warnings": [],
+        "requested_at": "2026-08-07T11:19:37.156423+00:00"
+      }
+    ],
+    "edges": [
+      {
+        "source": "ND0001",
+        "target": "NG0005",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0002",
+        "target": "NG0006",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0004",
+        "target": "NG0007",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0012",
+        "target": "NG0008",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0016",
+        "target": "NG0009",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0017",
+        "target": "NG0010",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0018",
+        "target": "NG0011",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0001",
+        "target": "NG0012",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0002",
+        "target": "NG0013",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0004",
+        "target": "NG0014",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0012",
+        "target": "NG0015",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0016",
+        "target": "NG0016",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0017",
+        "target": "NG0017",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0018",
+        "target": "NG0018",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0001",
+        "target": "NG0019",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0002",
+        "target": "NG0020",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0004",
+        "target": "NG0021",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0012",
+        "target": "NG0022",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0016",
+        "target": "NG0023",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0017",
+        "target": "NG0024",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0018",
+        "target": "NG0025",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0001",
+        "target": "NG0026",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0002",
+        "target": "NG0027",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0004",
+        "target": "NG0028",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0012",
+        "target": "NG0029",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0016",
+        "target": "NG0030",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0017",
+        "target": "NG0031",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0018",
+        "target": "NG0032",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0001",
+        "target": "NG0033",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0002",
+        "target": "NG0034",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0004",
+        "target": "NG0035",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0012",
+        "target": "NG0036",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0016",
+        "target": "NG0037",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0017",
+        "target": "NG0038",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0018",
+        "target": "NG0039",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0001",
+        "target": "NG0040",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0002",
+        "target": "NG0041",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0004",
+        "target": "NG0042",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0012",
+        "target": "NG0043",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0016",
+        "target": "NG0044",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0017",
+        "target": "NG0045",
+        "relation": "depends_on"
+      },
+      {
+        "source": "ND0018",
+        "target": "NG0046",
+        "relation": "depends_on"
+      }
+    ]
+  },
+  "indices": {
+    "coverage": {
+      "path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\coverage_index.json"
+    },
+    "group": {
+      "registry_path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\grouping\\group_index\\group_registry.csv",
+      "matrix_shards": [],
+      "by_node": {},
+      "group_count": 0,
+      "active_group_count": 0,
+      "deprioritized_group_count": 0
+    },
+    "evidence_digest": {
+      "path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\evidence_digest.jsonl",
+      "count": 0
+    },
+    "salience": {
+      "view_path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\salience_view.jsonl",
+      "history_path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\salience_history.jsonl"
+    },
+    "questions": {
+      "path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\question_ledger.jsonl",
+      "count": 0
+    },
+    "relations": {
+      "path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\relation_index.jsonl",
+      "count": 0
+    },
+    "findings": {
+      "path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\finding_ledger.jsonl",
+      "count": 0
+    },
+    "hypotheses": {
+      "path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\hypothesis_ledger.jsonl",
+      "count": 0
+    },
+    "requests": {
+      "path": "C:\\Users\\kimot\\OneDrive\\TAKAHIRO\\coding_workspace\\CONDUCTOR\\.smoke-v43\\indices\\analysis_request_ledger.jsonl",
+      "count": 0
+    }
+  },
+  "history": [
+    {
+      "timestamp": "2026-08-07T11:19:24.478481+00:00",
+      "action": "round_started",
+      "round_id": "RND0001"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:24.531043+00:00",
+      "action": "initialized"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.092889+00:00",
+      "action": "node_added",
+      "node_id": "ND0001",
+      "capability_id": "D001",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.092889+00:00",
+      "action": "node_added",
+      "node_id": "ND0002",
+      "capability_id": "D002",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.092889+00:00",
+      "action": "node_added",
+      "node_id": "ND0003",
+      "capability_id": "D003",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.092889+00:00",
+      "action": "node_added",
+      "node_id": "ND0004",
+      "capability_id": "D004",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.092889+00:00",
+      "action": "node_added",
+      "node_id": "ND0005",
+      "capability_id": "D005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0006",
+      "capability_id": "D006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0007",
+      "capability_id": "D007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0008",
+      "capability_id": "D008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0009",
+      "capability_id": "D009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0010",
+      "capability_id": "D010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0011",
+      "capability_id": "D012",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0012",
+      "capability_id": "D013",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0013",
+      "capability_id": "D014",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0014",
+      "capability_id": "D015",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0015",
+      "capability_id": "D016",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0016",
+      "capability_id": "D017",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0017",
+      "capability_id": "D019",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "ND0018",
+      "capability_id": "D020",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "NG0001",
+      "capability_id": "C001",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "NG0002",
+      "capability_id": "C002",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "NG0003",
+      "capability_id": "C003",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "NG0004",
+      "capability_id": "C004",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "NG0005",
+      "capability_id": "C005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.107301+00:00",
+      "action": "node_added",
+      "node_id": "NG0006",
+      "capability_id": "C005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0007",
+      "capability_id": "C005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0008",
+      "capability_id": "C005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0009",
+      "capability_id": "C005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0010",
+      "capability_id": "C005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0011",
+      "capability_id": "C005",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0012",
+      "capability_id": "C006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0013",
+      "capability_id": "C006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0014",
+      "capability_id": "C006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0015",
+      "capability_id": "C006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0016",
+      "capability_id": "C006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0017",
+      "capability_id": "C006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0018",
+      "capability_id": "C006",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0019",
+      "capability_id": "C007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0020",
+      "capability_id": "C007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0021",
+      "capability_id": "C007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0022",
+      "capability_id": "C007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0023",
+      "capability_id": "C007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0024",
+      "capability_id": "C007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0025",
+      "capability_id": "C007",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0026",
+      "capability_id": "C008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.124089+00:00",
+      "action": "node_added",
+      "node_id": "NG0027",
+      "capability_id": "C008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0028",
+      "capability_id": "C008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0029",
+      "capability_id": "C008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0030",
+      "capability_id": "C008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0031",
+      "capability_id": "C008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0032",
+      "capability_id": "C008",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0033",
+      "capability_id": "C009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0034",
+      "capability_id": "C009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0035",
+      "capability_id": "C009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0036",
+      "capability_id": "C009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0037",
+      "capability_id": "C009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0038",
+      "capability_id": "C009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0039",
+      "capability_id": "C009",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0040",
+      "capability_id": "C010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0041",
+      "capability_id": "C010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0042",
+      "capability_id": "C010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0043",
+      "capability_id": "C010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.140737+00:00",
+      "action": "node_added",
+      "node_id": "NG0044",
+      "capability_id": "C010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.156423+00:00",
+      "action": "node_added",
+      "node_id": "NG0045",
+      "capability_id": "C010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.156423+00:00",
+      "action": "node_added",
+      "node_id": "NG0046",
+      "capability_id": "C010",
+      "round_id": "RND0001",
+      "phase": "basic_compute"
+    },
+    {
+      "timestamp": "2026-08-07T11:19:37.156423+00:00",
+      "action": "basic_compute_planned",
+      "node_ids": [
+        "ND0001",
+        "ND0002",
+        "ND0003",
+        "ND0004",
+        "ND0005",
+        "ND0006",
+        "ND0007",
+        "ND0008",
+        "ND0009",
+        "ND0010",
+        "ND0011",
+        "ND0012",
+        "ND0013",
+        "ND0014",
+        "ND0015",
+        "ND0016",
+        "ND0017",
+        "ND0018",
+        "NG0001",
+        "NG0002",
+        "NG0003",
+        "NG0004",
+        "NG0005",
+        "NG0006",
+        "NG0007",
+        "NG0008",
+        "NG0009",
+        "NG0010",
+        "NG0011",
+        "NG0012",
+        "NG0013",
+        "NG0014",
+        "NG0015",
+        "NG0016",
+        "NG0017",
+        "NG0018",
+        "NG0019",
+        "NG0020",
+        "NG0021",
+        "NG0022",
+        "NG0023",
+        "NG0024",
+        "NG0025",
+        "NG0026",
+        "NG0027",
+        "NG0028",
+        "NG0029",
+        "NG0030",
+        "NG0031",
+        "NG0032",
+        "NG0033",
+        "NG0034",
+        "NG0035",
+        "NG0036",
+        "NG0037",
+        "NG0038",
+        "NG0039",
+        "NG0040",
+        "NG0041",
+        "NG0042",
+        "NG0043",
+        "NG0044",
+        "NG0045",
+        "NG0046"
+      ],
+      "profile_id": "comprehensive-multiround-v1"
+    },
+    {
+      "timestamp": "2026-08-07T11:20:00.211236+00:00",
+      "action": "round_ended",
+      "round_id": "RND0001",
+      "status": "paused",
+      "reason": "smoke pause"
+    },
+    {
+      "timestamp": "2026-08-07T11:20:01.171579+00:00",
+      "action": "round_resumed",
+      "round_id": "RND0001"
+    }
+  ],
+  "updated_at": "2026-08-07T11:20:01.171579+00:00"
+}

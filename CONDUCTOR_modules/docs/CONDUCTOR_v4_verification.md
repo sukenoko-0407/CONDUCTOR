@@ -30,7 +30,7 @@ CONDUCTOR package layout is valid
 | Group／Metric | Run-global Group ID、Boolean matrix、binary=Tanimoto、表現semantics優先 |
 | Operator | 一般モード主要CSV、CONDUCTORモードCSV／Evidence／digest／HTML／manifest／event |
 | 移行 | source非変更、dry-run、旧→新Node ID対応、検証済みartifact copy、旧Interpretation除外、active Roundなしのhandoff |
-| Package | 44 Catalog Skill、1 maintenance Skill、3 Agent、installer／layout検証 |
+| Package | 44 Catalog Skill、1 maintenance Skill、1 support Skill、3 Agent、installer／layout検証 |
 | End-to-end | Description → Grouping → Operator → Interpretation → State登録 |
 
 ## 3. v4.3.0移行試験
@@ -49,6 +49,8 @@ CONDUCTOR package layout is valid
 - end-to-end artifact chainと未計画variant拒否
 
 ## 5. 未実施の環境検証
+
+Result Concierge追加時には、凍結条件、run_root外source拒否、State hash不変、Markdown／base64 Figure埋込みHTML、support SkillのCatalog非収載を独立回帰試験で確認した。
 
 Linux HPCへ配置後、次を受入試験する。
 

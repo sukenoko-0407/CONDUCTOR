@@ -1,0 +1,16 @@
+{
+  "run_id": "qa_run",
+  "round_id": null,
+  "analysis_requests": [
+    {
+      "request_id": "REQ0001",
+      "revision": 1,
+      "question_id": "Q0001",
+      "source_id": "F0001",
+      "action": "同一scopeの別Description、global comparator、sibling Group、反証候補を比較する。",
+      "purpose": "falsify",
+      "status": "proposed",
+      "round_id": null
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "profile_id": "comprehensive-multiround-v1",
+  "managed_by": "human",
+  "description": "全Descriptionの基本計算と、表現familyを横断するGlobal/Local探索を行う標準profile。",
+  "basic_compute": {
+    "description_capabilities": ["*"],
+    "direct_structure_grouping": ["C001", "C002", "C003", "C004"],
+    "vector_grouping_capabilities": ["C005", "C006", "C007", "C008", "C009", "C010"],
+    "vector_grouping_representations": ["D001", "D002", "D004", "D013", "D017", "D019", "D020"],
+    "conditional_grouping": ["C011", "C012"],
+    "high_cost_bundle": ["D016", "D019", "D020"]
+  },
+  "initial_exploration": {
+    "description_master_panel": ["D001", "D002", "D004", "D013", "D017", "D019", "D020"],
+    "global_operator_capabilities": ["A001", "A002", "A003", "A004", "A005", "A006", "A007", "A008", "A009", "A010"],
+    "local_operator_capabilities": ["A001", "A002", "A003", "A004", "A005", "A006", "A007", "A008", "A010"],
+    "representative_groups_per_grouping": 4,
+    "representative_roles": [
+      "largest_local",
+      "middle_size",
+      "endpoint_dispersion_extreme",
+      "low_overlap_or_structurally_cohesive"
+    ]
+  },
+  "additional_exploration": {
+    "stratify_by": ["description_family", "grouping_family", "operator", "scope"],
+    "sampling": "seeded_balanced_without_replacement"
+  },
+  "description_semantics": {
+    "D001": {"value_semantics": "dense_continuous", "natural_metric": "euclidean"},
+    "D002": {"value_semantics": "binary_fingerprint", "natural_metric": "tanimoto"},
+    "D003": {"value_semantics": "binary_fingerprint", "natural_metric": "tanimoto"},
+    "D004": {"value_semantics": "sparse_count", "natural_metric": "cosine"},
+    "D005": {"value_semantics": "sparse_count", "natural_metric": "cosine"},
+    "D006": {"value_semantics": "sparse_count", "natural_metric": "cosine"},
+    "D007": {"value_semantics": "binary_fingerprint", "natural_metric": "tanimoto"},
+    "D008": {"value_semantics": "binary_fingerprint", "natural_metric": "tanimoto"},
+    "D009": {"value_semantics": "binary_fingerprint", "natural_metric": "tanimoto"},
+    "D010": {"value_semantics": "binary_fingerprint", "natural_metric": "tanimoto"},
+    "D012": {"value_semantics": "dense_continuous", "natural_metric": "euclidean"},
+    "D013": {"value_semantics": "dense_shape_moment", "natural_metric": "manhattan"},
+    "D014": {"value_semantics": "dense_continuous", "natural_metric": "euclidean"},
+    "D015": {"value_semantics": "dense_continuous", "natural_metric": "euclidean"},
+    "D016": {"value_semantics": "dense_continuous", "natural_metric": "euclidean"},
+    "D017": {"value_semantics": "binary_fingerprint", "natural_metric": "tanimoto"},
+    "D019": {"value_semantics": "dense_embedding", "natural_metric": "cosine"},
+    "D020": {"value_semantics": "dense_continuous", "natural_metric": "euclidean"}
+  }
+}
