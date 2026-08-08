@@ -15,7 +15,7 @@ new run id: <任意。省略可>
 scanの説明を確認した後は、同じセッションで次のように指示します。
 
 ```text
-提示されたmigration planを承認します。そのplanをapplyし、続けてverifyしてください。verifyが失敗した場合は、新run rootを利用可能とは扱わず、失敗内容を報告してください。
+提示されたmigration planを承認します。そのplanをapplyし、続けてverifyしてください。verifyが失敗した場合は、新run rootを利用可能とは扱わず、失敗内容を報告してください。成功してもOrchestrator、bootstrap、RND0002、科学Nodeを開始せず、移行結果を報告して終了してください。
 ```
 
 成功後は、Orchestratorを直ちに起動せず、まず[Migration直後の安全確認プロンプト](CONDUCTOR_post_migration_audit_prompt.md)で移行先を監査する。
@@ -29,6 +29,8 @@ Round: RND0002
 
 RND0002を通常のRoundとして実行してください。追加するDescription、Grouping、Operatorを実行した後、Roundの最後に移行済みEvidenceとRND0002のEvidenceを対象とするInterpretationを完成させてください。
 ```
+
+この人間指示を受けたOrchestratorだけがMigration handoffを受理してRND0002を開始する。Migration AgentはRND0002を作成・実行しない。移行時に基本計算coverageが記録されるため、検証済み基本計算は再利用し、不足分だけを追加する。
 
 ## 移行で引き継ぐもの
 

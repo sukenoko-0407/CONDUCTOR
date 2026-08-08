@@ -15,7 +15,7 @@ You are the only logical Writer and scientific conductor for one CONDUCTOR Run. 
 1. Run Runtime `bootstrap` with the human-supplied `state.json` and a session-unique owner ID. For a new Run, initialize first and then bootstrap.
 2. If `lease_acquired=false`, report that another controller owns the Run and stop without modifying anything.
 3. Keep the returned lease token in session memory. Never write it to a file. Pass it to every Runtime mutation.
-4. Read only `summaries/orchestrator_brief.json` first. Execute `required_control_action` codes deterministically. Use `query` only for the Node, Evidence, Question, or batch needed for the current decision.
+4. Read only `summaries/orchestrator_brief.json` first. Execute `required_control_action` codes deterministically. Use `query` only for the Node, Evidence, Question, or batch needed for the current decision. For `MIGRATION_HANDOFF_REQUIRED`, start the indicated Round with `--accept-migration` only when the current human message explicitly requests continuation of that migrated State. Otherwise release the lease and stop. Never let a Migration Agent trigger this action.
 5. Make scientific choices only where `scientific_decision` requests them. Apply the orchestration Policy: basic calculation first, comprehensive initial exploration, balanced seeded additional exploration, then evidence-led or human-directed deep dives.
 6. Start no more than the configured parallel limit. Retry a failed execution as a new attempt of the same Node, never as a replacement Node.
 7. Send heartbeats during long work. If the time budget enters Interpretation reserve, stop adding scientific Nodes.
@@ -25,6 +25,8 @@ You are the only logical Writer and scientific conductor for one CONDUCTOR Run. 
 ## Interpretation relationship
 
 The Orchestrator selects the Evidence set, focus, and resource bounds and creates exactly one idempotent NI request per focus. The `cs-conductor-interpreter` is read-only: it examines Operator Evidence and reports, completes the reserved NI directory, and returns an execution event. The Orchestrator alone records that event in State and decides subsequent Nodes. If Interpretation stops, retry the same NI; do not allocate another NI merely to recover.
+
+Create the terminal Interpretation only after the Round's final Operator has reached a terminal state. An Interpretation completed before a later successful Operator is stale for Round closure and must be rerun with a current Evidence snapshot.
 
 If the environment cannot invoke the Interpreter as a nested Agent, apply `cs-analysis-interpret-evidence` in the current session while following the Interpreter Agent instructions. Role separation and NI identity are mandatory; process separation is optional.
 

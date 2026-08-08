@@ -66,6 +66,25 @@ class StateManagerTests(unittest.TestCase):
             self.assertTrue((state_path.parent / "summaries" / "orchestrator_brief.json").is_file())
             self.assertTrue((state_path.parent / "rounds" / "RND0001" / "round_request.md").is_file())
 
+    def test_interpretation_before_latest_operator_is_stale_for_round_close(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "interpretation"; output.mkdir()
+            for name in ["interpretation.json", "interpretation.md", "interpretation.html"]:
+                (output / name).write_text("complete", encoding="utf-8")
+            state = {
+                "round_control": {"active_round_id": "RND0001", "rounds": [{"round_id": "RND0001"}]},
+                "execution_graph": {"nodes": [
+                    {"node_id": "NO0001", "round_id": "RND0001", "stage": "analysis", "status": "succeeded", "finished_at": "2026-08-08T02:00:00+00:00"},
+                    {"node_id": "NI0001", "round_id": "RND0001", "stage": "interpretation", "status": "succeeded", "finished_at": "2026-08-08T01:00:00+00:00", "output_dir": str(output)},
+                ]},
+            }
+            stale = STATE.interpretation_gate(state)
+            self.assertEqual("blocked", stale["status"])
+            self.assertIn("INTERPRETATION_PRECEDES_LATEST_OPERATOR", stale["reason_codes"])
+            state["execution_graph"]["nodes"][1]["finished_at"] = "2026-08-08T03:00:00+00:00"
+            current = STATE.interpretation_gate(state)
+            self.assertEqual("satisfied", current["status"])
+
     def test_basic_plan_is_comprehensive_and_uses_one_bundle_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             state_path = self.initialize(Path(directory))

@@ -2,10 +2,10 @@
 
 ## 1. 結果概要
 
-2026-08-08にWindows開発環境で自動試験を実施し、**41件すべて合格**した。内訳はState／control／migration 16件、Repository契約10件、科学計算Smoke 15件である。
+2026-08-08にWindows開発環境で自動試験を実施し、**43件すべて合格**した。内訳はState／control／migration 18件、Repository契約10件、科学計算Smoke 15件である。
 
 ```text
-State/control/migration: OK (16 tests)
+State/control/migration: OK (18 tests)
 Repository contracts:   OK (10 tests)
 Scientific smoke:       OK (15 tests, 259.277s)
 Validated 44 allowlisted capabilities
@@ -23,19 +23,19 @@ CONDUCTOR package layout is valid
 | Node retry | 同じNode ID内の`TRY###` attempt追加、parallel limitのstart時再検査 |
 | bounded状態 | `state_summary.json`と`orchestrator_brief.json`、固定action code、phase順序 |
 | Round | deadline、Interpretation reserve、stop reason、複数Round、handoff |
-| Interpretation gate | 成功Operator後、JSON／Markdown／HTMLなしのcheckpoint／completed拒否 |
+| Interpretation gate | 成功Operator後、JSON／Markdown／HTMLなし、または最終Operatorより古いInterpretationでのcheckpoint／completed拒否 |
 | Audit | Quick／Full、`run_root/audit/<timestamp>/`、State非変更、artifact検査 |
 | 基本・初期探索 | 全Description、MCSを含むGrouping、Global全Operator、Local batch計画 |
 | 追加探索 | Round累積上限、seed付きbalanced非復元抽出、candidate pool exhaustion |
 | Group／Metric | Run-global Group ID、Boolean matrix、binary=Tanimoto、表現semantics優先 |
 | Operator | 一般モード主要CSV、CONDUCTORモードCSV／Evidence／digest／HTML／manifest／event |
-| 移行 | source非変更、dry-run、旧→新Node ID対応、検証済みartifact copy、旧Interpretation除外 |
+| 移行 | source非変更、dry-run、旧→新Node ID対応、検証済みartifact copy、旧Interpretation除外、active Roundなしのhandoff |
 | Package | 44 Catalog Skill、1 maintenance Skill、3 Agent、installer／layout検証 |
 | End-to-end | Description → Grouping → Operator → Interpretation → State登録 |
 
 ## 3. v4.3.0移行試験
 
-合成した旧Runの`ND0999`と`NO1500`を、新run rootの`ND0001`と`NO0001`へ依存順に再附番した。旧`NI0900`はactive DAGへ入れず参照用とし、新`RND0002`でfresh Interpretationを必須にした。
+合成した旧Runの`ND0999`と`NO1500`を、新run rootの`ND0001`と`NO0001`へ依存順に再附番した。旧`NI0900`はactive DAGへ入れず参照用とした。Migrationは`RND0001` checkpoint、active Roundなし、`migration_handoff=awaiting_human_start`で終了することを確認した。明示的な`--accept-migration`なしではRND0002を開始できず、開始後の基本計画でも移行済みD001を重複作成しないことを確認した。
 
 移行前後でsource `state.json` hashが不変であることを確認した。またscan後にsource artifactを変更したケースでは、target作成前にapplyが拒否されることを確認した。Groupingを含むケースでは、Group registry、Group件数、Node別membership索引を新run rootに再構築できることも確認した。
 

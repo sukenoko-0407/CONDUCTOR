@@ -81,7 +81,18 @@
           "additionalProperties": false
         },
         "last_bootstrap_at": {"type": ["string", "null"], "format": "date-time"},
-        "last_audit_path": {"type": ["string", "null"]}
+        "last_audit_path": {"type": ["string", "null"]},
+        "migration_handoff": {
+          "type": "object",
+          "required": ["status", "created_at", "accepted_at", "accepted_round_id"],
+          "properties": {
+            "status": {"enum": ["awaiting_human_start", "accepted"]},
+            "created_at": {"type": "string", "format": "date-time"},
+            "accepted_at": {"type": ["string", "null"], "format": "date-time"},
+            "accepted_round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4,}$"}
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

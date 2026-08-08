@@ -6,7 +6,7 @@
 
 対象はcontrol plane、Orchestrator／Interpreter連携、内部Skill、監査、State schema、planner、関連文書・試験である。Description、Grouping、Operatorの科学計算Kernelと一般利用時の挙動は原則変更しない。
 
-4.3.0 Stateを暗黙に書き換えない。旧run rootをread-onlyとする一回限りの明示的migrationだけを提供し、`scan → 人間承認 → apply → verify` により別の新run rootを作成する。検証済み科学artifactは移行できるが、旧Interpretationは参照用とし、新Roundで作り直す。
+4.3.0 Stateを暗黙に書き換えない。旧run rootをread-onlyとする一回限りの明示的migrationだけを提供し、`scan → 人間承認 → apply → verify` により別の新run rootを作成する。検証済み科学artifactは移行できるが、旧Interpretationは参照用とする。Migrationはactive Roundを作らず、別の人間指示を受けたOrchestratorが後続Roundを開始する。
 
 ## 2. 改修の目的
 

@@ -14,6 +14,7 @@ description: Deterministically initialize, resume, inspect, plan, execute, audit
 3. `lease_acquired=false` なら別のWriterが稼働中である。Stateを変更せず終了する。
 4. `lease_acquired=true` なら返された `lease_token` を保持し、以降の全変更コマンドへ `--lease-token` を渡す。tokenをファイルへ保存しない。
 5. 通常は `summaries/orchestrator_brief.json` の `required_control_action` を上から処理する。科学的選択だけ `scientific_decision` を根拠にOrchestratorが判断する。
+   移行済みStateの`MIGRATION_HANDOFF_REQUIRED`は実行要求ではない。現在の人間メッセージが移行後Roundの開始を明示した場合だけ、`round-start --accept-migration`を実行する。
 6. 長時間処理中は `heartbeat` でleaseを更新する。
 7. Round終了前にInterpretationを成功記録する。`checkpoint` / `completed` はJSON・Markdown・HTMLが揃わなければ拒否される。
 8. 正常終了時は `release-lease` を実行する。
@@ -28,6 +29,7 @@ launcherは共有Pixiを優先し、`PIXI_CACHE_DIR`、`UV_CACHE_DIR`、一時Di
 
 ## 制御アクション
 
+- `MIGRATION_HANDOFF_REQUIRED`: 人間の明示的な移行後Round開始指示がある場合だけ`round-start --accept-migration`
 - `PLAN_BASIC`: `plan-basic`
 - `REQUEST_BASIC_BUNDLE_APPROVAL`: 人間に一括承認を求め、`approve-basic-bundle`
 - `PLAN_INITIAL_GLOBAL`: `plan-initial-global`
@@ -38,7 +40,7 @@ launcherは共有Pixiを優先し、`PIXI_CACHE_DIR`、`UV_CACHE_DIR`、一時Di
 - `ROUND_CLOSE_READY`: Full Auditを実行してから `round-end`
 - `STOP_SCIENTIFIC_EXPANSION`: 新規科学Nodeを増やさずInterpretationと監査へ移る
 
-Node失敗後の再試行は新Nodeを追加せず、同じNodeを `start --retry` する。Interpreterの再試行も同じNIを完成させる。
+Node失敗後の再試行は新Nodeを追加せず、同じNodeを `start --retry` する。Interpreterの再試行も同じNIを完成させる。最終Interpretationは最後の成功Operatorより後に完成している必要があり、後発Operatorがある場合はRound終端用としてstaleになる。
 
 ## 事故復旧
 

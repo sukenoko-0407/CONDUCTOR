@@ -31,6 +31,6 @@
 
 ## 互換性
 
-4.3.1の通常Runtimeは4.3.0 Stateを暗黙更新しない。例外として、一回限りのMigration Agent／Skillが `scan → 人間承認 → apply → verify` により、旧run rootを変更せず別の新run rootを作成できる。検証済みDescription／Grouping／Operator artifactだけをactive DAGへ取り込み、旧Interpretationは参照用に保持して新Roundで作り直す。
+4.3.1の通常Runtimeは4.3.0 Stateを暗黙更新しない。例外として、一回限りのMigration Agent／Skillが `scan → 人間承認 → apply → verify` により、旧run rootを変更せず別の新run rootを作成できる。検証済みDescription／Grouping／Operator artifactだけを`RND0001` checkpointへ取り込み、active Roundを作らず人間のhandoff指示を待つ。旧Interpretationは参照用に保持し、後続Roundの終端で作り直す。
 
 通常再開時のAgent入力は `summaries/orchestrator_brief.json` であり、`state.json` は機械可読な正本、`state_summary.json` はboundedな事実要約である。監査は `audit/<timestamp>/` に保存する。

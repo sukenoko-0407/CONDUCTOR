@@ -19,6 +19,16 @@ def stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
 
+def parse_time(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -84,6 +94,10 @@ def audit(state_path: Path, mode: str) -> dict[str, Any]:
     rounds = state.get("round_control", {}).get("rounds", [])
     active_records = [item.get("round_id") for item in rounds if item.get("status") == "active"]
     add("SINGLE_ACTIVE_ROUND", len(active_records) <= 1 and (not active_records or active_records[0] == active_round), {"pointer": active_round, "active": active_records})
+    handoff = state.get("orchestration_control", {}).get("migration_handoff") or {}
+    if handoff.get("status") == "awaiting_human_start":
+        post_migration_nodes = [node.get("node_id") for node in nodes if node.get("round_id") != "RND0001"]
+        add("MIGRATION_HANDOFF_SAFE", active_round is None and not post_migration_nodes, {"active_round_id": active_round, "post_migration_nodes": post_migration_nodes})
     max_by_prefix = {"description_node": ("ND", 0), "grouping_node": ("NG", 0), "operator_node": ("NO", 0), "interpretation_node": ("NI", 0)}
     for key, (prefix, _value) in list(max_by_prefix.items()):
         maximum = max((int(match.group(1)) for node_id in ids if (match := re.fullmatch(prefix + r"(\d+)", str(node_id)))), default=0)
@@ -92,12 +106,21 @@ def audit(state_path: Path, mode: str) -> dict[str, Any]:
     add("NODE_COUNTERS_COVER_IDS", not stale_counters, stale_counters)
     successful_analysis = [node for node in nodes if node.get("round_id") == active_round and node.get("stage") == "analysis" and node.get("status") == "succeeded"]
     successful_interpretation = [node for node in nodes if node.get("round_id") == active_round and node.get("stage") == "interpretation" and node.get("status") == "succeeded"]
+    latest_analysis_at = max(
+        (value for value in (parse_time(node.get("finished_at") or node.get("started_at") or node.get("requested_at")) for node in successful_analysis) if value is not None),
+        default=None,
+    )
     valid_interpretation = []
+    stale_interpretation = []
     for node in successful_interpretation:
         root = Path(node["output_dir"])
         if all((root / name).is_file() for name in ["interpretation.json", "interpretation.md", "interpretation.html"]):
-            valid_interpretation.append(node["node_id"])
-    add("INTERPRETATION_CLOSE_GATE", not successful_analysis or bool(valid_interpretation), {"analysis": [node["node_id"] for node in successful_analysis], "valid_interpretation": valid_interpretation}, "warning")
+            completed_at = parse_time(node.get("finished_at") or node.get("started_at") or node.get("requested_at"))
+            if latest_analysis_at is not None and (completed_at is None or completed_at < latest_analysis_at):
+                stale_interpretation.append(node["node_id"])
+            else:
+                valid_interpretation.append(node["node_id"])
+    add("INTERPRETATION_CLOSE_GATE", not successful_analysis or bool(valid_interpretation), {"analysis": [node["node_id"] for node in successful_analysis], "valid_interpretation": valid_interpretation, "stale_interpretation": stale_interpretation}, "warning")
     if mode == "full":
         missing: list[dict[str, str]] = []; mismatch: list[dict[str, str]] = []
         for node in nodes:

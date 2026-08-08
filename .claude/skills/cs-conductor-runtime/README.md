@@ -24,9 +24,11 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state bootstrap \
 
 返されたlease tokenを、そのセッションのState変更コマンドへ `--lease-token` として渡します。
 
+移行済みRunの最初のRoundは、人間の開始指示を確認して`round-start --accept-migration`で開始します。移行済み基本計算は再利用され、不足分だけが計画対象になります。
+
 ## 制約事項
 
-一般解析用Skillではありません。Stateの直接編集、複数Writer、InterpretationなしのRound完了は許可されません。
+一般解析用Skillではありません。Stateの直接編集、複数Writer、Migration AgentからのRound開始、最終Operatorより古いInterpretationによるRound完了は許可されません。
 
 ## 変更履歴
 

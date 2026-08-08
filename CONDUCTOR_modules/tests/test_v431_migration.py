@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -11,7 +12,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATOR = ROOT / ".claude" / "skills" / "cs-conductor-migrate-v430-run" / "scripts" / "migrate.py"
+RUNTIME = ROOT / ".claude" / "skills" / "cs-conductor-runtime" / "scripts" / "state_manager.py"
 DATA = ROOT / "CONDUCTOR_modules" / "tests" / "data" / "small_sar.csv"
+MIGRATION_SPEC = importlib.util.spec_from_file_location("migration_v431", MIGRATOR)
+assert MIGRATION_SPEC and MIGRATION_SPEC.loader
+MIGRATION = importlib.util.module_from_spec(MIGRATION_SPEC)
+MIGRATION_SPEC.loader.exec_module(MIGRATION)
 
 
 def digest(path: Path) -> str:
@@ -21,6 +27,9 @@ def digest(path: Path) -> str:
 class V431MigrationTests(unittest.TestCase):
     def cli(self, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(MIGRATOR), *arguments], cwd=ROOT, check=check, text=True, capture_output=True)
+
+    def runtime(self, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(RUNTIME), *arguments], cwd=ROOT, check=check, text=True, capture_output=True)
 
     def fixture(self, root: Path) -> Path:
         root.mkdir()
@@ -45,6 +54,27 @@ class V431MigrationTests(unittest.TestCase):
         interpretation = root / "interpretation" / "NI0900"; interpretation.mkdir(parents=True); (interpretation / "interpretation.html").write_text("legacy", encoding="utf-8")
         return root / "state.json"
 
+    def test_basic_coverage_recognizes_complete_imported_panel(self) -> None:
+        catalog = json.loads((ROOT / "CONDUCTOR_modules" / "catalog" / "catalog.json").read_text(encoding="utf-8"))
+        profile = json.loads((ROOT / "CONDUCTOR_modules" / "catalog" / "analysis_profile.json").read_text(encoding="utf-8"))
+        description_ids = sorted(item["capability_id"] for item in catalog["capabilities"] if item["stage"] == "description")
+        nodes = [
+            {"node_id": f"ND{index:04d}", "stage": "description", "capability_id": capability_id, "status": "succeeded", "dependencies": []}
+            for index, capability_id in enumerate(description_ids, 1)
+        ]
+        description_node = {node["capability_id"]: node["node_id"] for node in nodes}
+        counter = 1
+        for capability_id in profile["basic_compute"]["direct_structure_grouping"]:
+            nodes.append({"node_id": f"NG{counter:04d}", "stage": "grouping", "capability_id": capability_id, "status": "succeeded", "dependencies": []}); counter += 1
+        for grouping_id in profile["basic_compute"]["vector_grouping_capabilities"]:
+            for description_id in profile["basic_compute"]["vector_grouping_representations"]:
+                nodes.append({"node_id": f"NG{counter:04d}", "stage": "grouping", "capability_id": grouping_id, "status": "succeeded", "dependencies": [description_node[description_id]]}); counter += 1
+        nodes.append({"node_id": f"NG{counter:04d}", "stage": "grouping", "capability_id": "C011", "status": "succeeded", "dependencies": []})
+        coverage = MIGRATION.basic_coverage(nodes, {"assay_level_count": 2})
+        self.assertTrue(coverage["complete"])
+        self.assertEqual(coverage["expected_count"], coverage["covered_count"])
+        self.assertEqual([], coverage["missing"])
+
     def test_scan_apply_verify_creates_distinct_run_and_preserves_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory); source = temporary / "source"; target = temporary / "target"
@@ -58,11 +88,29 @@ class V431MigrationTests(unittest.TestCase):
             applied = json.loads(self.cli("apply", "--plan", str(plan), "--approve").stdout)
             self.assertEqual("pass", applied["status"]); self.assertEqual(before, digest(source_state))
             migrated = json.loads((target / "state.json").read_text(encoding="utf-8"))
-            self.assertEqual("4.3.1", migrated["conductor_version"]); self.assertEqual("RND0002", migrated["round_control"]["active_round_id"])
+            self.assertEqual("4.3.1", migrated["conductor_version"]); self.assertIsNone(migrated["round_control"]["active_round_id"])
+            self.assertEqual(2, migrated["round_control"]["next_round_number"])
+            self.assertEqual("awaiting_human_start", migrated["orchestration_control"]["migration_handoff"]["status"])
             self.assertEqual(20, migrated["id_counters"]["finding"])
             self.assertFalse(any(node["stage"] == "interpretation" for node in migrated["execution_graph"]["nodes"]))
             verified = json.loads(self.cli("verify", "--target-run-root", str(target)).stdout)
             self.assertEqual("pass", verified["status"])
+
+            bootstrap = json.loads(self.runtime("bootstrap", "--state", str(target / "state.json"), "--owner-id", "migration-test").stdout)
+            token = bootstrap["lease_token"]
+            blocked = self.runtime("round-start", "--state", str(target / "state.json"), "--round-id", "RND0002", "--request", "resume", "--lease-token", token, check=False)
+            self.assertNotEqual(0, blocked.returncode)
+            self.assertIn("--accept-migration", blocked.stderr)
+            unchanged = json.loads((target / "state.json").read_text(encoding="utf-8"))
+            self.assertIsNone(unchanged["round_control"]["active_round_id"])
+
+            self.runtime("round-start", "--state", str(target / "state.json"), "--round-id", "RND0002", "--request", "explicit human continuation", "--accept-migration", "--lease-token", token)
+            started = json.loads((target / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual("RND0002", started["round_control"]["active_round_id"])
+            self.assertEqual("accepted", started["orchestration_control"]["migration_handoff"]["status"])
+            self.runtime("plan-basic", "--state", str(target / "state.json"), "--lease-token", token)
+            planned = json.loads((target / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(1, sum(node["stage"] == "description" and node["capability_id"] == "D001" for node in planned["execution_graph"]["nodes"]))
 
     def test_apply_refuses_artifact_changed_after_scan_before_creating_target(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

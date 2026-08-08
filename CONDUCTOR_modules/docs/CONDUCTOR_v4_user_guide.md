@@ -156,4 +156,4 @@ bootstrap時はQuick Auditを行う。Agent停止、lease takeover、Quick Audit
 
 ## 13. v4.3.0 Runの一回限り移行
 
-通常Orchestratorで旧Stateを開かない。`cs-conductor-v430-migrator` にsourceと未作成targetを指定し、scan結果を人間が確認した後だけapplyする。詳細は `docs/prompt/CONDUCTOR_v430_to_v431_migration_prompt.md` を参照する。
+通常Orchestratorで旧Stateを開かない。`cs-conductor-v430-migrator` にsourceと未作成targetを指定し、scan結果を人間が確認した後だけapplyする。Migrationは`RND0001` checkpoint、active Roundなし、明示的handoff待ちで終了する。Migration AgentはbootstrapやOrchestratorを起動しない。別の人間指示を受けたOrchestratorがRND0002を開始し、移行済み基本計算を再利用して不足分だけを計画する。詳細は `docs/prompt/CONDUCTOR_v430_to_v431_migration_prompt.md` を参照する。

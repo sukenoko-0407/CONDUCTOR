@@ -43,8 +43,9 @@ Orchestratorは起動せず、Stateを変更しないでください。
 ## 継続可否の目安
 
 - Migration verificationが`pass`
+- active Roundが`null`で、`migration_handoff`が`awaiting_human_start`
 - RND0002の科学Nodeが0件
 - RND0002のInterpretation Nodeが0件
 - `running` Nodeと未終了attemptが0件
 
-上記を満たし、leaseだけが残っている場合は、leaseを正規に解放するか失効・監査済みtakeoverを行った後に解析を再開できる。RND0002に意図しないNodeがある場合は手作業で削除せず、Audit結果を基に補正または再Migrationを判断する。
+上記を満たす状態が正常なMigration終端である。通常はMigration Agentがbootstrapしないためleaseも空である。leaseが残っている場合は正規に解放するか失効・監査済みtakeoverを行った後に解析を再開する。RND0002に意図しないNodeがある場合は手作業で削除せず、Audit結果を基に補正または再Migrationを判断する。

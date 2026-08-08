@@ -259,6 +259,9 @@ def renew_lease(state: dict[str, Any], minutes: int | None = None) -> None:
 def controller_mutation(state: dict[str, Any], args: argparse.Namespace) -> None:
     require_controller(state, args)
     renew_lease(state)
+    handoff = (state.get("orchestration_control") or {}).get("migration_handoff") or {}
+    if handoff.get("status") == "awaiting_human_start" and getattr(args, "command", None) != "round-start":
+        raise ValueError("Migration handoff is awaiting an explicit human Round start; no other State mutation is allowed")
     scientific_expansion_commands = {"plan-basic", "plan-initial-global", "plan-initial-local", "plan-additional", "plan-deep-dive", "add"}
     if getattr(args, "command", None) in scientific_expansion_commands:
         time_status = round_time_status(state)
@@ -432,6 +435,16 @@ def create_round(state: dict[str, Any], run_root: Path, request: str, envelope: 
     started = datetime.now(timezone.utc)
     walltime = max(1, int(envelope.get("walltime_minutes") or 480))
     reserve = max(10, min(60, int(round(walltime * 0.15))))
+    migration_baseline = state.get("run", {}).get("migration_baseline") or {}
+    prior_phase_plans = {
+        phase: any(entry.get("action") == f"{phase}_planned" for entry in state.get("history") or [])
+        for phase in ["basic_compute", "initial_global", "initial_local"]
+    }
+    baseline_flags = {
+        "basic_plan_complete": bool((migration_baseline.get("basic_compute") or {}).get("complete")) if number == 2 and migration_baseline else prior_phase_plans["basic_compute"],
+        "initial_global_plan_complete": bool(migration_baseline.get("initial_global_complete")) if number == 2 and migration_baseline else prior_phase_plans["initial_global"],
+        "initial_local_plan_complete": bool(migration_baseline.get("initial_local_complete")) if number == 2 and migration_baseline else prior_phase_plans["initial_local"],
+    }
     item = {
         "round_id": round_id, "number": number, "status": "active", "request": request,
         "request_path": str((round_root / "round_request.md").resolve()), "resource_envelope": envelope,
@@ -442,6 +455,7 @@ def create_round(state: dict[str, Any], run_root: Path, request: str, envelope: 
             "additional_nodes_planned": 0,
             "stop_reason": None,
             "last_progress_at": started.isoformat(),
+            **baseline_flags,
         },
         "close_gate": {"status": "open", "reason_codes": ["ROUND_ACTIVE"], "checked_at": started.isoformat()},
     }
@@ -790,12 +804,14 @@ def cmd_plan_basic(args: argparse.Namespace) -> int:
         description_ids = expand_capability_list(capabilities, profile["basic_compute"]["description_capabilities"], "description")
         description_nodes: dict[str, dict[str, Any]] = {}
         for capability_id in description_ids:
-            node, created = plan_node(state, capabilities, run_root, capability_id, [], "basic_compute", "基本計算として全Descriptionを生成する。")
+            existing = next((node for node in state["execution_graph"]["nodes"] if node["stage"] == "description" and node["capability_id"] == capability_id and node["status"] == "succeeded"), None)
+            node, created = (existing, False) if existing else plan_node(state, capabilities, run_root, capability_id, [], "basic_compute", "基本計算として全Descriptionを生成する。")
             description_nodes[capability_id] = node
             if created:
                 planned.append(node["node_id"])
         for capability_id in profile["basic_compute"]["direct_structure_grouping"]:
-            node, created = plan_node(state, capabilities, run_root, capability_id, [], "basic_compute", "Direct structure基本Groupingを生成する。")
+            existing = next((node for node in state["execution_graph"]["nodes"] if node["stage"] == "grouping" and node["capability_id"] == capability_id and node["status"] == "succeeded"), None)
+            node, created = (existing, False) if existing else plan_node(state, capabilities, run_root, capability_id, [], "basic_compute", "Direct structure基本Groupingを生成する。")
             if created:
                 planned.append(node["node_id"])
         for grouping_id in profile["basic_compute"]["vector_grouping_capabilities"]:
@@ -803,14 +819,23 @@ def cmd_plan_basic(args: argparse.Namespace) -> int:
                 source = description_nodes.get(description_id) or next((node for node in state["execution_graph"]["nodes"] if node["capability_id"] == description_id and node["stage"] == "description"), None)
                 if source is None:
                     continue
-                node, created = plan_node(
+                existing = next(
+                    (
+                        node for node in state["execution_graph"]["nodes"]
+                        if node["stage"] == "grouping" and node["capability_id"] == grouping_id and node["status"] == "succeeded"
+                        and any(state_nodes(state).get(dependency, {}).get("capability_id") == description_id for dependency in node.get("dependencies") or [])
+                    ),
+                    None,
+                )
+                node, created = (existing, False) if existing else plan_node(
                     state, capabilities, run_root, grouping_id, [source["node_id"]], "basic_compute",
                     f"表現family代表{description_id}へVector Clustering {grouping_id}を適用する。",
                 )
                 if created:
                     planned.append(node["node_id"])
         if state["run"].get("assay_level_count", 0) > 1 and "C011" in profile["basic_compute"]["conditional_grouping"]:
-            node, created = plan_node(
+            existing = next((node for node in state["execution_graph"]["nodes"] if node["stage"] == "grouping" and node["capability_id"] == "C011" and node["status"] == "succeeded"), None)
+            node, created = (existing, False) if existing else plan_node(
                 state, capabilities, run_root, "C011", [], "basic_compute",
                 "複数assay条件を検出したため、条件を混合せず比較可能にする。",
                 {"columns": state["run"]["assay_column"]},
@@ -1716,25 +1741,41 @@ def interpretation_gate(state: dict[str, Any], round_id: str | None = None) -> d
         node for node in state["execution_graph"]["nodes"]
         if node["round_id"] == selected_round and node["stage"] == "interpretation" and node["status"] == "succeeded"
     ]
+    artifact_valid: list[dict[str, Any]] = []
     valid: list[str] = []
     missing_artifacts: list[str] = []
+    stale_interpretations: list[str] = []
     for node in interpretations:
         output = Path(node["output_dir"])
         expected = [output / "interpretation.json", output / "interpretation.md", output / "interpretation.html"]
         if all(path.is_file() and path.stat().st_size > 0 for path in expected):
-            valid.append(node["node_id"])
+            artifact_valid.append(node)
         else:
             missing_artifacts.append(node["node_id"])
+    analysis_times = [
+        timestamp for timestamp in
+        (parse_timestamp(node.get("finished_at") or node.get("started_at") or node.get("requested_at")) for node in analysis)
+        if timestamp is not None
+    ]
+    latest_analysis_at = max(analysis_times, default=None)
+    for node in artifact_valid:
+        interpretation_at = parse_timestamp(node.get("finished_at") or node.get("started_at") or node.get("requested_at"))
+        if latest_analysis_at is not None and (interpretation_at is None or interpretation_at < latest_analysis_at):
+            stale_interpretations.append(node["node_id"])
+        else:
+            valid.append(node["node_id"])
     reasons: list[str] = []
     status = "satisfied"
-    migration_requires_fresh = bool((item or {}).get("execution_control", {}).get("migration_requires_fresh_interpretation"))
-    if (analysis or migration_requires_fresh) and not valid:
+    if analysis and not valid:
         status = "blocked"
-        reasons.append("FRESH_INTERPRETATION_REQUIRED" if migration_requires_fresh else "INTERPRETATION_REQUIRED")
+        reasons.append("INTERPRETATION_REQUIRED")
     if missing_artifacts:
         status = "blocked"
         reasons.append("INTERPRETATION_ARTIFACTS_MISSING")
-    if not analysis and not migration_requires_fresh:
+    if stale_interpretations:
+        status = "blocked"
+        reasons.append("INTERPRETATION_PRECEDES_LATEST_OPERATOR")
+    if not analysis:
         reasons.append("NO_NEW_OPERATOR_EVIDENCE")
     return {
         "status": status, "reason_codes": reasons,
@@ -1742,6 +1783,7 @@ def interpretation_gate(state: dict[str, Any], round_id: str | None = None) -> d
         "interpretation_node_ids": [node["node_id"] for node in interpretations],
         "valid_interpretation_node_ids": valid,
         "invalid_interpretation_node_ids": missing_artifacts,
+        "stale_interpretation_node_ids": stale_interpretations,
     }
 
 
@@ -1925,14 +1967,14 @@ def required_control_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
         return [{"code": "PACKAGE_APPROVAL_REQUIRED", "blocking": True}]
     current = active_round(state, required=False)
     if current is None:
+        handoff = (state.get("orchestration_control") or {}).get("migration_handoff") or {}
+        if handoff.get("status") == "awaiting_human_start":
+            return [{"code": "MIGRATION_HANDOFF_REQUIRED", "blocking": True, "next_round_id": f"RND{state['round_control']['next_round_number']:04d}", "reason": "EXPLICIT_HUMAN_START_REQUIRED"}]
         return [{"code": "START_NEXT_ROUND", "blocking": True, "next_round_id": f"RND{state['round_control']['next_round_number']:04d}"}]
     nodes = state["execution_graph"]["nodes"]
     control = current.get("execution_control") or {}
-    if control.get("migration_requires_fresh_interpretation") and interpretation_gate(state)["status"] == "blocked":
-        pending_i = [node["node_id"] for node in nodes if node["round_id"] == current["round_id"] and node["stage"] == "interpretation" and node["status"] in {"pending", "running", "failed", "stale"}]
-        return [{"code": "CREATE_OR_COMPLETE_INTERPRETATION", "blocking": True, "node_ids": pending_i[:SUMMARY_LIMIT], "reason": "FRESH_INTERPRETATION_OF_IMPORTED_EVIDENCE"}]
     if not control.get("basic_plan_complete"):
-        actions.append({"code": "PLAN_BASIC", "blocking": True})
+        return [{"code": "PLAN_BASIC", "blocking": True}]
     bundle = state["run"].get("high_cost_bundle") or {}
     if bundle.get("status") == "pending" and any(node.get("human_approval") == "bundle_pending" for node in nodes):
         actions.append({"code": "REQUEST_BASIC_BUNDLE_APPROVAL", "blocking": True})
@@ -2056,6 +2098,11 @@ def cmd_round_start(args: argparse.Namespace) -> int:
     with state_lock(state_path):
         state = read_json(state_path)
         controller_mutation(state, args)
+        handoff = (state.get("orchestration_control") or {}).get("migration_handoff") or {}
+        if handoff.get("status") == "awaiting_human_start" and not args.accept_migration:
+            raise ValueError("Starting the first post-migration Round requires --accept-migration after an explicit human instruction")
+        if args.accept_migration and handoff.get("status") != "awaiting_human_start":
+            raise ValueError("--accept-migration is valid only for a pending Migration handoff")
         gate = detect_package_change(state, find_workspace())
         if gate["status"] != "clear":
             append_history(state, "package_change_detected", differences=gate["differences"])
@@ -2070,7 +2117,10 @@ def cmd_round_start(args: argparse.Namespace) -> int:
                 write_state(state_path, state); return 0
             raise ValueError(f"Requested Round must be {expected}; State was not changed")
         envelope = {"walltime_minutes": args.walltime_minutes, "max_additional_nodes": args.max_additional_nodes, "interpretation_iterations": args.interpretation_iterations}
-        create_round(state, state_path.parent, args.request, envelope)
+        created_round = create_round(state, state_path.parent, args.request, envelope)
+        if handoff.get("status") == "awaiting_human_start":
+            handoff.update({"status": "accepted", "accepted_at": utc_now(), "accepted_round_id": created_round["round_id"]})
+            append_history(state, "migration_handoff_accepted", round_id=created_round["round_id"])
         write_state(state_path, state)
     return 0
 
@@ -2209,6 +2259,10 @@ def audit_state(state_path: Path, state: dict[str, Any], mode: str = "quick") ->
     lease = (state.get("orchestration_control") or {}).get("lease") or {}
     live = lease_is_live(state)
     check("LEASE_WELL_FORMED", not lease.get("token_hash") or bool(lease.get("owner_id") and lease.get("expires_at")), {"owner_id": lease.get("owner_id"), "live": live})
+    handoff = (state.get("orchestration_control") or {}).get("migration_handoff") or {}
+    if handoff.get("status") == "awaiting_human_start":
+        post_migration_nodes = [node["node_id"] for node in state["execution_graph"]["nodes"] if node.get("round_id") != "RND0001"]
+        check("MIGRATION_HANDOFF_SAFE", state["round_control"].get("active_round_id") is None and not post_migration_nodes, {"active_round_id": state["round_control"].get("active_round_id"), "post_migration_nodes": post_migration_nodes})
     gate = interpretation_gate(state)
     check("INTERPRETATION_CLOSE_GATE", gate["status"] != "blocked", gate, severity="warning")
     if mode == "full":
@@ -2451,7 +2505,7 @@ def build_parser() -> argparse.ArgumentParser:
     runnable = sub.add_parser("runnable"); runnable.add_argument("--state", required=True); runnable.set_defaults(func=cmd_runnable)
     status = sub.add_parser("status"); status.add_argument("--state", required=True); status.set_defaults(func=cmd_status)
     degroup = sub.add_parser("deprioritize-group"); degroup.add_argument("--state", required=True); degroup.add_argument("--group-id", required=True); degroup.add_argument("--reason", required=True); degroup.set_defaults(func=cmd_deprioritize_group)
-    round_start = sub.add_parser("round-start"); round_start.add_argument("--state", required=True); round_start.add_argument("--round-id", required=True); round_start.add_argument("--request", required=True); round_start.add_argument("--walltime-minutes", type=int, default=480); round_start.add_argument("--max-additional-nodes", type=int, default=300); round_start.add_argument("--interpretation-iterations", type=int, default=3); round_start.set_defaults(func=cmd_round_start)
+    round_start = sub.add_parser("round-start"); round_start.add_argument("--state", required=True); round_start.add_argument("--round-id", required=True); round_start.add_argument("--request", required=True); round_start.add_argument("--walltime-minutes", type=int, default=480); round_start.add_argument("--max-additional-nodes", type=int, default=300); round_start.add_argument("--interpretation-iterations", type=int, default=3); round_start.add_argument("--accept-migration", action="store_true", help="Required only for the first post-migration Round after an explicit human instruction."); round_start.set_defaults(func=cmd_round_start)
     round_end = sub.add_parser("round-end"); round_end.add_argument("--state", required=True); round_end.add_argument("--round-id", required=True); round_end.add_argument("--status", choices=["paused", "checkpoint", "completed"], required=True); round_end.add_argument("--reason", required=True); round_end.add_argument("--stop-reason", choices=["budget_exhausted", "no_eligible_work", "human_checkpoint", "completed_scope", "abnormal_interruption", "other"]); round_end.set_defaults(func=cmd_round_end)
     resume = sub.add_parser("resume"); resume.add_argument("--state", required=True); resume.set_defaults(func=cmd_resume)
     package = sub.add_parser("approve-package-change"); package.add_argument("--state", required=True); package_choice = package.add_mutually_exclusive_group(required=True); package_choice.add_argument("--approve", action="store_true"); package_choice.add_argument("--reject", dest="approve", action="store_false"); package.add_argument("--rationale", required=True); package.set_defaults(func=cmd_approve_package_change)

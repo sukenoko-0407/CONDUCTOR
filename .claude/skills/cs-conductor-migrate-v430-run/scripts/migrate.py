@@ -9,7 +9,7 @@ import re
 import shutil
 import sys
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -66,6 +66,59 @@ def workspace_root() -> Path:
         if (candidate / ".claude" / "skills").is_dir() and (candidate / "CONDUCTOR_modules" / "catalog" / "catalog.json").is_file():
             return candidate
     raise RuntimeError("Installed CONDUCTOR Project root was not found")
+
+
+def basic_coverage(nodes: list[dict[str, Any]], run: dict[str, Any]) -> dict[str, Any]:
+    root = workspace_root()
+    catalog = read_json(root / "CONDUCTOR_modules" / "catalog" / "catalog.json")
+    profile = read_json(root / "CONDUCTOR_modules" / "catalog" / "analysis_profile.json")
+    capabilities = {item["capability_id"]: item for item in catalog["capabilities"]}
+    succeeded = [node for node in nodes if node.get("status") == "succeeded"]
+    by_id = {node["node_id"]: node for node in succeeded}
+    descriptions = {node["capability_id"] for node in succeeded if node.get("stage") == "description"}
+    grouping_nodes = [node for node in succeeded if node.get("stage") == "grouping"]
+    basic = profile["basic_compute"]
+    expected_descriptions = (
+        sorted(capability_id for capability_id, item in capabilities.items() if item.get("stage") == "description")
+        if "*" in basic["description_capabilities"] else list(basic["description_capabilities"])
+    )
+    expected: list[dict[str, Any]] = []
+    expected.extend({"kind": "description", "capability_id": capability_id} for capability_id in expected_descriptions)
+    expected.extend({"kind": "direct_grouping", "capability_id": capability_id} for capability_id in basic["direct_structure_grouping"])
+    expected.extend(
+        {"kind": "vector_grouping", "capability_id": grouping_id, "description_capability_id": description_id}
+        for grouping_id in basic["vector_grouping_capabilities"]
+        for description_id in basic["vector_grouping_representations"]
+    )
+    if int(run.get("assay_level_count") or 0) > 1 and "C011" in basic.get("conditional_grouping", []):
+        expected.append({"kind": "conditional_grouping", "capability_id": "C011"})
+
+    def covered(item: dict[str, Any]) -> bool:
+        if item["kind"] == "description":
+            return item["capability_id"] in descriptions
+        candidates = [node for node in grouping_nodes if node.get("capability_id") == item["capability_id"]]
+        if item["kind"] != "vector_grouping":
+            return bool(candidates)
+        required_description = item["description_capability_id"]
+        return any(
+            any(by_id.get(dependency, {}).get("capability_id") == required_description for dependency in node.get("dependencies") or [])
+            for node in candidates
+        )
+
+    missing = [item for item in expected if not covered(item)]
+    return {
+        "complete": not missing,
+        "expected_count": len(expected),
+        "covered_count": len(expected) - len(missing),
+        "missing_count": len(missing),
+        "missing": missing,
+    }
+
+
+def imported_phase_complete(source_state: dict[str, Any], included_ids: set[str], phase: str) -> bool:
+    planned = any(item.get("action") == f"{phase}_planned" for item in source_state.get("history") or [])
+    source_nodes = [node for node in source_state.get("execution_graph", {}).get("nodes", []) if node.get("phase") == phase and node.get("stage") != "interpretation"]
+    return bool(planned and source_nodes and all(node.get("status") == "succeeded" and node.get("node_id") in included_ids for node in source_nodes))
 
 
 def topological_nodes(nodes: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
@@ -182,13 +235,19 @@ def scan(source: Path, target: Path, new_run_id: str | None) -> tuple[Path, dict
         "included_node_count": len(included), "excluded_node_count": len(excluded), "node_plan": node_plan,
         "excluded_nodes": excluded, "node_id_map": mapping, "errors": errors,
         "source_input": state.get("run", {}).get("input"), "source_input_sha256": state.get("run", {}).get("input_hash"),
+        "migration_baseline": {
+            "basic_compute": basic_coverage(included, state.get("run", {})),
+            "initial_global_complete": imported_phase_complete(state, valid_old_ids, "initial_global"),
+            "initial_local_complete": imported_phase_complete(state, valid_old_ids, "initial_local"),
+        },
         "created_at": now(), "approval_required": True,
     }
     write_json(plan_root / "migration_plan.json", plan)
     write_json(plan_root / "scan_report.json", {key: value for key, value in plan.items() if key not in {"node_plan", "node_id_map"}})
     write_csv(plan_root / "node_id_map.csv", ["old_node_id", "new_node_id", "stage", "capability_id", "skill_name"], node_plan)
     write_csv(plan_root / "excluded_nodes.csv", ["old_node_id", "stage", "capability_id", "reasons"], ({**row, "reasons": ";".join(row["reasons"])} for row in excluded))
-    lines = ["# CONDUCTOR v4.3.0 Migration Scan", "", f"- Applicable: {plan['applicable']}", f"- Source: `{source}`", f"- Target: `{target}`", f"- Included Nodes: {len(included)}", f"- Excluded Nodes: {len(excluded)}", "", "## Errors", ""]
+    baseline = plan["migration_baseline"]
+    lines = ["# CONDUCTOR v4.3.0 Migration Scan", "", f"- Applicable: {plan['applicable']}", f"- Source: `{source}`", f"- Target: `{target}`", f"- Included Nodes: {len(included)}", f"- Excluded Nodes: {len(excluded)}", f"- Basic coverage: {baseline['basic_compute']['covered_count']}/{baseline['basic_compute']['expected_count']}", f"- Initial global complete: {baseline['initial_global_complete']}", f"- Initial local complete: {baseline['initial_local_complete']}", "", "## Errors", ""]
     lines.extend(f"- {error}" for error in errors); lines.extend(["", "## Approval", "", "`apply --approve` は人間がこのscanを確認した後だけ実行する。", ""])
     atomic_write(plan_root / "scan_report.md", "\n".join(lines))
     return plan_root, plan
@@ -394,7 +453,6 @@ def apply(plan_path: Path) -> dict[str, Any]:
         ),
         default=max_entity_counter(source_state, "evidence"),
     )
-    started = datetime.now(timezone.utc); active_deadline = started + timedelta(minutes=480)
     package_snapshot = copy_package_snapshot(target)
     high_cost = dict(source_state.get("run", {}).get("high_cost_bundle") or {"capability_ids": [], "status": "approved", "scope": {}, "scope_hash": "0" * 64})
     high_cost["status"] = "approved" if high_cost.get("status") == "approved" else "pending"
@@ -404,13 +462,19 @@ def apply(plan_path: Path) -> dict[str, Any]:
             **{key: value for key, value in source_state.get("run", {}).items() if key not in {"run_id", "input", "input_hash", "package_snapshot", "package_snapshot_history", "package_change_gate", "created_at", "high_cost_bundle"}},
             "run_id": plan["new_run_id"], "input": str(input_target.resolve()), "input_hash": sha256(input_target),
             "package_snapshot": package_snapshot, "package_change_gate": {"status": "clear", "checked_at": now(), "differences": []},
-            "high_cost_bundle": high_cost, "created_at": now(), "migration_provenance": {"source_run_root": str(source), "source_run_id": plan["source_run_id"], "plan": str((migration_root / 'migration_plan.json').resolve())},
+            "high_cost_bundle": high_cost, "created_at": now(),
+            "migration_provenance": {"source_run_root": str(source), "source_run_id": plan["source_run_id"], "plan": str((migration_root / 'migration_plan.json').resolve())},
+            "migration_baseline": plan["migration_baseline"],
         },
-        "round_control": {"active_round_id": "RND0002", "next_round_number": 3, "rounds": [
+        "round_control": {"active_round_id": None, "next_round_number": 2, "rounds": [
             {"round_id": "RND0001", "number": 1, "status": "checkpoint", "request": "Validated v4.3.0 scientific artifact import", "resource_envelope": {}, "started_at": now(), "ended_at": now(), "execution_control": {"stop_reason": "migration_import"}, "close_gate": {"status": "reference_only", "reason_codes": ["LEGACY_INTERPRETATION_NOT_ACTIVE"], "checked_at": now()}},
-            {"round_id": "RND0002", "number": 2, "status": "active", "request": "Create a fresh v4.3.1 Interpretation of imported Evidence, then continue analysis.", "resource_envelope": {"walltime_minutes": 480, "max_additional_nodes": 300, "interpretation_iterations": 3}, "sampling_events": [], "started_at": started.isoformat(), "ended_at": None, "execution_control": {"deadline_at": active_deadline.isoformat(), "interpretation_reserve_minutes": 60, "additional_nodes_planned": 0, "stop_reason": None, "last_progress_at": started.isoformat(), "migration_requires_fresh_interpretation": True}, "close_gate": {"status": "open", "reason_codes": ["FRESH_INTERPRETATION_REQUIRED"], "checked_at": now()}},
         ]},
-        "orchestration_control": {"controller_epoch": 0, "lease": {"owner_id": None, "token_hash": None, "epoch": 0, "acquired_at": None, "heartbeat_at": None, "expires_at": None, "duration_minutes": 20}, "last_bootstrap_at": None, "last_audit_path": None},
+        "orchestration_control": {
+            "controller_epoch": 0,
+            "lease": {"owner_id": None, "token_hash": None, "epoch": 0, "acquired_at": None, "heartbeat_at": None, "expires_at": None, "duration_minutes": 20},
+            "last_bootstrap_at": None, "last_audit_path": None,
+            "migration_handoff": {"status": "awaiting_human_start", "created_at": now(), "accepted_at": None, "accepted_round_id": None},
+        },
         "id_counters": {
             "description_node": stage_counts["description"], "grouping_node": stage_counts["grouping"], "operator_node": stage_counts["analysis"], "interpretation_node": 0,
             "group": group_max, "evidence": evidence_max, "finding": max_entity_counter(source_state, "finding"), "hypothesis": max_entity_counter(source_state, "hypothesis"), "question": max_entity_counter(source_state, "question"), "relation": max_entity_counter(source_state, "relation"), "request": max_entity_counter(source_state, "request"), "scope": max_entity_counter(source_state, "scope"), "salience_event": max(max_entity_counter(source_state, "salience_event"), len(evidence_digests)),
@@ -429,8 +493,8 @@ def apply(plan_path: Path) -> dict[str, Any]:
     summaries = target / "summaries"; summaries.mkdir()
     status_counts = defaultdict(int)
     for node in imported_nodes: status_counts[node["status"]] += 1
-    write_json(summaries / "state_summary.json", {"schema_version": "2.0.0", "run": {"run_id": plan["new_run_id"], "project": state["run"].get("project"), "input": str(input_target), "endpoint": state["run"].get("endpoint"), "higher_is_better": state["run"].get("higher_is_better"), "row_count": state["run"].get("row_count"), "profile_id": state["run"].get("profile_id")}, "round_control": {"active_round_id": "RND0002", "next_round_number": 3, "rounds": [{"round_id": "RND0001", "status": "checkpoint"}, {"round_id": "RND0002", "status": "active"}]}, "node_count": len(imported_nodes), "status_counts": dict(status_counts), "evidence_count": len(evidence_digests), "migration_requires_fresh_interpretation": True, "updated_at": now()})
-    write_json(summaries / "orchestrator_brief.json", {"schema_version": "1.0.0", "run_id": plan["new_run_id"], "state_path": str(state_path), "active_round_id": "RND0002", "required_control_action": [{"code": "CREATE_OR_COMPLETE_INTERPRETATION", "blocking": True, "reason": "FRESH_INTERPRETATION_OF_IMPORTED_EVIDENCE"}], "scientific_decision": {"code": "REVIEW_IMPORTED_EVIDENCE_AFTER_INTERPRETATION", "candidate_question_ids": []}, "updated_at": now()})
+    write_json(summaries / "state_summary.json", {"schema_version": "2.0.0", "run": {"run_id": plan["new_run_id"], "project": state["run"].get("project"), "input": str(input_target), "endpoint": state["run"].get("endpoint"), "higher_is_better": state["run"].get("higher_is_better"), "row_count": state["run"].get("row_count"), "profile_id": state["run"].get("profile_id")}, "round_control": {"active_round_id": None, "next_round_number": 2, "rounds": [{"round_id": "RND0001", "status": "checkpoint"}]}, "node_count": len(imported_nodes), "status_counts": dict(status_counts), "evidence_count": len(evidence_digests), "migration_handoff": "awaiting_human_start", "migration_baseline": plan["migration_baseline"], "updated_at": now()})
+    write_json(summaries / "orchestrator_brief.json", {"schema_version": "1.0.0", "run_id": plan["new_run_id"], "state_path": str(state_path), "active_round_id": None, "required_control_action": [{"code": "MIGRATION_HANDOFF_REQUIRED", "blocking": True, "next_round_id": "RND0002", "reason": "EXPLICIT_HUMAN_START_REQUIRED"}], "scientific_decision": {"code": "NONE_UNTIL_MIGRATION_HANDOFF", "candidate_question_ids": []}, "updated_at": now()})
     write_json(migration_root / "imported_artifact_manifest.json", {"schema_version": "1.0.0", "artifacts": artifact_manifest, "created_at": now()})
     return verify(target)
 
@@ -464,7 +528,8 @@ def verify(target: Path) -> dict[str, Any]:
         {"registry_path": str(registry_path), "indexed_grouping_nodes": len(indexed_grouping_nodes), "grouping_nodes": len(grouping_nodes)},
     )
     add("SOURCE_IS_DISTINCT", Path(state["run"]["migration_provenance"]["source_run_root"]).resolve() != target.resolve())
-    add("FRESH_INTERPRETATION_PENDING", state["round_control"]["active_round_id"] == "RND0002" and not any(node["stage"] == "interpretation" for node in state["execution_graph"]["nodes"]))
+    add("MIGRATION_HANDOFF_PENDING", state["round_control"]["active_round_id"] is None and state["round_control"]["next_round_number"] == 2 and state.get("orchestration_control", {}).get("migration_handoff", {}).get("status") == "awaiting_human_start")
+    add("NO_POST_MIGRATION_NODES", all(node.get("round_id") == "RND0001" and node.get("status") == "succeeded" for node in state["execution_graph"]["nodes"]))
     add("BOUNDED_SUMMARIES_EXIST", all((target / "summaries" / name).is_file() for name in ["state_summary.json", "orchestrator_brief.json"]))
     result = {"schema_version": "1.0.0", "target_run_root": str(target), "status": "pass" if all(item["passed"] for item in checks) else "fail", "checks": checks, "created_at": now()}
     migration = target / "migration" / "v430_import"; migration.mkdir(parents=True, exist_ok=True); write_json(migration / "verification.json", result)
