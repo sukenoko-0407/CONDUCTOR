@@ -1,4 +1,4 @@
-# CONDUCTOR 4.3.0 Description間の関係性とカバー範囲
+# CONDUCTOR 4.3.1 Description間の関係性とカバー範囲
 
 作成日: 2026-08-03  
 対象: CONDUCTOR Catalogに収載されたDescription Skill 18件

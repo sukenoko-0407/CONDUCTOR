@@ -19,7 +19,8 @@
 <p>高コストDescriptionを含む基本計算はRun開始時に一括承認します。初期探索の後も、一つの結果だけで結論を出さず、別表現、別Group、別Operator、outside controlを組み合わせます。</p>
 <h2>疎結合とDAG</h2>
 <p>各Skillは入力と出力の契約を持つ独立部品です。OrchestratorはCatalogからCapabilityを選び、実行NodeをState内のDAGへ登録します。DAGは上流から下流への依存を有向に表し、循環を許さないため、再開、重複回避、stale伝播、結果の由来追跡に使えます。</p>
-<p>DAGだけへ全情報を詰め込まず、Round、coverage、Group membership、Evidence digest、Question、salienceは軽量な索引で管理します。Orchestratorはまずsummaryを読み、必要な箇所だけ詳細を開きます。</p>
+<p>DAGだけへ全情報を詰め込まず、Round、coverage、Group membership、Evidence digest、Question、salienceは軽量な索引で管理します。Orchestratorはまずboundedな<code>orchestrator_brief.json</code>を読み、必要な箇所だけ詳細を開きます。</p>
+<p>同じRunを変更できるOrchestratorは単一Writer leaseを取得した一つだけです。Nodeの再試行は別Nodeではなく同じNode内のexecution attemptとして記録します。成功Operator EvidenceがあるRoundは、InterpretationのJSON／Markdown／HTMLとFull Auditが揃わなければ完了できません。</p>
 <h2>結果は残し、重要度は変える</h2>
 <p>全Operator artifactは保存します。重要性は<code>untriaged</code>、<code>routine</code>、<code>candidate</code>、<code>priority</code>等の可変indexで管理し、別の発見との関係から再評価できます。重要でないと判断した結果も削除や永久除外をしません。</p>
 <h2>一般利用とCONDUCTOR利用</h2>

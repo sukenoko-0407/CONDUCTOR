@@ -12,7 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULES = ROOT / "CONDUCTOR_modules"
-STATE_MANAGER = ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
+STATE_MANAGER = ROOT / ".claude" / "skills" / "cs-conductor-runtime" / "scripts" / "state_manager.py"
+RUN_AUDIT = ROOT / ".claude" / "skills" / "cs-conductor-run-audit" / "scripts" / "audit.py"
 SPEC = importlib.util.spec_from_file_location("state_manager_v43", STATE_MANAGER)
 assert SPEC and SPEC.loader
 STATE = importlib.util.module_from_spec(SPEC)
@@ -20,9 +21,19 @@ SPEC.loader.exec_module(STATE)
 
 
 class StateManagerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.lease_tokens: dict[str, str] = {}
+
     def cli(self, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        values = list(arguments)
+        read_only = {"init", "bootstrap", "query", "status", "runnable"}
+        if values and values[0] not in read_only and "--lease-token" not in values and "--state" in values:
+            state = str(Path(values[values.index("--state") + 1]).resolve())
+            token = self.lease_tokens.get(state)
+            if token:
+                values.extend(["--lease-token", token])
         return subprocess.run(
-            [sys.executable, str(STATE_MANAGER), *arguments], cwd=ROOT,
+            [sys.executable, str(STATE_MANAGER), *values], cwd=ROOT,
             check=check, text=True, capture_output=True,
         )
 
@@ -33,13 +44,18 @@ class StateManagerTests(unittest.TestCase):
             "--assay-column", "assay", "--project", "unit", "--parallel-limit", "3",
             "--run-id", run_id, "--output-dir", str(directory), "--request", "Round 1 unit test",
         )
-        return directory / "state.json"
+        state_path = directory / "state.json"
+        boot = json.loads(self.cli("bootstrap", "--state", str(state_path), "--owner-id", "unit-test").stdout)
+        self.assertTrue(boot["lease_acquired"])
+        self.lease_tokens[str(state_path.resolve())] = boot["lease_token"]
+        return state_path
 
     def test_init_creates_multiround_state_and_derived_indices(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             state_path = self.initialize(Path(directory))
             state = json.loads(state_path.read_text(encoding="utf-8"))
-            self.assertEqual("2.0.0", state["schema_version"])
+            self.assertEqual("2.1.0", state["schema_version"])
+            self.assertEqual("4.3.1", state["conductor_version"])
             self.assertEqual("RND0001", state["round_control"]["active_round_id"])
             self.assertEqual(2, state["round_control"]["next_round_number"])
             self.assertEqual("comprehensive-multiround-v1", state["run"]["profile_id"])
@@ -47,6 +63,7 @@ class StateManagerTests(unittest.TestCase):
             for key in ["coverage", "group", "evidence_digest", "salience", "questions", "relations", "findings", "hypotheses", "requests"]:
                 self.assertIn(key, state["indices"])
             self.assertTrue((state_path.parent / "summaries" / "state_summary.json").is_file())
+            self.assertTrue((state_path.parent / "summaries" / "orchestrator_brief.json").is_file())
             self.assertTrue((state_path.parent / "rounds" / "RND0001" / "round_request.md").is_file())
 
     def test_basic_plan_is_comprehensive_and_uses_one_bundle_gate(self) -> None:
@@ -251,6 +268,15 @@ class StateManagerTests(unittest.TestCase):
             self.assertFalse(duplicate["created"])
             self.assertEqual("NI0001", duplicate["node"]["node_id"])
 
+            finalized = json.loads(state_path.read_text(encoding="utf-8"))
+            interpretation_node = STATE.state_nodes(finalized)["NI0001"]
+            output = Path(interpretation_node["output_dir"])
+            output.mkdir(parents=True, exist_ok=True)
+            for name in ["interpretation.json", "interpretation.md", "interpretation.html"]:
+                (output / name).write_text("finalized unit interpretation\n", encoding="utf-8")
+            interpretation_node["status"] = "succeeded"
+            STATE.write_state(state_path, finalized)
+
             self.cli("round-end", "--state", str(state_path), "--round-id", "RND0001", "--status", "checkpoint", "--reason", "handoff")
             round_root = root / "rounds" / "RND0001"
             for name in [
@@ -275,6 +301,85 @@ class StateManagerTests(unittest.TestCase):
                 "--focus", "contradictions only",
             ).stdout)
             self.assertEqual("NI0003", third["node"]["node_id"])
+
+    def test_duplicate_controller_is_read_only_and_round_close_requires_interpretation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = self.initialize(Path(directory))
+            duplicate = json.loads(self.cli(
+                "bootstrap", "--state", str(state_path), "--owner-id", "second-controller",
+            ).stdout)
+            self.assertFalse(duplicate["lease_acquired"])
+            self.assertEqual("LEASE_HELD_BY_OTHER_CONTROLLER", duplicate["reason_code"])
+
+            operator = json.loads(self.cli(
+                "add", "--state", str(state_path), "--capability-id", "A002", "--reason", "gate test",
+            ).stdout)["node"]
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            STATE.state_nodes(state)[operator["node_id"]]["status"] = "succeeded"
+            STATE.write_state(state_path, state)
+            blocked = self.cli(
+                "round-end", "--state", str(state_path), "--round-id", "RND0001",
+                "--status", "checkpoint", "--reason", "must fail", check=False,
+            )
+            self.assertNotEqual(0, blocked.returncode)
+            self.assertIn("Interpretation", blocked.stderr)
+
+    def test_parallel_limit_is_rechecked_and_retry_uses_same_node(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = self.initialize(Path(directory))
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["run"]["parallel_limit"] = 1
+            STATE.write_state(state_path, state)
+            first = json.loads(self.cli("add", "--state", str(state_path), "--capability-id", "D001", "--reason", "first").stdout)["node"]
+            second = json.loads(self.cli("add", "--state", str(state_path), "--capability-id", "D002", "--reason", "second").stdout)["node"]
+            self.cli("start", "--state", str(state_path), "--node-id", first["node_id"])
+            blocked = self.cli("start", "--state", str(state_path), "--node-id", second["node_id"], check=False)
+            self.assertNotEqual(0, blocked.returncode)
+            self.cli("mark-terminal", "--state", str(state_path), "--node-id", first["node_id"], "--status", "failed", "--reason", "retry test")
+            self.cli("start", "--state", str(state_path), "--node-id", first["node_id"], "--retry")
+            updated = json.loads(state_path.read_text(encoding="utf-8"))
+            retried = STATE.state_nodes(updated)[first["node_id"]]
+            self.assertEqual(first["node_id"], retried["node_id"])
+            self.assertEqual(2, len(retried["execution_attempts"]))
+
+    def test_full_audit_is_read_only_and_written_under_run_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = self.initialize(Path(directory))
+            before = state_path.read_bytes()
+            completed = subprocess.run(
+                [sys.executable, str(RUN_AUDIT), "--state", str(state_path), "--mode", "full"],
+                cwd=ROOT, check=True, text=True, capture_output=True,
+            )
+            result = json.loads(completed.stdout)
+            output = Path(result["output_dir"])
+            self.assertEqual(state_path.parent / "audit", output.parent)
+            self.assertTrue((output / "audit.json").is_file())
+            self.assertTrue((output / "audit.md").is_file())
+            self.assertEqual(before, state_path.read_bytes())
+
+    def test_orchestrator_brief_drives_fixed_phase_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = self.initialize(Path(directory))
+            brief_path = state_path.parent / "summaries" / "orchestrator_brief.json"
+            codes = [item["code"] for item in json.loads(brief_path.read_text(encoding="utf-8"))["required_control_action"]]
+            self.assertIn("PLAN_BASIC", codes)
+            self.cli("plan-basic", "--state", str(state_path))
+            self.cli("approve-basic-bundle", "--state", str(state_path), "--approve", "--rationale", "unit")
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            for node in state["execution_graph"]["nodes"]:
+                if node["phase"] == "basic_compute":
+                    node["status"] = "succeeded"
+            STATE.write_state(state_path, state)
+            codes = [item["code"] for item in json.loads(brief_path.read_text(encoding="utf-8"))["required_control_action"]]
+            self.assertIn("PLAN_INITIAL_GLOBAL", codes)
+            self.cli("plan-initial-global", "--state", str(state_path))
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            for node in state["execution_graph"]["nodes"]:
+                if node["phase"] == "initial_global":
+                    node["status"] = "succeeded"
+            STATE.write_state(state_path, state)
+            codes = [item["code"] for item in json.loads(brief_path.read_text(encoding="utf-8"))["required_control_action"]]
+            self.assertIn("PLAN_INITIAL_LOCAL_BATCH", codes)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+[workspace]
+name = "cs-conductor-run-audit"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[dependencies]
+python = ">=3.12,<3.13"
+
+[tasks]
+audit = "python ../scripts/audit.py"
+smoke = "python ../scripts/audit.py --help"

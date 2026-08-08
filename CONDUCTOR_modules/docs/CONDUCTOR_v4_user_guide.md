@@ -1,4 +1,4 @@
-# CONDUCTOR 4.3.0 利用手順
+# CONDUCTOR 4.3.1 利用手順
 
 ## 1. 前提
 
@@ -20,7 +20,7 @@
 - 既定Round envelope
 - 高コスト基本計算bundleの承認
 
-Orchestratorはinputを検査し、新しいState、Catalog／profile／Policy snapshot、`RND0001`を作る。旧Stateや旧artifactを新Runへimportしない。
+Orchestratorはinputを検査し、新しいState、Catalog／profile／Policy snapshot、`RND0001`を作る。Runtimeのbootstrapで単一Writer leaseを取得し、別Orchestratorが同じRunを変更できないようにする。
 
 ```text
 `cs-conductor-orchestrator` Agentを使用して、新しいCONDUCTOR Runを開始してください。
@@ -34,6 +34,8 @@ Round envelope: walltime 8 hours, additional nodes 300, Interpretation iteration
 高コスト基本計算bundleを一括承認します。
 ```
 
+Wall Timeは最大予算であり、必ず8時間使い切る指示ではない。ただし、時間と実行可能な解析が残る間は、初期探索、balanced追加探索、妥当な深掘りを継続する。終盤はInterpretationと監査の時間を予約する。
+
 ## 3. 初回実行
 
 Orchestratorは原則として次の順に進む。
@@ -42,8 +44,8 @@ Orchestratorは原則として次の順に進む。
 2. `initial_global`: 全applicable global Operator role
 3. Grouping-wide screenと代表Group選択
 4. `initial_local`: 代表Groupの全applicable local Operator role
-5. Interpretation
-6. Round summaryと`next_round_brief`
+5. Interpretation（JSON、Markdown、HTML）
+6. Full Audit、Round summary、`orchestrator_brief.json`
 
 失敗・利用不能Capabilityは無言で除外しない。再試行・代替が不可能な場合は人間が`waived`を判断する。計算が長時間に及ぶ場合は同じRoundをpause/resumeできる。
 
@@ -59,7 +61,7 @@ State: /absolute/path/to/state.json
 今回の重点: Q0007はスルーし、G000124のcross-Description比較を重視してください。
 ```
 
-重点を省略した場合、Orchestratorは未完了mandatory coverage、前Roundの`next_round_brief`、active Question、balanced random追加探索に基づいて進める。
+重点を省略した場合、Orchestratorは `orchestrator_brief.json` の制御action、未完了mandatory coverage、active Question、balanced random追加探索に基づいて進める。新sessionでも長いMarkdown群を最初から読む必要はない。
 
 Round番号がStateと一致しない場合は、Stateを変更せず報告する。承認応答やsession再開は新Roundとして数えない。
 
@@ -105,7 +107,7 @@ Finding、Hypothesis、Question、RelationはRun内IDを引き継ぐ。既存ent
 
 ## 8. 状態確認
 
-通常は`state_summary.json`と最新Round summaryを入口にする。完全DAG図は人間がState pathを指定して明示依頼した場合だけ`cs-conductor-state-report`を使う。
+Orchestratorは`orchestrator_brief.json`を入口とし、必要時だけ`state_summary.json`とfocused queryを使う。完全DAG図は人間がState pathを指定して明示依頼した場合だけ`cs-conductor-state-report`を使う。
 
 確認項目は次である。
 
@@ -130,8 +132,8 @@ Round開始時にRun snapshotと現在のCatalog、profile、Policy、Skill vers
 `state resume`または`round-start`で差分を検出すると、`package_change_gate`が`approval_required`となり、新規Nodeの計画・実行は停止する。人間が差分を確認して同一Runでの継続を許可した場合だけ、次を実行する。
 
 ```bash
-python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state approve-package-change \
-  --state <STATE_JSON> --approve --rationale "確認した差分と継続理由"
+python .claude/skills/cs-conductor-runtime/scripts/launch.py state approve-package-change \
+  --state <STATE_JSON> --approve --rationale "確認した差分と継続理由" --lease-token <SESSION_TOKEN>
 ```
 
 承認時は以前のsnapshotをhistoryへ保持し、新Packageを別snapshotとして保存する。却下時は`--reject`を使用し、旧Packageを復元するか新規Runを開始する。
@@ -145,3 +147,13 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py state approve-
 5. CSV／Evidence JSON: 数値と機械可読な正本
 
 routine分類は無価値や削除を意味しない。新しいRelation、Question、人間指示により再昇格できる。
+
+## 12. Auditと事故復旧
+
+bootstrap時はQuick Auditを行う。Agent停止、lease takeover、Quick Audit error、Round終了前、人間の明示依頼では `cs-conductor-run-audit` のFull modeを使う。結果は `<run_root>/audit/<timestamp>/` に保存され、科学DAG Nodeにはしない。
+
+失敗Nodeの再実行は同じNode IDに新しいexecution attemptを追加する。別Nodeを作って番号を消費しない。`running` Nodeを残してAgentが停止した場合は、event／artifactを照合してから再試行可否を決める。
+
+## 13. v4.3.0 Runの一回限り移行
+
+通常Orchestratorで旧Stateを開かない。`cs-conductor-v430-migrator` にsourceと未作成targetを指定し、scan結果を人間が確認した後だけapplyする。詳細は `docs/prompt/CONDUCTOR_v430_to_v431_migration_prompt.md` を参照する。

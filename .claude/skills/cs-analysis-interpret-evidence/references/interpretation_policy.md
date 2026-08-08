@@ -1,4 +1,4 @@
-# CONDUCTOR 4.3.0 Interpretation Policy
+# CONDUCTOR 4.3.1 Interpretation Policy
 
 ## 1. 目的
 
@@ -10,14 +10,15 @@ Interpretationは作業記録ではなく、Operator Evidenceを全体／局所�
 
 Interpreterは計算Nodeを実行せず、State、artifact、salienceを直接変更しない。Finding、Hypothesis、Question、Relation、salience update、追加解析要求を提案する。OrchestratorとState ManagerがID予約、検証、State登録、Node作成を行う。
 
-Interpretation NodeはRun内の一時点におけるread-only reviewであり、過去reportを上書きしない。
+Interpretation NodeはRun内の一時点におけるread-only reviewであり、過去reportを上書きしない。Interpreter停止時は同じNI Nodeを再試行し、復旧のために別NIを発行しない。Orchestratorだけが完成eventをStateへ登録する。
 
 ## 3. 入力の段階読込
 
-1. 全Evidenceのcompact digestとcoverageを確認する。
-2. 新規、untriaged、priority、human-pinned、active Question関連Evidenceを詳細確認する。
-3. indexed joinで成立したglobal/local、cross-Description、sibling Group、cross-Operator、counterexample候補を確認する。
-4. 必要な数値CSV、supporting compound／pair、Operator HTMLへdrill-downする。
+1. `orchestrator_brief.json` のInterpretation要求と、予約済みNIのfocusを確認する。
+2. 全Evidenceのcompact digestとcoverageを確認する。
+3. 新規、untriaged、priority、human-pinned、active Question関連Evidenceを詳細確認する。
+4. indexed joinで成立したglobal/local、cross-Description、sibling Group、cross-Operator、counterexample候補を確認する。
+5. 必要な数値CSV、supporting compound／pair、Operator HTMLへdrill-downする。
 
 過去Interpretation全文を無条件に連結せず、最新ledger、Round summary、`next_round_brief`を入口にする。routine Evidenceもdigest検索対象に残す。
 
@@ -95,3 +96,5 @@ Cliffには構造差、pharmacophore差、assay条件、別Description、sibling
 - Operator HTMLへの導線
 
 各entityにID、初出Round、最終更新Round、revision、statusを表示する。IDだけを並べず、人間が解析内容と意味を理解できる文章を記載する。
+
+成功Operator EvidenceがあるRoundのcheckpoint／completedには、`agent_interpreted` のJSON、Markdown、HTMLがすべて必要である。resource上限に近づいた場合も、科学Node追加よりこのreport完成を優先する。

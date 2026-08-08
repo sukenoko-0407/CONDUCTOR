@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/state.schema.json",
-  "title": "CONDUCTOR 4.3 run state",
+  "title": "CONDUCTOR 4.3.1 run state",
   "type": "object",
-  "required": ["schema_version", "conductor_version", "run", "round_control", "id_counters", "execution_graph", "indices", "history", "updated_at"],
+  "required": ["schema_version", "conductor_version", "run", "round_control", "orchestration_control", "id_counters", "execution_graph", "indices", "history", "updated_at"],
   "properties": {
-    "schema_version": {"const": "2.0.0"},
-    "conductor_version": {"const": "4.3.0"},
+    "schema_version": {"const": "2.1.0"},
+    "conductor_version": {"const": "4.3.1"},
     "run": {
       "type": "object",
       "required": ["run_id", "project", "input", "input_hash", "endpoint", "higher_is_better", "parallel_limit", "row_count", "id_column", "profile_id", "package_snapshot", "package_change_gate", "high_cost_bundle", "created_at"],
@@ -58,6 +58,30 @@
         "active_round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4,}$"},
         "next_round_number": {"type": "integer", "minimum": 1},
         "rounds": {"type": "array", "items": {"$ref": "#/$defs/round"}}
+      },
+      "additionalProperties": false
+    },
+    "orchestration_control": {
+      "type": "object",
+      "required": ["controller_epoch", "lease", "last_bootstrap_at", "last_audit_path"],
+      "properties": {
+        "controller_epoch": {"type": "integer", "minimum": 0},
+        "lease": {
+          "type": "object",
+          "required": ["owner_id", "token_hash", "epoch", "acquired_at", "heartbeat_at", "expires_at", "duration_minutes"],
+          "properties": {
+            "owner_id": {"type": ["string", "null"]},
+            "token_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+            "epoch": {"type": "integer", "minimum": 0},
+            "acquired_at": {"type": ["string", "null"], "format": "date-time"},
+            "heartbeat_at": {"type": ["string", "null"], "format": "date-time"},
+            "expires_at": {"type": ["string", "null"], "format": "date-time"},
+            "duration_minutes": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        "last_bootstrap_at": {"type": ["string", "null"], "format": "date-time"},
+        "last_audit_path": {"type": ["string", "null"]}
       },
       "additionalProperties": false
     },
@@ -113,6 +137,8 @@
         "human_approval": {"enum": ["not_required", "bundle_pending", "approved", "rejected", "required"]},
         "output_dir": {"type": "string", "minLength": 1},
         "requested_at": {"type": "string", "format": "date-time"}
+        ,"execution_attempts": {"type": "array", "items": {"type": "object"}}
+        ,"current_attempt_id": {"type": ["string", "null"]}
       },
       "additionalProperties": true
     },

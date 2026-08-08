@@ -1,4 +1,4 @@
-# CONDUCTOR 4.3.0 SAR解析基盤：合意事項
+# CONDUCTOR 4.3.1 SAR解析基盤：合意事項
 
 この文書は構想議論から確定した設計判断を簡潔にまとめる。詳細仕様は[設計仕様](CONDUCTOR_v4_design_spec.md)、行動規則は[Orchestration Policy](CONDUCTOR_v4_policy.md)と[Interpretation Policy](CONDUCTOR_v4_interpretation_policy.md)を正本とする。
 
@@ -45,15 +45,17 @@ Finding、Hypothesis、Question、Relationを区別する。Questionはすべて
 
 ## 8. State
 
-DAGは計算依存と再開を管理する。Round、coverage、Question、salienceは別ledgerで管理する。Stateは小さいcontrol planeとし、巨大なmembership、全Evidence本文、過去Interpretation全文を格納しない。
+DAGは計算依存と再開を管理する。Nodeの再試行は同一Node内のattemptとして記録する。Round、coverage、Question、salienceは別ledgerで管理する。Stateは小さいcontrol planeとし、巨大なmembership、全Evidence本文、過去Interpretation全文を格納しない。
 
 ## 9. 成果物
 
-人間の主成果物は`interpretation.md/html`である。個別Operator HTMLへ遡れる。Agentの次Round入口は`state_summary.json`、`round_summary.json`、`next_round_brief.json`、Evidence digestである。
+人間の主成果物は`interpretation.md/html`である。個別Operator HTMLへ遡れる。Agentの通常入口はboundedな`orchestrator_brief.json`であり、必要時だけ`state_summary.json`、focused query、Evidence digestへ進む。
 
 ## 10. 互換性
 
-旧Stateと旧成果物は新Runへimportしない。旧runはread-onlyで保存できるが、新仕様は最初から再実行する。後方互換層やmigration utilityは実装しない。
+通常Runtimeは旧Stateを直接更新しない。一回限りのMigration Agent／Skillだけが、旧runをread-onlyのままscanし、人間承認後に検証済み科学artifactを別の新run rootへcopyできる。旧Interpretationは参照用であり、新仕様で再作成する。
+
+同一Runを変更できるOrchestratorはleaseを持つ一つだけとする。Roundは成功Operator Evidenceがある場合にInterpretation JSON／Markdown／HTMLとFull Auditなしで終了できない。
 
 ## 11. 実行環境
 

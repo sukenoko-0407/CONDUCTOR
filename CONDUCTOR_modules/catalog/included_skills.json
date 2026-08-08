@@ -43,7 +43,11 @@
     "cs-analysis-group-overlap",
     "cs-analysis-group-structural-diversity",
     "cs-analysis-interpret-evidence",
-    "cs-conductor-orchestrator",
+    "cs-conductor-runtime",
+    "cs-conductor-run-audit",
     "cs-conductor-state-report"
+  ],
+  "maintenance_skills": [
+    "cs-conductor-migrate-v430-run"
   ]
 }

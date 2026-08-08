@@ -604,7 +604,7 @@ def base_capability(identifier: str, name: str, display: str, stage: str, family
         "capability_id": identifier,
         "skill_name": name,
         "display_name": display,
-        "version": "4.3.0",
+        "version": "4.3.1",
         "stage": stage,
         "family": family,
         "description": f"Use when Claude Code needs to run {display} from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",

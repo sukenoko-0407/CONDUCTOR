@@ -27,14 +27,14 @@ def copy_targets(target: Path) -> list[tuple[Path, Path]]:
             SOURCE_ROOT / ".claude" / "agents" / name,
             target / ".claude" / "agents" / name,
         )
-        for name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"]
+        for name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md", "cs-conductor-v430-migrator.md"]
     ]
     pairs.extend(
         (
             SOURCE_ROOT / ".claude" / "skills" / name,
             target / ".claude" / "skills" / name,
         )
-        for name in selection["included_skills"]
+        for name in [*selection["included_skills"], *selection.get("maintenance_skills", [])]
     )
     pairs.append((MODULE_ROOT, target / "CONDUCTOR_modules"))
     return pairs

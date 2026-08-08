@@ -22,6 +22,7 @@ def main() -> int:
         "docs/CONDUCTOR_v4_interpretation_policy.md",
         "docs/prompt/CONDUCTOR_analysis_request_prompt.md",
         "docs/prompt/CONDUCTOR_session_handoff_template.md",
+        "docs/prompt/CONDUCTOR_v430_to_v431_migration_prompt.md",
         "schemas/capability.schema.json",
         "schemas/state.schema.json",
         "schemas/evidence.schema.json",
@@ -40,6 +41,7 @@ def main() -> int:
     agents = [
         PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-orchestrator.md",
         PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-interpreter.md",
+        PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-v430-migrator.md",
     ]
     for path in agents:
         if not path.is_file():
@@ -51,9 +53,14 @@ def main() -> int:
         selection = json.loads(selection_path.read_text(encoding="utf-8"))
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
         names = selection.get("included_skills") or []
+        maintenance_names = selection.get("maintenance_skills") or []
         catalog_names = [entry.get("skill_name") for entry in catalog.get("capabilities") or []]
         if len(names) != len(set(names)):
             errors.append("included_skills contains duplicates")
+        if len(maintenance_names) != len(set(maintenance_names)):
+            errors.append("maintenance_skills contains duplicates")
+        if set(names) & set(maintenance_names):
+            errors.append("scientific/control Catalog and maintenance skill lists overlap")
         if set(names) != set(catalog_names):
             errors.append("catalog capabilities do not match included_skills")
         if catalog.get("selection_path") != "CONDUCTOR_modules/catalog/included_skills.json":
@@ -93,6 +100,11 @@ def main() -> int:
                     for token in ["--round-id", "--evidence-id", "evidence_digest.json", "operator_report.html"]:
                         if token not in runner_text:
                             errors.append(f"{name}: Operator runner is missing {token}")
+        for name in maintenance_names:
+            skill = PROJECT_ROOT / ".claude" / "skills" / name
+            for relative in ["SKILL.md", "README.md", "capability.json", "scripts/launch.py", "env/pixi.toml"]:
+                if not (skill / relative).is_file():
+                    errors.append(f"{name}: missing maintenance file {relative}")
 
     legacy_roots = ["catalog", "docs", "schemas", "tests", "tools"]
     for name in legacy_roots:
@@ -112,6 +124,9 @@ def main() -> int:
         ]:
             if required not in text:
                 errors.append(f"Orchestrator Agent does not reference {required}")
+        for required in ["cs-conductor-runtime", "cs-conductor-run-audit", "Interpretation"]:
+            if required not in text:
+                errors.append(f"Orchestrator Agent does not contain required control reference: {required}")
 
     profile_path = MODULE_ROOT / "catalog" / "analysis_profile.json"
     if profile_path.is_file():

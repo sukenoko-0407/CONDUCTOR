@@ -3,7 +3,7 @@
   "capability_id": "O002",
   "skill_name": "cs-conductor-state-report",
   "display_name": "CONDUCTOR State DAG report",
-  "version": "4.0.0",
+  "version": "4.3.1",
   "stage": "orchestration",
   "family": "state_reporting",
   "description": "Use only on an explicit human request with an explicitly supplied state.json path to render a read-only timestamped HTML and SVG execution DAG report.",

@@ -1,12 +1,12 @@
 {
   "schema_version": "1.0.0",
   "capability_id": "O001",
-  "skill_name": "cs-conductor-orchestrator",
-  "display_name": "CONDUCTOR v4 Orchestrator",
-  "version": "4.3.0",
+  "skill_name": "cs-conductor-runtime",
+  "display_name": "CONDUCTOR deterministic runtime",
+  "version": "4.3.1",
   "stage": "orchestration",
   "family": "graph_orchestration",
-  "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, orchestration and Interpretation Policies, execution DAG, exploration ledger, and execution events.",
+  "description": "Deterministic State mutation runtime used by the CONDUCTOR Orchestrator Agent. It owns Node allocation, lease control, attempts, gates, summaries, and Round close validation.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -33,10 +33,12 @@
     "catalog": "CONDUCTOR_modules/catalog/catalog.json",
     "rounds": "rounds/RND####/",
     "indices": "indices/",
-    "summaries": "summaries/state_summary.json"
+    "summaries": "summaries/state_summary.json and summaries/orchestrator_brief.json",
+    "audit": "audit/<timestamp>/"
   },
   "implementation": {
-    "purpose": "multiround_dag_state_and_analysis_orchestration",
+    "purpose": "deterministic_multiround_dag_runtime",
+    "state_access": "single_writer_lease",
     "interpretation_execution_authority": "orchestrator_only"
   }
 }

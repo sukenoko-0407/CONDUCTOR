@@ -575,7 +575,7 @@ def run() -> int:
     summary.to_csv(summary_path, index=False)
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     input_label = ";".join(args.input) if isinstance(args.input, list) else (args.input or "inline_smiles")
-    manifest = {"schema_version": "1.0.0", "conductor_version": "4.3.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name], "created_at": utc_now()}
+    manifest = {"schema_version": "1.0.0", "conductor_version": "4.3.1", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name], "created_at": utc_now()}
     if args.conductor:
         validate_json(manifest, "artifact_manifest.schema.json")
         write_json(outdir / "grouping_manifest.json", manifest)

@@ -31,7 +31,7 @@ python CONDUCTOR_modules/tools/install_into_project.py --target /path/to/project
 python CONDUCTOR_modules/tools/install_into_project.py --target /path/to/project --apply
 ```
 
-installerは既存の`.claude/`自体を置換せず、CONDUCTORの2 Agent、allowlist収載Skill、`CONDUCTOR_modules/`だけを追加する。同名のAgent、Skill、moduleがすでに存在する場合は停止するため、既存内容とのmergeは人間が判断する。
+installerは既存の`.claude/`自体を置換せず、通常Orchestrator／Interpreterと一回限りMigration Agent、allowlist収載Skill、maintenance Skill、`CONDUCTOR_modules/`だけを追加する。同名のAgent、Skill、moduleがすでに存在する場合は停止するため、既存内容とのmergeは人間が判断する。
 
 手動導入では、Project rootへ`.claude/agents/cs-conductor-*.md`、allowlist収載された`.claude/skills/cs-*`、`CONDUCTOR_modules/`を同じ相対配置でコピーする。
 
@@ -45,7 +45,7 @@ installerは既存の`.claude/`自体を置換せず、CONDUCTORの2 Agent、all
 
 ```bash
 python CONDUCTOR_modules/tools/verify_package_layout.py
-python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --check
+python .claude/skills/cs-conductor-runtime/scripts/launch.py catalog --check
 ```
 
 後者は各SkillのPixi環境を使用する。Linuxでは共有Pixi `/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi`を優先する。
@@ -68,9 +68,12 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py catalog --chec
 - Claude Codeへの解析依頼テンプレート: `docs/prompt/CONDUCTOR_analysis_request_prompt.md`
 - セッション引継ぎテンプレート: `docs/prompt/CONDUCTOR_session_handoff_template.md`
 - State可視化: `.claude/skills/cs-conductor-state-report/`（人間の明示要求時だけ実行）
+- State制御: `.claude/skills/cs-conductor-runtime/`（通常はOrchestrator Agentから内部利用）
+- Quick／Full Audit: `.claude/skills/cs-conductor-run-audit/`
+- 一回限りv4.3.0移行: `.claude/agents/cs-conductor-v430-migrator.md` と `.claude/skills/cs-conductor-migrate-v430-run/`
 - Skill生成・保守: `tools/`と`schemas/`
 
-Catalog収載変更後はOrchestratorの`catalog --write` commandで再生成し、差分を確認する。引数なし、または`--check`は読み取り専用の検証である。
+Catalog収載変更後はRuntimeの`catalog --write` commandで再生成し、差分を確認する。引数なし、または`--check`は読み取り専用の検証である。
 
 ## Windowsでの注意
 

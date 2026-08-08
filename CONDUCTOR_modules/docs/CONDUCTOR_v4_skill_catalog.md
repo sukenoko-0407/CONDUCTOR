@@ -1,9 +1,9 @@
-# CONDUCTOR 4.3.0 Skill Catalog
+# CONDUCTOR 4.3.1 Skill Catalog
 
-> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
+> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。移行専用maintenance Skillは科学Catalogへ収載しない。
 
 Profile: `comprehensive-multiround-v1`
-Generated: `2026-08-07T12:58:08.852729+00:00`
+Generated: `2026-08-08T03:59:13.092255+00:00`
 
 ## Description
 
@@ -70,5 +70,6 @@ Generated: `2026-08-07T12:58:08.852729+00:00`
 
 | ID | Skill | Capability | Variants | Family | Grouping kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| O001 | `cs-conductor-orchestrator` | CONDUCTOR v4 Orchestrator | - | graph_orchestration | - | catalog_json, analysis_profile_json, policy_markdown, interpretation_policy_markdown, endpoint_csv, round_request | - | - | low | stable | False |
+| O001 | `cs-conductor-runtime` | CONDUCTOR deterministic runtime | - | graph_orchestration | - | catalog_json, analysis_profile_json, policy_markdown, interpretation_policy_markdown, endpoint_csv, round_request | - | - | low | stable | False |
 | O002 | `cs-conductor-state-report` | CONDUCTOR State DAG report | - | state_reporting | - | explicit_state_json_read_only | - | - | low | stable | False |
+| O003 | `cs-conductor-run-audit` | CONDUCTOR Run Audit | - | run_audit | - | explicit_state_json | - | - | low | stable | False |

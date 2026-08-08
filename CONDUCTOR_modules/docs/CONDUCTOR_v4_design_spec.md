@@ -1,10 +1,10 @@
-# CONDUCTOR 4.3.0 設計仕様
+# CONDUCTOR 4.3.1 設計仕様
 
 ## 1. 目的
 
 CONDUCTORは、複数のDescription、Grouping、Operatorを疎結合に組み合わせ、化合物全体と局所Groupの違いを反復的に探索するSAR解析システムである。単一の一貫した説明を強制せず、局所化による変化、異なる表現での一致、矛盾、例外、Activity Cliffを仮説候補として提示する。
 
-本仕様は新規Run専用である。旧Stateとの後方互換は持たない。
+通常Runtimeは新規4.3.1 Runを扱い、旧Stateを直接更新しない。一回限りの明示migrationでは、検証済み科学artifactを別の新run rootへ取り込める。
 
 ## 2. 用語
 
@@ -32,6 +32,8 @@ RoundとPhaseは直交する。基本計算が複数Roundへまたがること�
 8. Round、Question、salience、coverageをDAGだけで表現しない。
 9. 相関を因果と断定しない。
 10. 分子標準化、compound ID、SMILESの品質は人間の責務とする。
+11. State変更は単一Writer leaseを持つOrchestratorだけが行う。
+12. Node identityとexecution attemptを分け、retryでNode IDを増やさない。
 
 ## 4. Skill境界
 
@@ -79,7 +81,7 @@ Questionへ紐付く比較bundleを計画する。標準bundleは、同一Group�
 
 Round IDは`RND0001`からRun内通番とする。active Roundは一つだけとし、承認待ちやsession終了では同Roundをpause/resumeする。番号不整合時はStateを変更しない。
 
-通常はInterpretation Nodeを生成してRoundを完了する。基本計算のみ、HPC job待ち、人間による中断では`checkpoint`として終了できる。各Roundはrequest、manifest、summary、Evidence set、triage update、next-round briefを保存する。
+成功Operator EvidenceがあるRoundは、Interpretation NodeとJSON／Markdown／HTMLを成功記録してから完了する。HPC job待ちや人間中断は`paused`にできるが、`checkpoint/completed`はInterpretation gateとFull Auditを通す。各Roundはrequest、manifest、summary、Evidence set、triage update、next-round briefを保存する。
 
 ## 7. Stateと索引
 
@@ -87,13 +89,14 @@ Round IDは`RND0001`からRun内通番とする。active Roundは一つだけと
 
 - Run identityとpackage/profile snapshot
 - Round controlとID counters
+- controller epoch、単一Writer leaseのhash、execution attempts
 - execution DAG
 - coverage indexへの参照
 - Group indexへの参照
 - Evidence digest／salience／Question／Relation ledgerへの参照
 - artifact path、hash、status、analysis signature
 
-Derived indexはStateとimmutable artifactから再構築可能でなければならない。Orchestratorは最初に`state_summary.json`を読み、必要なNode、Group、Evidenceだけを詳細取得する。
+Derived indexはStateとimmutable artifactから再構築可能でなければならない。Orchestratorは最初にboundedな`orchestrator_brief.json`を読み、必要時だけ`state_summary.json`とfocused queryでNode、Group、Evidenceを取得する。
 
 ## 8. ID
 
@@ -120,4 +123,7 @@ Run開始時にCatalog、profiles、Policies、Skill version、package manifest 
 - routine Evidenceが新しい関係から再昇格できる。
 - InterpretationがEvidence数に対して全ペア総当たりを行わない。
 - State／indexが中断後に再構築・再開できる。
+- 並列Orchestratorのうち一つだけがleaseを取得し、他はState非変更で終了する。
+- Round closeがInterpretation artifact不足を拒否する。
+- Quick／Full AuditがRun rootへ保存され、異常停止後の再開判断を支援する。
 - Windowsでplanningと小規模実行、Linux HPCでCPU64／A100と共有Pixiを検証する。

@@ -21,6 +21,7 @@
 | `NG0001` | Grouping Node | Run | State Manager |
 | `NO0001` | Operator Node | Run | State Manager |
 | `NI0001` | Interpretation Node／artifact | Run | State Manager |
+| `NO0001-TRY001` | Node execution attempt | Node | State Manager |
 | `RND0001` | 解析Round | Run | State Manager |
 | `G000001` | Group | Run | State Manager |
 | `E000001` | Operator Evidence | Run | State Manager |
@@ -33,6 +34,8 @@
 | `SEV0001` | Salience変更event | Run | State Manager |
 
 `R`単独prefixは使用しない。Roundは`RND`、Relationは`REL`とする。Hypothesisは`H`であり、Relationと混同しない。
+
+Attempt IDは独立した科学Nodeではない。同じNodeを再試行すると`TRY002`へ進み、Node ID、Evidence ID、Interpretation ID予約は維持する。
 
 ## 3. CapabilityとNode
 
@@ -79,6 +82,8 @@ Questionは少なくとも次を持つ。
 ## 7. ID予約
 
 InterpreterはIDを自由採番しない。OrchestratorがState Managerへ必要件数を渡し、lock下でInterpretation Nodeへidempotentな正式ID blockを予約する。機械draftと専用Agentのfinal renderはこの予約だけを使う。同じNodeのretryは同じ予約を使い、未使用IDも再利用しない。後続Roundでは新しい`NI####`と予約blockを作り、既存entityの再解釈は予約内の`revisable_ids`を使って同じIDの`revision`を増やす。
+
+v4.3.0から別のv4.3.1 run rootへ一回限り移行する場合は、新Run内でNode IDを依存順に再附番する。これはsource RunのID変更ではない。`node_id_map.csv`と各Nodeの`legacy_node_id`で追跡する。
 
 ## 8. HTML表示
 

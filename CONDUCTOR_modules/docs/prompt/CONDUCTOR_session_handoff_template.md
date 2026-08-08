@@ -1,6 +1,6 @@
 # CONDUCTOR Session Handoff
 
-このMarkdownは人間向けnavigationである。正本は`state.json`、各Round artifact、各科学計算artifactとする。通常は`round_summary.json`と`next_round_brief.json`から再生成する。
+このMarkdownは人間向けnavigationである。正本は`state.json`、各Round artifact、各科学計算artifactとする。Orchestratorの通常入口は`orchestrator_brief.json`であり、この長文handoffを必須入力にはしない。
 
 ## Run identity
 
@@ -48,6 +48,7 @@
 
 ## 参照artifact
 
+- Latest `orchestrator_brief.json`:
 - Latest `state_summary.json`:
 - Latest `round_summary.json`:
 - Latest `next_round_brief.json`:
@@ -61,4 +62,5 @@
 同Roundがactiveなら再開してください。
 State: <ABSOLUTE_STATE_JSON_PATH>
 今回の重点: <任意>
+最初にbootstrapで単一Writer leaseを取得し、Round close前にInterpretationとFull Auditを完了してください。
 ```

@@ -63,7 +63,7 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
 
 
 def render_markdown(catalog: dict[str, Any]) -> str:
-    lines = ["# CONDUCTOR 4.3.0 Skill Catalog", "", "> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。", "", f"Profile: `{catalog['profile_id']}`", f"Generated: `{catalog['generated_at']}`", ""]
+    lines = ["# CONDUCTOR 4.3.1 Skill Catalog", "", "> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。移行専用maintenance Skillは科学Catalogへ収載しない。", "", f"Profile: `{catalog['profile_id']}`", f"Generated: `{catalog['generated_at']}`", ""]
     for stage in ["description", "grouping", "analysis", "interpretation", "orchestration"]:
         entries = [entry for entry in catalog["capabilities"] if entry["stage"] == stage]
         if not entries:
@@ -121,7 +121,7 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
     unknown = sorted(referenced - known)
     if unknown:
         raise ValueError(f"Analysis profile references unknown capabilities: {unknown}")
-    catalog = {"schema_version": "1.1.0", "conductor_version": "4.3.0", "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
+    catalog = {"schema_version": "1.2.0", "conductor_version": "4.3.1", "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
     return catalog, render_markdown(catalog)
 
 

@@ -1,12 +1,12 @@
 {
-  "schema_version": "1.1.0",
-  "conductor_version": "4.3.0",
+  "schema_version": "1.2.0",
+  "conductor_version": "4.3.1",
   "profile_id": "comprehensive-multiround-v1",
   "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json",
   "profile_hash": "6083f0477d2747b84be150e9caabe20cafb370eede72b1692f5ee12d9d5d3e3c",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-07T12:58:08.852729+00:00",
+  "generated_at": "2026-08-08T03:59:13.092255+00:00",
   "capabilities": [
     {
       "schema_version": "1.0.0",
@@ -1654,7 +1654,7 @@
       "capability_id": "I001",
       "skill_name": "cs-analysis-interpret-evidence",
       "display_name": "SAR evidence interpretation",
-      "version": "4.3.0",
+      "version": "4.3.1",
       "stage": "interpretation",
       "family": "evidence_integration",
       "description": "Use when the dedicated Claude Code Interpretation Agent must explore CONDUCTOR v4 evidence across representations, groups, scopes, and Operators under a read-only Policy, preserve contradictions, and prepare falsification-oriented exploration requests and human reports.",
@@ -1700,12 +1700,12 @@
     {
       "schema_version": "1.0.0",
       "capability_id": "O001",
-      "skill_name": "cs-conductor-orchestrator",
-      "display_name": "CONDUCTOR v4 Orchestrator",
-      "version": "4.3.0",
+      "skill_name": "cs-conductor-runtime",
+      "display_name": "CONDUCTOR deterministic runtime",
+      "version": "4.3.1",
       "stage": "orchestration",
       "family": "graph_orchestration",
-      "description": "Use when Claude Code must initialize, plan, resume, inspect, or update a CONDUCTOR v4 SAR run using the human-curated Catalog, orchestration and Interpretation Policies, execution DAG, exploration ledger, and execution events.",
+      "description": "Deterministic State mutation runtime used by the CONDUCTOR Orchestrator Agent. It owns Node allocation, lease control, attempts, gates, summaries, and Round close validation.",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -1732,10 +1732,12 @@
         "catalog": "CONDUCTOR_modules/catalog/catalog.json",
         "rounds": "rounds/RND####/",
         "indices": "indices/",
-        "summaries": "summaries/state_summary.json"
+        "summaries": "summaries/state_summary.json and summaries/orchestrator_brief.json",
+        "audit": "audit/<timestamp>/"
       },
       "implementation": {
-        "purpose": "multiround_dag_state_and_analysis_orchestration",
+        "purpose": "deterministic_multiround_dag_runtime",
+        "state_access": "single_writer_lease",
         "interpretation_execution_authority": "orchestrator_only"
       }
     },
@@ -1744,7 +1746,7 @@
       "capability_id": "O002",
       "skill_name": "cs-conductor-state-report",
       "display_name": "CONDUCTOR State DAG report",
-      "version": "4.0.0",
+      "version": "4.3.1",
       "stage": "orchestration",
       "family": "state_reporting",
       "description": "Use only on an explicit human request with an explicitly supplied state.json path to render a read-only timestamped HTML and SVG execution DAG report.",
@@ -1774,6 +1776,42 @@
         "purpose": "read_only_execution_dag_visualization",
         "state_access": "read_only",
         "invocation": "explicit_human_request_only",
+        "dag_registration": "forbidden"
+      }
+    },
+    {
+      "schema_version": "1.0.0",
+      "capability_id": "O003",
+      "skill_name": "cs-conductor-run-audit",
+      "display_name": "CONDUCTOR Run Audit",
+      "version": "1.0.0",
+      "stage": "orchestration",
+      "family": "run_audit",
+      "description": "Read-only Quick/Full audit of a supplied CONDUCTOR State and its referenced artifacts.",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ]
+      },
+      "dependencies": [],
+      "input_contract": [
+        "explicit_state_json"
+      ],
+      "output": {
+        "json": "audit/<timestamp>/audit.json",
+        "markdown": "audit/<timestamp>/audit.md"
+      },
+      "implementation": {
+        "purpose": "read_only_control_and_artifact_audit",
+        "state_access": "read_only",
+        "invocation": "orchestrator_control_boundary_or_explicit_human_request",
         "dag_registration": "forbidden"
       }
     }

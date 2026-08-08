@@ -31,7 +31,9 @@ CONDUCTORは、化合物の構造と活性値からSARを反復的に探索す�
 
 各Skillは入力と出力の契約を持つ独立部品です。OrchestratorはCatalogからCapabilityを選び、実行NodeをState内のDAGへ登録します。DAGは上流から下流への依存を有向に表し、循環を許さないため、再開、重複回避、stale伝播、結果の由来追跡に使えます。
 
-DAGだけへ全情報を詰め込まず、Round、coverage、Group membership、Evidence digest、Question、salienceは軽量な索引で管理します。Orchestratorはまずsummaryを読み、必要な箇所だけ詳細を開きます。
+DAGだけへ全情報を詰め込まず、Round、coverage、Group membership、Evidence digest、Question、salienceは軽量な索引で管理します。Orchestratorはまずboundedな`orchestrator_brief.json`を読み、必要な箇所だけ詳細を開きます。
+
+同じRunを変更できるOrchestratorは単一Writer leaseを取得した一つだけです。Nodeの再試行は別Nodeではなく同じNode内のexecution attemptとして記録します。成功Operator EvidenceがあるRoundは、InterpretationのJSON／Markdown／HTMLとFull Auditが揃わなければ完了できません。
 
 ## 結果は残し、重要度は変える
 

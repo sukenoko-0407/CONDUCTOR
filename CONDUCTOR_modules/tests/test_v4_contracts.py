@@ -35,7 +35,7 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("CONDUCTOR package layout is valid", completed.stdout)
         catalog = json.loads((MODULE_ROOT / "catalog" / "catalog.json").read_text(encoding="utf-8"))
         self.assertEqual("CONDUCTOR_modules/catalog/included_skills.json", catalog["selection_path"])
-        for agent_name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"]:
+        for agent_name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md", "cs-conductor-v430-migrator.md"]:
             text = (ROOT / ".claude" / "agents" / agent_name).read_text(encoding="utf-8")
             self.assertIn("CONDUCTOR_modules/", text)
 
@@ -49,7 +49,8 @@ class RepositoryContractTests(unittest.TestCase):
             "## 変更履歴",
         ]
         skill_directories = sorted(path for path in SKILLS.iterdir() if path.is_dir())
-        self.assertEqual(43, len(skill_directories))
+        selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(selection["included_skills"]) + len(selection.get("maintenance_skills", [])), len(skill_directories))
         for skill in skill_directories:
             readme = skill / "README.md"
             self.assertTrue(readme.is_file(), skill.name)
@@ -67,7 +68,7 @@ class RepositoryContractTests(unittest.TestCase):
         selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
         capability_schema = json.loads((MODULE_ROOT / "schemas" / "capability.schema.json").read_text(encoding="utf-8"))
         names = selection["included_skills"]
-        self.assertEqual(43, len(names))
+        self.assertEqual(44, len(names))
         self.assertEqual(len(names), len(set(names)))
         for name in names:
             skill = SKILLS / name
@@ -194,12 +195,14 @@ class RepositoryContractTests(unittest.TestCase):
             temporary = Path(directory)
             state_root = temporary / "run"
             state_path = state_root / "state.json"
-            manager = SKILLS / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
+            manager = SKILLS / "cs-conductor-runtime" / "scripts" / "state_manager.py"
             data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
             subprocess.run([sys.executable, str(manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--project", "unit", "--parallel-limit", "2", "--run-id", "state-report", "--output-dir", str(state_root), "--request", "state report test"], cwd=ROOT, check=True, text=True, capture_output=True)
-            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "D002", "--reason", "report fixture"], cwd=ROOT, check=True, text=True, capture_output=True)
-            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "C002", "--reason", "report fixture"], cwd=ROOT, check=True, text=True, capture_output=True)
-            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "A002", "--reason", "report fixture"], cwd=ROOT, check=True, text=True, capture_output=True)
+            boot = subprocess.run([sys.executable, str(manager), "bootstrap", "--state", str(state_path), "--owner-id", "state-report-fixture"], cwd=ROOT, check=True, text=True, capture_output=True)
+            token = json.loads(boot.stdout)["lease_token"]
+            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "D002", "--reason", "report fixture", "--lease-token", token], cwd=ROOT, check=True, text=True, capture_output=True)
+            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "C002", "--reason", "report fixture", "--lease-token", token], cwd=ROOT, check=True, text=True, capture_output=True)
+            subprocess.run([sys.executable, str(manager), "add", "--state", str(state_path), "--capability-id", "A002", "--reason", "report fixture", "--lease-token", token], cwd=ROOT, check=True, text=True, capture_output=True)
             before = state_path.read_bytes()
             runner = SKILLS / "cs-conductor-state-report" / "scripts" / "run.py"
             rejected = subprocess.run([sys.executable, str(runner), "--state", str(state_path)], cwd=ROOT, text=True, capture_output=True)
@@ -245,7 +248,7 @@ class RepositoryContractTests(unittest.TestCase):
         markdown_path = MODULE_ROOT / "docs" / "CONDUCTOR_v4_skill_catalog.md"
         before = (catalog_path.read_bytes(), markdown_path.read_bytes())
         completed = subprocess.run(
-            [sys.executable, str(SKILLS / "cs-conductor-orchestrator" / "scripts" / "build_catalog.py")],
+            [sys.executable, str(SKILLS / "cs-conductor-runtime" / "scripts" / "build_catalog.py")],
             cwd=ROOT,
             text=True,
             capture_output=True,
@@ -263,7 +266,8 @@ class RepositoryContractTests(unittest.TestCase):
         definition = (ROOT / ".claude" / "agents" / "cs-conductor-orchestrator.md").read_text(encoding="utf-8")
         self.assertIn("Skill", definition)
         self.assertIn("AskUserQuestion", definition)
-        self.assertIn("  - cs-conductor-orchestrator", definition)
+        self.assertIn("  - cs-conductor-runtime", definition)
+        self.assertIn("  - cs-conductor-run-audit", definition)
         self.assertIn("MCS is mandatory basic computation", definition)
         self.assertIn("one human decision", definition)
         self.assertTrue((MODULE_ROOT / "pyproject.toml").is_file())
@@ -285,13 +289,26 @@ class RepositoryContractTests(unittest.TestCase):
 
 @unittest.skipUnless(__import__("importlib").util.find_spec("rdkit"), "RDKit is not installed")
 class RuntimeSmokeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.lease_tokens: dict[str, str] = {}
+
     def run_cli(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        values = list(arguments)
         environment = dict(os.environ)
         environment["PYTHONUTF8"] = "1"
-        completed = subprocess.run([sys.executable, *arguments], cwd=ROOT, env=environment, check=False, text=True, capture_output=True)
+        if values and Path(values[0]).name == "state_manager.py" and len(values) > 1 and values[1] not in {"init", "bootstrap", "query", "status", "runnable"} and "--state" in values:
+            state_path = str(Path(values[values.index("--state") + 1]).resolve())
+            if state_path not in self.lease_tokens:
+                boot = subprocess.run(
+                    [sys.executable, values[0], "bootstrap", "--state", state_path, "--owner-id", "runtime-smoke"],
+                    cwd=ROOT, env=environment, check=True, text=True, capture_output=True,
+                )
+                self.lease_tokens[state_path] = json.loads(boot.stdout)["lease_token"]
+            values.extend(["--lease-token", self.lease_tokens[state_path]])
+        completed = subprocess.run([sys.executable, *values], cwd=ROOT, env=environment, check=False, text=True, capture_output=True)
         if completed.returncode != 0:
             self.fail(
-                f"Command failed ({completed.returncode}): {[sys.executable, *arguments]}\n"
+                f"Command failed ({completed.returncode}): {[sys.executable, *values]}\n"
                 f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
             )
         return completed
@@ -599,7 +616,7 @@ class RuntimeSmokeTests(unittest.TestCase):
 
     def test_state_rejects_an_unplanned_description_variant(self) -> None:
         data = MODULE_ROOT / "tests" / "data" / "small_sar.csv"
-        state_manager = SKILLS / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
+        state_manager = SKILLS / "cs-conductor-runtime" / "scripts" / "state_manager.py"
         runner = SKILLS / "cs-compute-description-morgan" / "scripts" / "run.py"
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
@@ -614,7 +631,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             self.run_cli(str(state_manager), "start", "--state", str(state_path), "--node-id", planned_node["node_id"])
             self.run_cli(str(runner), "--input", str(data), "--n-bits", "2048", "--output-dir", str(outdir), "--conductor", "--project", "unit", "--run-id", run_id, "--node-id", planned_node["node_id"], "--overwrite")
             rejected = subprocess.run(
-                [sys.executable, str(state_manager), "record", "--state", str(state_path), "--event", str(outdir / "execution_event.json")],
+                [sys.executable, str(state_manager), "record", "--state", str(state_path), "--event", str(outdir / "execution_event.json"), "--lease-token", self.lease_tokens[str(state_path.resolve())]],
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertNotEqual(0, rejected.returncode)
@@ -802,7 +819,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             state_root = temporary / "state-run"
             state_path = state_root / "state.json"
             run_id = "unit_e2e"
-            state_manager = SKILLS / "cs-conductor-orchestrator" / "scripts" / "state_manager.py"
+            state_manager = SKILLS / "cs-conductor-runtime" / "scripts" / "state_manager.py"
             self.run_cli(str(state_manager), "init", "--input", str(data), "--endpoint", "pIC50", "--higher-is-better", "--assay-column", "assay", "--project", "unit", "--parallel-limit", "2", "--run-id", run_id, "--output-dir", str(state_root), "--request", "Round 1 e2e")
             description_node = json.loads(self.run_cli(str(state_manager), "add", "--state", str(state_path), "--capability-id", "D001", "--reason", "e2e description").stdout)["node"]
             grouping_node = json.loads(self.run_cli(str(state_manager), "add", "--state", str(state_path), "--capability-id", "C001", "--reason", "e2e grouping").stdout)["node"]
@@ -817,7 +834,7 @@ class RuntimeSmokeTests(unittest.TestCase):
             wrong_project_path = description / "wrong-project-event.json"
             wrong_project_path.write_text(json.dumps(wrong_project_event), encoding="utf-8")
             rejected = subprocess.run(
-                [sys.executable, str(state_manager), "record", "--state", str(state_path), "--event", str(wrong_project_path)],
+                [sys.executable, str(state_manager), "record", "--state", str(state_path), "--event", str(wrong_project_path), "--lease-token", self.lease_tokens[str(state_path.resolve())]],
                 cwd=ROOT, text=True, capture_output=True,
             )
             self.assertNotEqual(0, rejected.returncode)

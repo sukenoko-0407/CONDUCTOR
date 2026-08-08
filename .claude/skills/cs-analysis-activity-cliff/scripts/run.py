@@ -757,7 +757,7 @@ def run() -> int:
         "artifacts": [{"type": "operator_result", "path": result_path.name, "sha256": file_hash(result_path)}], "created_at": utc_now()
     }
     config = {key: value for key, value in vars(args).items()}
-    manifest = {"schema_version": "1.0.0", "conductor_version": "4.3.0", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now()}
+    manifest = {"schema_version": "1.0.0", "conductor_version": "4.3.1", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now()}
     if args.conductor:
         report_path = outdir / "operator_report.html"
         report_path.write_text(

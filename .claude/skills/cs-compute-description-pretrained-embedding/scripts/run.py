@@ -529,7 +529,7 @@ def run() -> int:
         warnings.append(f"{len(errors)} row-level errors were recorded")
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     manifest = {
-        "schema_version": "1.0.0", "conductor_version": "4.3.0", "run_id": run_id,
+        "schema_version": "1.0.0", "conductor_version": "4.3.1", "run_id": run_id,
         "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"],
         "representation_id": CAPABILITY["representation_id"], "input": args.input or "inline_smiles", "input_hash": input_hash,
         "row_count": int(len(result)), "valid_molecule_count": int(result["mol_parse_ok"].sum()), "feature_count": len(features),

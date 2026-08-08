@@ -1,4 +1,4 @@
-# CONDUCTOR 4.3.0 Orchestration Policy
+# CONDUCTOR 4.3.1 Orchestration Policy
 
 ## 1. 役割
 
@@ -17,6 +17,9 @@ Orchestratorは、Catalogで人間が許可したSkillだけを使い、Run内�
 - 新しい高コスト深掘りは目的、対象、資源、期待情報を示して別途確認する。
 - 人間指定parallel limitを超えない。
 - 同じStateを複数Orchestratorが同時に更新しない。
+- bootstrapで単一Writer leaseを取得し、すべてのState変更にsession tokenを用いる。別Writerがleaseを保持する場合はread-onlyで終了する。
+- Node失敗の再試行は同じNode IDの新execution attemptとし、復旧目的の代替Nodeを作らない。
+- 成功Operator EvidenceがあるRoundは、同Roundの成功InterpretationとJSON／Markdown／HTMLなしにcheckpoint／completedへしない。
 - 相関、局所傾向、SALIを因果や機序として断定しない。
 
 ## 3. Round lifecycle
@@ -24,6 +27,8 @@ Orchestratorは、Catalogで人間が許可したSkillだけを使い、Run内�
 人間が新規または継続Round番号とState pathを指定する。番号がStateの`next_round`と一致すれば開始し、同番号がactiveなら再開する。完了済み番号、欠番、別active Roundがある場合は書き込まず報告する。
 
 Roundは既定resource envelopeをsnapshotする。人間の追加指示がなければ、未完了mandatory coverage、前Roundの`next_round_brief`、active Question、coverage gapに基づいて進める。承認応答は新Roundに数えない。
+
+Wall Timeは最大予算としてdeadlineを持つ。使い切り自体を目的にしないが、eligible workが残る間の説明不能な早期終了は許容しない。終盤はInterpretationとFull Auditのためのreserveへ切り替え、停止理由を定義済みcodeで記録する。
 
 ## 4. Phase gate
 
@@ -66,10 +71,10 @@ Groupingはdirect structureとDescription-vectorを混同しない。vector metr
 
 全Evidenceの存在、digest、provenance、coverageは保持する。毎Round全文を再読込しない。標準読込順は次とする。
 
-1. `state_summary.json`
-2. 最新Round summaryと`next_round_brief`
-3. untriaged、priority、human-pinned、active Question関連digest
-4. 新Evidenceとindex keyが一致するroutine digest
+1. `orchestrator_brief.json`
+2. 必要な場合だけboundedな`state_summary.json`
+3. focused queryで対象Node、Evidence、Question、batch
+4. untriaged、priority、human-pinned、active Question関連digest
 5. 必要な完全Evidence、CSV、Operator HTML
 
 全EvidenceペアのCartesian comparisonは禁止する。
@@ -82,11 +87,11 @@ Operator artifactはimmutableとし、importanceは可変indexで管理する。
 
 - 上流artifactが変われば下流を`stale`にする。
 - 同じ失敗を無制限に再試行しない。
-- active Round、running Node、lock、pending approvalを再開時に検査する。
+- active Round、running attempt、lease、pending approvalをbootstrap Quick Auditで検査する。
 - package、Catalog、profile、Policy hashが変わった場合は差分を提示し、承認なく混在させない。
 - Derived index不整合時はimmutable artifactとStateから再構築する。
-- 旧Stateはimportしない。新規Runとして開始する。
+- 4.3.0 Stateは通常Runtimeで更新しない。一回限りのMigration Skillだけが、source非変更、別target、dry-run、人間承認、検証を条件に科学artifactをimportできる。
 
 ## 12. Round終了
 
-Round終了時に、Node差分、coverage差分、新規・更新Finding／Hypothesis／Question、salience変更、矛盾、pending approval、次Round候補を保存する。通常は新しいInterpretation Nodeで閉じる。計算だけのcheckpointでは、解釈を捏造せず終了理由を記録する。
+Round終了時に、Node差分、coverage差分、新規・更新Finding／Hypothesis／Question、salience変更、矛盾、pending approval、次Round候補を保存する。成功Operator Evidenceがある場合は新しいInterpretation Nodeで必ず閉じ、Full Auditを通す。単なる計算checkpointでこのgateを回避しない。

@@ -7,18 +7,22 @@ import json
 import os
 import random
 import re
+import secrets
 import shutil
 import sys
 from collections import defaultdict, deque
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
-CONDUCTOR_VERSION = "4.3.0"
-STATE_SCHEMA_VERSION = "2.0.0"
+CONDUCTOR_VERSION = "4.3.1"
+STATE_SCHEMA_VERSION = "2.1.0"
+SUMMARY_SCHEMA_VERSION = "2.0.0"
+DEFAULT_LEASE_MINUTES = 20
+SUMMARY_LIMIT = 20
 TERMINAL_STATUSES = {"succeeded", "failed", "unavailable", "waived", "not_applicable", "skipped"}
 SUCCESS_LIKE_STATUSES = {"succeeded", "waived", "not_applicable"}
 STAGE_COUNTER = {
@@ -57,6 +61,25 @@ def utc_now() -> str:
 
 def run_id_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def timestamp_id() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def bounded(values: Iterable[Any], limit: int = SUMMARY_LIMIT) -> list[Any]:
+    materialized = list(values)
+    return materialized[-limit:]
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def find_workspace() -> Path:
@@ -183,6 +206,12 @@ def validate_state(state: dict[str, Any]) -> None:
             raise ValueError("round_control.active_round_id is inconsistent")
     elif active:
         raise ValueError("An active Round requires round_control.active_round_id")
+    lease = state.get("orchestration_control", {}).get("lease") or {}
+    if lease.get("token_hash") and not (lease.get("owner_id") and lease.get("expires_at")):
+        raise ValueError("A claimed Orchestrator lease requires owner_id and expires_at")
+    node_ids = [node["node_id"] for node in state["execution_graph"]["nodes"]]
+    if len(node_ids) != len(set(node_ids)):
+        raise ValueError("Node IDs must be unique")
 
 
 @contextmanager
@@ -199,6 +228,49 @@ def state_lock(state_path: Path) -> Iterator[None]:
         if descriptor is not None:
             os.close(descriptor)
             lock_path.unlink(missing_ok=True)
+
+
+def lease_is_live(state: dict[str, Any]) -> bool:
+    lease = state.get("orchestration_control", {}).get("lease") or {}
+    expires_at = parse_timestamp(lease.get("expires_at"))
+    return bool(lease.get("token_hash") and expires_at and expires_at > datetime.now(timezone.utc))
+
+
+def require_controller(state: dict[str, Any], args: argparse.Namespace) -> None:
+    control = state.get("orchestration_control")
+    if not control:
+        raise ValueError("State has no v4.3.1 orchestration control; migrate the Run before mutation")
+    token = getattr(args, "lease_token", None)
+    lease = control.get("lease") or {}
+    if not lease_is_live(state):
+        raise ValueError("No live Orchestrator lease; run bootstrap first")
+    if not token or token_hash(token) != lease.get("token_hash"):
+        raise ValueError("This process does not own the Orchestrator lease")
+
+
+def renew_lease(state: dict[str, Any], minutes: int | None = None) -> None:
+    lease = state["orchestration_control"]["lease"]
+    now = datetime.now(timezone.utc)
+    duration = minutes or int(lease.get("duration_minutes") or DEFAULT_LEASE_MINUTES)
+    lease["heartbeat_at"] = now.isoformat()
+    lease["expires_at"] = (now + timedelta(minutes=duration)).isoformat()
+
+
+def controller_mutation(state: dict[str, Any], args: argparse.Namespace) -> None:
+    require_controller(state, args)
+    renew_lease(state)
+    scientific_expansion_commands = {"plan-basic", "plan-initial-global", "plan-initial-local", "plan-additional", "plan-deep-dive", "add"}
+    if getattr(args, "command", None) in scientific_expansion_commands:
+        time_status = round_time_status(state)
+        if time_status["status"] in {"interpretation_reserve", "expired"}:
+            raise ValueError(f"Scientific expansion is closed by Round time control: {time_status['status']}")
+
+
+def add_lease_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--lease-token",
+        help="Opaque token returned by bootstrap. Required for every State mutation after initialization.",
+    )
 
 
 def append_history(state: dict[str, Any], action: str, **details: Any) -> None:
@@ -357,10 +429,21 @@ def create_round(state: dict[str, Any], run_root: Path, request: str, envelope: 
     round_root = run_root / "rounds" / round_id
     round_root.mkdir(parents=True, exist_ok=False)
     (round_root / "round_request.md").write_text(request.rstrip() + "\n", encoding="utf-8")
+    started = datetime.now(timezone.utc)
+    walltime = max(1, int(envelope.get("walltime_minutes") or 480))
+    reserve = max(10, min(60, int(round(walltime * 0.15))))
     item = {
         "round_id": round_id, "number": number, "status": "active", "request": request,
         "request_path": str((round_root / "round_request.md").resolve()), "resource_envelope": envelope,
-        "sampling_events": [], "started_at": utc_now(), "ended_at": None,
+        "sampling_events": [], "started_at": started.isoformat(), "ended_at": None,
+        "execution_control": {
+            "deadline_at": (started + timedelta(minutes=walltime)).isoformat(),
+            "interpretation_reserve_minutes": reserve,
+            "additional_nodes_planned": 0,
+            "stop_reason": None,
+            "last_progress_at": started.isoformat(),
+        },
+        "close_gate": {"status": "open", "reason_codes": ["ROUND_ACTIVE"], "checked_at": started.isoformat()},
     }
     state["round_control"]["rounds"].append(item)
     state["round_control"]["active_round_id"] = round_id
@@ -415,6 +498,16 @@ def cmd_init(args: argparse.Namespace) -> int:
             "created_at": utc_now(),
         },
         "round_control": {"active_round_id": None, "next_round_number": 1, "rounds": []},
+        "orchestration_control": {
+            "controller_epoch": 0,
+            "lease": {
+                "owner_id": None, "token_hash": None, "epoch": 0,
+                "acquired_at": None, "heartbeat_at": None, "expires_at": None,
+                "duration_minutes": DEFAULT_LEASE_MINUTES,
+            },
+            "last_bootstrap_at": None,
+            "last_audit_path": None,
+        },
         "id_counters": counters, "execution_graph": {"nodes": [], "edges": []}, "indices": indices,
         "history": [], "updated_at": utc_now(),
     }
@@ -643,6 +736,7 @@ def add_node(
         "analysis_signature": signature, "human_approval": approval, "output_dir": ".",
         "selection_reason": reason, "request_origin": request_origin, "question_ids": question_ids or [],
         "cost": capability["cost"], "artifacts": [], "warnings": [], "requested_at": utc_now(),
+        "execution_attempts": [], "current_attempt_id": None,
     }
     if node["stage"] == "analysis":
         node["evidence_id"] = allocate_id(state, "evidence")[0]
@@ -690,6 +784,7 @@ def cmd_plan_basic(args: argparse.Namespace) -> int:
     profile = load_profile()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         run_root = state_path.parent
         planned: list[str] = []
         description_ids = expand_capability_list(capabilities, profile["basic_compute"]["description_capabilities"], "description")
@@ -722,6 +817,7 @@ def cmd_plan_basic(args: argparse.Namespace) -> int:
             )
             if created:
                 planned.append(node["node_id"])
+        active_round(state).setdefault("execution_control", {})["basic_plan_complete"] = True
         append_history(state, "basic_compute_planned", node_ids=planned, profile_id=profile["profile_id"])
         update_coverage_index(state_path, state)
         write_state(state_path, state)
@@ -733,6 +829,7 @@ def cmd_approve_basic_bundle(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         status = "approved" if args.approve else "rejected"
         bundle = state["run"]["high_cost_bundle"]
         bundle.update({"status": status, "rationale": args.rationale, "decided_at": utc_now(), "decided_scope_hash": bundle["scope_hash"]})
@@ -827,6 +924,7 @@ def cmd_plan_initial_global(args: argparse.Namespace) -> int:
     profile = load_profile()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         ensure_initial_gate(state, args.override_gate)
         run_root = state_path.parent
         descriptions = master_description_nodes(state, profile)
@@ -843,6 +941,7 @@ def cmd_plan_initial_global(args: argparse.Namespace) -> int:
                 )
                 if created:
                     planned.append(node["node_id"])
+        active_round(state).setdefault("execution_control", {})["initial_global_plan_complete"] = True
         append_history(state, "initial_global_planned", node_ids=planned)
         update_coverage_index(state_path, state)
         write_state(state_path, state)
@@ -934,6 +1033,7 @@ def cmd_plan_initial_local(args: argparse.Namespace) -> int:
     profile = load_profile()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         if not phase_terminal(state, "initial_global") and not args.override_gate:
             raise ValueError("initial_global is not terminal")
         run_root = state_path.parent
@@ -943,15 +1043,23 @@ def cmd_plan_initial_local(args: argparse.Namespace) -> int:
         selections: list[dict[str, Any]] = []
         limit = profile["initial_exploration"]["representative_groups_per_grouping"]
         for grouping in groupings:
+            if len(planned) >= args.batch_size:
+                break
             for selected in select_representative_groups(state, grouping, limit):
+                if len(planned) >= args.batch_size:
+                    break
                 group_id = selected["row"]["group_id"]
                 selections.append({"grouping_node_id": grouping["node_id"], "group_id": group_id, "role": selected["role"], "count": selected["count"], "fraction": selected["fraction"], "endpoint_variance": selected["variance"]})
                 for capability_id in profile["initial_exploration"]["local_operator_capabilities"]:
+                    if len(planned) >= args.batch_size:
+                        break
                     capability = capabilities[capability_id]
                     if "within-group" not in (capability.get("scope_support") or []):
                         continue
                     dependency_sets = dependency_sets_for_operator(capability, descriptions, [grouping], "within-group")
                     for dependencies in dependency_sets:
+                        if len(planned) >= args.batch_size:
+                            break
                         params = {"scope_mode": "within-group", "target_group": group_id}
                         node, created = plan_node(
                             state, capabilities, run_root, capability_id, dependencies, "initial_local",
@@ -961,7 +1069,8 @@ def cmd_plan_initial_local(args: argparse.Namespace) -> int:
                             planned.append(node["node_id"])
         round_item = active_round(state)
         round_item["representative_group_selections"] = selections
-        append_history(state, "initial_local_planned", node_ids=planned, selections=selections)
+        round_item.setdefault("execution_control", {})["initial_local_plan_complete"] = len(planned) < args.batch_size
+        append_history(state, "initial_local_planned", node_ids=planned, selections=selections, batch_size=args.batch_size)
         update_coverage_index(state_path, state)
         write_state(state_path, state)
     print(json.dumps({"planned_nodes": planned, "representative_groups": selections}, ensure_ascii=False, indent=2))
@@ -1057,10 +1166,22 @@ def cmd_plan_additional(args: argparse.Namespace) -> int:
     profile = load_profile()
     with state_lock(state_path):
         state = read_json(state_path)
-        if not (phase_terminal(state, "initial_global") and phase_terminal(state, "initial_local")) and not args.override_gate:
+        controller_mutation(state, args)
+        current_control = active_round(state).get("execution_control") or {}
+        global_done = phase_terminal(state, "initial_global") or bool(current_control.get("initial_global_plan_complete") and not any(node["phase"] == "initial_global" and node["status"] not in TERMINAL_STATUSES for node in state["execution_graph"]["nodes"]))
+        local_done = phase_terminal(state, "initial_local") or bool(current_control.get("initial_local_plan_complete") and not any(node["phase"] == "initial_local" and node["status"] not in TERMINAL_STATUSES for node in state["execution_graph"]["nodes"]))
+        if not (global_done and local_done) and not args.override_gate:
             raise ValueError("initial_global and initial_local must be terminal before automatic additional exploration")
+        round_item = active_round(state)
+        control = round_item.setdefault("execution_control", {})
+        already_planned = int(control.get("additional_nodes_planned") or 0)
+        maximum = int(round_item.get("resource_envelope", {}).get("max_additional_nodes") or 0)
+        remaining = max(0, maximum - already_planned)
+        if remaining == 0:
+            raise ValueError(f"Round additional-exploration budget is exhausted ({maximum})")
+        requested = min(args.count, remaining)
         candidates = candidate_cells(state, capabilities, profile)
-        selected = balanced_sample(candidates, args.count, args.seed, state)
+        selected = balanced_sample(candidates, requested, args.seed, state)
         planned: list[str] = []
         for item in selected:
             node, created = plan_node(
@@ -1071,12 +1192,14 @@ def cmd_plan_additional(args: argparse.Namespace) -> int:
                 node["coverage_stratum"] = item["stratum"]
                 planned.append(node["node_id"])
         event = {
-            "seed": args.seed, "requested_count": args.count, "candidate_count": len(candidates),
+            "seed": args.seed, "requested_count": args.count, "accepted_count": requested, "candidate_count": len(candidates),
             "candidate_pool_hash": value_hash(sorted(item["signature"] for item in candidates)),
             "selected_signatures": [item["signature"] for item in selected], "selected_node_ids": planned,
             "sampling": "seeded_balanced_without_replacement", "created_at": utc_now(),
         }
-        active_round(state)["sampling_events"].append(event)
+        round_item["sampling_events"].append(event)
+        control["additional_nodes_planned"] = already_planned + len(planned)
+        control["additional_candidate_pool_exhausted"] = not bool(candidates)
         append_history(state, "additional_exploration_planned", **event)
         update_coverage_index(state_path, state)
         write_state(state_path, state)
@@ -1097,6 +1220,7 @@ def cmd_question_add(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         target_groups = [value for value in (args.target_group or "").split(",") if value]
         evidence_ids = [value for value in (args.evidence or "").split(",") if value]
         operator_ids = [value for value in (args.operator or "").split(",") if value]
@@ -1130,6 +1254,7 @@ def cmd_question_decision(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         path = Path(state["indices"]["questions"]["path"])
         current = latest_entity_view(path, "question_id").get(args.question_id)
         if current is None:
@@ -1173,6 +1298,7 @@ def cmd_plan_deep_dive(args: argparse.Namespace) -> int:
     profile = load_profile()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         questions = latest_entity_view(Path(state["indices"]["questions"]["path"]), "question_id")
         question = questions.get(args.question_id)
         if question is None:
@@ -1240,6 +1366,7 @@ def cmd_salience_set(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         digest_ids = {item["evidence_id"] for item in read_jsonl(Path(state["indices"]["evidence_digest"]["path"]))}
         if args.evidence_id not in digest_ids:
             raise ValueError(f"Unknown Evidence: {args.evidence_id}")
@@ -1292,6 +1419,7 @@ def cmd_reserve_interpretation_ids(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         node = state_nodes(state).get(args.node_id)
         if node is None or node["stage"] != "interpretation":
             raise ValueError("--node-id must identify an Interpretation Node")
@@ -1546,6 +1674,8 @@ def node_readiness_error(state: dict[str, Any], node: dict[str, Any]) -> str | N
         return "Human approval is required"
     if node["human_approval"] == "rejected":
         return "Human approval was rejected"
+    if node["stage"] != "interpretation" and round_time_status(state)["status"] in {"interpretation_reserve", "expired"}:
+        return "Round time control permits only Interpretation and close activities"
     nodes = state_nodes(state)
     for dependency in node["dependencies"]:
         status = nodes[dependency]["status"]
@@ -1554,12 +1684,76 @@ def node_readiness_error(state: dict[str, Any], node: dict[str, Any]) -> str | N
     return None
 
 
+def round_time_status(state: dict[str, Any]) -> dict[str, Any]:
+    item = active_round(state, required=False)
+    if item is None:
+        return {"status": "no_active_round", "remaining_minutes": 0, "reserve_minutes": 0, "deadline_at": None}
+    control = item.get("execution_control") or {}
+    deadline = parse_timestamp(control.get("deadline_at"))
+    remaining = ((deadline - datetime.now(timezone.utc)).total_seconds() / 60.0) if deadline else float("inf")
+    reserve = int(control.get("interpretation_reserve_minutes") or 0)
+    status = "available"
+    if remaining <= 0:
+        status = "expired"
+    elif remaining <= reserve:
+        status = "interpretation_reserve"
+    return {
+        "status": status, "remaining_minutes": max(0.0, round(remaining, 2)),
+        "reserve_minutes": reserve, "deadline_at": control.get("deadline_at"),
+    }
+
+
+def interpretation_gate(state: dict[str, Any], round_id: str | None = None) -> dict[str, Any]:
+    item = active_round(state, required=False)
+    selected_round = round_id or (item or {}).get("round_id")
+    if not selected_round:
+        return {"status": "not_applicable", "reason_codes": ["NO_ACTIVE_ROUND"], "analysis_node_ids": [], "interpretation_node_ids": []}
+    analysis = [
+        node for node in state["execution_graph"]["nodes"]
+        if node["round_id"] == selected_round and node["stage"] == "analysis" and node["status"] == "succeeded"
+    ]
+    interpretations = [
+        node for node in state["execution_graph"]["nodes"]
+        if node["round_id"] == selected_round and node["stage"] == "interpretation" and node["status"] == "succeeded"
+    ]
+    valid: list[str] = []
+    missing_artifacts: list[str] = []
+    for node in interpretations:
+        output = Path(node["output_dir"])
+        expected = [output / "interpretation.json", output / "interpretation.md", output / "interpretation.html"]
+        if all(path.is_file() and path.stat().st_size > 0 for path in expected):
+            valid.append(node["node_id"])
+        else:
+            missing_artifacts.append(node["node_id"])
+    reasons: list[str] = []
+    status = "satisfied"
+    migration_requires_fresh = bool((item or {}).get("execution_control", {}).get("migration_requires_fresh_interpretation"))
+    if (analysis or migration_requires_fresh) and not valid:
+        status = "blocked"
+        reasons.append("FRESH_INTERPRETATION_REQUIRED" if migration_requires_fresh else "INTERPRETATION_REQUIRED")
+    if missing_artifacts:
+        status = "blocked"
+        reasons.append("INTERPRETATION_ARTIFACTS_MISSING")
+    if not analysis and not migration_requires_fresh:
+        reasons.append("NO_NEW_OPERATOR_EVIDENCE")
+    return {
+        "status": status, "reason_codes": reasons,
+        "analysis_node_ids": [node["node_id"] for node in analysis],
+        "interpretation_node_ids": [node["node_id"] for node in interpretations],
+        "valid_interpretation_node_ids": valid,
+        "invalid_interpretation_node_ids": missing_artifacts,
+    }
+
+
 def runnable_nodes(state: dict[str, Any]) -> list[dict[str, Any]]:
     running = sum(node["status"] == "running" for node in state["execution_graph"]["nodes"])
     available = max(0, state["run"]["parallel_limit"] - running)
     phase_order = {"basic_compute": 0, "initial_global": 1, "initial_local": 2, "additional_exploration": 3, "deep_dive": 4, "human_directed": 5}
     stage_order = {"description": 0, "grouping": 1, "analysis": 2, "interpretation": 3}
+    time_status = round_time_status(state)
     result = [node for node in state["execution_graph"]["nodes"] if node["status"] in {"pending", "stale"} and node_readiness_error(state, node) is None]
+    if time_status["status"] in {"interpretation_reserve", "expired"}:
+        result = [node for node in result if node["stage"] == "interpretation"]
     result.sort(key=lambda node: (phase_order[node["phase"]], stage_order[node["stage"]], node["node_id"]))
     return result[:available]
 
@@ -1568,16 +1762,26 @@ def cmd_start(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         node = state_nodes(state).get(args.node_id)
         if node is None:
             raise ValueError(f"Unknown Node: {args.node_id}")
-        if node["status"] not in {"pending", "stale"}:
+        retryable = node["status"] in {"failed", "unavailable"} and args.retry
+        if node["status"] not in {"pending", "stale"} and not retryable:
             raise ValueError(f"Node is not startable: {node['status']}")
         error = node_readiness_error(state, node)
         if error:
             raise ValueError(error)
-        node["status"] = "running"; node["started_at"] = utc_now()
-        append_history(state, "node_started", node_id=node["node_id"])
+        running = [item["node_id"] for item in state["execution_graph"]["nodes"] if item["status"] == "running"]
+        if len(running) >= int(state["run"]["parallel_limit"]):
+            raise ValueError(f"Parallel limit reached ({state['run']['parallel_limit']}): {running}")
+        attempt_number = len(node.get("execution_attempts") or []) + 1
+        attempt_id = f"{node['node_id']}-TRY{attempt_number:03d}"
+        attempt = {"attempt_id": attempt_id, "number": attempt_number, "status": "running", "started_at": utc_now(), "finished_at": None}
+        node.setdefault("execution_attempts", []).append(attempt)
+        node["current_attempt_id"] = attempt_id
+        node["status"] = "running"; node["started_at"] = attempt["started_at"]
+        append_history(state, "node_started", node_id=node["node_id"], attempt_id=attempt_id)
         update_coverage_index(state_path, state); write_state(state_path, state)
     return 0
 
@@ -1586,10 +1790,16 @@ def cmd_mark_terminal(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         node = state_nodes(state).get(args.node_id)
         if node is None:
             raise ValueError(f"Unknown Node: {args.node_id}")
         node["status"] = args.status; node["terminal_reason"] = args.reason; node["finished_at"] = utc_now()
+        for attempt in reversed(node.get("execution_attempts") or []):
+            if attempt.get("attempt_id") == node.get("current_attempt_id"):
+                attempt.update({"status": args.status, "finished_at": node["finished_at"], "reason": args.reason})
+                break
+        node["current_attempt_id"] = None
         cascaded = cascade_terminal_dependencies(state)
         append_history(state, "node_marked_terminal", node_id=node["node_id"], status=args.status, reason=args.reason, cascaded_node_ids=cascaded)
         update_coverage_index(state_path, state); write_state(state_path, state)
@@ -1600,7 +1810,9 @@ def cmd_record(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve(); event_path = Path(args.event).resolve()
     event = read_json(event_path); validate_json(event, "execution_event.schema.json")
     with state_lock(state_path):
-        state = read_json(state_path); node = state_nodes(state).get(event["node_id"])
+        state = read_json(state_path)
+        controller_mutation(state, args)
+        node = state_nodes(state).get(event["node_id"])
         if node is None:
             raise ValueError(f"Event Node is not planned: {event['node_id']}")
         for key, expected in [("run_id", state["run"]["run_id"]), ("project", state["run"]["project"]), ("capability_id", node["capability_id"]), ("skill_name", node["skill_name"])]:
@@ -1628,6 +1840,11 @@ def cmd_record(args: argparse.Namespace) -> int:
             if artifact["type"] == "interpretation" and path.name == "interpretation.json": interpretation_path = path
         previous_hashes = (node.get("input_hash"), node.get("config_hash"))
         node.update({"status": event["status"], "input_hash": event["input_hash"], "config_hash": event["config_hash"], "configuration": event["configuration"], "artifacts": artifacts, "warnings": event.get("warnings") or [], "started_at": event.get("started_at"), "finished_at": event.get("finished_at")})
+        for attempt in reversed(node.get("execution_attempts") or []):
+            if attempt.get("attempt_id") == node.get("current_attempt_id"):
+                attempt.update({"status": event["status"], "finished_at": event.get("finished_at"), "event_path": str(event_path)})
+                break
+        node["current_attempt_id"] = None
         if node["stage"] == "grouping" and event["status"] == "succeeded":
             if not group_membership or not group_registry:
                 raise ValueError("Successful Grouping requires membership and registry artifacts")
@@ -1667,7 +1884,10 @@ def update_coverage_index(state_path: Path, state: dict[str, Any]) -> None:
 
 
 def compact_rounds(state: dict[str, Any]) -> list[dict[str, Any]]:
-    return [{"round_id": item["round_id"], "status": item["status"], "started_at": item["started_at"], "ended_at": item.get("ended_at")} for item in state["round_control"]["rounds"]]
+    return bounded(({
+        "round_id": item["round_id"], "status": item["status"], "started_at": item["started_at"],
+        "ended_at": item.get("ended_at"), "stop_reason": (item.get("execution_control") or {}).get("stop_reason"),
+    } for item in state["round_control"]["rounds"]), 5)
 
 
 def build_state_summary(state: dict[str, Any]) -> dict[str, Any]:
@@ -1679,24 +1899,100 @@ def build_state_summary(state: dict[str, Any]) -> dict[str, Any]:
     salience = read_jsonl(Path(state["indices"]["salience"]["view_path"]))
     priority = [item for item in salience if item.get("attention_class") == "priority" or item.get("human_pinned")]
     return {
-        "schema_version": "1.0.0", "run": {key: state["run"][key] for key in ["run_id", "project", "input", "endpoint", "higher_is_better", "row_count", "profile_id"]},
+        "schema_version": SUMMARY_SCHEMA_VERSION, "run": {key: state["run"][key] for key in ["run_id", "project", "input", "endpoint", "higher_is_better", "row_count", "profile_id"]},
         "package_change_gate": state["run"].get("package_change_gate"),
         "round_control": {"active_round_id": state["round_control"]["active_round_id"], "next_round_number": state["round_control"]["next_round_number"], "rounds": compact_rounds(state)},
         "node_count": len(state["execution_graph"]["nodes"]), "status_counts": dict(status_counts),
         "phase_counts": {phase: dict(counts) for phase, counts in phase_counts.items()},
-        "runnable_node_ids": [node["node_id"] for node in runnable_nodes(state)],
-        "group_index": state["indices"]["group"], "evidence_count": state["indices"]["evidence_digest"]["count"],
-        "priority_evidence": priority[-100:],
-        "active_questions": [item for item in questions if item.get("status") in {"open", "in_progress"} and item.get("human_decision") != "skip"],
-        "human_skipped_questions": [item for item in questions if item.get("human_decision") == "skip"],
-        "failed_or_unavailable": [{"node_id": node["node_id"], "capability_id": node["capability_id"], "status": node["status"], "reason": node.get("terminal_reason")} for node in state["execution_graph"]["nodes"] if node["status"] in {"failed", "unavailable"}],
+        "runnable_node_ids": [node["node_id"] for node in runnable_nodes(state)][:SUMMARY_LIMIT],
+        "runnable_count": len([node for node in state["execution_graph"]["nodes"] if node["status"] in {"pending", "stale"} and node_readiness_error(state, node) is None]),
+        "group_index": {key: state["indices"]["group"].get(key) for key in ["group_count", "active_group_count", "deprioritized_group_count", "registry_path"]},
+        "evidence_count": state["indices"]["evidence_digest"]["count"],
+        "priority_evidence": priority[-SUMMARY_LIMIT:],
+        "active_questions": bounded((item for item in questions if item.get("status") in {"open", "in_progress"} and item.get("human_decision") != "skip"), SUMMARY_LIMIT),
+        "human_skipped_question_count": sum(item.get("human_decision") == "skip" for item in questions),
+        "failed_or_unavailable": bounded(({"node_id": node["node_id"], "capability_id": node["capability_id"], "status": node["status"], "reason": node.get("terminal_reason")} for node in state["execution_graph"]["nodes"] if node["status"] in {"failed", "unavailable"}), SUMMARY_LIMIT),
+        "time_budget": round_time_status(state),
+        "interpretation_gate": interpretation_gate(state),
         "updated_at": state["updated_at"],
     }
 
 
+def required_control_actions(state: dict[str, Any]) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    gate = state["run"].get("package_change_gate") or {}
+    if gate.get("status") != "clear":
+        return [{"code": "PACKAGE_APPROVAL_REQUIRED", "blocking": True}]
+    current = active_round(state, required=False)
+    if current is None:
+        return [{"code": "START_NEXT_ROUND", "blocking": True, "next_round_id": f"RND{state['round_control']['next_round_number']:04d}"}]
+    nodes = state["execution_graph"]["nodes"]
+    control = current.get("execution_control") or {}
+    if control.get("migration_requires_fresh_interpretation") and interpretation_gate(state)["status"] == "blocked":
+        pending_i = [node["node_id"] for node in nodes if node["round_id"] == current["round_id"] and node["stage"] == "interpretation" and node["status"] in {"pending", "running", "failed", "stale"}]
+        return [{"code": "CREATE_OR_COMPLETE_INTERPRETATION", "blocking": True, "node_ids": pending_i[:SUMMARY_LIMIT], "reason": "FRESH_INTERPRETATION_OF_IMPORTED_EVIDENCE"}]
+    if not control.get("basic_plan_complete"):
+        actions.append({"code": "PLAN_BASIC", "blocking": True})
+    bundle = state["run"].get("high_cost_bundle") or {}
+    if bundle.get("status") == "pending" and any(node.get("human_approval") == "bundle_pending" for node in nodes):
+        actions.append({"code": "REQUEST_BASIC_BUNDLE_APPROVAL", "blocking": True})
+    running = [node["node_id"] for node in nodes if node["status"] == "running"]
+    if running:
+        actions.append({"code": "WAIT_OR_RECONCILE_RUNNING", "blocking": True, "node_ids": running[:SUMMARY_LIMIT]})
+    runnable = runnable_nodes(state)
+    if runnable:
+        actions.append({"code": "EXECUTE_RUNNABLE_BATCH", "blocking": False, "node_ids": [node["node_id"] for node in runnable]})
+    basic_done = phase_terminal(state, "basic_compute")
+    global_done = phase_terminal(state, "initial_global") or bool(control.get("initial_global_plan_complete") and not any(node["phase"] == "initial_global" and node["status"] not in TERMINAL_STATUSES for node in nodes))
+    local_done = phase_terminal(state, "initial_local") or bool(control.get("initial_local_plan_complete") and not any(node["phase"] == "initial_local" and node["status"] not in TERMINAL_STATUSES for node in nodes))
+    planning_action = False
+    if not running and not runnable and basic_done and not control.get("initial_global_plan_complete"):
+        actions.append({"code": "PLAN_INITIAL_GLOBAL", "blocking": True}); planning_action = True
+    elif not running and not runnable and global_done and not control.get("initial_local_plan_complete"):
+        actions.append({"code": "PLAN_INITIAL_LOCAL_BATCH", "blocking": True, "batch_size": 120}); planning_action = True
+    elif not running and not runnable and global_done and local_done and round_time_status(state)["status"] == "available":
+        additional_limit = int(current.get("resource_envelope", {}).get("max_additional_nodes") or 0)
+        additional_count = int(control.get("additional_nodes_planned") or 0)
+        if additional_count < additional_limit and not control.get("additional_candidate_pool_exhausted"):
+            actions.append({"code": "PLAN_BALANCED_ADDITIONAL", "blocking": False, "remaining_budget": additional_limit - additional_count}); planning_action = True
+    interpretation = interpretation_gate(state)
+    if interpretation["status"] == "blocked" and ((not running and not runnable and not planning_action) or round_time_status(state)["status"] != "available"):
+        pending_i = [node["node_id"] for node in nodes if node["round_id"] == current["round_id"] and node["stage"] == "interpretation" and node["status"] in {"pending", "running", "failed", "stale"}]
+        actions.append({"code": "CREATE_OR_COMPLETE_INTERPRETATION", "blocking": True, "node_ids": pending_i[:SUMMARY_LIMIT]})
+    if not running and not runnable and not planning_action and interpretation["status"] == "satisfied":
+        actions.append({"code": "ROUND_CLOSE_READY", "blocking": False})
+    if round_time_status(state)["status"] in {"interpretation_reserve", "expired"}:
+        actions.append({"code": "STOP_SCIENTIFIC_EXPANSION", "blocking": True})
+    return actions
+
+
+def scientific_decision_card(state: dict[str, Any]) -> dict[str, Any]:
+    questions = list(latest_entity_view(Path(state["indices"]["questions"]["path"]), "question_id").values())
+    candidates = [item for item in questions if item.get("status") in {"open", "in_progress"} and item.get("human_decision") not in {"skip", "defer"}]
+    return {
+        "code": "SELECT_DEEP_DIVE_OR_BALANCED_ADDITION" if candidates else "SELECT_BALANCED_ADDITION_OR_CLOSE",
+        "candidate_question_ids": [item["question_id"] for item in candidates[:SUMMARY_LIMIT]],
+        "instruction": "Choose scientific priority from compact candidates; deterministic runtime will validate and register the chosen action.",
+    }
+
+
+def build_orchestrator_brief(state_path: Path, state: dict[str, Any]) -> dict[str, Any]:
+    lease = dict((state.get("orchestration_control") or {}).get("lease") or {})
+    lease.pop("token_hash", None)
+    return {
+        "schema_version": "1.0.0", "run_id": state["run"]["run_id"], "state_path": str(state_path.resolve()),
+        "active_round_id": state["round_control"]["active_round_id"], "controller_lease": lease,
+        "required_control_action": required_control_actions(state),
+        "scientific_decision": scientific_decision_card(state),
+        "time_budget": round_time_status(state), "interpretation_gate": interpretation_gate(state),
+        "counts": build_state_summary(state)["status_counts"], "updated_at": state["updated_at"],
+    }
+
+
 def refresh_state_summary(state_path: Path, state: dict[str, Any]) -> None:
-    summary_path = state_path.parent / "summaries" / "state_summary.json"
-    write_json(summary_path, build_state_summary(state))
+    summary_root = state_path.parent / "summaries"
+    write_json(summary_root / "state_summary.json", build_state_summary(state))
+    write_json(summary_root / "orchestrator_brief.json", build_orchestrator_brief(state_path, state))
 
 
 def round_node_delta(state: dict[str, Any], round_id: str) -> list[dict[str, Any]]:
@@ -1759,6 +2055,7 @@ def cmd_round_start(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         gate = detect_package_change(state, find_workspace())
         if gate["status"] != "clear":
             append_history(state, "package_change_detected", differences=gate["differences"])
@@ -1781,13 +2078,21 @@ def cmd_round_start(args: argparse.Namespace) -> int:
 def cmd_round_end(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
-        state = read_json(state_path); item = active_round(state)
+        state = read_json(state_path)
+        controller_mutation(state, args)
+        item = active_round(state)
         if item["round_id"] != args.round_id:
             raise ValueError("Round ID does not match the active Round")
         running = [node["node_id"] for node in state["execution_graph"]["nodes"] if node["round_id"] == args.round_id and node["status"] == "running"]
         if running:
             raise ValueError(f"Round has running Nodes: {running}")
+        close_gate = interpretation_gate(state, args.round_id)
+        item["close_gate"] = {**close_gate, "checked_at": utc_now()}
+        if args.status in {"checkpoint", "completed"} and close_gate["status"] == "blocked":
+            write_state(state_path, state)
+            raise ValueError(f"Round close is blocked: {close_gate['reason_codes']}; complete and record Interpretation first")
         item["status"] = args.status; item["ended_at"] = utc_now(); item["end_reason"] = args.reason
+        item.setdefault("execution_control", {})["stop_reason"] = args.stop_reason or args.reason
         if args.status in {"completed", "checkpoint"}:
             state["round_control"]["active_round_id"] = None
         append_history(state, "round_ended", round_id=args.round_id, status=args.status, reason=args.reason)
@@ -1806,6 +2111,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     dependencies = [value for value in (args.depends_on or "").split(",") if value]
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         node, created = plan_node(state, capabilities, state_path.parent, args.capability_id, dependencies, "human_directed", args.reason, parameters)
         append_history(state, "human_directed_node_requested", node_id=node["node_id"], created=created, reason=args.reason)
         update_coverage_index(state_path, state); write_state(state_path, state)
@@ -1817,6 +2123,7 @@ def cmd_add_interpretation(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve(); capabilities = catalog_by_id()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         if args.evidence_node:
             dependencies = [value for value in args.evidence_node.split(",") if value]
         else:
@@ -1856,7 +2163,9 @@ def cmd_add_interpretation(args: argparse.Namespace) -> int:
 def cmd_deprioritize_group(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve(); requested = {value for value in args.group_id.split(",") if value}
     with state_lock(state_path):
-        state = read_json(state_path); path = Path(state["indices"]["group"]["registry_path"]); rows = read_csv_rows(path)
+        state = read_json(state_path)
+        controller_mutation(state, args)
+        path = Path(state["indices"]["group"]["registry_path"]); rows = read_csv_rows(path)
         known = {row["group_id"] for row in rows}
         if requested - known:
             raise ValueError(f"Unknown Group IDs: {sorted(requested - known)}")
@@ -1878,10 +2187,163 @@ def cmd_runnable(args: argparse.Namespace) -> int:
     state = read_json(Path(args.state)); print(json.dumps(runnable_nodes(state), ensure_ascii=False, indent=2)); return 0
 
 
+def audit_state(state_path: Path, state: dict[str, Any], mode: str = "quick") -> dict[str, Any]:
+    checks: list[dict[str, Any]] = []
+
+    def check(code: str, passed: bool, detail: Any = None, severity: str = "error") -> None:
+        checks.append({"code": code, "passed": bool(passed), "severity": severity, "detail": detail})
+
+    try:
+        validate_dag(state)
+        check("DAG_ACYCLIC", True)
+    except Exception as exc:
+        check("DAG_ACYCLIC", False, str(exc))
+    node_ids = [node["node_id"] for node in state["execution_graph"]["nodes"]]
+    check("NODE_IDS_UNIQUE", len(node_ids) == len(set(node_ids)), {"count": len(node_ids), "unique": len(set(node_ids))})
+    signatures = [node["analysis_signature"] for node in state["execution_graph"]["nodes"] if node["status"] != "stale"]
+    check("ACTIVE_SIGNATURES_UNIQUE", len(signatures) == len(set(signatures)), {"count": len(signatures), "unique": len(set(signatures))})
+    running = [node for node in state["execution_graph"]["nodes"] if node["status"] == "running"]
+    check("PARALLEL_LIMIT", len(running) <= int(state["run"]["parallel_limit"]), {"running": len(running), "limit": state["run"]["parallel_limit"]})
+    orphan_running = [node["node_id"] for node in running if not node.get("current_attempt_id")]
+    check("RUNNING_HAS_ATTEMPT", not orphan_running, orphan_running)
+    lease = (state.get("orchestration_control") or {}).get("lease") or {}
+    live = lease_is_live(state)
+    check("LEASE_WELL_FORMED", not lease.get("token_hash") or bool(lease.get("owner_id") and lease.get("expires_at")), {"owner_id": lease.get("owner_id"), "live": live})
+    gate = interpretation_gate(state)
+    check("INTERPRETATION_CLOSE_GATE", gate["status"] != "blocked", gate, severity="warning")
+    if mode == "full":
+        missing: list[dict[str, str]] = []
+        hash_mismatches: list[dict[str, str]] = []
+        for node in state["execution_graph"]["nodes"]:
+            if node["status"] != "succeeded":
+                continue
+            for artifact in node.get("artifacts") or []:
+                path_value = artifact.get("resolved_path")
+                if not path_value:
+                    continue
+                path = Path(path_value)
+                if not path.is_file():
+                    missing.append({"node_id": node["node_id"], "path": str(path)})
+                elif artifact.get("sha256") and file_hash(path) != artifact["sha256"]:
+                    hash_mismatches.append({"node_id": node["node_id"], "path": str(path)})
+        check("SUCCEEDED_ARTIFACTS_EXIST", not missing, missing)
+        check("SUCCEEDED_ARTIFACT_HASHES", not hash_mismatches, hash_mismatches)
+    errors = [item for item in checks if not item["passed"] and item["severity"] == "error"]
+    warnings = [item for item in checks if not item["passed"] and item["severity"] == "warning"]
+    return {
+        "schema_version": "1.0.0", "mode": mode, "run_id": state["run"]["run_id"],
+        "state_path": str(state_path.resolve()), "status": "fail" if errors else ("warning" if warnings else "pass"),
+        "error_count": len(errors), "warning_count": len(warnings), "checks": checks, "created_at": utc_now(),
+    }
+
+
+def write_audit_result(state_path: Path, result: dict[str, Any]) -> Path:
+    output = state_path.parent / "audit" / timestamp_id()
+    output.mkdir(parents=True, exist_ok=False)
+    write_json(output / "audit.json", result)
+    lines = [f"# CONDUCTOR {result['mode'].title()} Audit", "", f"- Status: {result['status']}", f"- Run: {result['run_id']}", "", "## Checks", ""]
+    for item in result["checks"]:
+        mark = "PASS" if item["passed"] else item["severity"].upper()
+        lines.append(f"- [{mark}] `{item['code']}` — {json.dumps(item.get('detail'), ensure_ascii=False)}")
+    atomic_write_text(output / "audit.md", "\n".join(lines) + "\n")
+    return output
+
+
+def cmd_bootstrap(args: argparse.Namespace) -> int:
+    state_path = Path(args.state).resolve()
+    with state_lock(state_path):
+        state = read_json(state_path)
+        control = state.get("orchestration_control")
+        if not control:
+            raise ValueError("v4.3.0 State cannot be bootstrapped directly; use the migration Skill")
+        lease = control["lease"]
+        live = lease_is_live(state)
+        supplied_matches = bool(args.lease_token and token_hash(args.lease_token) == lease.get("token_hash"))
+        if live and not supplied_matches and not args.force_takeover:
+            brief = build_orchestrator_brief(state_path, state)
+            print(json.dumps({"lease_acquired": False, "reason_code": "LEASE_HELD_BY_OTHER_CONTROLLER", "brief": brief}, ensure_ascii=False, indent=2))
+            return 0
+        if live and args.force_takeover and not args.takeover_reason:
+            raise ValueError("--force-takeover requires --takeover-reason")
+        token = args.lease_token if supplied_matches else secrets.token_urlsafe(32)
+        previous_owner = lease.get("owner_id")
+        control["controller_epoch"] = int(control.get("controller_epoch") or 0) + (0 if supplied_matches else 1)
+        now = datetime.now(timezone.utc)
+        duration = max(5, int(args.lease_minutes))
+        lease.update({
+            "owner_id": args.owner_id, "token_hash": token_hash(token), "epoch": control["controller_epoch"],
+            "acquired_at": lease.get("acquired_at") if supplied_matches else now.isoformat(),
+            "heartbeat_at": now.isoformat(), "expires_at": (now + timedelta(minutes=duration)).isoformat(),
+            "duration_minutes": duration,
+        })
+        control["last_bootstrap_at"] = now.isoformat()
+        gate = detect_package_change(state, find_workspace())
+        action = "controller_lease_renewed" if supplied_matches else ("controller_lease_taken_over" if previous_owner else "controller_lease_acquired")
+        append_history(state, action, owner_id=args.owner_id, previous_owner_id=previous_owner, epoch=lease["epoch"], reason=args.takeover_reason)
+        audit = audit_state(state_path, state, "quick")
+        audit_path = write_audit_result(state_path, audit)
+        control["last_audit_path"] = str(audit_path.resolve())
+        write_state(state_path, state)
+        result = {"lease_acquired": True, "lease_token": token, "audit": audit, "brief": build_orchestrator_brief(state_path, state)}
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_heartbeat(args: argparse.Namespace) -> int:
+    state_path = Path(args.state).resolve()
+    with state_lock(state_path):
+        state = read_json(state_path)
+        controller_mutation(state, args)
+        append_history(state, "controller_heartbeat", owner_id=state["orchestration_control"]["lease"].get("owner_id"))
+        write_state(state_path, state)
+    print(json.dumps(build_orchestrator_brief(state_path, state), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_release_lease(args: argparse.Namespace) -> int:
+    state_path = Path(args.state).resolve()
+    with state_lock(state_path):
+        state = read_json(state_path)
+        require_controller(state, args)
+        owner = state["orchestration_control"]["lease"].get("owner_id")
+        append_history(state, "controller_lease_released", owner_id=owner, reason=args.reason)
+        state["orchestration_control"]["lease"] = {
+            "owner_id": None, "token_hash": None, "epoch": state["orchestration_control"]["controller_epoch"],
+            "acquired_at": None, "heartbeat_at": None, "expires_at": None, "duration_minutes": DEFAULT_LEASE_MINUTES,
+        }
+        write_state(state_path, state)
+    return 0
+
+
+def cmd_query(args: argparse.Namespace) -> int:
+    state = read_json(Path(args.state).resolve())
+    identifiers = [value for value in (args.ids or "").split(",") if value]
+    if args.kind == "brief":
+        value: Any = build_orchestrator_brief(Path(args.state).resolve(), state)
+    elif args.kind == "node":
+        nodes = state_nodes(state)
+        value = [nodes[item] for item in identifiers if item in nodes]
+    elif args.kind == "question":
+        latest = latest_entity_view(Path(state["indices"]["questions"]["path"]), "question_id")
+        value = [latest[item] for item in identifiers if item in latest] if identifiers else bounded(latest.values(), args.limit)
+    elif args.kind == "evidence":
+        rows = {item["evidence_id"]: item for item in read_jsonl(Path(state["indices"]["evidence_digest"]["path"]))}
+        value = [rows[item] for item in identifiers if item in rows] if identifiers else bounded(rows.values(), args.limit)
+    else:
+        value = {
+            "runnable": runnable_nodes(state)[:args.limit],
+            "questions": bounded(latest_entity_view(Path(state["indices"]["questions"]["path"]), "question_id").values(), args.limit),
+            "priority_evidence": build_state_summary(state)["priority_evidence"][:args.limit],
+        }
+    print(json.dumps(value, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         input_hash = file_hash(Path(state["run"]["input"]))
         if input_hash != state["run"]["input_hash"]:
             for node in state["execution_graph"]["nodes"]:
@@ -1900,6 +2362,7 @@ def cmd_approve_package_change(args: argparse.Namespace) -> int:
     workspace = find_workspace()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         gate = detect_package_change(state, workspace)
         if not gate["differences"]:
             raise ValueError("The active package already matches the Run snapshot")
@@ -1950,6 +2413,7 @@ def cmd_rebuild_indices(args: argparse.Namespace) -> int:
     state_path = Path(args.state).resolve()
     with state_lock(state_path):
         state = read_json(state_path)
+        controller_mutation(state, args)
         write_jsonl(Path(state["indices"]["evidence_digest"]["path"]), [])
         state["indices"]["evidence_digest"]["count"] = 0
         for node in state["execution_graph"]["nodes"]:
@@ -1962,13 +2426,17 @@ def cmd_rebuild_indices(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage a CONDUCTOR 4.3 multi-Round State DAG.")
+    parser = argparse.ArgumentParser(description="Manage a CONDUCTOR 4.3.1 multi-Round State DAG.")
     sub = parser.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init"); init.add_argument("--input", required=True); init.add_argument("--endpoint", required=True); init.add_argument("--higher-is-better", action=argparse.BooleanOptionalAction, required=True); init.add_argument("--project", required=True); init.add_argument("--parallel-limit", type=int, required=True); init.add_argument("--assay-column"); init.add_argument("--run-id"); init.add_argument("--output-dir"); init.add_argument("--request"); init.add_argument("--walltime-minutes", type=int, default=480); init.add_argument("--max-additional-nodes", type=int, default=300); init.add_argument("--interpretation-iterations", type=int, default=3); init.set_defaults(func=cmd_init)
+    bootstrap = sub.add_parser("bootstrap"); bootstrap.add_argument("--state", required=True); bootstrap.add_argument("--owner-id", required=True); bootstrap.add_argument("--lease-token"); bootstrap.add_argument("--lease-minutes", type=int, default=DEFAULT_LEASE_MINUTES); bootstrap.add_argument("--force-takeover", action="store_true"); bootstrap.add_argument("--takeover-reason"); bootstrap.set_defaults(func=cmd_bootstrap)
+    heartbeat = sub.add_parser("heartbeat"); heartbeat.add_argument("--state", required=True); heartbeat.set_defaults(func=cmd_heartbeat)
+    release = sub.add_parser("release-lease"); release.add_argument("--state", required=True); release.add_argument("--reason", required=True); release.set_defaults(func=cmd_release_lease)
+    query = sub.add_parser("query"); query.add_argument("--state", required=True); query.add_argument("--kind", choices=["brief", "node", "question", "evidence", "batch"], required=True); query.add_argument("--ids"); query.add_argument("--limit", type=int, default=20); query.set_defaults(func=cmd_query)
     plan_basic = sub.add_parser("plan-basic"); plan_basic.add_argument("--state", required=True); plan_basic.set_defaults(func=cmd_plan_basic)
     approve = sub.add_parser("approve-basic-bundle"); approve.add_argument("--state", required=True); choice = approve.add_mutually_exclusive_group(required=True); choice.add_argument("--approve", action="store_true"); choice.add_argument("--reject", dest="approve", action="store_false"); approve.add_argument("--rationale", required=True); approve.set_defaults(func=cmd_approve_basic_bundle)
     global_plan = sub.add_parser("plan-initial-global"); global_plan.add_argument("--state", required=True); global_plan.add_argument("--override-gate", action="store_true"); global_plan.set_defaults(func=cmd_plan_initial_global)
-    local_plan = sub.add_parser("plan-initial-local"); local_plan.add_argument("--state", required=True); local_plan.add_argument("--override-gate", action="store_true"); local_plan.set_defaults(func=cmd_plan_initial_local)
+    local_plan = sub.add_parser("plan-initial-local"); local_plan.add_argument("--state", required=True); local_plan.add_argument("--override-gate", action="store_true"); local_plan.add_argument("--batch-size", type=int, default=120); local_plan.set_defaults(func=cmd_plan_initial_local)
     additional = sub.add_parser("plan-additional"); additional.add_argument("--state", required=True); additional.add_argument("--count", type=int, required=True); additional.add_argument("--seed", type=int, required=True); additional.add_argument("--override-gate", action="store_true"); additional.set_defaults(func=cmd_plan_additional)
     qadd = sub.add_parser("question-add"); qadd.add_argument("--state", required=True); qadd.add_argument("--title", required=True); qadd.add_argument("--rationale", required=True); qadd.add_argument("--deep-dive-potential", action=argparse.BooleanOptionalAction, default=True); qadd.add_argument("--priority", choices=["low", "medium", "high"], default="medium"); qadd.add_argument("--target-group"); qadd.add_argument("--evidence"); qadd.add_argument("--operator"); qadd.set_defaults(func=cmd_question_add)
     qdecision = sub.add_parser("question-decision"); qdecision.add_argument("--state", required=True); qdecision.add_argument("--question-id", required=True); qdecision.add_argument("--decision", choices=["unreviewed", "allow", "skip", "defer"], required=True); qdecision.add_argument("--rationale", required=True); qdecision.set_defaults(func=cmd_question_decision)
@@ -1977,23 +2445,29 @@ def build_parser() -> argparse.ArgumentParser:
     add = sub.add_parser("add"); add.add_argument("--state", required=True); add.add_argument("--capability-id", required=True); add.add_argument("--depends-on"); add.add_argument("--parameters-json"); add.add_argument("--reason", required=True); add.set_defaults(func=cmd_add)
     interpretation = sub.add_parser("add-interpretation"); interpretation.add_argument("--state", required=True); interpretation.add_argument("--evidence-node"); interpretation.add_argument("--phase", choices=["initial_local", "additional_exploration", "deep_dive", "human_directed"], default="human_directed"); interpretation.add_argument("--reason", required=True); interpretation.add_argument("--focus", help="Optional concise perspective; different focuses may create distinct Interpretation Nodes in one Round."); interpretation.add_argument("--max-full-evidence", type=int, default=200); interpretation.add_argument("--findings", type=int, default=200); interpretation.add_argument("--hypotheses", type=int, default=50); interpretation.add_argument("--questions", type=int, default=200); interpretation.add_argument("--relations", type=int, default=1000); interpretation.add_argument("--requests", type=int, default=200); interpretation.set_defaults(func=cmd_add_interpretation)
     reserve = sub.add_parser("reserve-interpretation-ids"); reserve.add_argument("--state", required=True); reserve.add_argument("--node-id", required=True); reserve.add_argument("--findings", type=int, default=200); reserve.add_argument("--hypotheses", type=int, default=50); reserve.add_argument("--questions", type=int, default=200); reserve.add_argument("--relations", type=int, default=1000); reserve.add_argument("--requests", type=int, default=200); reserve.set_defaults(func=cmd_reserve_interpretation_ids)
-    start = sub.add_parser("start"); start.add_argument("--state", required=True); start.add_argument("--node-id", required=True); start.set_defaults(func=cmd_start)
+    start = sub.add_parser("start"); start.add_argument("--state", required=True); start.add_argument("--node-id", required=True); start.add_argument("--retry", action="store_true"); start.set_defaults(func=cmd_start)
     terminal = sub.add_parser("mark-terminal"); terminal.add_argument("--state", required=True); terminal.add_argument("--node-id", required=True); terminal.add_argument("--status", choices=["failed", "unavailable", "waived", "not_applicable", "skipped"], required=True); terminal.add_argument("--reason", required=True); terminal.set_defaults(func=cmd_mark_terminal)
     record = sub.add_parser("record"); record.add_argument("--state", required=True); record.add_argument("--event", required=True); record.set_defaults(func=cmd_record)
     runnable = sub.add_parser("runnable"); runnable.add_argument("--state", required=True); runnable.set_defaults(func=cmd_runnable)
     status = sub.add_parser("status"); status.add_argument("--state", required=True); status.set_defaults(func=cmd_status)
     degroup = sub.add_parser("deprioritize-group"); degroup.add_argument("--state", required=True); degroup.add_argument("--group-id", required=True); degroup.add_argument("--reason", required=True); degroup.set_defaults(func=cmd_deprioritize_group)
     round_start = sub.add_parser("round-start"); round_start.add_argument("--state", required=True); round_start.add_argument("--round-id", required=True); round_start.add_argument("--request", required=True); round_start.add_argument("--walltime-minutes", type=int, default=480); round_start.add_argument("--max-additional-nodes", type=int, default=300); round_start.add_argument("--interpretation-iterations", type=int, default=3); round_start.set_defaults(func=cmd_round_start)
-    round_end = sub.add_parser("round-end"); round_end.add_argument("--state", required=True); round_end.add_argument("--round-id", required=True); round_end.add_argument("--status", choices=["paused", "checkpoint", "completed"], required=True); round_end.add_argument("--reason", required=True); round_end.set_defaults(func=cmd_round_end)
+    round_end = sub.add_parser("round-end"); round_end.add_argument("--state", required=True); round_end.add_argument("--round-id", required=True); round_end.add_argument("--status", choices=["paused", "checkpoint", "completed"], required=True); round_end.add_argument("--reason", required=True); round_end.add_argument("--stop-reason", choices=["budget_exhausted", "no_eligible_work", "human_checkpoint", "completed_scope", "abnormal_interruption", "other"]); round_end.set_defaults(func=cmd_round_end)
     resume = sub.add_parser("resume"); resume.add_argument("--state", required=True); resume.set_defaults(func=cmd_resume)
     package = sub.add_parser("approve-package-change"); package.add_argument("--state", required=True); package_choice = package.add_mutually_exclusive_group(required=True); package_choice.add_argument("--approve", action="store_true"); package_choice.add_argument("--reject", dest="approve", action="store_false"); package.add_argument("--rationale", required=True); package.set_defaults(func=cmd_approve_package_change)
     rebuild = sub.add_parser("rebuild-indices"); rebuild.add_argument("--state", required=True); rebuild.set_defaults(func=cmd_rebuild_indices)
+    for command_parser in [
+        heartbeat, release, plan_basic, approve, global_plan, local_plan, additional, qadd, qdecision,
+        deep, salience, add, interpretation, reserve, start, terminal, record, degroup, round_start,
+        round_end, resume, package, rebuild,
+    ]:
+        add_lease_argument(command_parser)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    for name in ["parallel_limit", "walltime_minutes", "max_additional_nodes", "interpretation_iterations", "count", "findings", "hypotheses", "questions", "relations", "requests"]:
+    for name in ["parallel_limit", "walltime_minutes", "max_additional_nodes", "interpretation_iterations", "count", "findings", "hypotheses", "questions", "relations", "requests", "lease_minutes", "batch_size", "limit"]:
         if hasattr(args, name) and getattr(args, name) is not None and getattr(args, name) < 1:
             raise ValueError(f"--{name.replace('_', '-')} must be >= 1")
     if hasattr(args, "seed") and args.seed < 0:

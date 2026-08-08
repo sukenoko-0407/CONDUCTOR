@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0.0",
+  "capability_id": "O003",
+  "skill_name": "cs-conductor-run-audit",
+  "display_name": "CONDUCTOR Run Audit",
+  "version": "1.0.0",
+  "stage": "orchestration",
+  "family": "run_audit",
+  "description": "Read-only Quick/Full audit of a supplied CONDUCTOR State and its referenced artifacts.",
+  "cost": {"class": "low", "human_approval_required": false, "hpc_profile": "cpu64"},
+  "applicability": {"status": "stable", "platforms": ["linux-64", "win-64"]},
+  "dependencies": [],
+  "input_contract": ["explicit_state_json"],
+  "output": {"json": "audit/<timestamp>/audit.json", "markdown": "audit/<timestamp>/audit.md"},
+  "implementation": {
+    "purpose": "read_only_control_and_artifact_audit",
+    "state_access": "read_only",
+    "invocation": "orchestrator_control_boundary_or_explicit_human_request",
+    "dag_registration": "forbidden"
+  }
+}

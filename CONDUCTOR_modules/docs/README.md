@@ -1,6 +1,6 @@
 # CONDUCTOR documentation
 
-このdirectoryはCONDUCTOR 4.3.0のtarget specificationを収載する。ファイル名の`v4`はmajor系列名として維持する。実装が文書へ追随するまで、以下の「正本文書」を設計判断の基準とする。
+このdirectoryはCONDUCTOR 4.3.1のtarget specificationを収載する。ファイル名の`v4`はmajor系列名として維持する。以下の「正本文書」を設計判断の基準とする。
 
 ## 正本文書
 
@@ -13,6 +13,7 @@
 | [識別子リファレンス](CONDUCTOR_identifier_reference.md) | Capability、Node、Round、Group、Evidence等のID契約 |
 | [利用手順](CONDUCTOR_v4_user_guide.md) | 新規Run、後続Round、部分解析、再開方法 |
 | [リファクタリング計画](CONDUCTOR_refactoring_plan.md) | 実装順序、変更境界、試験、完了条件 |
+| [4.3.1実装計画](CONDUCTOR_v4.3.1_refactoring_plan.md) | 単一Writer、Audit、Interpretation gate、移行仕様 |
 
 ## 補助資料
 
@@ -23,4 +24,6 @@
 
 ## 互換性
 
-4.3.0は新規Runを前提とし、旧Stateのimport、migration、互換wrapperを提供しない。旧成果物はread-onlyで保存できるが、新RunのcoverageやStateへ取り込まない。
+4.3.1の通常Runtimeは4.3.0 Stateを暗黙更新しない。例外として、一回限りのMigration Agent／Skillが `scan → 人間承認 → apply → verify` により、旧run rootを変更せず別の新run rootを作成できる。検証済みDescription／Grouping／Operator artifactだけをactive DAGへ取り込み、旧Interpretationは参照用に保持して新Roundで作り直す。
+
+通常再開時のAgent入力は `summaries/orchestrator_brief.json` であり、`state.json` は機械可読な正本、`state_summary.json` はboundedな事実要約である。監査は `audit/<timestamp>/` に保存する。

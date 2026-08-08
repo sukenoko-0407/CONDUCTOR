@@ -1,4 +1,4 @@
-# CONDUCTOR 4.3.0 出力契約
+# CONDUCTOR 4.3.1 出力契約
 
 ## 1. 共通規則
 
@@ -27,7 +27,10 @@ results/CONDUCTOR/<project>/<run-id>/
 ├─ state.json
 ├─ snapshots/
 ├─ summaries/
-│  └─ state_summary.json
+│  ├─ state_summary.json
+│  └─ orchestrator_brief.json
+├─ audit/
+│  └─ <timestamp>/
 ├─ indices/
 │  ├─ coverage_index.json
 │  ├─ evidence_digest.jsonl
@@ -129,8 +132,14 @@ rounds/RND0001/
 
 ## 9. State summaryと再構築
 
-`state.json`は正本control plane、`state_summary.json`と各indexはmaterialized viewである。indexはStateとimmutable artifactから再構築できなければならない。Orchestratorは通常raw Stateや全Evidenceを全文読込しない。
+`state.json`は正本control plane、`state_summary.json`はboundedな事実要約、`orchestrator_brief.json`は次の制御actionと科学判断候補を分けたAgent用action cardである。各indexはmaterialized viewであり、Stateとimmutable artifactから再構築できなければならない。Orchestratorは通常raw Stateや全Evidenceを全文読込しない。
+
+監査は `audit/<timestamp>/audit.json` と `audit.md` に保存する。Stateを変更せず、科学DAG NodeやEvidenceとして登録しない。
 
 ## 10. Hashと上書き
 
-artifactのhash不一致は成功扱いにしない。同じNodeのretryは予約済みoutput directoryとID reservationを再利用し、別entityとして二重登録しない。completed Round、Finding、Hypothesis、Question、RelationのIDを再利用しない。
+artifactのhash不一致は成功扱いにしない。同じNodeのretryは予約済みoutput directoryとID reservationを再利用し、`execution_attempts`へ追加する。lease tokenの平文はStateやファイルへ保存せず、Stateにはhashと期限だけを保持する。completed Round、Finding、Hypothesis、Question、RelationのIDを再利用しない。
+
+## 11. 一回限りのMigration
+
+4.3.0からの移行記録は新run rootの `migration/v430_import/` に置く。plan、scan report、Node ID対応表、除外Node、artifact manifest、verificationを保持する。source run rootへは何も書き込まない。

@@ -26,10 +26,14 @@ Catalogで基本計算に指定された高コストDescriptionを含むbundle�
 同Roundがactiveなら再開してください。
 
 State: <ABSOLUTE_STATE_JSON_PATH>
-今回の重点: <任意。省略時はmandatory coverage、active Question、coverage gap、前Roundのnext_round_briefに基づき自律選択>
+今回の重点: <任意。省略時はorchestrator_brief.jsonの制御actionと科学判断候補に基づき自律選択>
+
+最初にRuntime bootstrapで単一Writer leaseを取得してください。取得できなければStateを変更せず報告してください。Round終了前にInterpretation JSON／Markdown／HTMLとFull Auditを完成させてください。
 ```
 
 Round番号はStateに対するguardである。不一致時は番号を自動補正せず、Stateを変更しない。
+
+新しいClaude Code sessionでも、この短い指示とState pathでよい。Agentはまずboundedな`orchestrator_brief.json`を読み、必要な項目だけfocused queryする。
 
 ## Questionを選別する
 
@@ -93,6 +97,16 @@ State: <ABSOLUTE_STATE_JSON_PATH>
 解析NodeとしてDAGへ登録しないでください。
 ```
 
+## 異常停止後に再開する
+
+```text
+`cs-conductor-orchestrator` Agentを使用してください。
+State: <ABSOLUTE_STATE_JSON_PATH>
+Round: <RND####>
+
+前Agentが途中停止した可能性があります。bootstrap後にFull Auditを行い、running Nodeのevent／artifactを照合してください。既存Nodeを別番号で作り直さず、必要な場合は同じNodeの新execution attemptとして再試行してください。
+```
+
 ## 一般利用
 
 ```text
@@ -104,6 +118,6 @@ Input: <PATH_OR_SMILES>
 ## 注意
 
 - 同じinputでもendpointが異なる場合は別Runとする。
-- 旧State、一般利用artifact、別Run artifactを自動importしない。
+- 旧State、一般利用artifact、別Run artifactを通常Runtimeへ自動importしない。v4.3.0の一回限り移行は専用Migration Agentで別run rootへ行う。
 - package hash差分があれば`package_change_gate`を確認し、人間確認前に計画・実行を進めない。承認後だけ`approve-package-change --approve`を使用する。
 - 完全Evidenceを毎Roundすべて読まず、digestから必要なものだけを詳細確認する。
