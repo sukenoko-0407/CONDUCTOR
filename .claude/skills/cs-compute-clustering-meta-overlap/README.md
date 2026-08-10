@@ -2,11 +2,11 @@
 
 ## SKILLの目的
 
-long形式のGrouping結果またはBoolean wide matrix shardにあるcompound重複を使ってmeta groupを生成する。
+long形式のClustering結果またはBoolean wide matrix shardにあるcompound重複を使ってmeta Clusterを生成する。
 
 ## 想定利用シーン
 
-複数Groupingの重複関係を要約し、上位のgroup構造を確認する場合。
+複数Clusteringの重複関係を要約し、上位のCluster構造を確認する場合。
 
 ## 環境構築
 
@@ -17,20 +17,20 @@ long形式のGrouping結果またはBoolean wide matrix shardにあるcompound�
 一般利用（主成果物のみ）:
 
 ```bash
-python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input grouping_a.csv --input grouping_b.csv
+python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input cluster_membership.csv
 ```
 
 
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input grouping_a.csv --input grouping_b.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-compute-clustering-meta-overlap/scripts/launch.py --input cluster_membership.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
 
-- 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
-- `--input`を反復指定でき、異なるGrouping nodeのmembershipを一つのmeta解析へ渡せる。
+- 一般利用とCONDUCTORの両方でClustering／Clusterと呼ぶ。入力分子やfeature値は変更しない。
+- 5化合物未満のClusterは出力・登録しない。
 
 ## 変更履歴
 

@@ -14,10 +14,10 @@ from typing import Any
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
-STAGES = ["description", "grouping", "analysis", "interpretation"]
+STAGES = ["description", "clustering", "analysis", "interpretation"]
 STAGE_LABELS = {
     "description": "Description",
-    "grouping": "Grouping",
+    "clustering": "Clustering",
     "analysis": "Operator",
     "interpretation": "Interpretation",
 }
@@ -105,11 +105,12 @@ def all_edges(state: dict[str, Any]) -> list[dict[str, str]]:
     return edges
 
 
-def runnable_node_ids(nodes: list[dict[str, Any]]) -> list[str]:
+def runnable_node_ids(nodes: list[dict[str, Any]], active_round_id: str | None) -> list[str]:
     by_id = {str(node.get("node_id")): node for node in nodes}
     runnable = []
     for node in nodes:
-        if node.get("status") != "pending" or node.get("human_approval") in {"required", "rejected"}:
+        execution_round = node.get("execution_round_id") or node.get("round_id")
+        if node.get("status") != "pending" or execution_round != active_round_id or node.get("human_approval") in {"required", "rejected", "bundle_pending"}:
             continue
         dependencies = [by_id.get(str(item)) for item in node.get("dependencies") or []]
         if all(item is not None and item.get("status") == "succeeded" for item in dependencies):
@@ -188,8 +189,9 @@ def svg_report(state: dict[str, Any]) -> tuple[str, list[str], list[dict[str, st
             f"Node: {node_id}", f"Capability: {capability}", f"Skill: {node.get('skill_name') or '-'}",
             f"Status: {STATUS_LABELS.get(status, status)}",
         ]
-        if node.get("selection_reason"):
-            title_parts.append(f"Reason: {node['selection_reason']}")
+        selection_reason=node.get("selection_reason") or (node.get("selection_basis") or {}).get("reason")
+        if selection_reason:
+            title_parts.append(f"Reason: {selection_reason}")
         approval_ring = f"<circle class='approval-ring' cx='{x}' cy='{y}' r='37'/>" if node.get("human_approval") == "required" else ""
         label = node_id if len(node_id) <= 8 else node_id[:7] + "…"
         node_shapes.append(
@@ -246,7 +248,8 @@ def html_report(
     nodes = list(state.get("execution_graph", {}).get("nodes", []))
     status_counts = Counter(str(node.get("status") or "unknown") for node in nodes)
     stage_counts = Counter(str(node.get("stage") or "unknown") for node in nodes)
-    runnable = runnable_node_ids(nodes)
+    active_round_id = (state.get("round_control") or {}).get("active_round_id")
+    runnable = runnable_node_ids(nodes, active_round_id)
     terminal = sum(status_counts.get(status, 0) for status in ("succeeded", "failed", "unavailable", "waived", "not_applicable", "skipped"))
     cards = [
         ("全Node", len(nodes)), ("完了", status_counts.get("succeeded", 0)),
@@ -259,28 +262,33 @@ def html_report(
         + "".join(f"<td>{sum(1 for node in nodes if node.get('stage') == stage and node.get('status') == status)}</td>" for status in STATUS_LABELS)
         + "</tr>" for stage in STAGES
     )
+    progress_table = (
+        "<div class='table-wrap'><table><thead><tr><th>段階</th><th>全Node</th>"
+        + "".join(f"<th>{label}</th>" for label in STATUS_LABELS.values())
+        + f"</tr></thead><tbody>{stage_rows}</tbody></table></div>"
+    )
     node_rows = []
     for node in sorted(nodes, key=lambda item: (STAGES.index(item.get("stage")) if item.get("stage") in STAGES else 99, natural_key(str(item.get("node_id") or "")))):
         dependencies = ", ".join(str(value) for value in node.get("dependencies") or []) or "-"
         node_rows.append(
             "<tr>"
             f"<td><b>{html.escape(str(node.get('node_id') or '-'))}</b><br><span class='muted'>{html.escape(str(node.get('capability_id') or '-'))}</span></td>"
-            f"<td>{html.escape(STAGE_LABELS.get(str(node.get('stage')), str(node.get('stage') or '-')))}</td>"
+            f"<td>{html.escape(STAGE_LABELS.get(str(node.get('stage')), str(node.get('stage') or '-')))}<br><span class='muted'>{html.escape(str(node.get('requested_round_id') or node.get('round_id') or '-'))} → {html.escape(str(node.get('execution_round_id') or 'deferred'))}</span></td>"
             f"<td><span class='status-chip status-{html.escape(str(node.get('status') or 'unknown'))}'>{html.escape(STATUS_LABELS.get(str(node.get('status')), str(node.get('status') or '-')))}</span></td>"
             f"<td>{html.escape(dependencies)}</td><td>{html.escape(str(node.get('human_approval') or '-'))}</td>"
-            f"<td>{html.escape(str(node.get('selection_reason') or '-'))}</td><td>{artifact_links(node)}</td></tr>"
+            f"<td>{html.escape(str(node.get('selection_reason') or (node.get('selection_basis') or {}).get('reason') or '-'))}</td><td>{artifact_links(node)}</td></tr>"
         )
     warning_html = "".join(f"<li>{html.escape(item)}</li>" for item in warnings) or "<li>構造上の警告はありません。</li>"
     runnable_html = ", ".join(html.escape(item) for item in runnable) or "なし"
-    group_index = (state.get("indices") or {}).get("group") or {}
+    cluster_index = (state.get("indices") or {}).get("clusters") or {}
     round_control = state.get("round_control") or {}
     css = """:root{--ink:#283740;--navy:#304957;--muted:#6d787e;--paper:#f1f0ec;--surface:#fff;--line:#d8d5cd;--green:#5f7d73;--blue:#668196;--brick:#95645c;--ochre:#a48853;--skip:#a29b8f;--pending:#d9dde0}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.65 "Yu Gothic UI","Segoe UI",sans-serif}main{max-width:1400px;margin:26px auto;padding:38px 44px 60px;background:var(--surface);box-shadow:0 12px 34px #26364018}h1,h2{color:var(--navy)}h1{margin:4px 0 6px;font-size:32px}h2{margin-top:42px;border-bottom:2px solid var(--navy);padding-bottom:7px}.muted,.meta{color:var(--muted)}.metrics{display:grid;grid-template-columns:repeat(6,minmax(110px,1fr));gap:12px;margin:25px 0}.metric{padding:14px 16px;background:#f7f7f4;border:1px solid var(--line);border-radius:6px}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;color:var(--navy);font-size:26px}.dag-wrap{overflow:auto;border:1px solid var(--line);background:#fff;padding:10px}.dag-wrap svg{display:block;max-width:none;height:auto}.legend{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0}.legend span{display:inline-flex;align-items:center;gap:6px}.dot{width:13px;height:13px;border-radius:50%;display:inline-block;border:1px solid #fff;box-shadow:0 0 0 1px #aab0b2}.line{width:28px;border-top:2px solid #5f7d73}.line.planned{border-top-style:dashed;border-color:#aeb4b7}.line.lineage{border-top-style:dotted;border-color:#806637}.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.panel{padding:17px 20px;background:#f7f7f4;border:1px solid var(--line)}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px;border:1px solid var(--line);text-align:left;vertical-align:top}thead th{background:#eceeec}tbody th{background:#f6f6f3}.table-wrap{overflow:auto}.status-chip{display:inline-block;border-radius:3px;padding:2px 7px}.status-succeeded{background:#e5eeea;color:#38584e}.status-running{background:#e5ebef;color:#405f73}.status-failed{background:#f0e5e3;color:#79463e}.status-skipped{background:#eeece8;color:#665f55}.status-stale{background:#f0eadf;color:#725c31}.status-pending{background:#eceeef;color:#59646a}a{color:#405f73}code{word-break:break-all}.warning{border-left:4px solid var(--ochre);background:#f3eee3;padding:12px 18px}@media(max-width:900px){main{margin:0;padding:24px 18px}.metrics{grid-template-columns:repeat(2,1fr)}.summary-grid{grid-template-columns:1fr}}@media print{body{background:#fff}main{box-shadow:none;margin:0;max-width:none}.dag-wrap{overflow:visible}}"""
-    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR State Report</title><style>{css}</style></head><body><main><header><p class='meta'>Read-only execution snapshot</p><h1>CONDUCTOR State Report</h1><p class='meta'>Project {html.escape(str(state.get('run', {}).get('project') or '-'))} · Run {html.escape(str(state.get('run', {}).get('run_id') or '-'))} · Generated {html.escape(generated_at)}</p></header><div class='metrics'>{card_html}</div><div class='summary-grid'><section class='panel'><b>State</b><p>Source: {path_link(state_path, state_path.name)}<br>SHA-256: <code>{state_sha256}</code><br>State updated_at: {html.escape(str(state.get('updated_at') or '-'))}<br>Terminal: {terminal}/{len(nodes)}</p></section><section class='panel'><b>現在実行可能なNode</b><p>{runnable_html}</p><p>Group: {group_index.get('active_group_count', 0)} active / {group_index.get('deprioritized_group_count', 0)} deprioritized<br>Rounds: {len(round_control.get('rounds') or [])} · Active: {html.escape(str(round_control.get('active_round_id') or 'none'))}</p></section></div><h2>実行DAG</h2><p>円は実行Node、矢印は依存関係です。Interpretation lineageは実行依存ではなく、前回解釈の読み取り専用参照です。</p><div class='legend'><span><i class='dot' style='background:var(--green)'></i>完了</span><span><i class='dot' style='background:var(--blue)'></i>実行中</span><span><i class='dot' style='background:var(--pending)'></i>未実行</span><span><i class='dot' style='background:var(--brick)'></i>失敗</span><span><i class='dot' style='background:var(--skip)'></i>Skip</span><span><i class='dot' style='background:var(--ochre)'></i>Stale</span><span><i class='line'></i>完了Edge</span><span><i class='line planned'></i>未完了Edge</span><span><i class='line lineage'></i>Interpretation lineage</span></div><p><a href='state_dag.svg'>SVGを単独で開く</a></p><div class='dag-wrap'>{svg}</div><h2>段階別進捗</h2><div class='table-wrap'><table><thead><tr><th>段階</th><th>全数</th>{''.join(f'<th>{html.escape(label)}</th>' for label in STATUS_LABELS.values())}</tr></thead><tbody>{stage_rows}</tbody></table></div><h2>Node詳細</h2><div class='table-wrap'><table><thead><tr><th>Node / Capability</th><th>段階</th><th>Status</th><th>依存Node</th><th>Approval</th><th>選択理由</th><th>Artifact</th></tr></thead><tbody>{''.join(node_rows)}</tbody></table></div><h2>検証メモ</h2><div class='warning'><ul>{warning_html}</ul><p>Execution edges: {len(edges)}</p></div></main></body></html>"""
+    return f"""<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>CONDUCTOR State Report</title><style>{css}</style></head><body><main><header><p class='meta'>Read-only execution snapshot</p><h1>CONDUCTOR State Report</h1><p class='meta'>Project {html.escape(str(state.get('run', {}).get('project') or '-'))} · Run {html.escape(str(state.get('run', {}).get('run_id') or '-'))} · Generated {html.escape(generated_at)}</p></header><div class='metrics'>{card_html}</div><div class='summary-grid'><section class='panel'><b>State</b><p>Source: {path_link(state_path, state_path.name)}<br>SHA-256: <code>{state_sha256}</code><br>State updated_at: {html.escape(str(state.get('updated_at') or '-'))}<br>Terminal: {terminal}/{len(nodes)}</p></section><section class='panel'><b>現在実行可能なNode</b><p>{runnable_html}</p><p>Cluster: {cluster_index.get('cluster_count', 0)} registered<br>Rounds: {len(round_control.get('rounds') or [])} · Active: {html.escape(str(round_control.get('active_round_id') or 'none'))}</p></section></div><h2>実行DAG</h2><p>円は実行Node、矢印は依存関係です。</p><div class='legend'><span><i class='dot' style='background:var(--green)'></i>完了</span><span><i class='dot' style='background:var(--blue)'></i>実行中</span><span><i class='dot' style='background:var(--pending)'></i>未実行</span><span><i class='dot' style='background:var(--brick)'></i>失敗</span><span><i class='dot' style='background:var(--skip)'></i>Skip</span><span><i class='dot' style='background:var(--ochre)'></i>Stale</span><span><i class='line'></i>完了Edge</span><span><i class='line planned'></i>未完了Edge</span></div><p><a href='state_dag.svg'>SVGを単独で開く</a></p><div class='dag-wrap'>{svg}</div><h2>段階別進捗</h2>{progress_table}<h2>Node詳細</h2><div class='table-wrap'><table><thead><tr><th>Node / Capability</th><th>段階</th><th>Status</th><th>依存Node</th><th>Approval</th><th>選択理由</th><th>Artifact</th></tr></thead><tbody>{''.join(node_rows)}</tbody></table></div><h2>検証メモ</h2><div class='warning'><ul>{warning_html}</ul><p>Execution edges: {len(edges)}</p></div></main></body></html>"""
 
 
 def write_nodes_csv(path: Path, nodes: list[dict[str, Any]]) -> None:
     columns = [
-        "node_id", "capability_id", "skill_name", "stage", "phase", "status", "dependencies",
+        "node_id", "capability_id", "skill_name", "stage", "phase", "requested_round_id", "execution_round_id", "status", "dependencies",
         "human_approval", "request_origin", "requested_at", "selection_reason", "output_dir", "artifacts",
     ]
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -290,9 +298,10 @@ def write_nodes_csv(path: Path, nodes: list[dict[str, Any]]) -> None:
             writer.writerow({
                 "node_id": node.get("node_id"), "capability_id": node.get("capability_id"),
                 "skill_name": node.get("skill_name"), "stage": node.get("stage"), "phase": node.get("phase"),
+                "requested_round_id": node.get("requested_round_id") or node.get("round_id"), "execution_round_id": node.get("execution_round_id"),
                 "status": node.get("status"), "dependencies": ",".join(str(item) for item in node.get("dependencies") or []),
                 "human_approval": node.get("human_approval"), "request_origin": node.get("request_origin"),
-                "requested_at": node.get("requested_at"), "selection_reason": node.get("selection_reason"),
+                "requested_at": node.get("requested_at"), "selection_reason": node.get("selection_reason") or (node.get("selection_basis") or {}).get("reason"),
                 "output_dir": node.get("output_dir"), "artifacts": json.dumps(node.get("artifacts") or [], ensure_ascii=False),
             })
 
@@ -335,7 +344,7 @@ def main() -> int:
         "generated_at": generated_at, "node_count": len(nodes), "edge_count": len(edges),
         "status_counts": dict(Counter(str(node.get("status") or "unknown") for node in nodes)),
         "stage_counts": dict(Counter(str(node.get("stage") or "unknown") for node in nodes)),
-        "runnable_nodes": runnable_node_ids(nodes), "warnings": warnings,
+        "runnable_nodes": runnable_node_ids(nodes, (state.get("round_control") or {}).get("active_round_id")), "warnings": warnings,
         "artifacts": ["state_report.html", "state_dag.svg", "state_nodes.csv", "state_summary.json"],
     }
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

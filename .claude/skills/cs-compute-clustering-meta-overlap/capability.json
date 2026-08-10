@@ -1,13 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "C012",
   "skill_name": "cs-compute-clustering-meta-overlap",
   "display_name": "Overlap-based meta clustering",
-  "version": "4.0.0",
-  "stage": "grouping",
+  "version": "0.1.0",
+  "stage": "clustering",
   "family": "meta",
-  "grouping_kind": "meta",
-  "description": "Use when Claude Code needs to run Overlap-based meta clustering from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when Claude Code needs to run Overlap-based meta clustering from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -21,18 +20,24 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
+  "clustering_kind": "meta",
   "clustering_id": "C012",
   "dependencies": [
-    "grouping"
+    "clustering"
   ],
   "input_contract": [
-    "group_membership_csv"
+    "cluster_membership_csv"
   ],
   "output": {
     "membership": "cluster_membership.csv",
-    "summary": "cluster_summary.csv"
+    "summary": "cluster_summary.csv",
+    "manifest": "clustering_manifest.json"
   },
   "implementation": {
     "algorithm": "meta_overlap"
+  },
+  "analysis_role": "clustering",
+  "default_parameters": {
+    "min_cluster_size": 5
   }
 }

@@ -23,7 +23,7 @@ python .claude/skills/cs-conductor-run-audit/scripts/launch.py \
 
 ## 制約事項
 
-Stateは変更しません。監査結果は科学的EvidenceやDAG Nodeではありません。
+Stateは変更しません。監査結果は科学的なOperator resultやDAG Nodeではありません。
 
 ## 変更履歴
 

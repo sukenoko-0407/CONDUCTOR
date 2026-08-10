@@ -1,11 +1,12 @@
 [project]
-name = "conductor-v4-workspace"
-version = "4.3.1"
-description = "Development and acceptance-test environment for the multi-Round CONDUCTOR architecture"
+name = "conductor-workspace"
+version = "0.1.0"
+description = "Development and acceptance-test environment for the CONDUCTOR multi-Round analysis architecture"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "jinja2>=3.1",
   "jsonschema>=4.21",
+  "matplotlib>=3.8",
   "networkx>=3.2",
   "numpy>=1.26",
   "pandas>=2.2",
@@ -17,3 +18,8 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+]

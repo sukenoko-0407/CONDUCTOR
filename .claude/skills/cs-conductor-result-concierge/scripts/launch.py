@@ -64,5 +64,8 @@ if not pixi:
 runtime_env = prepare_runtime_environment(skill_dir)
 print(f"INFO: Using Pixi executable: {pixi}", file=sys.stderr)
 print(f"INFO: Skill-local cache root: {skill_dir / 'env' / 'cache'}", file=sys.stderr)
-command = [pixi, "run", "--manifest-path", str(manifest), "python", str(runner), *sys.argv[1:]]
+lockfile=manifest.with_name("pixi.lock")
+if not lockfile.is_file():
+    subprocess.check_call([pixi,"install","--manifest-path",str(manifest)],env=runtime_env)
+command = [pixi, "run", "--manifest-path", str(manifest), "--locked", "python", str(runner), *sys.argv[1:]]
 raise SystemExit(subprocess.call(command, env=runtime_env))

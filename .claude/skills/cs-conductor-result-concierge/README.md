@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-完了済みCONDUCTOR RunのFinding、仮説、Question、Evidence、Node、Group、Operator結果を、人間の問いに合わせて説明・比較・再可視化する。
+完了済みCONDUCTOR RunのInsight、Next Action、Node、Cluster、Operator結果を、人間の問いに合わせて説明・比較・再可視化する。
 
 ## 想定利用シーン
 
@@ -17,7 +17,7 @@ Interpretation reportで気になった項目の根拠を詳しく確認した�
 ```bash
 python .claude/skills/cs-conductor-result-concierge/scripts/launch.py prepare \
   --state results/CONDUCTOR/PROJECT/RUN/state.json \
-  --request "F012の根拠と反証候補を説明する" --focus-id F012 --explicit-request
+  --request "INS0012の根拠と反証候補を説明する" --focus-id INS0012 --explicit-request
 ```
 
 表示されたrequest directory内の`response_draft.json`を記入後、次を実行する。

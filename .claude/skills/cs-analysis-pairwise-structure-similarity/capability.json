@@ -1,12 +1,12 @@
 {
-  "schema_version": "1.0.0",
-  "capability_id": "A003",
+  "schema_version": "2.0.0",
+  "capability_id": "A006",
   "skill_name": "cs-analysis-pairwise-structure-similarity",
   "display_name": "Pairwise structure similarity",
-  "version": "4.0.0",
+  "version": "0.1.0",
   "stage": "analysis",
   "family": "feature_space",
-  "description": "Use when Claude Code needs to run Pairwise structure similarity from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when Claude Code needs to run Pairwise structure similarity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -20,26 +20,34 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
-  "scope_support": [
-    "global",
-    "within-group",
-    "between-groups"
-  ],
-  "operator_id": "A003",
-  "default_parameters": {
-    "max_pairs": 200000,
-    "random_seed": 61453
-  },
+  "operator_id": "A006",
   "dependencies": [],
   "input_contract": [
     "endpoint_csv"
   ],
   "output": {
-    "filename": "A003_pairwise_structure_similarity.csv",
+    "filename": "A006_pairwise_structure_similarity.csv",
     "report": "operator_report.html",
-    "evidence": "evidence.json"
+    "summary": "operator_summary.json",
+    "manifest": "analysis_manifest.json"
   },
   "implementation": {
     "operator": "pairwise_structure_similarity"
+  },
+  "analysis_role": "pairwise_structure_similarity",
+  "scope_support": [
+    "global",
+    "within-cluster",
+    "between-clusters"
+  ],
+  "internal_representation": {
+    "kind": "morgan",
+    "radius": 2,
+    "n_bits": 2048,
+    "metric": "tanimoto"
+  },
+  "default_parameters": {
+    "max_pairs": 200000,
+    "random_seed": 61453
   }
 }

@@ -39,5 +39,5 @@ Use `scripts/launch.py`; do not invoke Pixi directly. It prefers `/home/open-sha
 - Require `--explicit-request`; reject unattended or implicit invocation.
 - Treat the supplied State as read-only and verify its SHA-256 before and after rendering.
 - Never write into `CONDUCTOR_modules/`.
-- Never change Node status, approval, Group data, exploration budget, history, or handoff.
+- Never change Node status, approval, Cluster data, exploration budget, history, or handoff.
 - Do not claim that report generation advances or completes the scientific analysis.

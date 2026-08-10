@@ -13,7 +13,7 @@ SOURCE_ROOT = MODULE_ROOT.parent
 
 
 def ignored(directory: str, names: list[str]) -> set[str]:
-    ignored_names = {"__pycache__", ".pytest_cache", "Archive"}
+    ignored_names = {"__pycache__", ".pytest_cache", ".uv-cache", ".venv", "Archive"}
     if Path(directory).name == "env":
         ignored_names.update({".pixi", "cache", "config", "data", "state", "tmp", "pixi-home"})
     ignored_names.update(name for name in names if name.endswith(".pyc"))
@@ -27,7 +27,7 @@ def copy_targets(target: Path) -> list[tuple[Path, Path]]:
             SOURCE_ROOT / ".claude" / "agents" / name,
             target / ".claude" / "agents" / name,
         )
-        for name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md", "cs-conductor-v430-migrator.md"]
+        for name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"]
     ]
     pairs.extend(
         (

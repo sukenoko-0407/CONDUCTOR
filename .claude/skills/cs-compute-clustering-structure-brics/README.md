@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-compound IDとSMILESをBRICS fragmentで直接group化し、cluster membershipとsummaryを生成する。
+compound IDとSMILESをBRICS fragment clusteringで直接Cluster化し、cluster membershipとsummaryを生成する。
 
 ## 想定利用シーン
 
@@ -24,14 +24,15 @@ python .claude/skills/cs-compute-clustering-structure-brics/scripts/launch.py --
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-clustering-structure-brics/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-compute-clustering-structure-brics/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
 
-- 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
-- 両モードともcompound IDとSMILESを含むCSVを必須入力とし、CLIへのSMILES直接入力は受け付けない。
+- 一般利用とCONDUCTORの両方でClustering／Clusterと呼ぶ。入力分子やfeature値は変更しない。
+- 5化合物未満のClusterは出力・登録しない。
 - Description vectorは入力にせず、fingerprint生成を内部に隠した距離clusteringも行わない。
+- 一般利用・CONDUCTOR利用ともcompound IDとSMILESを含むCSVを必須入力とし、CLIへのSMILES直接指定は受け付けない。
 - invalid SMILESは未割当として保持する。分子標準化は行わない。
 
 ## 変更履歴
@@ -39,4 +40,3 @@ python .claude/skills/cs-compute-clustering-structure-brics/scripts/launch.py --
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
-| 1.1.0 | 構造クラスタリングの入力をcompound ID・SMILES CSVに限定。 |

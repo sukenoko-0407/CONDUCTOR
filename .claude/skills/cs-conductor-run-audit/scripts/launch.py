@@ -40,6 +40,9 @@ pixi = str(shared) if shared.is_file() and os.access(shared, os.X_OK) else shuti
 if not pixi:
     print(f"ERROR: pixi is required; shared binary was not executable at {shared}", file=sys.stderr)
     raise SystemExit(127)
-command = [pixi, "run", "--manifest-path", str(skill_dir / "env" / "pixi.toml"), "python", str(skill_dir / "scripts" / "audit.py"), *sys.argv[1:]]
 runtime_env = prepare_runtime_environment(skill_dir)
+manifest=(skill_dir/"env"/"pixi.toml").resolve();lockfile=manifest.with_name("pixi.lock")
+if not lockfile.is_file():
+    subprocess.check_call([pixi,"install","--manifest-path",str(manifest)],env=runtime_env)
+command = [pixi, "run", "--manifest-path", str(manifest), "--locked", "python", str(skill_dir / "scripts" / "audit.py"), *sys.argv[1:]]
 raise SystemExit(subprocess.call(command, env=runtime_env))

@@ -1,167 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/state.schema.json",
-  "title": "CONDUCTOR 4.3.1 run state",
+  "title": "CONDUCTOR State",
   "type": "object",
-  "required": ["schema_version", "conductor_version", "run", "round_control", "orchestration_control", "id_counters", "execution_graph", "indices", "history", "updated_at"],
+  "required": ["schema_version", "conductor_version", "revision", "run", "round_control", "orchestration_control", "counters", "execution_graph", "indices", "created_at", "updated_at"],
   "properties": {
-    "schema_version": {"const": "2.1.0"},
-    "conductor_version": {"const": "4.3.1"},
-    "run": {
-      "type": "object",
-      "required": ["run_id", "project", "input", "input_hash", "endpoint", "higher_is_better", "parallel_limit", "row_count", "id_column", "profile_id", "package_snapshot", "package_change_gate", "high_cost_bundle", "created_at"],
-      "properties": {
-        "run_id": {"type": "string", "minLength": 1},
-        "project": {"type": "string", "minLength": 1},
-        "input": {"type": "string", "minLength": 1},
-        "input_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "endpoint": {"type": "string", "minLength": 1},
-        "higher_is_better": {"type": "boolean"},
-        "parallel_limit": {"type": "integer", "minimum": 1},
-        "row_count": {"type": "integer", "minimum": 0},
-        "id_column": {"type": "string", "minLength": 1},
-        "assay_column": {"type": ["string", "null"]},
-        "assay_level_count": {"type": "integer", "minimum": 0},
-        "profile_id": {"type": "string", "minLength": 1},
-        "package_snapshot": {"type": "object"},
-        "package_snapshot_history": {"type": "array", "items": {"type": "object"}},
-        "package_change_gate": {
-          "type": "object",
-          "required": ["status", "checked_at", "differences"],
-          "properties": {
-            "status": {"enum": ["clear", "approval_required", "rejected"]},
-            "checked_at": {"type": "string", "format": "date-time"},
-            "differences": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
-          },
-          "additionalProperties": true
-        },
-        "high_cost_bundle": {
-          "type": "object",
-          "required": ["capability_ids", "status", "scope", "scope_hash"],
-          "properties": {
-            "capability_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-            "status": {"enum": ["pending", "approved", "rejected"]},
-            "scope": {"type": "object"},
-            "scope_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-            "decided_scope_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
-          },
-          "additionalProperties": true
-        },
-        "created_at": {"type": "string", "format": "date-time"}
-      },
-      "additionalProperties": true
-    },
-    "round_control": {
-      "type": "object",
-      "required": ["active_round_id", "next_round_number", "rounds"],
-      "properties": {
-        "active_round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4,}$"},
-        "next_round_number": {"type": "integer", "minimum": 1},
-        "rounds": {"type": "array", "items": {"$ref": "#/$defs/round"}}
-      },
-      "additionalProperties": false
-    },
-    "orchestration_control": {
-      "type": "object",
-      "required": ["controller_epoch", "lease", "last_bootstrap_at", "last_audit_path"],
-      "properties": {
-        "controller_epoch": {"type": "integer", "minimum": 0},
-        "lease": {
-          "type": "object",
-          "required": ["owner_id", "token_hash", "epoch", "acquired_at", "heartbeat_at", "expires_at", "duration_minutes"],
-          "properties": {
-            "owner_id": {"type": ["string", "null"]},
-            "token_hash": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
-            "epoch": {"type": "integer", "minimum": 0},
-            "acquired_at": {"type": ["string", "null"], "format": "date-time"},
-            "heartbeat_at": {"type": ["string", "null"], "format": "date-time"},
-            "expires_at": {"type": ["string", "null"], "format": "date-time"},
-            "duration_minutes": {"type": "integer", "minimum": 1}
-          },
-          "additionalProperties": false
-        },
-        "last_bootstrap_at": {"type": ["string", "null"], "format": "date-time"},
-        "last_audit_path": {"type": ["string", "null"]},
-        "migration_handoff": {
-          "type": "object",
-          "required": ["status", "created_at", "accepted_at", "accepted_round_id"],
-          "properties": {
-            "status": {"enum": ["awaiting_human_start", "accepted"]},
-            "created_at": {"type": "string", "format": "date-time"},
-            "accepted_at": {"type": ["string", "null"], "format": "date-time"},
-            "accepted_round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4,}$"}
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    "id_counters": {
-      "type": "object",
-      "required": ["description_node", "grouping_node", "operator_node", "interpretation_node", "group", "evidence", "finding", "hypothesis", "question", "relation", "request", "scope", "salience_event"],
-      "additionalProperties": {"type": "integer", "minimum": 0}
-    },
-    "execution_graph": {
-      "type": "object",
-      "required": ["nodes", "edges"],
-      "properties": {
-        "nodes": {"type": "array", "items": {"$ref": "#/$defs/node"}},
-        "edges": {"type": "array", "items": {"$ref": "#/$defs/edge"}}
-      },
-      "additionalProperties": false
-    },
-    "indices": {"type": "object"},
-    "history": {"type": "array", "items": {"type": "object"}},
-    "updated_at": {"type": "string", "format": "date-time"}
+    "schema_version": {"const": "2.0.0"},
+    "conductor_version": {"const": "0.1.0"},
+    "revision": {"type": "integer", "minimum": 0},
+    "run": {"type": "object", "required": ["run_id", "project", "input", "input_hash", "endpoint", "higher_is_better", "parallel_limit"], "properties": {"run_id":{"type":"string","minLength":1},"project":{"type":"string","minLength":1},"input":{"type":"string","minLength":1},"input_hash":{"type":"string","pattern":"^[a-f0-9]{64}$"},"endpoint":{"type":"string","minLength":1},"higher_is_better":{"type":"boolean"},"parallel_limit":{"type":"integer","minimum":1}}, "additionalProperties":true},
+    "round_control": {"type":"object","required":["active_round_id","next_round_number","rounds"],"properties":{"active_round_id":{"type":["string","null"]},"next_round_number":{"type":"integer","minimum":1},"rounds":{"type":"array","items":{"type":"object"}}},"additionalProperties":true},
+    "orchestration_control": {"type":"object","required":["lease"],"properties":{"lease":{"type":"object"}},"additionalProperties":true},
+    "counters": {"type":"object","required":["description_node","clustering_node","analysis_node","interpretation_node","cluster","insight","action"],"additionalProperties":{"type":"integer","minimum":0}},
+    "execution_graph": {"type":"object","required":["nodes","edges"],"properties":{"nodes":{"type":"array","items":{"$ref":"#/$defs/node"}},"edges":{"type":"array","items":{"type":"object","required":["source","target"],"properties":{"source":{"type":"string"},"target":{"type":"string"}},"additionalProperties":false}}},"additionalProperties":false},
+    "indices": {"type":"object"},
+    "created_at": {"type":"string","format":"date-time"},
+    "updated_at": {"type":"string","format":"date-time"}
   },
-  "additionalProperties": false,
   "$defs": {
-    "round": {
-      "type": "object",
-      "required": ["round_id", "number", "status", "request", "resource_envelope", "started_at"],
-      "properties": {
-        "round_id": {"type": "string", "pattern": "^RND[0-9]{4,}$"},
-        "number": {"type": "integer", "minimum": 1},
-        "status": {"enum": ["active", "paused", "checkpoint", "completed"]},
-        "request": {"type": "string"},
-        "resource_envelope": {"type": "object"},
-        "started_at": {"type": "string", "format": "date-time"},
-        "ended_at": {"type": ["string", "null"], "format": "date-time"}
-      },
-      "additionalProperties": true
-    },
-    "node": {
-      "type": "object",
-      "required": ["node_id", "capability_id", "skill_name", "stage", "phase", "round_id", "status", "dependencies", "input_bindings", "parameters", "analysis_signature", "human_approval", "output_dir", "requested_at"],
-      "properties": {
-        "node_id": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"},
-        "capability_id": {"type": "string", "pattern": "^[DCAI][0-9]{3}$"},
-        "skill_name": {"type": "string", "minLength": 1},
-        "stage": {"enum": ["description", "grouping", "analysis", "interpretation"]},
-        "phase": {"enum": ["basic_compute", "initial_global", "initial_local", "additional_exploration", "deep_dive", "human_directed"]},
-        "round_id": {"type": "string", "pattern": "^RND[0-9]{4,}$"},
-        "status": {"enum": ["pending", "running", "succeeded", "failed", "unavailable", "waived", "not_applicable", "stale", "skipped"]},
-        "dependencies": {"type": "array", "items": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"}, "uniqueItems": true},
-        "input_bindings": {"type": "object"},
-        "parameters": {"type": "object"},
-        "analysis_signature": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
-        "human_approval": {"enum": ["not_required", "bundle_pending", "approved", "rejected", "required"]},
-        "output_dir": {"type": "string", "minLength": 1},
-        "requested_at": {"type": "string", "format": "date-time"}
-        ,"execution_attempts": {"type": "array", "items": {"type": "object"}}
-        ,"current_attempt_id": {"type": ["string", "null"]}
-      },
-      "additionalProperties": true
-    },
-    "edge": {
-      "type": "object",
-      "required": ["source", "target", "relation"],
-      "properties": {
-        "source": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"},
-        "target": {"type": "string", "pattern": "^N[DGIO][0-9]{4,}$"},
-        "relation": {"enum": ["depends_on", "invalidates"]}
-      },
-      "additionalProperties": false
-    }
-  }
+    "node": {"type":"object","required":["node_id","stage","capability_id","skill_name","round_id","requested_round_id","execution_round_id","phase","dependencies","parameters","analysis_signature","status","execution_attempts"],"properties":{"node_id":{"type":"string","pattern":"^N[DCAI][0-9]{6}$"},"stage":{"enum":["description","clustering","analysis","interpretation"]},"capability_id":{"type":"string","pattern":"^[DCAI][0-9]{3}$"},"skill_name":{"type":"string"},"round_id":{"type":"string","pattern":"^RND[0-9]{4}$"},"requested_round_id":{"type":"string","pattern":"^RND[0-9]{4}$"},"execution_round_id":{"type":["string","null"],"pattern":"^RND[0-9]{4}$"},"phase":{"enum":["basic_compute","initial_global","initial_local","additional_exploration","deep_dive","human_directed"]},"dependencies":{"type":"array","items":{"type":"string"},"uniqueItems":true},"parameters":{"type":"object"},"analysis_signature":{"type":"string","pattern":"^[a-f0-9]{64}$"},"status":{"enum":["pending","running","succeeded","failed","unavailable","not_applicable","skipped","waived","stale","deferred"]},"execution_attempts":{"type":"array","items":{"type":"object"}},"current_attempt_id":{"type":["string","null"]}},"additionalProperties":true}
+  },
+  "additionalProperties":true
 }

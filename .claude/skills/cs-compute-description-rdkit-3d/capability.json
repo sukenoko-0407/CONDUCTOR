@@ -1,12 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "D012",
   "skill_name": "cs-compute-description-rdkit-3d",
   "display_name": "RDKit 3D descriptors",
-  "version": "4.0.0",
+  "version": "0.1.0",
   "stage": "description",
   "family": "3d_shape",
-  "description": "Use when Claude Code needs to run RDKit 3D descriptors from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when Claude Code needs to run RDKit 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -30,5 +30,10 @@
   },
   "implementation": {
     "algorithm": "rdkit_3d"
-  }
+  },
+  "value_semantics": "dense_continuous",
+  "natural_metric": "euclidean",
+  "allowed_metrics": [
+    "euclidean"
+  ]
 }

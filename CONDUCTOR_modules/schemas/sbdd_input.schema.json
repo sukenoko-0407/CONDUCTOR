@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://conductor.local/schemas/v4/sbdd_input.schema.json",
-  "title": "CONDUCTOR v4 reserved SBDD input manifest",
-  "description": "Extension contract only; v4 initial implementation does not execute SBDD calculations.",
+  "$id": "https://conductor.local/schemas/sbdd_input.schema.json",
+  "title": "CONDUCTOR reserved SBDD input manifest",
+  "description": "Extension contract only; CONDUCTOR 0.1.0 does not execute SBDD calculations.",
   "type": "object",
   "required": ["schema_version", "prepared_by_human"],
   "properties": {

@@ -1,12 +1,12 @@
 {
-  "schema_version": "1.0.0",
-  "capability_id": "A005",
+  "schema_version": "2.0.0",
+  "capability_id": "A007",
   "skill_name": "cs-analysis-knn-activity-consistency",
   "display_name": "kNN activity consistency",
-  "version": "4.0.0",
+  "version": "0.1.0",
   "stage": "analysis",
   "family": "feature_space",
-  "description": "Use when Claude Code needs to run kNN activity consistency from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when Claude Code needs to run kNN activity consistency from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -20,15 +20,7 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
-  "scope_support": [
-    "global",
-    "within-group",
-    "between-groups"
-  ],
-  "operator_id": "A005",
-  "default_parameters": {
-    "k": 10
-  },
+  "operator_id": "A007",
   "dependencies": [
     "description"
   ],
@@ -37,11 +29,21 @@
     "description"
   ],
   "output": {
-    "filename": "A005_knn_activity_consistency.csv",
+    "filename": "A007_knn_activity_consistency.csv",
     "report": "operator_report.html",
-    "evidence": "evidence.json"
+    "summary": "operator_summary.json",
+    "manifest": "analysis_manifest.json"
   },
   "implementation": {
     "operator": "knn_activity_consistency"
+  },
+  "analysis_role": "knn_activity_consistency",
+  "scope_support": [
+    "global",
+    "within-cluster",
+    "between-clusters"
+  ],
+  "default_parameters": {
+    "k": 10
   }
 }

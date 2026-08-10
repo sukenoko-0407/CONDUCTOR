@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-表現に適した距離でSALIを計算し、property landscapeの局所Cliffと全体的な平滑性を評価する。
+Extended structure-activity landscape indexを実行し、一般利用向け数値結果とCONDUCTOR向けOperator resultを生成する。
 
 ## 想定利用シーン
 
@@ -24,23 +24,19 @@ python .claude/skills/cs-analysis-sali/scripts/launch.py --input compounds.csv -
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-analysis-sali/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID --round-id ROUND_ID --evidence-id EVIDENCE_ID
+python .claude/skills/cs-analysis-sali/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
-- CONDUCTORモードではState由来のDescription／Grouping Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。
-- Morganとbinary fingerprintにはTanimoto、USR/USRCATにはManhattanを使用する。`--metric auto`でも自動選択できる。
-- 高SALI pairは測定誤差・assay条件・他表現で確認し、低い中心値とupper tailはその空間での相対的な平滑性として扱う。
-- metricとendpoint scaleが異なるrun間でraw SALI値を直接比較しない。
-- Group内／Group間scopeに対応し、連続表現ではglobal前処理基準を既定とする。
+- CONDUCTORモードではState由来のDescription／Clustering Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。
+- `--metric auto`はfeature特性から距離を選び、Morgan表現にはTanimoto以外を使用しない。
+- 高SALI pairと、中心・upper tailが示すlandscape平滑性をともに評価し、異なるmetricのraw SALI値を直接比較しない。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
-| 1.2.0 | Description／GroupingのCapabilityとsource Node IDのprovenance表示を追加。 |
-| 1.1.0 | CONDUCTORモードの人間向けOperator HTMLレポートを追加。 |
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |

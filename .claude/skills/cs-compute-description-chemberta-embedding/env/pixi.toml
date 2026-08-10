@@ -1,0 +1,18 @@
+[workspace]
+name = "cs-compute-description-chemberta-embedding"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[dependencies]
+jsonschema = ">=4.21"
+numpy = ">=1.26"
+pandas = ">=2.2"
+pyarrow = ">=15"
+python = ">=3.12,<3.13"
+pytorch = ">=2.3"
+rdkit = ">=2024.3"
+transformers = ">=4.41"
+
+[tasks]
+run = "python ../scripts/run.py"
+smoke = "python ../scripts/run.py --help"

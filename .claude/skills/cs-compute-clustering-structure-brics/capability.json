@@ -1,13 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "C003",
   "skill_name": "cs-compute-clustering-structure-brics",
   "display_name": "BRICS fragment clustering",
-  "version": "4.0.0",
-  "stage": "grouping",
+  "version": "0.1.0",
+  "stage": "clustering",
   "family": "direct_structure",
-  "grouping_kind": "direct_structure",
-  "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by shared BRICS fragments, without generating a hidden descriptor vector, in general or CONDUCTOR v4 mode.",
+  "description": "Cluster compounds from a compound-ID/SMILES CSV with BRICS fragment clustering, without generating a hidden descriptor vector.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -21,19 +20,22 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
+  "clustering_kind": "direct_structure",
   "clustering_id": "C003",
-  "default_parameters": {
-    "min_cluster_size": 3
-  },
   "dependencies": [],
   "input_contract": [
     "compound_id_smiles_csv"
   ],
   "output": {
     "membership": "cluster_membership.csv",
-    "summary": "cluster_summary.csv"
+    "summary": "cluster_summary.csv",
+    "manifest": "clustering_manifest.json"
   },
   "implementation": {
     "algorithm": "structure_brics"
+  },
+  "analysis_role": "clustering",
+  "default_parameters": {
+    "min_cluster_size": 5
   }
 }

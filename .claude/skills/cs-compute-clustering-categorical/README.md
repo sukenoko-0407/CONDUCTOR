@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-CSVのカテゴリ列からgroupを作り、cluster membershipとsummaryを生成する。
+CSVのカテゴリ列からClusterを作り、cluster membershipとsummaryを生成する。
 
 ## 想定利用シーン
 
@@ -24,12 +24,13 @@ python .claude/skills/cs-compute-clustering-categorical/scripts/launch.py --inpu
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-clustering-categorical/scripts/launch.py --input compounds.csv --columns assay --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-compute-clustering-categorical/scripts/launch.py --input compounds.csv --columns assay --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
 
-- 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
+- 一般利用とCONDUCTORの両方でClustering／Clusterと呼ぶ。入力分子やfeature値は変更しない。
+- 5化合物未満のClusterは出力・登録しない。
 
 ## 変更履歴
 

@@ -21,4 +21,4 @@ QuickはDAG、ID、lease、parallel limit、running attempt、Interpretation終�
 
 `status=fail` の場合は新規Nodeを実行せず、Orchestratorが原因を解消する。`warning` は科学的判断を妨げないが、Round終端前に内容を確認する。
 
-このSkillは監査結果自体をDAG Nodeにしない。監査は制御面の記録であり、科学的Evidenceではない。
+このSkillは監査結果自体をDAG Nodeにしない。監査は制御面の記録であり、科学的なOperator resultではない。

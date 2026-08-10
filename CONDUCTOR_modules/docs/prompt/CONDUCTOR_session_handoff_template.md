@@ -1,66 +1,16 @@
-# CONDUCTOR Session Handoff
+# CONDUCTOR session引継ぎテンプレート
 
-このMarkdownは人間向けnavigationである。正本は`state.json`、各Round artifact、各科学計算artifactとする。Orchestratorの通常入口は`orchestrator_brief.json`であり、この長文handoffを必須入力にはしない。
-
-## Run identity
-
-- State:
-- Run ID:
-- Project:
-- Input:
-- Endpoint:
-- Higher is better:
-- Package／profile snapshot:
-
-## Round
-
-- Activeまたは直近Round:
-- Status:
-- 次に期待するRound:
-- 開始時の人間指示:
-- Stop reason:
-
-## Coverage
-
-- Basic compute:
-- Initial global:
-- Initial local:
-- Additional exploration:
-- Deep dive:
-- Failed／unavailable／waived:
-
-## Knowledge frontier
-
-- Priority Finding:
-- Active Hypothesis:
-- Active Question:
-- Human-skipped／deferred Question:
-- Unresolved contradiction:
-- Human-pinned Evidence:
-
-## Pending work
-
-- Runnable Node:
-- Approval待ち:
-- HPC job:
-- Coverage gap:
-- Reopen recommendation:
-
-## 参照artifact
-
-- Latest `orchestrator_brief.json`:
-- Latest `state_summary.json`:
-- Latest `round_summary.json`:
-- Latest `next_round_brief.json`:
-- Latest `interpretation.html`:
-- Operator report:
-
-## 次のセッション
+通常は次の短い情報だけで再開できます。
 
 ```text
-`cs-conductor-orchestrator` Agentを使用して、既存CONDUCTOR Runの解析Round <RND####>を開始してください。
-同Roundがactiveなら再開してください。
-State: <ABSOLUTE_STATE_JSON_PATH>
-今回の重点: <任意>
-最初にbootstrapで単一Writer leaseを取得し、Round close前にInterpretationとFull Auditを完了してください。
+cs-conductor-orchestrator Agentを使ってCONDUCTORを再開してください。
+state.json: <absolute path>
+期待する次Round: RND####
+今回の依頼: <追加探索／特定Insightの深掘り／人間checkpoint等>
+parallel_limit: <number>
+Wall Time: <time>
+
+Runtime bootstrapを行い、leaseを取得できない場合は変更せず停止してください。orchestrator_brief.jsonから開始し、必要な情報だけをqueryしてください。異常中断の痕跡があればFull Auditでattemptとartifactを照合してから続行してください。
 ```
+
+手作業の引継ぎ文書は補助情報です。正本は`state.json`、`summaries/`、`indices/`、`rounds/`です。

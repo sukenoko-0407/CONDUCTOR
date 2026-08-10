@@ -1,76 +1,44 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
-def prepare_runtime_environment(skill_dir: Path) -> dict[str, str]:
-    env_dir = (skill_dir / "env").resolve()
-    cache_root = env_dir / "cache"
-    pixi_cache = cache_root / "pixi"
-    locations = {
-        "PIXI_HOME": env_dir / "pixi-home",
-        "PIXI_CACHE_DIR": pixi_cache,
-        "PIXI_CACHE_CONDA_PACKAGES_DIR": pixi_cache / "conda-packages",
-        "PIXI_CACHE_REPODATA_DIR": pixi_cache / "repodata",
-        "PIXI_CACHE_PYPI_WHEELS_DIR": pixi_cache / "pypi-wheels",
-        "PIXI_CACHE_PYPI_MAPPING_DIR": pixi_cache / "pypi-mapping",
-        "PIXI_CACHE_EXEC_ENVIRONMENTS_DIR": pixi_cache / "exec-environments",
-        "PIXI_CACHE_BUILD_TOOL_ENVIRONMENTS_DIR": pixi_cache / "build-tool-environments",
-        "PIXI_CACHE_DETACHED_ENVIRONMENTS_DIR": pixi_cache / "detached-environments",
-        "RATTLER_CACHE_DIR": pixi_cache,
-        "UV_CACHE_DIR": cache_root / "uv",
-        "PIP_CACHE_DIR": cache_root / "pip",
-        "XDG_CACHE_HOME": cache_root / "xdg",
-        "XDG_CONFIG_HOME": env_dir / "config",
-        "XDG_DATA_HOME": env_dir / "data",
-        "XDG_STATE_HOME": env_dir / "state",
-        "MPLCONFIGDIR": cache_root / "matplotlib",
-        "NUMBA_CACHE_DIR": cache_root / "numba",
-        "HF_HOME": cache_root / "huggingface",
-        "TORCH_HOME": cache_root / "torch",
-        "CUDA_CACHE_PATH": cache_root / "cuda",
-        "TRITON_CACHE_DIR": cache_root / "triton",
-        "TORCHINDUCTOR_CACHE_DIR": cache_root / "torchinductor",
-        "JOBLIB_TEMP_FOLDER": env_dir / "tmp" / "joblib",
-        "TMPDIR": env_dir / "tmp",
-        "TMP": env_dir / "tmp",
-        "TEMP": env_dir / "tmp",
-    }
-    for path in set(locations.values()):
-        path.mkdir(parents=True, exist_ok=True)
-    runtime_env = os.environ.copy()
-    runtime_env.update({name: str(path) for name, path in locations.items()})
-    runtime_env.update(
-        {
-            "PIXI_CACHE_NETFS_REDIRECT": "never",
-            "PIXI_NO_CONFIG": "1",
-        }
-    )
-    return runtime_env
+def runtime_environment(skill_dir: Path) -> dict[str, str]:
+    env_dir=(skill_dir/"env").resolve();cache=env_dir/"cache";pixi_cache=cache/"pixi"
+    locations={"PIXI_HOME":env_dir/"pixi-home","PIXI_CACHE_DIR":pixi_cache,"PIXI_CACHE_CONDA_PACKAGES_DIR":pixi_cache/"conda-packages","PIXI_CACHE_REPODATA_DIR":pixi_cache/"repodata","PIXI_CACHE_PYPI_WHEELS_DIR":pixi_cache/"pypi-wheels","PIXI_CACHE_PYPI_MAPPING_DIR":pixi_cache/"pypi-mapping","PIXI_CACHE_EXEC_ENVIRONMENTS_DIR":pixi_cache/"exec-environments","RATTLER_CACHE_DIR":pixi_cache,"UV_CACHE_DIR":cache/"uv","PIP_CACHE_DIR":cache/"pip","XDG_CACHE_HOME":cache/"xdg","XDG_CONFIG_HOME":env_dir/"config","XDG_DATA_HOME":env_dir/"data","XDG_STATE_HOME":env_dir/"state","MPLCONFIGDIR":cache/"matplotlib","NUMBA_CACHE_DIR":cache/"numba","TMPDIR":env_dir/"tmp","TMP":env_dir/"tmp","TEMP":env_dir/"tmp"}
+    for path in set(locations.values()):path.mkdir(parents=True,exist_ok=True)
+    env=os.environ.copy();env.update({k:str(v) for k,v in locations.items()});env.update({"PIXI_CACHE_NETFS_REDIRECT":"never","PIXI_NO_CONFIG":"1"});return env
 
 
-skill_dir = Path(__file__).resolve().parents[1]
-shared_pixi = Path("/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi")
-pixi = str(shared_pixi) if shared_pixi.is_file() and os.access(shared_pixi, os.X_OK) else shutil.which("pixi")
-args = sys.argv[1:]
-if not args or args[0] not in {"catalog", "state"}:
-    print("Usage: launch.py catalog [args] | state [args]", file=sys.stderr)
-    raise SystemExit(2)
-script = skill_dir / "scripts" / ("build_catalog.py" if args[0] == "catalog" else "state_manager.py")
-if not pixi:
-    print(
-        f"ERROR: pixi is required. Shared binary was not executable at {shared_pixi}; "
-        "install pixi on PATH and rerun this launcher. "
-        "pixi will create or reuse the Orchestrator environment from env/pixi.toml.",
-        file=sys.stderr,
-    )
-    raise SystemExit(127)
-runtime_env = prepare_runtime_environment(skill_dir)
-print(f"INFO: Using Pixi executable: {pixi}", file=sys.stderr)
-print(f"INFO: Skill-local cache root: {skill_dir / 'env' / 'cache'}", file=sys.stderr)
-command = [pixi, "run", "--manifest-path", str((skill_dir / "env" / "pixi.toml").resolve()), "python", str(script), *args[1:]]
-raise SystemExit(subprocess.call(command, env=runtime_env))
+skill_dir=Path(__file__).resolve().parents[1];arguments=sys.argv[1:]
+if not arguments or arguments[0] not in {"catalog","state"}:
+    print("Usage: launch.py catalog [args] | state [args]",file=sys.stderr);raise SystemExit(2)
+script=skill_dir/"scripts"/("build_catalog.py" if arguments[0]=="catalog" else "state_manager.py");arguments=arguments[1:]
+shared=Path("/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi");pixi=str(shared) if shared.is_file() and os.access(shared,os.X_OK) else shutil.which("pixi")
+if not pixi:print(f"ERROR: pixi is required; shared binary was not executable at {shared}.",file=sys.stderr);raise SystemExit(127)
+manifest=(skill_dir/"env"/"pixi.toml").resolve();lockfile=manifest.with_name("pixi.lock");ready=manifest.parent/".environment-ready";mutex=manifest.parent/".bootstrap.lock";env=runtime_environment(skill_dir)
+lock_hash=hashlib.sha256(lockfile.read_bytes()).hexdigest() if lockfile.is_file() else "missing";is_ready=ready.is_file() and ready.read_text(encoding="utf-8").strip()==lock_hash
+if not is_ready:
+    acquired=False
+    for _ in range(600):
+        try:mutex.mkdir();acquired=True;break
+        except FileExistsError:
+            if ready.is_file() and lockfile.is_file() and ready.read_text(encoding="utf-8").strip()==hashlib.sha256(lockfile.read_bytes()).hexdigest():break
+            time.sleep(1)
+    if acquired:
+        try:
+            command=[pixi,"install","--manifest-path",str(manifest)]+(["--locked"] if lockfile.is_file() else [])
+            code=subprocess.call(command,env=env)
+            if code:raise SystemExit(code)
+            if not lockfile.is_file():print(f"ERROR: pixi did not create {lockfile}",file=sys.stderr);raise SystemExit(78)
+            ready.write_text(hashlib.sha256(lockfile.read_bytes()).hexdigest()+"\n",encoding="utf-8")
+        finally:mutex.rmdir()
+    elif not (ready.is_file() and lockfile.is_file()):print("ERROR: timed out waiting for environment bootstrap",file=sys.stderr);raise SystemExit(75)
+command=[pixi,"run","--manifest-path",str(manifest),"--locked","python",str(script),*arguments]
+raise SystemExit(subprocess.call(command,env=env))

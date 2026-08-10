@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/interpretation.schema.json",
+  "title": "CONDUCTOR Interpretation",
+  "type": "object",
+  "required": ["schema_version", "run_id", "round_id", "node_id", "attempt_id", "title", "executive_summary", "insights", "next_actions", "coverage_note", "created_at"],
+  "properties": {
+    "schema_version": {"const": "2.0.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+    "node_id": {"type": "string", "pattern": "^NI[0-9]{6}$"},
+    "attempt_id": {"type": "string", "pattern": "^ATT[0-9]{4}$"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 300},
+    "executive_summary": {"type": "string", "minLength": 1, "maxLength": 5000},
+    "coverage_note": {"type": "string", "minLength": 1, "maxLength": 3000},
+    "insights": {"type": "array", "items": {"$ref": "#/$defs/insight"}},
+    "next_actions": {"type": "array", "items": {"$ref": "#/$defs/action"}},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "resultRef": {"type": "string", "pattern": "^NA[0-9]{6}@ATT[0-9]{4}(/CL[0-9]{6})?$"},
+    "insight": {
+      "type": "object",
+      "required": ["insight_id", "revision", "title", "observation", "interpretation", "attention", "scope", "supporting_results", "counter_results", "limitations"],
+      "properties": {
+        "insight_id": {"type": "string", "pattern": "^INS[0-9]{4}$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "title": {"type": "string", "minLength": 1, "maxLength": 300},
+        "observation": {"type": "string", "minLength": 1, "maxLength": 5000},
+        "interpretation": {"type": "string", "minLength": 1, "maxLength": 5000},
+        "attention": {"enum": ["priority", "watch", "background"]},
+        "scope": {"type": "object"},
+        "supporting_results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/resultRef"}, "uniqueItems": true},
+        "counter_results": {"type": "array", "items": {"$ref": "#/$defs/resultRef"}, "uniqueItems": true},
+        "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": true
+    },
+    "action": {
+      "type": "object",
+      "required": ["action_id", "revision", "title", "rationale", "status", "source_insights", "requested_analysis"],
+      "properties": {
+        "action_id": {"type": "string", "pattern": "^ACT[0-9]{4}$"},
+        "revision": {"type": "integer", "minimum": 1},
+        "title": {"type": "string", "minLength": 1, "maxLength": 300},
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 3000},
+        "status": {"enum": ["open", "closed"]},
+        "source_insights": {"type": "array", "items": {"type": "string", "pattern": "^INS[0-9]{4}$"}, "uniqueItems": true},
+        "requested_analysis": {"type": "array", "items": {"type": "object"}}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import math
 import sys
@@ -18,17 +17,6 @@ import pandas as pd
 SKILL_DIR = Path(__file__).resolve().parents[1]
 CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
 COMMON_COLUMNS = ["compound_id", "input_smiles", "mol_parse_ok", "description_error"]
-DESCRIPTION_SEMANTICS = {
-    "D001": ("dense_continuous", "euclidean"), "D002": ("binary_fingerprint", "tanimoto"),
-    "D003": ("binary_fingerprint", "tanimoto"), "D004": ("sparse_count", "cosine"),
-    "D005": ("sparse_count", "cosine"), "D006": ("sparse_count", "cosine"),
-    "D007": ("binary_fingerprint", "tanimoto"), "D008": ("binary_fingerprint", "tanimoto"),
-    "D009": ("binary_fingerprint", "tanimoto"), "D010": ("binary_fingerprint", "tanimoto"),
-    "D012": ("dense_continuous", "euclidean"), "D013": ("dense_shape_moment", "manhattan"),
-    "D014": ("dense_continuous", "euclidean"), "D015": ("dense_continuous", "euclidean"),
-    "D016": ("dense_continuous", "euclidean"), "D017": ("binary_fingerprint", "tanimoto"),
-    "D019": ("dense_embedding", "cosine"), "D020": ("dense_continuous", "euclidean"),
-}
 
 
 def utc_now() -> str:
@@ -119,8 +107,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir")
     parser.add_argument("--format", choices=["csv", "parquet"], default="csv")
     parser.add_argument("--run-id")
+    parser.add_argument("--round-id")
     parser.add_argument("--project")
     parser.add_argument("--node-id")
+    parser.add_argument("--attempt-id")
     parser.add_argument("--conductor", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     if algorithm in {"morgan", "atom_pair", "topological_torsion", "rdkit_path", "rdkit_pattern", "rdkit_layered", "avalon", "gobbi_pharm2d"}:
@@ -137,22 +127,22 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument("--reduction", choices=["none", "svd"], default="none")
         parser.add_argument("--svd-dim", type=int, default=256)
         parser.add_argument("--random-seed", type=int, default=61453)
-    if algorithm == "pretrained_embedding":
+    if algorithm == "chemberta_embedding":
         parser.add_argument("--model-dir")
-        parser.add_argument("--adapter", help="Python file exposing embed_smiles(smiles, model_dir).")
-        parser.add_argument("--device", default="cpu")
         parser.add_argument("--batch-size", type=int, default=32)
+        parser.add_argument("--max-length", type=int, default=512)
+        parser.add_argument("--cpu-threads", type=int, default=8)
     if algorithm == "tblite_xtb":
         parser.add_argument("--charge", type=float)
         parser.add_argument("--uhf", type=int)
     args = parser.parse_args()
     if args.conductor:
-        missing = [name for name in ("project", "run_id", "node_id") if not getattr(args, name)]
+        missing = [name for name in ("project", "run_id", "round_id", "node_id", "attempt_id") if not getattr(args, name)]
         if missing:
-            parser.error("--conductor requires --project, --run-id, and --node-id")
-    elif args.project or args.node_id:
-        parser.error("--project and --node-id are valid only with --conductor")
-    for name in ("n_bits", "num_confs", "svd_dim", "batch_size"):
+            parser.error("--conductor requires --project, --run-id, --round-id, --node-id, and --attempt-id")
+    elif args.project or args.round_id or args.node_id or args.attempt_id:
+        parser.error("--project, --round-id, --node-id, and --attempt-id are valid only with --conductor")
+    for name in ("n_bits", "num_confs", "svd_dim", "batch_size", "max_length", "cpu_threads"):
         if hasattr(args, name) and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
     if hasattr(args, "radius") and args.radius < 0:
@@ -243,7 +233,7 @@ def output_dir(args: argparse.Namespace, source_name: str, run_id: str) -> Path:
     root = find_workspace() / "results"
     skill = CAPABILITY["skill_name"]
     if args.conductor:
-        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "description" / skill / str(args.node_id).replace(":", "-")
+        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "description" / skill / str(args.node_id).replace(":", "-") / "attempts" / str(args.attempt_id)
     return root / "description" / source_name / skill / run_id
 
 
@@ -376,6 +366,30 @@ def mordred_values(mol: Any, ignore_3d: bool) -> dict[str, Any]:
     return values
 
 
+def _result_array(result: Any, *names: str) -> np.ndarray | None:
+    for name in names:
+        try:
+            value = result.get(name)
+        except Exception:
+            continue
+        if value is not None:
+            array = np.asarray(value, dtype=float)
+            if array.size:
+                return array
+    return None
+
+
+def _stats(prefix: str, array: np.ndarray) -> dict[str, float]:
+    values = np.asarray(array, dtype=float).reshape(-1)
+    values = values[np.isfinite(values)]
+    if not values.size:
+        return {}
+    return {
+        f"{prefix}_min": float(values.min()), f"{prefix}_max": float(values.max()),
+        f"{prefix}_mean": float(values.mean()), f"{prefix}_std": float(values.std()),
+    }
+
+
 def tblite_values(prepared: Any, args: argparse.Namespace) -> dict[str, Any]:
     from rdkit import Chem
     try:
@@ -386,15 +400,52 @@ def tblite_values(prepared: Any, args: argparse.Namespace) -> dict[str, Any]:
     numbers = np.array([atom.GetAtomicNum() for atom in prepared.GetAtoms()], dtype=int)
     positions = np.array([list(conformer.GetAtomPosition(i)) for i in range(prepared.GetNumAtoms())], dtype=float) * 1.8897261246257702
     charge = float(Chem.GetFormalCharge(prepared) if args.charge is None else args.charge)
-    calculator = Calculator("GFN2-xTB", numbers, positions, charge=charge, uhf=args.uhf)
+    uhf = 0 if args.uhf is None else int(args.uhf)
+    calculator = Calculator("GFN2-xTB", numbers, positions, charge=charge, uhf=uhf)
     calculator.set("verbosity", 0)
     result = calculator.singlepoint()
     energy = float(result.get("energy"))
-    values = {"tblite__energy_hartree": energy, "tblite__energy_ev": energy * 27.211386245988}
-    charges = result.get("charges")
+    values: dict[str, Any] = {
+        "xtb__total_energy_hartree": energy,
+        "xtb__energy_per_atom_hartree": energy / max(1, len(numbers)),
+    }
+    charges = _result_array(result, "charges")
     if charges is not None:
-        array = np.asarray(charges, dtype=float)
-        values.update({"tblite__charge_min": float(array.min()), "tblite__charge_max": float(array.max()), "tblite__charge_mean": float(array.mean()), "tblite__charge_std": float(array.std())})
+        values.update(_stats("xtb__mulliken_charge", charges))
+        values["xtb__mulliken_charge_mean_abs"] = float(np.mean(np.abs(charges)))
+        values["xtb__mulliken_charge_max_abs"] = float(np.max(np.abs(charges)))
+    orbitals = _result_array(result, "orbital-energies", "orbital_energies")
+    occupations = _result_array(result, "orbital-occupations", "orbital_occupations")
+    if orbitals is not None and occupations is not None and orbitals.size == occupations.size:
+        occupied = orbitals[occupations > 1e-8]
+        virtual = orbitals[occupations <= 1e-8]
+        if occupied.size:
+            values["xtb__homo_energy_hartree"] = float(np.max(occupied))
+        if virtual.size:
+            values["xtb__lumo_energy_hartree"] = float(np.min(virtual))
+        if occupied.size and virtual.size:
+            values["xtb__homo_lumo_gap_hartree"] = float(np.min(virtual) - np.max(occupied))
+    dipole = _result_array(result, "molecular-dipole", "dipole")
+    if dipole is not None:
+        values["xtb__dipole_magnitude_au"] = float(np.linalg.norm(dipole.reshape(-1)))
+    quadrupole = _result_array(result, "molecular-quadrupole", "quadrupole")
+    if quadrupole is not None:
+        tensor = quadrupole.reshape(3, 3) if quadrupole.size == 9 else quadrupole
+        if getattr(tensor, "shape", None) == (3, 3):
+            tensor = tensor - np.eye(3) * np.trace(tensor) / 3.0
+        values["xtb__quadrupole_traceless_frobenius_au"] = float(np.linalg.norm(tensor))
+    atom_energies = _result_array(result, "atom-energies", "atom_energies")
+    if atom_energies is not None:
+        values.update(_stats("xtb__atom_energy_hartree", atom_energies))
+    bond_orders = _result_array(result, "bond-orders", "bond_orders")
+    if bond_orders is not None and bond_orders.ndim == 2:
+        upper = bond_orders[np.triu_indices_from(bond_orders, k=1)]
+        values["xtb__bond_order_sum"] = float(np.sum(upper))
+        effective = upper[np.abs(upper) > 1e-3]
+        if effective.size:
+            values["xtb__bond_order_max"] = float(np.max(effective))
+            values["xtb__bond_order_mean"] = float(np.mean(effective))
+            values["xtb__bond_order_std"] = float(np.std(effective))
     return values
 
 
@@ -422,46 +473,61 @@ def compute_batch(rows: list[dict[str, Any]], mols: list[Any], args: argparse.Na
         for matrix_row, position in enumerate(valid_positions):
             rows[position].update({f"pharm2d_svd__{i:04d}": float(v) for i, v in enumerate(transformed[matrix_row])})
         return rows, {"raw_dimension": raw_dim, "actual_dimension": int(transformed.shape[1]), "explained_variance_ratio_sum": float(reducer.explained_variance_ratio_.sum())}
-    if algorithm == "pretrained_embedding":
+    if algorithm == "chemberta_embedding":
         smiles = [rows[position]["input_smiles"] for position in valid_positions]
         vectors = embed_smiles(smiles, args)
         if len(vectors) != len(valid_positions):
             raise RuntimeError("Embedding row count does not match valid molecule count")
         for position, vector in zip(valid_positions, vectors):
             rows[position].update({f"embedding__{i:04d}": float(value) for i, value in enumerate(vector)})
-        return rows, {"model_dir": args.model_dir, "dimension": int(len(vectors[0]) if vectors else 0)}
+        return rows, {"model_dir": str(resolve_model_dir(args)), "dimension": int(len(vectors[0]) if vectors else 0), "pooling": "non_special_token_mean", "max_length": args.max_length, "batch_size": args.batch_size, "cpu_threads": args.cpu_threads, "device": "cpu"}
     raise ValueError(f"Unsupported batch algorithm: {algorithm}")
 
 
+def resolve_model_dir(args: argparse.Namespace) -> Path:
+    import os
+    configured = args.model_dir or os.environ.get("CONDUCTOR_CHEMBERTA_MODEL_DIR")
+    config_path = SKILL_DIR / "env" / "model_path.txt"
+    if not configured and config_path.is_file():
+        configured = config_path.read_text(encoding="utf-8").strip()
+    if not configured:
+        raise ValueError("ChemBERTa model path is required via --model-dir, CONDUCTOR_CHEMBERTA_MODEL_DIR, or env/model_path.txt")
+    path = Path(configured).expanduser().resolve()
+    if not path.is_dir():
+        raise FileNotFoundError(f"Local ChemBERTa model directory not found: {path}")
+    return path
+
+
+def model_signature(model_dir: Path) -> str:
+    """Stable local-model identity without hashing multi-GB weight contents."""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in model_dir.rglob("*") if p.is_file()):
+        relative = path.relative_to(model_dir).as_posix()
+        stat = path.stat(); digest.update(f"{relative}\0{stat.st_size}\0".encode("utf-8"))
+        if path.name in {"config.json", "tokenizer_config.json", "special_tokens_map.json", "vocab.json"}:
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def embed_smiles(smiles: list[str], args: argparse.Namespace) -> list[list[float]]:
-    if args.adapter:
-        path = Path(args.adapter)
-        spec = importlib.util.spec_from_file_location("conductor_embedding_adapter", path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"Could not load adapter: {path}")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        if not hasattr(module, "embed_smiles"):
-            raise RuntimeError("Adapter must expose embed_smiles(smiles, model_dir)")
-        result = module.embed_smiles(smiles, args.model_dir)
-        return np.asarray(result, dtype=float).tolist()
-    if not args.model_dir:
-        raise ValueError("--model-dir or --adapter is required for pretrained embeddings")
     try:
         import torch
         from transformers import AutoModel, AutoTokenizer
     except ImportError as exc:
         raise RuntimeError("torch and transformers are required") from exc
-    tokenizer = AutoTokenizer.from_pretrained(args.model_dir, local_files_only=True)
-    model = AutoModel.from_pretrained(args.model_dir, local_files_only=True).to(args.device)
+    model_dir = resolve_model_dir(args)
+    torch.set_num_threads(args.cpu_threads)
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
+    model = AutoModel.from_pretrained(model_dir, local_files_only=True).cpu()
     model.eval()
     vectors: list[list[float]] = []
     for start in range(0, len(smiles), args.batch_size):
         batch = smiles[start : start + args.batch_size]
-        encoded = tokenizer(batch, padding=True, truncation=True, return_tensors="pt").to(args.device)
+        encoded = tokenizer(batch, padding=True, truncation=True, max_length=args.max_length, return_special_tokens_mask=True, return_tensors="pt")
+        special = encoded.pop("special_tokens_mask").bool()
         with torch.no_grad():
             output = model(**encoded).last_hidden_state
-            mask = encoded["attention_mask"].unsqueeze(-1)
+            mask = (encoded["attention_mask"].bool() & ~special).unsqueeze(-1)
             pooled = (output * mask).sum(1) / mask.sum(1).clamp(min=1)
         vectors.extend(pooled.detach().cpu().numpy().astype(float).tolist())
     return vectors
@@ -500,15 +566,21 @@ def run() -> int:
         rows.append(row)
     algorithm = CAPABILITY["implementation"]["algorithm"]
     metadata: dict[str, Any] = {"algorithm": algorithm}
-    value_semantics, natural_metric = DESCRIPTION_SEMANTICS.get(CAPABILITY["capability_id"], ("dense_continuous", "euclidean"))
+    value_semantics = CAPABILITY.get("value_semantics", "dense_continuous")
+    natural_metric = CAPABILITY.get("natural_metric", "euclidean")
     metadata.update({"representation_family": CAPABILITY.get("family"), "value_semantics": value_semantics, "natural_metric": natural_metric})
     if algorithm == "morgan":
         metadata["representation_variant"] = "chiral" if args.include_chirality else "standard"
     elif algorithm == "gobbi_pharm2d":
         metadata["representation_variant"] = "svd" if args.reduction == "svd" else "folded"
-    if (algorithm == "gobbi_pharm2d" and args.reduction == "svd") or algorithm == "pretrained_embedding":
+        if args.reduction == "svd":
+            value_semantics, natural_metric = "dense_embedding", "cosine"
+            metadata.update({"value_semantics": value_semantics, "natural_metric": natural_metric})
+    if (algorithm == "gobbi_pharm2d" and args.reduction == "svd") or algorithm == "chemberta_embedding":
         rows, batch_metadata = compute_batch(rows, mols, args)
         metadata.update(batch_metadata)
+        if algorithm == "chemberta_embedding":
+            metadata["model_signature"] = model_signature(resolve_model_dir(args))
     else:
         for index, mol in enumerate(mols):
             if mol is None:
@@ -529,9 +601,11 @@ def run() -> int:
         warnings.append(f"{len(errors)} row-level errors were recorded")
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     manifest = {
-        "schema_version": "1.0.0", "conductor_version": "4.3.1", "run_id": run_id,
+        "schema_version": "2.0.0", "conductor_version": "0.1.0", "artifact_stage": "description", "run_id": run_id,
+        "node_id": args.node_id, "attempt_id": args.attempt_id,
         "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"],
         "representation_id": CAPABILITY["representation_id"], "input": args.input or "inline_smiles", "input_hash": input_hash,
+        "value_semantics": value_semantics, "natural_metric": natural_metric, "feature_columns": features,
         "row_count": int(len(result)), "valid_molecule_count": int(result["mol_parse_ok"].sum()), "feature_count": len(features),
         "output": result_path.name, "format": args.format, "metadata": metadata, "warnings": warnings, "errors": errors, "created_at": utc_now()
     }
@@ -541,7 +615,7 @@ def run() -> int:
         write_json(outdir / "warnings.json", {"warnings": warnings, "errors": errors})
     if args.conductor:
         event = {
-            "schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id,
+            "schema_version": "2.0.0", "project": args.project, "run_id": run_id, "round_id": args.round_id, "node_id": args.node_id, "attempt_id": args.attempt_id,
             "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded",
             "input_hash": input_hash, "config_hash": object_hash(config), "configuration": config,
             "artifacts": [{"type": "description", "path": result_path.name, "sha256": file_sha256(result_path)}, {"type": "manifest", "path": "description_manifest.json", "sha256": file_sha256(outdir / "description_manifest.json")}],

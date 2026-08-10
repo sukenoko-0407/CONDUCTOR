@@ -1,12 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "D002",
   "skill_name": "cs-compute-description-morgan",
   "display_name": "Morgan fingerprint (optional chirality)",
-  "version": "4.0.0",
+  "version": "0.1.0",
   "stage": "description",
   "family": "2d_fingerprint",
-  "description": "Use when Claude Code needs to run Morgan fingerprint (optional chirality) from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when Claude Code needs to run Morgan fingerprint (optional chirality) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -31,6 +31,11 @@
   "implementation": {
     "algorithm": "morgan"
   },
+  "value_semantics": "binary_fingerprint",
+  "natural_metric": "tanimoto",
+  "allowed_metrics": [
+    "tanimoto"
+  ],
   "default_variant": "standard",
   "default_parameters": {
     "include_chirality": false,

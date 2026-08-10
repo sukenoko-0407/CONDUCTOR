@@ -2,11 +2,11 @@
 
 ## SKILLの目的
 
-Description Skillが生成した数値vectorへLeiden community detectionを適用し、cluster membershipとsummaryを生成する。
+Description Skillが生成した数値vectorへVector Leiden clusteringを適用し、cluster membershipとsummaryを生成する。
 
 ## 想定利用シーン
 
-descriptor、fingerprint、embedding空間で化合物をgroup化し、SMILESを直接扱う構造Groupingと比較する場合。
+descriptor、fingerprint、embedding空間で化合物をCluster化し、SMILESを直接扱う構造Clusteringと比較する場合。
 
 ## 環境構築
 
@@ -24,12 +24,13 @@ python .claude/skills/cs-compute-clustering-vector-leiden/scripts/launch.py --in
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-clustering-vector-leiden/scripts/launch.py --input description.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-compute-clustering-vector-leiden/scripts/launch.py --input description.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
 
-- 一般利用ではClustering、CONDUCTOR内ではGroupingとして扱う。入力分子やfeature値は変更しない。
+- 一般利用とCONDUCTORの両方でClustering／Clusterと呼ぶ。入力分子やfeature値は変更しない。
+- 5化合物未満のClusterは出力・登録しない。
 - raw SMILESは入力にできず、Descriptionを内部生成しない。`--metric auto`は表現に応じてTanimoto、Manhattan、Cosine、標準化Euclideanを選び、binaryまたは既知のbit fingerprintではTanimoto以外を許可しない。
 - 結果は入力feature、距離metric、thresholdまたはcluster数に依存する。
 

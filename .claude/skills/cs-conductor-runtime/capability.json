@@ -1,9 +1,9 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "O001",
   "skill_name": "cs-conductor-runtime",
   "display_name": "CONDUCTOR deterministic runtime",
-  "version": "4.3.1",
+  "version": "0.1.0",
   "stage": "orchestration",
   "family": "graph_orchestration",
   "description": "Deterministic State mutation runtime used by the CONDUCTOR Orchestrator Agent. It owns Node allocation, lease control, attempts, gates, summaries, and Round close validation.",
@@ -39,6 +39,6 @@
   "implementation": {
     "purpose": "deterministic_multiround_dag_runtime",
     "state_access": "single_writer_lease",
-    "interpretation_execution_authority": "orchestrator_only"
+    "interpretation_execution_authority": "runtime_commit_only"
   }
 }

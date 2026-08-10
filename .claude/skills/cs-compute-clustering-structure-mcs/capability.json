@@ -1,19 +1,17 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "C002",
   "skill_name": "cs-compute-clustering-structure-mcs",
   "display_name": "MCS clustering",
-  "version": "4.0.0",
-  "stage": "grouping",
+  "version": "0.1.0",
+  "stage": "clustering",
   "family": "direct_structure",
-  "grouping_kind": "direct_structure",
-  "description": "Use when Claude Code needs to group compounds from a compound-ID/SMILES CSV by maximum common substructure as a mandatory initial CONDUCTOR v4 Grouping axis, without generating a hidden descriptor vector or requiring per-run human approval.",
+  "description": "Cluster compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR axis, without generating a hidden descriptor vector or requiring per-run human approval.",
   "cost": {
     "class": "high",
     "human_approval_required": false,
     "hpc_profile": "cpu64"
   },
-  "approval_policy": "preauthorized_initial",
   "applicability": {
     "status": "experimental",
     "platforms": [
@@ -22,22 +20,26 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
+  "approval_policy": "preauthorized_initial",
+  "clustering_kind": "direct_structure",
   "clustering_id": "C002",
-  "default_parameters": {
-    "min_cluster_size": 3,
-    "max_pairs": 1000,
-    "max_core_groups": 300,
-    "random_seed": 61453
-  },
   "dependencies": [],
   "input_contract": [
     "compound_id_smiles_csv"
   ],
   "output": {
     "membership": "cluster_membership.csv",
-    "summary": "cluster_summary.csv"
+    "summary": "cluster_summary.csv",
+    "manifest": "clustering_manifest.json"
   },
   "implementation": {
     "algorithm": "structure_mcs"
+  },
+  "analysis_role": "clustering",
+  "default_parameters": {
+    "min_cluster_size": 5,
+    "max_pairs": 1000,
+    "max_core_clusters": 300,
+    "random_seed": 61453
   }
 }

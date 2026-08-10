@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-result-concierge
-description: Explain, trace, compare, and visualize existing results from an explicitly supplied completed CONDUCTOR run without changing State, DAG, scientific artifacts, or analysis decisions. Use only when a human asks to inspect a Finding, Hypothesis, Question, Evidence, Node, Group, Operator result, or relationship already present in a frozen run.
+description: Explain, trace, compare, and visualize existing results from an explicitly supplied completed CONDUCTOR run without changing State, DAG, scientific artifacts, or analysis decisions. Use only when a human asks to inspect an Insight, Next Action, Node, Cluster, Operator result, or relationship already present in a frozen run.
 allowed-tools: Read, Write, Glob, Grep, Bash
 ---
 
@@ -12,8 +12,8 @@ allowed-tools: Read, Write, Glob, Grep, Bash
 
 - 人間が`state.json`と依頼内容を明示した場合だけ使う。
 - active Round、running Node、live Orchestrator leaseがある場合は開始しない。
-- State、DAG、index、Description、Grouping、Operator、Interpretation、`CONDUCTOR_modules/`を変更しない。
-- 新規Descriptor、Grouping、統計検定、Operator、Interpretation ID、Nodeを作らない。
+- State、DAG、index、Description、Clustering、Operator、Interpretation、`CONDUCTOR_modules/`を変更しない。
+- 新規Descriptor、Clustering、統計検定、Operator、Interpretation ID、Nodeを作らない。
 - 既存値の抽出、並べ替え、比較、要約、provenance追跡、表・Figureへの再表現だけを行う。
 - 追加解析が必要なら実行せず、任意の`next_round_prompt.md`として提案する。
 
@@ -26,8 +26,8 @@ launcherは共有Pixiを優先し、`PIXI_CACHE_DIR`と`UV_CACHE_DIR`をSkill内
 ```bash
 python .claude/skills/cs-conductor-result-concierge/scripts/launch.py prepare \
   --state /path/to/run_root/state.json \
-  --request "F012を根拠データまで遡って説明し、関連GroupとGlobalを比較する" \
-  --focus-id F012 --explicit-request
+  --request "INS0012を根拠データまで遡って説明し、関連ClusterとGlobalを比較する" \
+  --focus-id INS0012 --explicit-request
 ```
 
 返された`request_dir`、`context.json`、`response_draft.json`を使用する。要求IDは`CRQ######`であり、Node IDやInterpretation IDとは独立する。
@@ -40,7 +40,7 @@ python .claude/skills/cs-conductor-result-concierge/scripts/launch.py prepare \
 python .claude/skills/cs-conductor-result-concierge/scripts/launch.py add-source \
   --request-dir /path/to/run_root/concierge/CRQ000001 \
   --source analysis/.../operator_report.html \
-  --source analysis/.../evidence_digest.json
+  --source analysis/.../operator_summary.json
 ```
 
 登録済みsourceだけを根拠として使い、`response_draft.json`の`source_paths`にもrun-root相対pathを記録する。
@@ -64,7 +64,7 @@ python .claude/skills/cs-conductor-result-concierge/scripts/launch.py verify \
 ## 回答品質
 
 - IDだけを並べず、「どの解析・どの表現・どの範囲・何が観測されたか」を平易に説明する。
-- Global対Local、Group間、異なるDescription間の比較では、比較可能性とsample数を明記する。
-- 相関、因果、仮説を混同しない。既存Evidenceを超える結論を作らない。
+- Global対Local、Cluster間、異なるDescription間の比較では、比較可能性とsample数を明記する。
+- 相関、因果、仮説を混同しない。既存Operator resultを超える結論を作らない。
 - 人間の意見はこのreport内で明示的に区別し、Stateへ反映しない。
 - 次Roundへ渡す提案は、観察済み事実と追加してほしい解析を分けて書く。

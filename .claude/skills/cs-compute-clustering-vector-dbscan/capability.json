@@ -1,13 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "C007",
   "skill_name": "cs-compute-clustering-vector-dbscan",
   "display_name": "Vector DBSCAN clustering",
-  "version": "4.0.0",
-  "stage": "grouping",
+  "version": "0.1.0",
+  "stage": "clustering",
   "family": "description_vector",
-  "grouping_kind": "description_vector",
-  "description": "Use when Claude Code needs to apply DBSCAN to a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
+  "description": "Apply Vector DBSCAN clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -21,13 +20,8 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
+  "clustering_kind": "description_vector",
   "clustering_id": "C007",
-  "default_parameters": {
-    "min_cluster_size": 3,
-    "metric": "auto",
-    "eps": 0.5,
-    "min_samples": 3
-  },
   "dependencies": [
     "description"
   ],
@@ -36,9 +30,17 @@
   ],
   "output": {
     "membership": "cluster_membership.csv",
-    "summary": "cluster_summary.csv"
+    "summary": "cluster_summary.csv",
+    "manifest": "clustering_manifest.json"
   },
   "implementation": {
     "algorithm": "vector_dbscan"
+  },
+  "analysis_role": "clustering",
+  "default_parameters": {
+    "min_cluster_size": 5,
+    "metric": "auto",
+    "eps": 0.5,
+    "min_samples": 3
   }
 }

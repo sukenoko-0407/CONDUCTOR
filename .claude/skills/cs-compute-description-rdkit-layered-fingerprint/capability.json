@@ -1,12 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "D009",
   "skill_name": "cs-compute-description-rdkit-layered-fingerprint",
   "display_name": "RDKit layered fingerprint",
-  "version": "4.0.0",
+  "version": "0.1.0",
   "stage": "description",
   "family": "2d_fingerprint",
-  "description": "Use when Claude Code needs to run RDKit layered fingerprint from CSV or compatible CONDUCTOR v4 artifacts with a self-contained Pixi environment.",
+  "description": "Use when Claude Code needs to run RDKit layered fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -30,5 +30,10 @@
   },
   "implementation": {
     "algorithm": "rdkit_layered"
-  }
+  },
+  "value_semantics": "binary_fingerprint",
+  "natural_metric": "tanimoto",
+  "allowed_metrics": [
+    "tanimoto"
+  ]
 }

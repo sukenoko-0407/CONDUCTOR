@@ -6,7 +6,7 @@ CSVまたは1件以上のSMILESからRDKit pattern fingerprintを計算し、Des
 
 ## 想定利用シーン
 
-部分構造や官能基パターンに基づく比較、Grouping、SAR解析。
+部分構造や官能基パターンに基づく比較、Clustering、SAR解析。
 
 ## 環境構築
 
@@ -24,7 +24,7 @@ python .claude/skills/cs-compute-description-rdkit-pattern-fingerprint/scripts/l
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-description-rdkit-pattern-fingerprint/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-compute-description-rdkit-pattern-fingerprint/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項

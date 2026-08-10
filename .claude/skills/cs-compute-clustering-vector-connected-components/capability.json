@@ -1,13 +1,12 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "C010",
   "skill_name": "cs-compute-clustering-vector-connected-components",
   "display_name": "Vector connected-component clustering",
-  "version": "4.0.0",
-  "stage": "grouping",
+  "version": "0.1.0",
+  "stage": "clustering",
   "family": "description_vector",
-  "grouping_kind": "description_vector",
-  "description": "Use when Claude Code needs to form connected components from a numeric vector artifact produced by a Description Skill; this Skill does not accept SMILES or generate descriptors internally.",
+  "description": "Apply Vector connected-component clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
   "cost": {
     "class": "medium",
     "human_approval_required": false,
@@ -21,11 +20,7 @@
     ],
     "molecule_standardization": "out_of_scope"
   },
-  "default_parameters": {
-    "min_cluster_size": 3,
-    "metric": "auto",
-    "similarity_threshold": 0.55
-  },
+  "clustering_kind": "description_vector",
   "clustering_id": "C010",
   "dependencies": [
     "description"
@@ -35,9 +30,16 @@
   ],
   "output": {
     "membership": "cluster_membership.csv",
-    "summary": "cluster_summary.csv"
+    "summary": "cluster_summary.csv",
+    "manifest": "clustering_manifest.json"
   },
   "implementation": {
     "algorithm": "vector_connected_components"
+  },
+  "analysis_role": "clustering",
+  "default_parameters": {
+    "min_cluster_size": 5,
+    "metric": "auto",
+    "similarity_threshold": 0.55
   }
 }

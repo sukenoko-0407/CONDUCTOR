@@ -7,8 +7,9 @@ CONDUCTORのDAG、Node ID、Round、単一Writer lease、実行attempt、Interpr
 ## 想定利用シーン
 
 - 新規Runの初期化と複数Roundの継続
-- Description / Grouping / Operator / Interpretationの部分追加
+- Description / Clustering / Operator / Interpretationの部分追加
 - Agent停止後の安全な再開
+- navigation indexの監査後再構築
 - Round終端前の状態確認
 
 ## 環境構築
@@ -24,14 +25,12 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state bootstrap \
 
 返されたlease tokenを、そのセッションのState変更コマンドへ `--lease-token` として渡します。
 
-移行済みRunの最初のRoundは、人間の開始指示を確認して`round-start --accept-migration`で開始します。移行済み基本計算は再利用され、不足分だけが計画対象になります。
-
 ## 制約事項
 
-一般解析用Skillではありません。Stateの直接編集、複数Writer、Migration AgentからのRound開始、最終Operatorより古いInterpretationによるRound完了は許可されません。
+一般解析用Skillではありません。alpha版Runの移行は行いません。Stateの直接編集、複数Writer、最終Operatorより古いInterpretationによるRound完了は許可されません。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | v4.3.1の決定論的Runtimeとして名称と責務を分離 |
+| 1.0.0 | 0.1.0の単一Writer・attempt・Cluster・Interpretation commit管理を実装 |

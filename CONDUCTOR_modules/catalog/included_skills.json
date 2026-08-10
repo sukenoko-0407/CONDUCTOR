@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "managed_by": "human",
   "included_skills": [
     "cs-compute-description-rdkit-2d",
@@ -12,14 +12,14 @@
     "cs-compute-description-rdkit-pattern-fingerprint",
     "cs-compute-description-rdkit-layered-fingerprint",
     "cs-compute-description-avalon-fingerprint",
+    "cs-compute-description-gobbi-pharm2d",
     "cs-compute-description-rdkit-3d",
     "cs-compute-description-usr-usrcat",
     "cs-compute-description-shape",
     "cs-compute-description-mordred-2d",
     "cs-compute-description-mordred-3d",
-    "cs-compute-description-gobbi-pharm2d",
-    "cs-compute-description-pretrained-embedding",
     "cs-compute-description-tblite-xtb",
+    "cs-compute-description-chemberta-embedding",
     "cs-compute-clustering-structure-murcko",
     "cs-compute-clustering-structure-mcs",
     "cs-compute-clustering-structure-brics",
@@ -32,25 +32,24 @@
     "cs-compute-clustering-vector-connected-components",
     "cs-compute-clustering-categorical",
     "cs-compute-clustering-meta-overlap",
-    "cs-analysis-group-profile",
     "cs-analysis-activity-distribution",
-    "cs-analysis-pairwise-structure-similarity",
     "cs-analysis-descriptor-activity-correlation",
+    "cs-analysis-projection-pca",
+    "cs-analysis-projection-umap",
+    "cs-analysis-multidescription-feature-model",
+    "cs-analysis-pairwise-structure-similarity",
     "cs-analysis-knn-activity-consistency",
     "cs-analysis-sali",
     "cs-analysis-activity-cliff",
-    "cs-analysis-group-enrichment",
-    "cs-analysis-group-overlap",
-    "cs-analysis-group-structural-diversity",
-    "cs-analysis-interpret-evidence",
+    "cs-analysis-cluster-profile",
+    "cs-analysis-cluster-enrichment",
+    "cs-analysis-cluster-overlap",
+    "cs-analysis-cluster-structural-diversity",
+    "cs-analysis-interpret-results",
     "cs-conductor-runtime",
     "cs-conductor-run-audit",
     "cs-conductor-state-report"
   ],
-  "maintenance_skills": [
-    "cs-conductor-migrate-v430-run"
-  ],
-  "support_skills": [
-    "cs-conductor-result-concierge"
-  ]
+  "maintenance_skills": [],
+  "support_skills": ["cs-conductor-result-concierge"]
 }

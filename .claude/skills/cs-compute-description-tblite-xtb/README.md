@@ -1,8 +1,8 @@
-# GFN2-xTB single-point descriptors
+# GFN2-xTB quantum descriptors
 
 ## SKILLの目的
 
-CSVまたは1件以上のSMILESからGFN2-xTB single-point descriptorsを計算し、Description表を生成する。
+CSVまたは1件以上のSMILESからGFN2-xTB quantum descriptorsを計算し、Description表を生成する。
 
 ## 想定利用シーン
 
@@ -24,7 +24,7 @@ python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --inpu
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --node-id NODE_ID
+python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項

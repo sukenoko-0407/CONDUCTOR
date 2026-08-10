@@ -5,7 +5,6 @@ import hashlib
 import json
 import math
 import random
-import re
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -110,20 +109,23 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument("--id-column")
     parser.add_argument("--output-dir")
     parser.add_argument("--run-id")
+    parser.add_argument("--round-id")
     parser.add_argument("--project")
     parser.add_argument("--node-id")
+    parser.add_argument("--attempt-id")
     parser.add_argument("--conductor", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--min-cluster-size", type=int, default=3)
+    parser.add_argument("--min-cluster-size", type=int, default=5)
     if algorithm == "categorical":
         parser.add_argument("--columns", required=True, help="Comma-separated categorical columns.")
     if algorithm == "structure_mcs":
         parser.add_argument("--max-pairs", type=int, default=1000, help="Maximum evaluated molecule pairs (1-1000).")
-        parser.add_argument("--max-core-groups", type=int, default=300, help="Maximum number of retained MCS groups.")
+        parser.add_argument("--max-core-clusters", type=int, default=300, help="Maximum number of retained MCS Clusters.")
         parser.add_argument("--random-seed", type=int, default=61453, help="Seed for reproducible random pair sampling.")
     if algorithm.startswith("vector_"):
         parser.add_argument("--metric", choices=["auto", "tanimoto", "cosine", "euclidean", "manhattan"], default="auto")
         parser.add_argument("--input-representation", help="Description capability ID, for example D002 or D013.")
+        parser.add_argument("--description-manifest", help="Description manifest whose value semantics and natural metric bind this run.")
     method = algorithm.split("_", 1)[1] if algorithm.startswith(("structure_", "vector_")) else ("connected_components" if algorithm == "meta_overlap" else None)
     if method in {"butina", "louvain", "leiden", "connected_components"}:
         parser.add_argument("--similarity-threshold", type=float, default=0.55)
@@ -138,16 +140,18 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument("--random-seed", type=int, default=61453)
     args = parser.parse_args()
     if args.conductor:
-        missing = [name for name in ("project", "run_id", "node_id") if not getattr(args, name)]
+        missing = [name for name in ("project", "run_id", "round_id", "node_id", "attempt_id") if not getattr(args, name)]
         if missing:
-            parser.error("--conductor requires --project, --run-id, and --node-id")
-    elif args.project or args.node_id:
-        parser.error("--project and --node-id are valid only with --conductor")
-    for name in ("min_cluster_size", "max_pairs", "max_core_groups", "min_samples", "n_clusters"):
+            parser.error("--conductor requires --project, --run-id, --round-id, --node-id, and --attempt-id")
+    elif args.project or args.round_id or args.node_id or args.attempt_id:
+        parser.error("--project, --round-id, --node-id, and --attempt-id are valid only with --conductor")
+    for name in ("min_cluster_size", "max_pairs", "max_core_clusters", "min_samples", "n_clusters"):
         if hasattr(args, name) and getattr(args, name) is not None and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
     if algorithm == "structure_mcs" and args.max_pairs > 1000:
         parser.error("--max-pairs must be <= 1000")
+    if args.min_cluster_size < 5:
+        parser.error("--min-cluster-size must be >= 5")
     if hasattr(args, "random_seed") and args.random_seed < 0:
         parser.error("--random-seed must be >= 0")
     for name in ("distance_threshold", "eps", "resolution"):
@@ -207,7 +211,7 @@ def default_output(args: argparse.Namespace, source_name: str, run_id: str) -> P
         return Path(args.output_dir)
     root = find_workspace() / "results"
     if args.conductor:
-        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "grouping" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-")
+        return root / "CONDUCTOR" / (args.project or source_name) / run_id / "clustering" / CAPABILITY["skill_name"] / str(args.node_id).replace(":", "-") / "attempts" / str(args.attempt_id)
     return root / "clustering" / source_name / CAPABILITY["skill_name"] / run_id
 
 
@@ -228,15 +232,15 @@ def structure_table(df: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.Data
     return result, mols, warnings
 
 
-def add_group(groups: dict[str, set[str]], label: str, members: list[str] | set[str], min_size: int) -> None:
+def add_cluster(clusters: dict[str, set[str]], label: str, members: list[str] | set[str], min_size: int) -> None:
     values = {str(value) for value in members}
     if len(values) >= min_size:
-        groups[label] = values
+        clusters[label] = values
 
 
-def rule_groups(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, algorithm: str) -> tuple[dict[str, set[str]], dict[str, Any]]:
+def rule_clusters(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, algorithm: str) -> tuple[dict[str, set[str]], dict[str, Any]]:
     from rdkit import Chem
-    groups: dict[str, set[str]] = {}
+    clusters: dict[str, set[str]] = {}
     if algorithm == "structure_murcko":
         from rdkit.Chem.Scaffolds import MurckoScaffold
         buckets: dict[str, list[str]] = defaultdict(list)
@@ -246,8 +250,8 @@ def rule_groups(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, a
                 if scaffold:
                     buckets[scaffold].append(str(compound_id))
         for scaffold, members in buckets.items():
-            add_group(groups, scaffold, members, args.min_cluster_size)
-        return groups, {"definition": "Bemis-Murcko scaffold"}
+            add_cluster(clusters, scaffold, members, args.min_cluster_size)
+        return clusters, {"definition": "Bemis-Murcko scaffold"}
     if algorithm in {"structure_brics", "structure_recap"}:
         buckets: dict[str, list[str]] = defaultdict(list)
         if algorithm == "structure_brics":
@@ -264,8 +268,8 @@ def rule_groups(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, a
                     for fragment in tree.GetLeaves().keys():
                         buckets[str(fragment)].append(str(compound_id))
         for fragment, members in buckets.items():
-            add_group(groups, fragment, members, args.min_cluster_size)
-        return groups, {"definition": algorithm.replace("structure_", "") + " fragments"}
+            add_cluster(clusters, fragment, members, args.min_cluster_size)
+        return clusters, {"definition": algorithm.replace("structure_", "") + " fragments"}
     if algorithm == "structure_mcs":
         from itertools import combinations
         from rdkit.Chem import rdFMCS
@@ -293,10 +297,10 @@ def rule_groups(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, a
             members = {cid for cid, mol in valid if query is not None and mol.HasSubstructMatch(query)}
             if len(members) >= args.min_cluster_size:
                 candidates[result.smartsString] = members
-        ranked = sorted(candidates.items(), key=lambda item: (-len(item[1]), item[0]))[: args.max_core_groups]
+        ranked = sorted(candidates.items(), key=lambda item: (-len(item[1]), item[0]))[: args.max_core_clusters]
         for smarts, members in ranked:
-            groups[smarts] = members
-        return groups, {
+            clusters[smarts] = members
+        return clusters, {
             "definition": "pair-seeded MCS",
             "pair_population": pair_population,
             "evaluated_pair_count": len(selected_pairs),
@@ -304,7 +308,7 @@ def rule_groups(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace, a
             "pair_sampling": sampling,
             "random_seed": args.random_seed,
         }
-    raise ValueError(f"Unsupported rule grouping: {algorithm}")
+    raise ValueError(f"Unsupported rule clustering: {algorithm}")
 
 
 def resolve_vector_metric(values: pd.DataFrame, features: list[str], args: argparse.Namespace) -> str:
@@ -312,21 +316,36 @@ def resolve_vector_metric(values: pd.DataFrame, features: list[str], args: argpa
     finite = observed[np.isfinite(observed)]
     is_binary = bool(finite.size) and bool(np.isin(finite, [0.0, 1.0]).all())
     representation = str(args.input_representation or "").upper()
-    fingerprint_ids = {"D002", "D003", "D007", "D008", "D009", "D010"}
+    manifest: dict[str, Any] = {}
+    if getattr(args, "description_manifest", None):
+        manifest = json.loads(Path(args.description_manifest).read_text(encoding="utf-8"))
+        if manifest.get("schema_version") != "2.0.0":
+            raise ValueError("Description manifest schema_version must be 2.0.0")
+        manifest_representation = str(manifest.get("capability_id") or "").upper()
+        if representation and manifest_representation and representation != manifest_representation:
+            raise ValueError("--input-representation conflicts with --description-manifest")
+        representation = representation or manifest_representation
+    semantics = str(manifest.get("value_semantics") or "")
+    bound_metric = str(manifest.get("natural_metric") or "")
+    fingerprint_ids = {"D002", "D003", "D007", "D008", "D009", "D010", "D011"}
     requested = args.metric
-    if is_binary and requested not in {"auto", "tanimoto"}:
+    if (is_binary or semantics == "binary_fingerprint") and requested not in {"auto", "tanimoto"}:
         raise ValueError("Binary Description vectors require --metric tanimoto")
     if representation in fingerprint_ids and requested not in {"auto", "tanimoto"}:
         raise ValueError(f"{representation} fingerprint vectors require --metric tanimoto")
     if requested == "tanimoto" and finite.size and np.any(finite < 0):
         raise ValueError("--metric tanimoto requires non-negative Description values")
     if requested != "auto":
+        if bound_metric and requested != bound_metric:
+            raise ValueError(f"Requested metric {requested} conflicts with Description manifest metric {bound_metric}")
         return requested
-    if is_binary or representation in fingerprint_ids or representation == "D002":
+    if bound_metric:
+        return bound_metric
+    if is_binary or semantics == "binary_fingerprint" or representation in fingerprint_ids:
         return "tanimoto"
     if representation == "D013":
         return "manhattan"
-    if representation in {"D004", "D005", "D017", "D019"}:
+    if representation in {"D004", "D005", "D006", "D020"}:
         return "cosine"
     feature_names = [str(feature).lower() for feature in features]
     if any(name.startswith(("usr__", "usrcat__")) for name in feature_names):
@@ -431,45 +450,45 @@ def labels_from_method(distance: np.ndarray, similarity: np.ndarray, args: argpa
     return labels
 
 
-def labeled_groups(ids: list[str], labels: np.ndarray, min_size: int) -> dict[str, set[str]]:
-    groups: dict[str, set[str]] = defaultdict(set)
+def labeled_clusters(ids: list[str], labels: np.ndarray, min_size: int) -> dict[str, set[str]]:
+    clusters: dict[str, set[str]] = defaultdict(set)
     for compound_id, label in zip(ids, labels):
         if int(label) >= 0:
-            groups[str(int(label))].add(str(compound_id))
-    return {label: members for label, members in groups.items() if len(members) >= min_size}
+            clusters[str(int(label))].add(str(compound_id))
+    return {label: members for label, members in clusters.items() if len(members) >= min_size}
 
 
-def categorical_groups(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dict[str, set[str]], dict[str, Any]]:
+def categorical_clusters(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dict[str, set[str]], dict[str, Any]]:
     columns = [value.strip() for value in (args.columns or "").split(",") if value.strip()]
     if not columns:
         raise ValueError("--columns is required for categorical clustering")
     missing = [column for column in columns if column not in df.columns]
     if missing:
         raise ValueError(f"Categorical columns not found: {missing}")
-    groups: dict[str, set[str]] = {}
+    clusters: dict[str, set[str]] = {}
     for column in columns:
         for value, frame in df.dropna(subset=[column]).groupby(column):
-            add_group(groups, f"{column}={value}", frame["compound_id"].astype(str).tolist(), args.min_cluster_size)
-    return groups, {"columns": columns}
+            add_cluster(clusters, f"{column}={value}", frame["compound_id"].astype(str).tolist(), args.min_cluster_size)
+    return clusters, {"columns": columns}
 
 
-def meta_overlap_groups(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dict[str, set[str]], dict[str, Any]]:
+def meta_overlap_clusters(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dict[str, set[str]], dict[str, Any]]:
     def active_mask(values: pd.Series) -> pd.Series:
         text = values.astype(str).str.strip().str.lower()
         return text.isin({"true", "yes", "y"}) | (pd.to_numeric(values, errors="coerce").fillna(0) > 0)
 
-    long_group_column = "cluster_id" if "cluster_id" in df.columns else ("group_id" if "group_id" in df.columns else None)
-    if long_group_column and "compound_id" in df.columns:
+    long_cluster_column = "cluster_id" if "cluster_id" in df.columns else None
+    if long_cluster_column and "compound_id" in df.columns:
         active = df if "membership_value" not in df.columns else df.loc[active_mask(df["membership_value"])]
-        active = active.loc[active[long_group_column].notna() & active[long_group_column].astype(str).str.strip().ne("")]
-        member_sets = {str(group): set(frame["compound_id"].astype(str)) for group, frame in active.groupby(long_group_column)}
+        active = active.loc[active[long_cluster_column].notna() & active[long_cluster_column].astype(str).str.strip().ne("")]
+        member_sets = {str(cluster): set(frame["compound_id"].astype(str)) for cluster, frame in active.groupby(long_cluster_column)}
     else:
         id_column = "compound_id"
         member_sets = {str(column): set(df.loc[active_mask(df[column]), id_column].astype(str)) for column in df.columns if column != id_column}
-        member_sets = {group_id: members for group_id, members in member_sets.items() if members}
+        member_sets = {cluster_id: members for cluster_id, members in member_sets.items() if members}
     names = sorted(member_sets)
     if not names:
-        return {}, {"source_group_count": 0}
+        return {}, {"source_cluster_count": 0}
     distance = np.zeros((len(names), len(names)), dtype=float)
     for i, left in enumerate(names):
         for j, right in enumerate(names):
@@ -477,21 +496,12 @@ def meta_overlap_groups(df: pd.DataFrame, args: argparse.Namespace) -> tuple[dic
             similarity = len(member_sets[left] & member_sets[right]) / len(union) if union else 0.0
             distance[i, j] = 1.0 - similarity
     labels = labels_from_method(distance, 1.0 - distance, args, "connected_components")
-    groups: dict[str, set[str]] = {}
+    clusters: dict[str, set[str]] = {}
     for label in sorted(set(labels)):
-        source_groups = [names[i] for i, value in enumerate(labels) if value == label]
-        members = set().union(*(member_sets[name] for name in source_groups)) if source_groups else set()
-        add_group(groups, "+".join(source_groups), members, args.min_cluster_size)
-    return groups, {"source_group_count": len(names)}
-
-
-def stable_group_id(label: str, members: set[str], args: argparse.Namespace) -> str:
-    if args.conductor and args.node_id:
-        context = re.sub(r"[^A-Za-z0-9]+", "_", str(args.node_id)).strip("_").upper()
-    else:
-        context = CAPABILITY["clustering_id"]
-    identity = value_hash({"label": str(label), "members": sorted(str(member) for member in members)})[:16].upper()
-    return f"G_{context}_{identity}"
+        source_clusters = [names[i] for i, value in enumerate(labels) if value == label]
+        members = set().union(*(member_sets[name] for name in source_clusters)) if source_clusters else set()
+        add_cluster(clusters, "+".join(source_clusters), members, args.min_cluster_size)
+    return clusters, {"source_cluster_count": len(names)}
 
 
 def run() -> int:
@@ -503,7 +513,7 @@ def run() -> int:
     if outdir.exists() and any(outdir.iterdir()):
         if not args.overwrite:
             raise FileExistsError(f"Output directory is not empty; use --overwrite: {outdir}")
-        for name in ["cluster_membership.csv", "cluster_summary.csv", "group_registry.json", "grouping_manifest.json", "warnings.json", "execution_event.json"]:
+        for name in ["cluster_membership.csv", "cluster_summary.csv", "cluster_registry.json", "clustering_manifest.json", "warnings.json", "execution_event.json"]:
             (outdir / name).unlink(missing_ok=True)
     outdir.mkdir(parents=True, exist_ok=True)
     algorithm = CAPABILITY["implementation"]["algorithm"]
@@ -513,28 +523,28 @@ def run() -> int:
         base, mols, parse_warnings = structure_table(df, args)
         warnings.extend(parse_warnings)
         if algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
-            raise ValueError(f"Unsupported direct-structure grouping algorithm: {algorithm}")
-        groups, details = rule_groups(base, mols, args, algorithm)
+            raise ValueError(f"Unsupported direct-structure clustering algorithm: {algorithm}")
+        clusters, details = rule_clusters(base, mols, args, algorithm)
     elif algorithm.startswith("vector_"):
         positions, distance, similarity, features, resolved_metric = vector_distances(df, args)
         method = algorithm.removeprefix("vector_")
         labels = labels_from_method(distance, similarity, args, method)
         ids = [str(df.iloc[position]["compound_id"]) for position in positions]
-        groups = labeled_groups(ids, labels, args.min_cluster_size)
+        clusters = labeled_clusters(ids, labels, args.min_cluster_size)
         details = {"feature_count": len(features), "requested_metric": args.metric, "metric": resolved_metric, "input_representation": args.input_representation, "method": method}
     elif algorithm == "categorical":
-        groups, details = categorical_groups(df, args)
+        clusters, details = categorical_clusters(df, args)
     elif algorithm == "meta_overlap":
-        groups, details = meta_overlap_groups(df, args)
+        clusters, details = meta_overlap_clusters(df, args)
     else:
         raise ValueError(f"Unsupported clustering algorithm: {algorithm}")
     membership_rows: list[dict[str, Any]] = []
     registry: list[dict[str, Any]] = []
-    for label, members in sorted(groups.items(), key=lambda item: (-len(item[1]), item[0])):
-        group_id = stable_group_id(label, members, args)
-        registry.append({"group_id": group_id, "group_label": label, "grouping_capability_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "source_node_id": args.node_id, "source_description_id": getattr(args, "input_representation", None), "definition": details, "compound_count": len(members), "activity_blind": True})
-        membership_rows.extend({"cluster_id": group_id, "compound_id": compound_id, "membership_value": 1.0, "membership_reason": label} for compound_id in sorted(members))
-    assigned_ids = set().union(*groups.values()) if groups else set()
+    for local_number, (label, members) in enumerate(sorted(clusters.items(), key=lambda item: (-len(item[1]), item[0])), 1):
+        local_cluster_id = f"LCL{local_number:06d}"
+        registry.append({"local_cluster_id": local_cluster_id, "cluster_label": label, "clustering_capability_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "source_node_id": args.node_id, "source_description_id": getattr(args, "input_representation", None), "definition": details, "compound_count": len(members), "activity_blind": True})
+        membership_rows.extend({"cluster_id": local_cluster_id, "compound_id": compound_id, "membership_value": 1.0, "membership_reason": label} for compound_id in sorted(members))
+    assigned_ids = set().union(*clusters.values()) if clusters else set()
     input_ids = set(df["compound_id"].astype(str))
     if algorithm.startswith("structure_"):
         invalid_ids = {
@@ -568,21 +578,21 @@ def run() -> int:
         for compound_id in sorted(input_ids - assigned_ids)
     )
     membership = pd.DataFrame(membership_rows, columns=["cluster_id", "compound_id", "membership_value", "membership_reason"])
-    summary = pd.DataFrame([{"cluster_id": row["group_id"], "cluster_label": row["group_label"], "compound_count": row["compound_count"], "clustering_id": CAPABILITY["clustering_id"]} for row in registry])
+    summary = pd.DataFrame([{"cluster_id": row["local_cluster_id"], "cluster_label": row["cluster_label"], "compound_count": row["compound_count"], "clustering_id": CAPABILITY["clustering_id"]} for row in registry])
     membership_path = outdir / "cluster_membership.csv"
     summary_path = outdir / "cluster_summary.csv"
     membership.to_csv(membership_path, index=False)
     summary.to_csv(summary_path, index=False)
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     input_label = ";".join(args.input) if isinstance(args.input, list) else (args.input or "inline_smiles")
-    manifest = {"schema_version": "1.0.0", "conductor_version": "4.3.1", "run_id": run_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name], "created_at": utc_now()}
+    manifest = {"schema_version": "2.0.0", "conductor_version": "0.1.0", "artifact_stage": "clustering", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "value_semantics": "cluster_membership", "natural_metric": details.get("metric"), "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name], "created_at": utc_now()}
     if args.conductor:
         validate_json(manifest, "artifact_manifest.schema.json")
-        write_json(outdir / "grouping_manifest.json", manifest)
+        write_json(outdir / "clustering_manifest.json", manifest)
         write_json(outdir / "warnings.json", {"warnings": warnings})
     if args.conductor:
-        write_json(outdir / "group_registry.json", registry)
-        event = {"schema_version": "1.0.0", "project": args.project, "run_id": run_id, "node_id": args.node_id, "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded", "input_hash": input_hash, "config_hash": value_hash(config), "configuration": config, "artifacts": [{"type": "group_membership", "path": membership_path.name, "sha256": file_hash(membership_path)}, {"type": "group_registry", "path": "group_registry.json", "sha256": file_hash(outdir / "group_registry.json")}, {"type": "manifest", "path": "grouping_manifest.json", "sha256": file_hash(outdir / "grouping_manifest.json")}], "warnings": warnings, "started_at": started_at, "finished_at": utc_now()}
+        write_json(outdir / "cluster_registry.json", registry)
+        event = {"schema_version": "2.0.0", "project": args.project, "run_id": run_id, "round_id": args.round_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded", "input_hash": input_hash, "config_hash": value_hash(config), "configuration": config, "artifacts": [{"type": "cluster_membership", "path": membership_path.name, "sha256": file_hash(membership_path)}, {"type": "cluster_registry", "path": "cluster_registry.json", "sha256": file_hash(outdir / "cluster_registry.json")}, {"type": "manifest", "path": "clustering_manifest.json", "sha256": file_hash(outdir / "clustering_manifest.json")}], "warnings": warnings, "started_at": started_at, "finished_at": utc_now()}
         validate_json(event, "execution_event.schema.json")
         write_json(outdir / "execution_event.json", event)
     print(outdir)

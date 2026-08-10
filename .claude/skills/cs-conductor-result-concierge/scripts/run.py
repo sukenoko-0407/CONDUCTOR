@@ -760,7 +760,7 @@ def parser() -> argparse.ArgumentParser:
     request_group = prepare_parser.add_mutually_exclusive_group(required=True)
     request_group.add_argument("--request", help="Human question or explanation request.")
     request_group.add_argument("--request-file", help="UTF-8 file containing the human request.")
-    prepare_parser.add_argument("--focus-id", action="append", help="Finding/Hypothesis/Question/Evidence/Node/Group ID; repeatable.")
+    prepare_parser.add_argument("--focus-id", action="append", help="Insight/Next Action/Node/Cluster/Operator result reference; repeatable.")
     prepare_parser.add_argument("--explicit-request", action="store_true", help="Confirm that a human explicitly requested this read-only action.")
     prepare_parser.set_defaults(handler=prepare)
 

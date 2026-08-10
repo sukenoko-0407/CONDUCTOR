@@ -1,0 +1,54 @@
+{
+  "schema_version": "2.0.0",
+  "capability_id": "A004",
+  "skill_name": "cs-analysis-projection-umap",
+  "display_name": "UMAP projection",
+  "version": "0.1.0",
+  "stage": "analysis",
+  "family": "projection",
+  "description": "Use when Claude Code needs to run UMAP projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+  "cost": {
+    "class": "medium",
+    "human_approval_required": false,
+    "hpc_profile": "cpu64"
+  },
+  "applicability": {
+    "status": "stable",
+    "platforms": [
+      "linux-64",
+      "win-64"
+    ],
+    "molecule_standardization": "out_of_scope"
+  },
+  "operator_id": "A004",
+  "dependencies": [
+    "description"
+  ],
+  "input_contract": [
+    "endpoint_csv",
+    "description",
+    "optional_clustering",
+    "optional_projection"
+  ],
+  "output": {
+    "filename": "A004_projection_umap.csv",
+    "report": "operator_report.html",
+    "summary": "operator_summary.json",
+    "manifest": "analysis_manifest.json"
+  },
+  "implementation": {
+    "operator": "projection_umap"
+  },
+  "analysis_role": "projection_umap",
+  "scope_support": [
+    "projection-fit",
+    "cluster-overlay"
+  ],
+  "default_parameters": {
+    "role": "projection-fit",
+    "random_seed": 61453,
+    "n_neighbors": 15,
+    "min_dist": 0.1,
+    "stability_seeds": 3
+  }
+}

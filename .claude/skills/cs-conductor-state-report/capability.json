@@ -1,9 +1,9 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "capability_id": "O002",
   "skill_name": "cs-conductor-state-report",
   "display_name": "CONDUCTOR State DAG report",
-  "version": "4.3.1",
+  "version": "0.1.0",
   "stage": "orchestration",
   "family": "state_reporting",
   "description": "Use only on an explicit human request with an explicitly supplied state.json path to render a read-only timestamped HTML and SVG execution DAG report.",
