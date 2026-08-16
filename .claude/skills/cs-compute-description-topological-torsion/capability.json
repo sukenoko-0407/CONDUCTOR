@@ -3,7 +3,7 @@
   "capability_id": "D005",
   "skill_name": "cs-compute-description-topological-torsion",
   "display_name": "Hashed topological-torsion fingerprint",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "description",
   "family": "2d_fingerprint",
   "description": "Use when Claude Code needs to run Hashed topological-torsion fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

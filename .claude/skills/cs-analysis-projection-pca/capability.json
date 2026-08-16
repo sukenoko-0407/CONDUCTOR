@@ -3,7 +3,7 @@
   "capability_id": "A003",
   "skill_name": "cs-analysis-projection-pca",
   "display_name": "PCA projection",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "analysis",
   "family": "projection",
   "description": "Use when Claude Code needs to run PCA projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

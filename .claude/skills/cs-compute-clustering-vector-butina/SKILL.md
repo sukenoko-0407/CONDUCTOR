@@ -17,14 +17,14 @@ compound IDと数値featureを持つDescription CSVを必須入力とする。ra
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. 入力列と必要な上流artifactを確認し、不明な列は明示指定する。OperatorのCONDUCTOR実行では、Stateが束縛したDescription／Clustering Capabilityとsource Node IDを表す`--evaluation-representation`、`--description-node-id`、`--clustering-representation`、`--clustering-node-id`を該当する上流入力とともに渡す。
+2. Description CSVのrepresentationを確認する。CONDUCTORモードではStateが束縛した`--input-representation`と`--description-manifest`を必ず渡す。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
 5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
 
 ## Algorithm-specific options
 
-`--min-cluster-size`未満のClusterを登録しない。`--metric auto`を既定とし、`--input-representation`と実VectorからMetricを決定する。binaryおよびMorganはTanimoto、USR/USRCATはManhattan、疎countとembedding/SVDはCosine、その他の連続値は標準化Euclideanを用いる。binaryまたは既知のbit fingerprintへTanimoto以外を明示すると停止する。`--similarity-threshold`でcluster cutoffを指定する。
+`--min-cluster-size`未満のClusterを登録しない。`--metric auto`でDescription manifestに固定されたMetricを使用する。`--parameter-mode auto`を既定とし、Clustering Skill自身がactivityを使わず距離・近傍構造から手法固有parameterを選ぶ。人間が再現条件を固定する場合だけ`--parameter-mode fixed`を使う。autoではk近傍距離からnative-distance cutoffを選ぶ。fixedでは`--distance-cutoff`を指定する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -39,8 +39,8 @@ compound IDと数値featureを持つDescription CSVを必須入力とする。ra
 
 ## Output contract
 
-- 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`と`cluster_summary.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/clustering/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ通常成果物、`clustering_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
+- 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`、`cluster_summary.csv`、`clustering_diagnostics.csv`を生成する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/clustering/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ通常成果物、Vector Clusteringでは`distance_profile.json`、さらに`clustering_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
@@ -55,7 +55,7 @@ compound IDと数値featureを持つDescription CSVを必須入力とする。ra
 CONDUCTOR利用が明示されていない場合はこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id general-001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv --input-representation D001 --run-id general-001
 ```
 
 ## CONDUCTOR mode command
@@ -63,7 +63,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id ge
 明示的なCONDUCTOR利用で、project、run、nodeが確定している場合だけこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NC000001 --attempt-id ATT0001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv --input-representation D001 --description-manifest path/to/description_manifest.json --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NC000001 --attempt-id ATT0001
 ```
 
 ## Boundaries

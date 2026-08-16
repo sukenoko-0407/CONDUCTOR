@@ -14,12 +14,15 @@
 
 Runtimeが機械的に決めるものはID、依存関係、重複signature、attempt、metric契約、並列上限、approval、終端gateです。Orchestratorが考えるものは、どの比較が科学的に意味を持つか、何を優先するか、どの反証を試すかです。候補の意味まで固定ルールで決めません。
 
+Vector Clustering C005～C010の数値parameterは、通常はSkill内部の`auto` modeでendpointを使わず手法別に校正します。Orchestratorはcutoffや`eps`を推測しません。人間が再現試験または感度解析を明示した場合だけ`fixed` modeを別Nodeとして使います。
+
 ## Clusterの扱い
 
 - 5化合物未満はClusterとして登録しない。
 - 大きいClusterを優先候補にするが、全体の30%超は局所性が弱く、50%超はglobal-likeとして扱う。
 - 小さくてもMCS等で構造凝集性が高いClusterは解釈候補に残せる。
 - A005のLocal model surveyは30化合物以上かつendpoint変動のあるClusterだけを対象にする。
+- `no_usable_partition`は有効なnegative resultとして保存し、そのClusteringからLocal Operatorを計画しない。
 
 ## Interpretationと継続
 

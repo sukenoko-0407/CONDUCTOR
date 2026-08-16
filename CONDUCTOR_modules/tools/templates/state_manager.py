@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
-VERSION="0.1.0"; STATE_SCHEMA="2.0.0"; BRIEF_SCHEMA="2.0.0"; SUMMARY_SCHEMA="2.0.0"
+VERSION="0.1.1"; STATE_SCHEMA="2.0.0"; BRIEF_SCHEMA="2.0.0"; SUMMARY_SCHEMA="2.0.0"
 NODE_INFO={"description":("description_node","ND"),"clustering":("clustering_node","NC"),"analysis":("analysis_node","NA"),"interpretation":("interpretation_node","NI")}
 TERMINAL={"succeeded","failed","unavailable","not_applicable","skipped","waived"}; MAX_BRIEF_BYTES=50*1024; MAX_CANDIDATES=20
 
@@ -127,7 +127,7 @@ def validate_dag(state:dict[str,Any])->None:
             if degree[target]==0:queue.append(target)
     if seen!=len(lookup):raise ValueError("Execution graph contains a cycle")
 def validate_state(state:dict[str,Any])->None:
-    if state.get("schema_version")!=STATE_SCHEMA or state.get("conductor_version")!=VERSION:raise ValueError("This Runtime accepts only CONDUCTOR 0.1.0 State schema 2.0.0")
+    if state.get("schema_version")!=STATE_SCHEMA or state.get("conductor_version")!=VERSION:raise ValueError("This Runtime accepts only CONDUCTOR 0.1.1 State schema 2.0.0")
     validate_dag(state);validate(state,"state.schema.json")
 
 
@@ -201,6 +201,8 @@ def add_node(state:dict[str,Any],caps:dict[str,dict[str,Any]],capability_id:str,
 
 def succeeded(state:dict[str,Any],stage:str,ids:Iterable[str]|None=None)->list[dict[str,Any]]:
     accepted=set(ids or []);return [n for n in state["execution_graph"]["nodes"] if n["stage"]==stage and n["status"]=="succeeded" and (not accepted or n["capability_id"] in accepted)]
+def usable_clustering_nodes(state:dict[str,Any])->list[dict[str,Any]]:
+    return [n for n in succeeded(state,"clustering") if (n.get("clustering_summary") or {}).get("selection_status","selected")=="selected"]
 def dependency_sets(cap:dict[str,Any],descs:list[dict[str,Any]],clusters:list[dict[str,Any]],scope:str)->list[list[str]]:
     deps=cap.get("dependencies") or []
     if cap["capability_id"]=="A005":return []
@@ -229,7 +231,7 @@ def plan_basic(state:dict[str,Any])->list[str]:
 
 
 def plan_initial_global(state:dict[str,Any])->list[str]:
-    caps=catalog();p=profile();master=p["initial_exploration"]["description_master_panel"];descs=succeeded(state,"description",master);clusters=succeeded(state,"clustering");planned=[]
+    caps=catalog();p=profile();master=p["initial_exploration"]["description_master_panel"];descs=succeeded(state,"description",master);clusters=usable_clustering_nodes(state);planned=[]
     for aid in p["initial_exploration"]["global_operator_capabilities"]:
         cap=caps[aid]
         if aid=="A005":
@@ -280,7 +282,7 @@ def representative_clusters(state:dict[str,Any],node:dict[str,Any],limit:int)->l
 
 
 def plan_initial_local(state:dict[str,Any])->list[str]:
-    caps=catalog();p=profile();master=p["initial_exploration"]["description_master_panel"];descs=succeeded(state,"description",master);clusters=succeeded(state,"clustering");planned=[];limit=int(p["initial_exploration"].get("representative_clusters_per_clustering",3))
+    caps=catalog();p=profile();master=p["initial_exploration"]["description_master_panel"];descs=succeeded(state,"description",master);clusters=usable_clustering_nodes(state);planned=[];limit=int(p["initial_exploration"].get("representative_clusters_per_clustering",3))
     projection_ids=set(p["initial_exploration"].get("projection_overlay_capabilities",[]))
     projections=[n for n in succeeded(state,"analysis",projection_ids) if n.get("parameters",{}).get("role")=="projection-fit"]
     for cluster_node in clusters:
@@ -307,7 +309,7 @@ def plan_initial_local(state:dict[str,Any])->list[str]:
 
 
 def candidate_cells(state:dict[str,Any])->list[dict[str,Any]]:
-    caps=catalog();p=profile();descs=succeeded(state,"description",p["initial_exploration"]["description_master_panel"]);clusters=succeeded(state,"clustering");existing={n["analysis_signature"] for n in state["execution_graph"]["nodes"] if n["status"] not in {"stale","deferred"}};result=[]
+    caps=catalog();p=profile();descs=succeeded(state,"description",p["initial_exploration"]["description_master_panel"]);clusters=usable_clustering_nodes(state);existing={n["analysis_signature"] for n in state["execution_graph"]["nodes"] if n["status"] not in {"stale","deferred"}};result=[]
     for aid in p["additional_exploration"]["operator_capabilities"]:
         cap=caps[aid]
         for scope in ("global","within-cluster"):
@@ -377,7 +379,10 @@ def state_summary(state:dict[str,Any])->dict[str,Any]:
     insights=list(latest(read_jsonl(Path(state["indices"]["insights"]["path"])),"insight_id").values());actions=list(latest(read_jsonl(Path(state["indices"]["next_actions"]["path"])),"action_id").values())
     priority=[{key:i.get(key) for key in ("insight_id","revision","title","attention","round_id","interpretation_node_id")} for i in insights if i.get("attention")=="priority"][-20:]
     open_actions=[{key:a.get(key) for key in ("action_id","revision","title","status","round_id","source_insights")} for a in actions if a.get("status")=="open"][-20:]
-    return {"schema_version":SUMMARY_SCHEMA,"run":{k:state["run"].get(k) for k in ("run_id","project","input","endpoint","higher_is_better","row_count","parallel_limit")},"active_round_id":state["round_control"]["active_round_id"],"next_round_number":state["round_control"]["next_round_number"],"node_count":len(state["execution_graph"]["nodes"]),"status_counts":dict(status),"stage_counts":{k:dict(v) for k,v in stage.items()},"cluster_count":state["indices"]["clusters"]["cluster_count"],"operator_result_count":state["indices"]["operator_results"]["count"],"priority_insights":priority,"open_next_actions":open_actions,"time_budget":round_time(state),"interpretation_gate":interpretation_gate(state),"updated_at":state["updated_at"]}
+    clustering_nodes=[n for n in state["execution_graph"]["nodes"] if n["stage"]=="clustering" and n["status"]=="succeeded"]
+    clustering_quality=Counter((n.get("clustering_summary") or {}).get("selection_status","selected") for n in clustering_nodes)
+    clustering_flags=Counter(flag for n in clustering_nodes for flag in (n.get("clustering_summary") or {}).get("quality_flags",[]))
+    return {"schema_version":SUMMARY_SCHEMA,"run":{k:state["run"].get(k) for k in ("run_id","project","input","endpoint","higher_is_better","row_count","parallel_limit")},"active_round_id":state["round_control"]["active_round_id"],"next_round_number":state["round_control"]["next_round_number"],"node_count":len(state["execution_graph"]["nodes"]),"status_counts":dict(status),"stage_counts":{k:dict(v) for k,v in stage.items()},"cluster_count":state["indices"]["clusters"]["cluster_count"],"clustering_selection_counts":dict(clustering_quality),"clustering_quality_flags":dict(clustering_flags),"operator_result_count":state["indices"]["operator_results"]["count"],"priority_insights":priority,"open_next_actions":open_actions,"time_budget":round_time(state),"interpretation_gate":interpretation_gate(state),"updated_at":state["updated_at"]}
 def brief(state:dict[str,Any])->dict[str,Any]:
     value={"schema_version":BRIEF_SCHEMA,"run_id":state["run"]["run_id"],"active_round_id":state["round_control"]["active_round_id"],"required_control_action":required_action(state),"facts":state_summary(state),"scientific_decision":None,"generated_at":utc_now()}
     if value["required_control_action"]["code"]=="SCIENTIFIC_DECISION":value["scientific_decision"]={"instruction":"候補、既存Insight、coverage balance、人間指示から次の有限な解析bundleまたはInterpretation移行を選ぶ。","candidates":value["required_control_action"]["candidates"]}
@@ -509,7 +514,7 @@ def command_for(state:dict[str,Any],node:dict[str,Any],attempt_id:str)->list[str
         if clusters:argv += ["--membership",str(primary(clusters[0],catalog()[clusters[0]["capability_id"]])),"--clustering-node-id",clusters[0]["node_id"],"--clustering-representation",clusters[0]["capability_id"]]
         if projection:argv += ["--projection",str(primary(projection,catalog()[projection["capability_id"]])),"--projection-node-id",projection["node_id"]]
     else:argv += ["--state",state["run"]["run_root"]+os.sep+"state.json","--context",node["parameters"]["context_path"],"--draft",node["parameters"].get("draft_path",str(Path(node["output_dir"])/"interpretation_draft_input.json"))]
-    excluded={"context_path","draft_path","scope_mode","focus","reviewed_result_refs","comparison_signatures"}
+    excluded={"context_path","draft_path","scope_mode","focus","reviewed_result_refs","comparison_signatures","input_representation"}
     mapping={"target_cluster":"--target-cluster","comparison_cluster":"--comparison-cluster"}
     for key,value in node["parameters"].items():
         if key in excluded or value is None:continue
@@ -546,6 +551,17 @@ def cmd_terminal(a:argparse.Namespace)->int:
 def promote_clusters(state:dict[str,Any],node:dict[str,Any],event_dir:Path,artifacts:list[dict[str,Any]])->None:
     member_art=next((x for x in artifacts if x["type"]=="cluster_membership"),None);registry_art=next((x for x in artifacts if x["type"]=="cluster_registry"),None)
     if not member_art or not registry_art:raise ValueError("Successful Clustering requires membership and registry")
+    manifest_art=next((x for x in artifacts if x["type"]=="manifest"),None)
+    manifest=read_json(Path(manifest_art["resolved_path"])) if manifest_art else {}
+    node["clustering_summary"]={
+        "selection_status":manifest.get("selection_status","selected"),
+        "quality_flags":manifest.get("quality_flags") or [],
+        "cluster_count":int(manifest.get("cluster_count") or 0),
+        "membership_count":int(manifest.get("membership_count") or 0),
+        "unassigned_count":int(manifest.get("unassigned_count") or 0),
+        "metric":manifest.get("natural_metric"),
+        "selected_parameters":(manifest.get("details") or {}).get("selected_parameters"),
+    }
     local_members=read_csv(Path(member_art["resolved_path"]));local_registry=read_json(Path(registry_art["resolved_path"]));mapping={};global_rows=read_csv(Path(state["indices"]["clusters"]["registry_path"]));promoted=[];node_dir=Path(state["run"]["run_root"])/"clusters"/"by_node"/node["node_id"];node_dir.mkdir(parents=True,exist_ok=True)
     for row in local_registry:
         if int(row["compound_count"])<5:raise ValueError("Clustering attempted to register a Cluster smaller than 5")
@@ -888,7 +904,7 @@ def cmd_runnable(a:argparse.Namespace)->int:print(json.dumps(runnable(read_json(
 
 def lease_arg(p:argparse.ArgumentParser)->None:p.add_argument("--lease-token",required=True)
 def parser()->argparse.ArgumentParser:
-    p=argparse.ArgumentParser(description="Manage a CONDUCTOR 0.1.0 multi-Round State DAG.");sub=p.add_subparsers(dest="command",required=True)
+    p=argparse.ArgumentParser(description="Manage a CONDUCTOR 0.1.1 multi-Round State DAG.");sub=p.add_subparsers(dest="command",required=True)
     x=sub.add_parser("init");x.add_argument("--input",required=True);x.add_argument("--endpoint",required=True);x.add_argument("--higher-is-better",action=argparse.BooleanOptionalAction,required=True);x.add_argument("--project",required=True);x.add_argument("--parallel-limit",type=int,required=True);x.add_argument("--run-id");x.add_argument("--output-dir");x.add_argument("--request");x.add_argument("--walltime-minutes",type=int,default=480);x.add_argument("--max-additional-nodes",type=int,default=300);x.add_argument("--interpretation-iterations",type=int,default=3);x.set_defaults(func=cmd_init)
     x=sub.add_parser("bootstrap");x.add_argument("--state",required=True);x.add_argument("--owner-id",required=True);x.add_argument("--lease-token");x.add_argument("--lease-minutes",type=int,default=30);x.add_argument("--force-takeover",action="store_true");x.add_argument("--takeover-reason");x.set_defaults(func=cmd_bootstrap)
     x=sub.add_parser("heartbeat");x.add_argument("--state",required=True);lease_arg(x);x.set_defaults(func=cmd_heartbeat)

@@ -17,4 +17,4 @@ IDはRun内で通し番号を引き継ぎ、Roundが変わっても再初期化�
 | `ACT####` | Next Action | Interpretation commit時のRuntime |
 | `CRQ######` | read-only Concierge request | Concierge |
 
-`D###`、`C###`、`A###`、`I###`、`O###`はCatalogのCapability IDです。これらは実行instanceではありません。旧alpha版の`G`、`NG`、Finding／Hypothesis／Question／Evidence用IDは0.1.0では使用しません。
+`D###`、`C###`、`A###`、`I###`、`O###`はCatalogのCapability IDです。これらは実行instanceではありません。旧alpha版の`G`、`NG`、Finding／Hypothesis／Question／Evidence用IDは0.1.1では使用しません。

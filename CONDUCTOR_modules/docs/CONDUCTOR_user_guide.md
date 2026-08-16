@@ -39,6 +39,10 @@ Wall Time: <minutes or hours>
 
 人間の見解を付ける場合は、`INS####`、`ACT####`、`CL######`、Operator result referenceを明記し、「重視」「反証したい」「ACTをclosedにしたい」「このscopeを比較したい」を追記します。具体的な指示がなくてもStateから継続できます。
 
+## 0.1.0からDescriptionだけを引き継ぐ
+
+一回限りの`cs-conductor-description-migrator` Agentを使用します。移行先のRND0001は基本計算途中のVersion migrationとして閉じ、成功済みDescriptionだけを保持します。RND0002は自動開始しません。検証後、人間が`cs-conductor-orchestrator`へRND0002開始を明示し、未完了の基本計算から継続します。詳細は`CONDUCTOR_0.1.0_to_0.1.1_description_migration.md`を参照してください。
+
 ## 新しいClaude Code sessionで再開
 
 新sessionには`state.json`の絶対pathと次Round番号を伝えれば、Runtime bootstrap、brief、bounded queryから状況を再構築できます。多数の過去Markdownをプロンプトへ貼る必要はありません。leaseが残っている場合は勝手にtakeoverせず、監査と人間確認を行います。

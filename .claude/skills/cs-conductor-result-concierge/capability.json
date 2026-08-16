@@ -3,7 +3,7 @@
   "capability_id": "O004",
   "skill_name": "cs-conductor-result-concierge",
   "display_name": "CONDUCTOR Result Concierge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "orchestration",
   "family": "result_concierge",
   "description": "Human-requested explanation and visualization of frozen CONDUCTOR results without State or scientific artifact mutation.",

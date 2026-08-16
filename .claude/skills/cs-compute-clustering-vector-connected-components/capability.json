@@ -3,7 +3,7 @@
   "capability_id": "C010",
   "skill_name": "cs-compute-clustering-vector-connected-components",
   "display_name": "Vector connected-component clustering",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "clustering",
   "family": "description_vector",
   "description": "Apply Vector connected-component clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -40,6 +40,6 @@
   "default_parameters": {
     "min_cluster_size": 5,
     "metric": "auto",
-    "similarity_threshold": 0.55
+    "parameter_mode": "auto"
   }
 }

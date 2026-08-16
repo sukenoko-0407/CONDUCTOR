@@ -10,6 +10,7 @@ Claude Codeが直接認識する`.claude/skills/`と`.claude/agents/`をProject�
 - `cs-conductor-runtime`: Stateの唯一の書込API。ID、DAG、lease、attempt、gate、indexを管理する。
 - `cs-conductor-interpreter`: bounded contextを読み、IDなしのInterpretation draftを作る。Stateは変更しない。
 - `cs-conductor-run-audit`: Quick／Full監査を行う。Stateは変更しない。
+- `cs-conductor-description-migrator`: 0.1.0から成功済みDescriptionだけを新規0.1.1 Runへ決定論的に移す一回限りのAgent。解析は起動しない。
 
 ## Stateの階層
 
@@ -37,4 +38,4 @@ launcherはLinuxの共有Pixi `/home/open-share/claude_code/skills-assets/assets
 
 ## 互換性
 
-alpha版Stateとartifactの自動migrationは提供しません。0.1.0 Runは新規作成し、旧Runはread-only referenceとして保持します。
+alpha版Stateとartifactの汎用的な自動migrationは提供しません。例外として0.1.0から0.1.1へは、成功済みDescription artifactだけを新規RunのRND0001へ移す専用Patchを提供します。旧Clustering、Analysis、Interpretation、IDは引き継がず、RND0002も自動作成しません。

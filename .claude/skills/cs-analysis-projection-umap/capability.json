@@ -3,7 +3,7 @@
   "capability_id": "A004",
   "skill_name": "cs-analysis-projection-umap",
   "display_name": "UMAP projection",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "analysis",
   "family": "projection",
   "description": "Use when Claude Code needs to run UMAP projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

@@ -27,7 +27,11 @@ def copy_targets(target: Path) -> list[tuple[Path, Path]]:
             SOURCE_ROOT / ".claude" / "agents" / name,
             target / ".claude" / "agents" / name,
         )
-        for name in ["cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"]
+        for name in [
+            "cs-conductor-orchestrator.md",
+            "cs-conductor-interpreter.md",
+            "cs-conductor-description-migrator.md",
+        ]
     ]
     pairs.extend(
         (

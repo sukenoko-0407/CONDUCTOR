@@ -77,6 +77,27 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(["CL000001"],committed["cluster_ids"]);self.assertEqual(1,state["indices"]["clusters"]["cluster_count"])
             matrix=Path(state["indices"]["clusters"]["matrix_paths"][0]).read_text(encoding="utf-8");self.assertIn("CL000001",matrix)
 
+    def test_no_usable_clustering_is_committed_as_negative_result(self)->None:
+        with tempfile.TemporaryDirectory() as folder:
+            state_path,token=self.setup_run(Path(folder))
+            node=json.loads(self.cli("add","--state",str(state_path),"--capability-id","C001","--reason","unit","--lease-token",token).stdout)["node"]
+            started=json.loads(self.cli("start","--state",str(state_path),"--node-id",node["node_id"],"--lease-token",token).stdout);out=Path(node["output_dir"])/"attempts"/started["attempt_id"];out.mkdir(parents=True)
+            membership=out/"cluster_membership.csv";membership.write_text("cluster_id,compound_id,membership_value,membership_reason\n"+"".join(f",C{i:03d},0,no_usable_partition\n" for i in range(1,13)),encoding="utf-8")
+            registry=out/"cluster_registry.json";registry.write_text("[]",encoding="utf-8")
+            manifest=out/"clustering_manifest.json";manifest.write_text(json.dumps({"selection_status":"no_usable_partition","quality_flags":["fragmented"],"cluster_count":0,"membership_count":0,"unassigned_count":12,"natural_metric":"euclidean","details":{"selected_parameters":None}}),encoding="utf-8")
+            artifacts=[
+                {"type":"cluster_membership","path":membership.name,"sha256":hashlib.sha256(membership.read_bytes()).hexdigest()},
+                {"type":"cluster_registry","path":registry.name,"sha256":hashlib.sha256(registry.read_bytes()).hexdigest()},
+                {"type":"manifest","path":manifest.name,"sha256":hashlib.sha256(manifest.read_bytes()).hexdigest()},
+            ]
+            event_path=out/"execution_event.json";event_path.write_text(json.dumps(self.event(node,started["attempt_id"],"succeeded",artifacts)),encoding="utf-8")
+            self.cli("record","--state",str(state_path),"--event",str(event_path),"--lease-token",token)
+            state=json.loads(state_path.read_text(encoding="utf-8"));committed=next(n for n in state["execution_graph"]["nodes"] if n["node_id"]==node["node_id"])
+            self.assertEqual("succeeded",committed["status"])
+            self.assertEqual("no_usable_partition",committed["clustering_summary"]["selection_status"])
+            self.assertEqual([],committed["cluster_ids"])
+            self.assertEqual([],STATE.usable_clustering_nodes(state))
+
     def test_interpretation_ids_continue_across_rounds(self)->None:
         with tempfile.TemporaryDirectory() as folder:
             state_path,_token=self.setup_run(Path(folder));state=STATE.read_json(state_path);result_ref="NA000001@ATT0001"

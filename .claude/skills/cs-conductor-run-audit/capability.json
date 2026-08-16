@@ -3,7 +3,7 @@
   "capability_id": "O003",
   "skill_name": "cs-conductor-run-audit",
   "display_name": "CONDUCTOR Run Audit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "orchestration",
   "family": "run_audit",
   "description": "Read-only Quick/Full audit of a supplied CONDUCTOR State and its referenced artifacts.",

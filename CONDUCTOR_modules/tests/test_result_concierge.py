@@ -20,7 +20,7 @@ class ConciergeTests(unittest.TestCase):
 
     def test_prepare_is_scoped_and_requires_frozen_run(self)->None:
         with tempfile.TemporaryDirectory() as folder_name:
-            root=Path(folder_name)/"run";root.mkdir();state={"schema_version":"2.0.0","conductor_version":"0.1.0","run":{"run_id":"run","project":"unit"},"round_control":{"active_round_id":None,"rounds":[]},"orchestration_control":{"lease":{"owner_id":None,"expires_at":None}},"execution_graph":{"nodes":[],"edges":[]},"indices":{}}
+            root=Path(folder_name)/"run";root.mkdir();state={"schema_version":"2.0.0","conductor_version":"0.1.1","run":{"run_id":"run","project":"unit"},"round_control":{"active_round_id":None,"rounds":[]},"orchestration_control":{"lease":{"owner_id":None,"expires_at":None}},"execution_graph":{"nodes":[],"edges":[]},"indices":{}}
             state_path=root/"state.json";state_path.write_text(json.dumps(state),encoding="utf-8")
             refused=self.cli("prepare","--state",str(state_path),"--request","説明","--focus-id","INS0001",check=False);self.assertNotEqual(0,refused.returncode)
             prepared=json.loads(self.cli("prepare","--state",str(state_path),"--request","INS0001を説明","--focus-id","INS0001","--explicit-request").stdout)

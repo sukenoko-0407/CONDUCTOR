@@ -17,22 +17,22 @@ descriptor、fingerprint、embedding空間で化合物をCluster化し、SMILES�
 一般利用（主成果物のみ）:
 
 ```bash
-python .claude/skills/cs-compute-clustering-vector-dbscan/scripts/launch.py --input description.csv
+python .claude/skills/cs-compute-clustering-vector-dbscan/scripts/launch.py --input description.csv --input-representation D001
 ```
 
 
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-clustering-vector-dbscan/scripts/launch.py --input description.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
+python .claude/skills/cs-compute-clustering-vector-dbscan/scripts/launch.py --input description.csv --input-representation D001 --description-manifest path/to/description_manifest.json --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
 
 - 一般利用とCONDUCTORの両方でClustering／Clusterと呼ぶ。入力分子やfeature値は変更しない。
 - 5化合物未満のClusterは出力・登録しない。
-- raw SMILESは入力にできず、Descriptionを内部生成しない。`--metric auto`は表現に応じてTanimoto、Manhattan、Cosine、標準化Euclideanを選び、binaryまたは既知のbit fingerprintではTanimoto以外を許可しない。
-- 結果は入力feature、距離metric、thresholdまたはcluster数に依存する。
+- raw SMILESは入力にできず、Descriptionを内部生成しない。MetricはDescription表現に固定し、`--parameter-mode auto`ではactivityを使わず手法固有の距離・近傍parameterを決定する。
+- 自動候補がすべて断片化または崩壊する場合は、Clusterを強制せず`no_usable_partition`を返す。
 
 ## 変更履歴
 

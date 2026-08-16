@@ -3,7 +3,7 @@
   "capability_id": "D001",
   "skill_name": "cs-compute-description-rdkit-2d",
   "display_name": "RDKit 2D descriptors",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "description",
   "family": "physicochemical",
   "description": "Use when Claude Code needs to run RDKit 2D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

@@ -120,7 +120,7 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
     unknown = sorted(referenced - known)
     if unknown:
         raise ValueError(f"Analysis profile references unknown capabilities: {unknown}")
-    catalog = {"schema_version": "2.0.0", "conductor_version": "0.1.0", "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
+    catalog = {"schema_version": "2.0.0", "conductor_version": "0.1.1", "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
     return catalog, render_markdown(catalog)
 
 

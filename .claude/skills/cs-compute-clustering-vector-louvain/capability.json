@@ -3,7 +3,7 @@
   "capability_id": "C008",
   "skill_name": "cs-compute-clustering-vector-louvain",
   "display_name": "Vector Louvain clustering",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "clustering",
   "family": "description_vector",
   "description": "Apply Vector Louvain clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -40,7 +40,7 @@
   "default_parameters": {
     "min_cluster_size": 5,
     "metric": "auto",
-    "similarity_threshold": 0.55,
+    "parameter_mode": "auto",
     "resolution": 1.0,
     "random_seed": 61453
   }

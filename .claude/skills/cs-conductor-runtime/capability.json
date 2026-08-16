@@ -3,7 +3,7 @@
   "capability_id": "O001",
   "skill_name": "cs-conductor-runtime",
   "display_name": "CONDUCTOR deterministic runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "orchestration",
   "family": "graph_orchestration",
   "description": "Deterministic State mutation runtime used by the CONDUCTOR Orchestrator Agent. It owns Node allocation, lease control, attempts, gates, summaries, and Round close validation.",

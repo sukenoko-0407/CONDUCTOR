@@ -77,12 +77,12 @@ CAPABILITY_DEFAULTS: dict[str, dict[str, Any]] = {
     "C002": {"default_parameters": {"min_cluster_size": 5, "max_pairs": 1000, "max_core_clusters": 300, "random_seed": 61453}},
     "C003": {"default_parameters": {"min_cluster_size": 5}},
     "C004": {"default_parameters": {"min_cluster_size": 5}},
-    "C005": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "similarity_threshold": 0.55}},
-    "C006": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "distance_threshold": 0.7}},
-    "C007": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "eps": 0.5, "min_samples": 3}},
-    "C008": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
-    "C009": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "similarity_threshold": 0.55, "resolution": 1.0, "random_seed": 61453}},
-    "C010": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "similarity_threshold": 0.55}},
+    "C005": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "parameter_mode": "auto"}},
+    "C006": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "parameter_mode": "auto"}},
+    "C007": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "parameter_mode": "auto", "min_samples": 5}},
+    "C008": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "parameter_mode": "auto", "resolution": 1.0, "random_seed": 61453}},
+    "C009": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "parameter_mode": "auto", "resolution": 1.0, "random_seed": 61453}},
+    "C010": {"default_parameters": {"min_cluster_size": 5, "metric": "auto", "parameter_mode": "auto"}},
     "C011": {"default_parameters": {"min_cluster_size": 5}},
     "C012": {"default_parameters": {"min_cluster_size": 5}},
     "A003": {"default_parameters": {"role": "projection-fit", "random_seed": 61453}},
@@ -363,7 +363,9 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             purpose = f"{display}を単独実行し、Clustering artifactを生成する。"
             inputs = "algorithmに対応するmembershipまたはcategorical CSVを使う。"
         base_args = "--input compounds.csv"
-        if capability["implementation"]["algorithm"] == "categorical":
+        if algorithm.startswith("vector_"):
+            base_args = "--input path/to/description.csv --input-representation D001"
+        elif capability["implementation"]["algorithm"] == "categorical":
             base_args += " --columns assay"
             inputs = "compound IDと一つ以上のカテゴリ列を持つCSVを使い、`--columns assay,series`のようにClusteringへ使用する列を必ず指定する。"
         elif capability["implementation"]["algorithm"] == "meta_overlap":
@@ -379,22 +381,25 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         }
         if algorithm.startswith(("structure_", "vector_")) and algorithm.split("_", 1)[1] not in {"murcko", "mcs", "brics", "recap"}:
             method = algorithm.split("_", 1)[1]
-            source_options = "`--metric auto`を既定とし、`--input-representation`と実VectorからMetricを決定する。binaryおよびMorganはTanimoto、USR/USRCATはManhattan、疎countとembedding/SVDはCosine、その他の連続値は標準化Euclideanを用いる。binaryまたは既知のbit fingerprintへTanimoto以外を明示すると停止する。"
+            source_options = "`--metric auto`でDescription manifestに固定されたMetricを使用する。`--parameter-mode auto`を既定とし、Clustering Skill自身がactivityを使わず距離・近傍構造から手法固有parameterを選ぶ。人間が再現条件を固定する場合だけ`--parameter-mode fixed`を使う。"
             method_options = {
-                "butina": "`--similarity-threshold`でcluster cutoffを指定する。",
-                "hierarchical": "`--n-clusters`または`--distance-threshold`で切断条件を指定する。",
-                "dbscan": "`--eps`と`--min-samples`を指定する。",
-                "louvain": "`--similarity-threshold`、`--resolution`、`--random-seed`を指定する。",
-                "leiden": "`--similarity-threshold`、`--resolution`、`--random-seed`を指定する。",
-                "connected_components": "`--similarity-threshold`でgraph edgeを定義する。",
+                "butina": "autoではk近傍距離からnative-distance cutoffを選ぶ。fixedでは`--distance-cutoff`を指定する。",
+                "hierarchical": "autoではaverage-linkage距離gapから切断候補を選ぶ。fixedでは`--n-clusters`または`--distance-threshold`を指定する。",
+                "dbscan": "autoではk-distance分布から`eps`を選び、`min_samples=5`を既定とする。fixedでは`--eps`を指定する。",
+                "louvain": "autoではweighted mutual-kNN graphを構築し、boundedなkと`resolution`候補を評価する。fixedでは`--n-neighbors`と`--resolution`を指定する。",
+                "leiden": "autoではweighted mutual-kNN graphを構築し、boundedなkと`resolution`候補を評価する。fixedでは`--n-neighbors`と`--resolution`を指定する。",
+                "connected_components": "autoではk近傍距離とpercolation傾向からnative-distance cutoffを選ぶ。fixedでは`--distance-cutoff`を指定する。",
             }[method]
             option_guidance = f"`--min-cluster-size`未満のClusterを登録しない。{source_options}{method_options}"
         else:
             option_guidance = clustering_options[algorithm]
+        conductor_args = base_args
+        if algorithm.startswith("vector_"):
+            conductor_args += " --description-manifest path/to/description_manifest.json"
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NC000001 --attempt-id ATT0001'
-        output_contract = '''- 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`と`cluster_summary.csv`だけを生成する。
-- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/clustering/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ通常成果物、`clustering_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {conductor_args} --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NC000001 --attempt-id ATT0001'
+        output_contract = '''- 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`、`cluster_summary.csv`、`clustering_diagnostics.csv`を生成する。
+- CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/clustering/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ通常成果物、Vector Clusteringでは`distance_profile.json`、さらに`clustering_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     elif kind == "analysis":
         purpose = f"{display}を実行し、客観的な数値結果とCONDUCTOR Operator summaryを生成する。"
         extra = ""
@@ -444,6 +449,16 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         output_contract = '''- 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
 - CONDUCTORモード: Skillはattempt directoryへ検証済みpreviewと`execution_event.json`を生成する。正式な`interpretation.json`、固定rendererによる`interpretation.md`／`interpretation.html`、Insight／Next Actionの通しID、ledger更新はRuntimeがevent commit時に一括確定する。'''
         option_guidance = "`references/interpretation_policy.md`を完全に読む。summaryはnavigationにだけ使い、保持するInsightは原数値artifactを確認する。矛盾、negative result、反証探索を記録し、State更新とOperator実行はRuntime／Orchestratorへ委ねる。"
+    if kind == "description":
+        workflow_input = "入力形式、compound ID列、SMILES列を確認し、曖昧な列だけを明示指定する。"
+    elif kind == "clustering" and capability["implementation"]["algorithm"].startswith("vector_"):
+        workflow_input = "Description CSVのrepresentationを確認する。CONDUCTORモードではStateが束縛した`--input-representation`と`--description-manifest`を必ず渡す。"
+    elif kind == "clustering":
+        workflow_input = "入力列とClustering固有の上流artifactを確認し、曖昧な列だけを明示指定する。"
+    elif kind == "analysis":
+        workflow_input = "Stateが束縛したDescription／Clustering Capabilityとsource Node IDを、対応する上流artifactとともに渡す。"
+    else:
+        workflow_input = "Runtimeが作成したcontext、draft、State参照を確認し、許可されたOperator resultだけを扱う。"
     return f'''---
 name: {name}
 description: {capability["description"]} General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
@@ -463,7 +478,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. 入力列と必要な上流artifactを確認し、不明な列は明示指定する。OperatorのCONDUCTOR実行では、Stateが束縛したDescription／Clustering Capabilityとsource Node IDを表す`--evaluation-representation`、`--description-node-id`、`--clustering-representation`、`--clustering-node-id`を該当する上流入力とともに渡す。
+2. {workflow_input}
 3. algorithm固有optionが必要なら`python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
 5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
@@ -530,6 +545,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         "Linuxでは共有Pixiを優先し、cacheと環境はこのSkillの`env/`配下に置かれる。"
     )
     conductor_args = "--conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001"
+    readme_conductor_extra = ""
 
     if kind == "description":
         algorithm = capability["implementation"]["algorithm"]
@@ -573,7 +589,8 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         elif algorithm.startswith("vector_"):
             purpose = f"Description Skillが生成した数値vectorへ{display}を適用し、cluster membershipとsummaryを生成する。"
             scenes = "descriptor、fingerprint、embedding空間で化合物をCluster化し、SMILESを直接扱う構造Clusteringと比較する場合。"
-            general_args = "--input description.csv"
+            general_args = "--input description.csv --input-representation D001"
+            readme_conductor_extra = " --description-manifest path/to/description_manifest.json"
         elif algorithm == "categorical":
             purpose = "CSVのカテゴリ列からClusterを作り、cluster membershipとsummaryを生成する。"
             scenes = "assay条件、既知series、sourceなど、人間が付与したカテゴリで化合物を分ける場合。"
@@ -590,8 +607,8 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         if algorithm == "structure_mcs":
             constraints.append("`--max-pairs`は1～1000に制限し、`--max-core-clusters`の既定値は300とする。")
         if algorithm.startswith("vector_"):
-            constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。`--metric auto`は表現に応じてTanimoto、Manhattan、Cosine、標準化Euclideanを選び、binaryまたは既知のbit fingerprintではTanimoto以外を許可しない。")
-            constraints.append("結果は入力feature、距離metric、thresholdまたはcluster数に依存する。")
+            constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。MetricはDescription表現に固定し、`--parameter-mode auto`ではactivityを使わず手法固有の距離・近傍parameterを決定する。")
+            constraints.append("自動候補がすべて断片化または崩壊する場合は、Clusterを強制せず`no_usable_partition`を返す。")
         if approval:
             constraints.append("高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。")
         primary_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}"
@@ -640,7 +657,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         extra_example = ""
 
     constraint_text = "\n".join(f"- {item}" for item in constraints) if constraints else "- 特になし。"
-    conductor_example = f"python .claude/skills/{name}/scripts/launch.py {general_args} {conductor_args}"
+    conductor_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}{readme_conductor_extra} {conductor_args}"
     return f'''# {display}
 
 ## SKILLの目的
@@ -688,7 +705,7 @@ def base_capability(identifier: str, name: str, display: str, stage: str, family
         "capability_id": identifier,
         "skill_name": name,
         "display_name": display,
-        "version": "0.1.0",
+        "version": "0.1.1",
         "stage": stage,
         "family": family,
         "description": f"Use when Claude Code needs to run {display} from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -722,9 +739,11 @@ def create_skill(capability: dict[str, Any], kind: str, template: Path, schemas:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create or refresh CONDUCTOR 0.1.0 Skill folders from canonical templates.")
+    parser = argparse.ArgumentParser(description="Create or refresh CONDUCTOR 0.1.1 Skill folders from canonical templates.")
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated Skill files. Manual customizations may be lost.")
+    parser.add_argument("--only", action="append", help="Refresh only the named Skill; repeat for multiple Skills.")
     args = parser.parse_args()
+    selected = set(args.only or [])
     SKILLS_ROOT.mkdir(parents=True, exist_ok=True)
     included: list[str] = []
     created = 0
@@ -752,7 +771,8 @@ def main() -> int:
                 ],
             })
         apply_capability_defaults(capability)
-        created += create_skill(capability, "description", TEMPLATES / "description_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
+        if not selected or name in selected:
+            created += create_skill(capability, "description", TEMPLATES / "description_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
     for identifier, name, display, algorithm, family, cost, status, wide in CLUSTERINGS:
         capability = base_capability(identifier, name, display, "clustering", family, cost, status, wide)
@@ -775,7 +795,8 @@ def main() -> int:
         if identifier == "C002":
             capability["description"] = "Cluster compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR axis, without generating a hidden descriptor vector or requiring per-run human approval."
         apply_capability_defaults(capability)
-        created += create_skill(capability, "clustering", TEMPLATES / "clustering_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
+        if not selected or name in selected:
+            created += create_skill(capability, "clustering", TEMPLATES / "clustering_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
         included.append(name)
     for identifier, name, display, operator, family, cost, status, wide, dependencies in OPERATORS:
         capability = base_capability(identifier, name, display, "analysis", family, cost, status, wide)
@@ -808,7 +829,7 @@ def main() -> int:
             capability["input_contract"] = ["endpoint_csv", "six_description_artifacts", "optional_clustering", "optional_global_model"]
         apply_capability_defaults(capability)
         template = TEMPLATES / ("projection_run.py" if identifier in {"A003", "A004"} else "multidescription_model_run.py" if identifier == "A005" else "operator_run.py")
-        analysis_created = create_skill(capability, "analysis", template, ["execution_event.schema.json", "operator_summary.schema.json", "artifact_manifest.schema.json"], args.force)
+        analysis_created = create_skill(capability, "analysis", template, ["execution_event.schema.json", "operator_summary.schema.json", "artifact_manifest.schema.json"], args.force) if not selected or name in selected else False
         created += analysis_created
         if analysis_created:
             shutil.copy2(TEMPLATES / "operator_report.py", SKILLS_ROOT / name / "scripts" / "operator_report.py")
@@ -822,7 +843,7 @@ def main() -> int:
         "output": {"json": "interpretation.json", "markdown": "interpretation.md", "html": "interpretation.html", "context": "interpretation_context.json", "quality": "report_quality.json", "draft": "interpretation_draft.json"},
         "implementation": {"purpose": "policy_guided_iterative_result_exploration", "state_access": "read_only", "execution_authority": "runtime_commit_only", "requires_dedicated_agent_review": True},
     })
-    interpretation_created = create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "operator_summary.schema.json", "analysis_profile.schema.json", "state.schema.json"], args.force)
+    interpretation_created = create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "operator_summary.schema.json", "analysis_profile.schema.json", "state.schema.json"], args.force) if not selected or interpretation["skill_name"] in selected else False
     created += interpretation_created
     if interpretation_created:
         references = SKILLS_ROOT / interpretation["skill_name"] / "references"

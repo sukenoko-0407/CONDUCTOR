@@ -26,12 +26,15 @@ results/CONDUCTOR/<project>/<run-id>/
 
 CONDUCTORモードでは主成果物に加え、manifest、warnings、`execution_event.json`を生成します。Operatorは`operator_summary.json`と`operator_report.html`を必須とします。A005 Cluster surveyは、集約summaryに加えて適用可能な各Clusterを`NA######@ATT####/CL######`で参照できる短いsummary collectionを生成します。Interpretationの正式成果物はRuntime commit後の`interpretation.json`、`interpretation.md`、`interpretation.html`、`quality_report.json`です。
 
+Vector Clusteringは通常／CONDUCTORの両モードで`cluster_membership.csv`、`cluster_summary.csv`、`clustering_diagnostics.csv`を生成します。CONDUCTORモードではさらに`distance_profile.json`を保存し、`clustering_manifest.json`へ`selection_status`、`quality_flags`、候補parameter、採用parameter、未所属理由内訳を記録します。`selection_status=no_usable_partition`は計算失敗ではなく、正式Clusterを登録しない診断付きnegative resultです。
+
 ## 不変条件
 
 - 既存attempt directoryを黙って上書きしない。
 - artifactはhashとsource Node／attemptを持つ。
 - Description manifestは実際の`value_semantics`と`natural_metric`を記録する。
 - binary fingerprintのClustering／SALI metricはTanimotoに固定する。
+- Vector ClusteringのMetricはDescription表現から固定し、距離校正と候補選択にendpointを使わない。
 - 5化合物未満のClusterへGlobal IDを割り当てない。
 - `CONDUCTOR_modules/`へ解析結果を書かない。
 - 各Roundは、保持Insightがゼロ件の場合も、品質検証済みInterpretationとその後のFull Auditなしに閉じない。

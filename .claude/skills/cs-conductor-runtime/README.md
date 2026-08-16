@@ -11,6 +11,7 @@ CONDUCTORのDAG、Node ID、Round、単一Writer lease、実行attempt、Interpr
 - Agent停止後の安全な再開
 - navigation indexの監査後再構築
 - Round終端前の状態確認
+- Vector Clusteringの品質状態と`no_usable_partition`の下流除外
 
 ## 環境構築
 
@@ -33,4 +34,4 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state bootstrap \
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | 0.1.0の単一Writer・attempt・Cluster・Interpretation commit管理を実装 |
+| 1.0.0 | 0.1.1の単一Writer・attempt・Cluster・Interpretation commit管理を実装 |

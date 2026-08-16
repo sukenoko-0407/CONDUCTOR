@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.0 検証項目
+# CONDUCTOR 0.1.1 検証項目
 
 ## 現在の検証結果
 
@@ -8,7 +8,7 @@
 - Test suite: 17件すべて合格
 - 文書整理: 配布対象docsにPNG／PPTXなし
 
-指定共有Pixi binary、Linux/HPC、実ChemBERTa weight、実tbliteを必要とする検査は本番環境での受入項目です。未実施項目を成功扱いしません。詳細は`CONDUCTOR_0.1.0_refactoring_plan.md`の「実装・検証結果」を参照してください。
+指定共有Pixi binary、Linux/HPC、実ChemBERTa weight、実tbliteを必要とする検査は本番環境での受入項目です。未実施項目を成功扱いしません。詳細は`CONDUCTOR_0.1.1_vector_clustering_refactoring_plan.md`を参照してください。
 
 ## Package
 
@@ -28,6 +28,9 @@
 - 一般利用では`--conductor`なしで主成果物だけを生成する。
 - CONDUCTOR利用ではNode／attempt directoryにmanifest、event、Operator reportを生成する。
 - structure Clusteringはcompound ID/SMILES CSV、Vector ClusteringはDescription vectorを受け取る。
+- C005～C010はnative distanceと手法別`auto` calibrationを使用し、endpoint列をparameter選択へ使わない。
+- Cluster構造が弱い入力では、Clusterを強制せず診断付き`no_usable_partition`を返せる。
+- 0.1.0→0.1.1 MigrationはDescriptionだけをRND0001へ移し、RND0002や解析を開始しない。
 - 全Clusteringで`min_cluster_size >= 5`を拒否不能な下限とする。
 - MCS pair上限は1000、pair samplingはseed付き一様ランダム非復元抽出である。
 - binary/MorganのmetricはTanimotoから変更できない。

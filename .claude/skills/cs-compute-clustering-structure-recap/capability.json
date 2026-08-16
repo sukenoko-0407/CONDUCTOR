@@ -3,7 +3,7 @@
   "capability_id": "C004",
   "skill_name": "cs-compute-clustering-structure-recap",
   "display_name": "RECAP fragment clustering",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "stage": "clustering",
   "family": "direct_structure",
   "description": "Cluster compounds from a compound-ID/SMILES CSV with RECAP fragment clustering, without generating a hidden descriptor vector.",

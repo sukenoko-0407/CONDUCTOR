@@ -45,6 +45,8 @@ launcherは共有Pixiを優先し、`PIXI_CACHE_DIR`、`UV_CACHE_DIR`、一時Di
 
 Node失敗後の再試行は新Nodeを追加せず、同じNodeを `start --retry` する。Interpreterの再試行も同じNIを完成させる。最終Interpretationは最後の成功Operatorより後に完成している必要があり、後発Operatorがある場合はRound終端用としてstaleになる。
 
+Vector Clusteringのcommit時はmanifestの`selection_status`と`quality_flags`をNodeの短いsummaryへ保存する。`no_usable_partition`は失敗に変換せずnegative resultとして保持するが、そのNodeをCluster-local Operatorの上流候補にはしない。
+
 ## 事故復旧
 
 期限切れleaseは通常の `bootstrap` で引き継げる。まだ有効なleaseの強制取得は、人間が重複Writerでないことを確認した場合だけ `--force-takeover --takeover-reason <理由>` を使う。取得後はFull Auditを実行し、`running` Nodeを無条件で再実行せず、artifact/eventの有無を確認する。navigation indexの欠損・件数不一致だけが問題なら、`rebuild-indices --state <state.json> --lease-token <token>`を使い、Stateやledgerを直接編集しない。

@@ -6,7 +6,7 @@
   "required": ["schema_version", "conductor_version", "revision", "run", "round_control", "orchestration_control", "counters", "execution_graph", "indices", "created_at", "updated_at"],
   "properties": {
     "schema_version": {"const": "2.0.0"},
-    "conductor_version": {"const": "0.1.0"},
+    "conductor_version": {"const": "0.1.1"},
     "revision": {"type": "integer", "minimum": 0},
     "run": {"type": "object", "required": ["run_id", "project", "input", "input_hash", "endpoint", "higher_is_better", "parallel_limit"], "properties": {"run_id":{"type":"string","minLength":1},"project":{"type":"string","minLength":1},"input":{"type":"string","minLength":1},"input_hash":{"type":"string","pattern":"^[a-f0-9]{64}$"},"endpoint":{"type":"string","minLength":1},"higher_is_better":{"type":"boolean"},"parallel_limit":{"type":"integer","minimum":1}}, "additionalProperties":true},
     "round_control": {"type":"object","required":["active_round_id","next_round_number","rounds"],"properties":{"active_round_id":{"type":["string","null"]},"next_round_number":{"type":"integer","minimum":1},"rounds":{"type":"array","items":{"type":"object"}}},"additionalProperties":true},

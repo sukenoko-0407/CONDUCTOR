@@ -19,14 +19,14 @@ def main() -> int:
         "docs/CONDUCTOR_skill_catalog.md", "schemas/capability.schema.json", "schemas/state.schema.json",
         "schemas/execution_event.schema.json", "schemas/operator_summary.schema.json",
         "schemas/interpretation.schema.json", "schemas/analysis_profile.schema.json",
-        "tools/templates/state_manager.py", "pyproject.toml", "uv.lock",
+        "tools/templates/state_manager.py", "tools/migrate_description_010_to_011.py", "pyproject.toml", "uv.lock",
     ]
     for relative in required:
         if not (MODULE_ROOT / relative).is_file(): errors.append(f"missing module file: CONDUCTOR_modules/{relative}")
     version = (MODULE_ROOT / "VERSION").read_text(encoding="utf-8").strip() if (MODULE_ROOT / "VERSION").is_file() else None
-    if version != "0.1.0": errors.append(f"unexpected package version: {version}")
+    if version != "0.1.1": errors.append(f"unexpected package version: {version}")
 
-    for name in ("cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"):
+    for name in ("cs-conductor-orchestrator.md", "cs-conductor-interpreter.md", "cs-conductor-description-migrator.md"):
         if not (PROJECT_ROOT / ".claude" / "agents" / name).is_file(): errors.append(f"missing Agent: {name}")
 
     obsolete_paths=[
@@ -38,7 +38,7 @@ def main() -> int:
         MODULE_ROOT/"tools"/"render_explanation_docs.py",
     ]
     for path in obsolete_paths:
-        if path.exists(): errors.append(f"obsolete 0.1.0 path remains: {path.relative_to(PROJECT_ROOT)}")
+        if path.exists(): errors.append(f"obsolete 0.1.1 path remains: {path.relative_to(PROJECT_ROOT)}")
     legacy_schema_names={"evidence.schema.json","evidence_digest.schema.json","interpretation_id_reservation.schema.json"}
     skill_root=PROJECT_ROOT/".claude"/"skills"
     for path in skill_root.rglob("*.json") if skill_root.is_dir() else []:
@@ -51,7 +51,7 @@ def main() -> int:
         allowlisted=set(selection.get("included_skills",[]));catalog_names={item.get("skill_name") for item in catalog.get("capabilities",[])}
         if len(names)!=len(set(names)): errors.append("Skill selection contains duplicates")
         if allowlisted!=catalog_names: errors.append("Catalog does not match included_skills")
-        if catalog.get("conductor_version")!="0.1.0": errors.append("Catalog version mismatch")
+        if catalog.get("conductor_version")!="0.1.1": errors.append("Catalog version mismatch")
         for name in names:
             root=PROJECT_ROOT/".claude"/"skills"/name
             for relative in ("SKILL.md","README.md","capability.json","scripts/launch.py","env/pixi.toml"):
@@ -59,7 +59,7 @@ def main() -> int:
             if not (root/"capability.json").is_file(): continue
             capability=json.loads((root/"capability.json").read_text(encoding="utf-8"))
             if capability.get("skill_name")!=name: errors.append(f"{name}: capability skill_name mismatch")
-            if capability.get("version")!="0.1.0": errors.append(f"{name}: capability version mismatch")
+            if capability.get("version")!="0.1.1": errors.append(f"{name}: capability version mismatch")
             stage=capability.get("stage")
             if stage in {"description","clustering","analysis","interpretation"}:
                 if not (root/"schemas"/"execution_event.schema.json").is_file(): errors.append(f"{name}: execution event schema missing")
@@ -96,7 +96,7 @@ def main() -> int:
     for root in public_roots:
         for path in root.rglob("*") if root.exists() else []:
             if path.is_file() and path.suffix.lower() in {".md",".json"}:
-                if "env" in path.parts or path.name=="CONDUCTOR_0.1.0_refactoring_plan.md": continue
+                if "env" in path.parts or "refactoring_plan" in path.name: continue
                 text=path.read_text(encoding="utf-8",errors="ignore")
                 for token in forbidden:
                     if token in text and "v430" not in str(path): errors.append(f"obsolete public token {token}: {path.relative_to(PROJECT_ROOT)}")
@@ -104,7 +104,7 @@ def main() -> int:
     if errors:
         for error in errors: print(f"ERROR: {error}",file=sys.stderr)
         return 1
-    print("CONDUCTOR 0.1.0 package layout is valid")
+    print("CONDUCTOR 0.1.1 package layout is valid")
     return 0
 
 
