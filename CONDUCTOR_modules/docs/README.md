@@ -1,6 +1,6 @@
 # CONDUCTOR ドキュメント
 
-対象Versionは`0.1.2`です。Description、Clustering、Operator、Interpretationを疎結合に接続し、同じRunを人間主導の複数Roundで探索します。
+対象Versionは`0.1.3`です。Description、Clustering、Operator、Interpretationを疎結合に接続し、同じRunを人間主導の複数Roundで探索します。
 
 ## 利用時に読む文書
 
@@ -13,9 +13,9 @@
 
 ## 実装・監査
 
-- [CONDUCTOR_design_spec.md](CONDUCTOR_design_spec.md): Dispatcher、Runtime、Control、Event Ledger、詳細DAG snapshot
-- [CONDUCTOR_runtime_redesign_overview.md](CONDUCTOR_runtime_redesign_overview.md): 0.1.2制御系の設計根拠
-- [CONDUCTOR_runtime_redesign_plan.md](CONDUCTOR_runtime_redesign_plan.md): 実装計画と受入条件
+- [CONDUCTOR_design_spec.md](CONDUCTOR_design_spec.md): Main Orchestrator、Executor、Interpreter、Runtime、Control、Event Ledger、詳細DAG snapshot
+- [CONDUCTOR_0.1.3_main_orchestrator_overview.md](CONDUCTOR_0.1.3_main_orchestrator_overview.md): 0.1.3制御系の設計根拠
+- [CONDUCTOR_0.1.3_implementation_plan.md](CONDUCTOR_0.1.3_implementation_plan.md): 実装計画と受入条件
 - [CONDUCTOR_skill_catalog.md](CONDUCTOR_skill_catalog.md): 人間allowlistから生成したCatalog
 - [CONDUCTOR_verification.md](CONDUCTOR_verification.md): 検証方法
 

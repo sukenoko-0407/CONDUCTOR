@@ -19,7 +19,7 @@ SPEC.loader.exec_module(MODULE)
 class ConciergeTests(unittest.TestCase):
     def frozen_run(self, base: Path) -> Path:
         root = base / "run"; (root / "runtime").mkdir(parents=True)
-        control = {"conductor_version": "0.1.2", "run": {"run_id": "r1"}, "active_round_id": None, "round_state": "CLOSED", "lease": {"owner_id": None, "expires_at": None}}
+        control = {"conductor_version": "0.1.3", "run": {"run_id": "r1"}, "active_round_id": None, "round_state": "CLOSED", "lease": {"owner_id": None, "expires_at": None}}
         snapshot = {"nodes": [], "rounds": {}}
         (root / "conductor_control.json").write_text(json.dumps(control), encoding="utf-8")
         (root / "runtime" / "dag_snapshot.json").write_text(json.dumps(snapshot), encoding="utf-8")
@@ -34,6 +34,29 @@ class ConciergeTests(unittest.TestCase):
             self.assertRegex(request_dir.name, r"^REQ\d{6}$")
             self.assertTrue((request_dir / "control_snapshot.json").is_file())
             self.assertTrue((request_dir / "dag_snapshot.json").is_file())
+            self.assertTrue((request_dir / "scratch").is_dir())
+
+    def test_request_local_python_helper_is_allowed_and_isolated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.frozen_run(Path(temporary))
+            prepared = MODULE.prepare(Namespace(run_root=str(root), request="既存値を再集計", request_file=None, focus_id=[], explicit_request=True))
+            request_dir = Path(prepared["request_dir"])
+            script = request_dir / "scratch" / "check.py"
+            script.write_text("from pathlib import Path\nPath('derived.txt').write_text('ok', encoding='utf-8')\nprint('done')\n", encoding="utf-8")
+            result = MODULE.run_helper(Namespace(request_dir=str(request_dir), script=str(script), timeout_seconds=30, script_args=[]))
+            self.assertEqual("succeeded", result["status"])
+            self.assertTrue((request_dir / "scratch" / "derived.txt").is_file())
+            self.assertTrue(Path(result["stdout"]).read_text(encoding="utf-8").strip() == "done")
+            self.assertEqual("0.1.3", json.loads((root / "conductor_control.json").read_text(encoding="utf-8"))["conductor_version"])
+
+    def test_python_helper_outside_request_scratch_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.frozen_run(Path(temporary))
+            prepared = MODULE.prepare(Namespace(run_root=str(root), request="確認", request_file=None, focus_id=[], explicit_request=True))
+            outside = Path(temporary) / "outside.py"
+            outside.write_text("print('no')\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                MODULE.run_helper(Namespace(request_dir=prepared["request_dir"], script=str(outside), timeout_seconds=30, script_args=[]))
 
     def test_active_run_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

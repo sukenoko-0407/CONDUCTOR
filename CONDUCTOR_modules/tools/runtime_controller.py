@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import hmac
 import importlib.util
 import json
 import os
@@ -20,11 +21,16 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 
-VERSION = "0.1.2"
+VERSION = "0.1.3"
+PROTOCOL_VERSION = "0.1.3"
 CONTROL_SCHEMA = "3.0.0"
 MAX_CONTROL_BYTES = 32 * 1024
 MAX_WORKING_SET_BYTES = 64 * 1024
 MAX_CANDIDATES = 20
+MAX_COMPACT_RESPONSE_BYTES = 16 * 1024
+EXECUTION_PACKET_TTL_MINUTES = 15
+MAX_EXECUTION_ATTEMPTS = 3
+MAX_INTERPRETER_ATTEMPTS = 3
 ROUND_STATES = {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"}
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
 
@@ -80,6 +86,46 @@ def file_hash(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _compact_response(
+    control: dict[str, Any],
+    *,
+    action_token: str | None = None,
+    detail_pointer: str | None = None,
+    **payload: Any,
+) -> dict[str, Any]:
+    """Return the bounded protocol surface consumed by the Main Agent.
+
+    Full Control remains available through the explicit read-only query command;
+    mutation commands do not echo it into the conversation.
+    """
+    response: dict[str, Any] = {
+        "protocol_version": PROTOCOL_VERSION,
+        "control_revision": int(control["revision"]),
+        "run_id": control["run"]["run_id"],
+        "round_id": control.get("active_round_id"),
+        "round_state": control["round_state"],
+        "required_action": clean(control["required_action"]),
+        "counts": clean(control.get("counts") or {}),
+        "closure": clean(control.get("closure") or {}),
+        "working_set": control.get("pointers", {}).get("working_set"),
+    }
+    if action_token is not None:
+        response["action_token"] = action_token
+    if detail_pointer is not None:
+        response["detail_pointer"] = detail_pointer
+    response.update(clean(payload))
+    validate(response, "compact_runtime_response.schema.json")
+    if len(canonical_bytes(response)) > MAX_COMPACT_RESPONSE_BYTES:
+        # Payloads must opt into a file pointer rather than silently truncating
+        # scientific identifiers or failure information.
+        raise ValueError("Compact Runtime response exceeds 16 KiB; store details and return a pointer")
+    return response
+
+
+def _print_compact(control: dict[str, Any], **payload: Any) -> None:
+    print(json.dumps(_compact_response(control, **payload), ensure_ascii=False, indent=2))
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -199,7 +245,7 @@ def writer_lock(root: Path, timeout: float = 30.0) -> Iterator[None]:
             (lock_dir / "owner.json").write_text(json.dumps({"pid": os.getpid(), "host": socket.gethostname(), "created_at": utc_now()}), encoding="utf-8")
             break
         except FileExistsError:
-            # A hard-killed Dispatcher cannot clean up its directory. Recover only
+            # A hard-killed Runtime process cannot clean up its directory. Recover only
             # when the recorded process is certainly gone; never steal a live lock.
             owner_path = lock_dir / "owner.json"
             try:
@@ -332,7 +378,7 @@ def _rotate_action_token(control: dict[str, Any]) -> str | None:
     if not control["lease"].get("owner_id"):
         control["lease"]["action_token_hash"] = None
         return None
-    token = secrets.token_urlsafe(32)
+    token = secrets.token_hex(32)
     control["lease"]["action_token_hash"] = value_hash(token)
     return token
 
@@ -378,10 +424,10 @@ def _lease_live(control: dict[str, Any]) -> bool:
     return bool(control["lease"].get("owner_id") and expires and expires > datetime.now(timezone.utc))
 
 
-def _require_dispatcher(root: Path, key: str) -> None:
+def _require_control_authority(root: Path, key: str) -> None:
     authority = read_json(root / "runtime" / "authority.json")
-    if not secrets.compare_digest(authority["dispatcher_key_hash"], value_hash(key)):
-        raise PermissionError("Dispatcher authority is required")
+    if not secrets.compare_digest(authority["control_authority_key_hash"], value_hash(key)):
+        raise PermissionError("Human-authorized Main control authority is required")
 
 
 def _require_action(control: dict[str, Any], lease_token: str, action_token: str, allowed_actions: set[str] | None = None) -> None:
@@ -393,6 +439,131 @@ def _require_action(control: dict[str, Any], lease_token: str, action_token: str
         raise PermissionError("Stale or invalid one-time Action token")
     if allowed_actions and control["required_action"]["code"] not in allowed_actions:
         raise PermissionError(f"Action is not allowed while required_action={control['required_action']['code']}")
+
+
+def _packet_signature(root: Path, packet: dict[str, Any]) -> str:
+    key = (root / "runtime" / "control_authority.key").read_text(encoding="utf-8").strip().encode("utf-8")
+    unsigned = {name: value for name, value in packet.items() if name != "signature"}
+    return hmac.new(key, canonical_bytes(unsigned), hashlib.sha256).hexdigest()
+
+
+def _validate_execution_packet(
+    root: Path,
+    control: dict[str, Any],
+    packet_path: Path,
+    executor_token: str,
+) -> dict[str, Any]:
+    packet_path = packet_path.resolve()
+    packet_root = (root / "runtime" / "scratch" / "packets").resolve()
+    if packet_root not in packet_path.parents:
+        raise PermissionError("Execution packet is outside the Runtime packet directory")
+    packet = read_json(packet_path)
+    validate(packet, "execution_packet.schema.json")
+    if not hmac.compare_digest(packet["signature"], _packet_signature(root, packet)):
+        raise PermissionError("Execution packet signature is invalid")
+    if not secrets.compare_digest(packet["executor_token_hash"], value_hash(executor_token)):
+        raise PermissionError("Execution packet token is invalid")
+    if packet["run_id"] != control["run"]["run_id"] or packet["round_id"] != control.get("active_round_id"):
+        raise PermissionError("Execution packet belongs to another Run or Round")
+    if int(packet["control_revision"]) != int(control["revision"]):
+        raise PermissionError("Execution packet is stale")
+    if packet["required_action"] != control["required_action"]["code"]:
+        raise PermissionError("Execution packet action no longer matches Runtime Control")
+    if not secrets.compare_digest(packet["lease_token_hash"], str(control["lease"].get("token_hash"))):
+        raise PermissionError("Execution packet lease is stale")
+    if not secrets.compare_digest(packet["action_token_hash"], str(control["lease"].get("action_token_hash"))):
+        raise PermissionError("Execution packet Action token is stale or already consumed")
+    if not _lease_live(control):
+        raise PermissionError("Execution packet has no live Main Agent lease")
+    expires = parse_time(packet.get("expires_at"))
+    if not expires or expires <= datetime.now(timezone.utc):
+        raise PermissionError("Execution packet has expired")
+    return packet
+
+
+def _require_executor_followup(control: dict[str, Any], packet: dict[str, Any], action_token: str) -> None:
+    if not _lease_live(control):
+        raise PermissionError("Main Agent lease expired while Executor was active")
+    if not secrets.compare_digest(packet["lease_token_hash"], str(control["lease"].get("token_hash"))):
+        raise PermissionError("Main Agent lease changed while Executor was active")
+    if not secrets.compare_digest(str(control["lease"].get("action_token_hash")), value_hash(action_token)):
+        raise PermissionError("Executor follow-up token is stale")
+    if control["required_action"]["code"] != "WAIT_OR_RECONCILE_RUNNING":
+        raise PermissionError("Runtime is not waiting for the claimed Executor batch")
+
+
+def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
+    root = resolve_root(args.run_root)
+    with writer_lock(root):
+        _recover_transaction(root)
+        control, snapshot = _read_state(root)
+        _require_action(control, args.lease_token, args.action_token, {"EXECUTE_RUNNABLE_BATCH"})
+        runnable = {node["node_id"]: node for node in _runnable(control, snapshot)}
+        requested = [item for item in (args.node_ids or "").split(",") if item] or list(runnable)
+        if not requested:
+            raise ValueError("No runnable Nodes")
+        if set(requested) - set(runnable):
+            raise ValueError(f"Requested Nodes are not currently runnable: {sorted(set(requested) - set(runnable))}")
+        requested = requested[: control["run"]["parallel_limit"]]
+        executor_token = secrets.token_hex(32)
+        packet_id = f"PKT{timestamp()}_{secrets.token_hex(4)}"
+        packet_dir = root / "runtime" / "scratch" / "packets" / packet_id
+        packet_dir.mkdir(parents=True, exist_ok=False)
+        execution_contracts: list[dict[str, Any]] = []
+        for node_id in requested:
+            node = runnable[node_id]
+            attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
+            scratch = root / "runtime" / "scratch" / node["assigned_round"] / node_id / attempt_id
+            command = _skill_command(root, control, snapshot, node, attempt_id, scratch)
+            prior_failure = next((attempt.get("failure_packet") for attempt in reversed(node.get("attempts") or []) if attempt.get("failure_packet")), None)
+            execution_contracts.append({
+                "node_id": node_id,
+                "capability_id": node["capability_id"],
+                "attempt_id": attempt_id,
+                "node_signature": node["signature"],
+                "input_nodes": node["input_nodes"],
+                "command_argv": command,
+                "command_hash": value_hash(command),
+                "working_directory": str(project_root()),
+                "scratch": str(scratch),
+                "environment": {"CONDUCTOR_ATTEMPT_TMP": str(scratch / "tmp")},
+                "expected_output_ref": node["output_ref"],
+                "validation": ["execution_event_identity", "artifact_sha256", "stage_schema", "analysis_subject", "scientific_invariants"],
+                "prior_failure_pointer": prior_failure,
+            })
+        packet = {
+            "schema_version": "1.0.0",
+            "protocol_version": PROTOCOL_VERSION,
+            "packet_id": packet_id,
+            "run_id": control["run"]["run_id"],
+            "round_id": control["active_round_id"],
+            "control_revision": control["revision"],
+            "required_action": control["required_action"]["code"],
+            "lease_token_hash": control["lease"]["token_hash"],
+            "action_token_hash": control["lease"]["action_token_hash"],
+            "executor_token_hash": value_hash(executor_token),
+            "node_ids": requested,
+            "capability_ids": [runnable[node_id]["capability_id"] for node_id in requested],
+            "execution_contracts": execution_contracts,
+            "timeout_minutes": args.timeout_minutes,
+            "clean_scratch": bool(args.clean_scratch),
+            "recovery_budget": {"maximum_attempts_per_node": MAX_EXECUTION_ATTEMPTS, "temporary_files_root": "<scratch>/recovery", "scientific_parameter_changes_allowed": False},
+            "created_at": utc_now(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=EXECUTION_PACKET_TTL_MINUTES)).isoformat(),
+        }
+        packet["signature"] = _packet_signature(root, packet)
+        validate(packet, "execution_packet.schema.json")
+        packet_path = packet_dir / "execution_packet.json"
+        write_json(packet_path, packet)
+    _print_compact(
+        control,
+        packet_path=str(packet_path),
+        executor_token=executor_token,
+        packet_id=packet_id,
+        node_ids=requested,
+        executor_agent="cs-conductor-executor",
+    )
+    return 0
 
 
 def _execution_round(node: dict[str, Any]) -> str | None:
@@ -540,7 +711,7 @@ def _finalize_allowed(root: Path, control: dict[str, Any], snapshot: dict[str, A
 def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
     round_id = control.get("active_round_id")
     if not round_id:
-        return {"code": "AWAIT_HUMAN_ROUND", "reason": "No active Round. Only a human-authorized Dispatcher operation can start one."}
+        return {"code": "AWAIT_HUMAN_ROUND", "reason": "No active Round. Only a human-authorized Main Orchestrator operation can start one."}
     if control["round_state"] == "AWAITING_HUMAN_REVIEW":
         return {"code": "HUMAN_REVIEW_REQUIRED", "reason": "Interpretation and audit are ready. Human continuation, report revision, or acceptance is required."}
     if control["round_state"] == "CLOSED":
@@ -549,6 +720,8 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
     if running:
         return {"code": "WAIT_OR_RECONCILE_RUNNING", "reason": "Running Attempts must be reconciled before another control action.", "node_ids": running[:20]}
     if control["round_state"] == "FINALIZING":
+        if (control.get("blocker") or {}).get("code") == "INTERPRETATION_RETRY_EXHAUSTED":
+            return {"code": "INTERPRETATION_BLOCKED", "reason": "The bounded Interpreter retry budget is exhausted. Human correction or report-revision authorization is required.", "node_id": control["blocker"].get("node_id")}
         fresh, interpretation_node = _interpretation_fresh(snapshot, round_id)
         if not fresh:
             existing = [node for node in snapshot["nodes"] if node["kind"] == "interpretation" and node.get("assigned_round") == round_id and node["status"] in {"pending", "failed"}]
@@ -572,13 +745,13 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
         node for node in snapshot["nodes"]
         if node["status"] == "failed"
         and node.get("assigned_round") == round_id
-        and len(node.get("attempts") or []) < 2
+        and len(node.get("attempts") or []) < MAX_EXECUTION_ATTEMPTS
     ]
     if retryable:
         retryable.sort(key=lambda node: node["node_id"])
         return {
             "code": "RETRY_FAILED_NODE",
-            "reason": "A failed scientific Node has one bounded retry available. Retry the same Node ID or leave it failed after the second failure.",
+            "reason": "A failed scientific Node has a bounded same-Node retry available. Retry never creates a replacement Node.",
             "node_id": retryable[0]["node_id"],
         }
     if _has_high_cost_waiting(root, control, snapshot):
@@ -704,11 +877,11 @@ def cmd_init(args: argparse.Namespace) -> int:
         raise FileExistsError(f"Run Root is not empty: {root}")
     for relative in ("runtime/logs", "runtime/scratch", "runtime/requests", "rounds", "description", "clustering", "analysis", "interpretation", "concierge", "audit", "state"):
         (root / relative).mkdir(parents=True, exist_ok=True)
-    dispatcher_key = secrets.token_urlsafe(48)
-    write_json(root / "runtime" / "authority.json", {"schema_version": "1.0.0", "dispatcher_key_hash": value_hash(dispatcher_key), "created_at": utc_now()})
-    atomic_bytes(root / "runtime" / "dispatcher.key", dispatcher_key.encode("utf-8") + b"\n")
+    control_key = secrets.token_hex(48)
+    write_json(root / "runtime" / "authority.json", {"schema_version": "1.0.0", "control_authority_key_hash": value_hash(control_key), "created_at": utc_now()})
+    atomic_bytes(root / "runtime" / "control_authority.key", control_key.encode("utf-8") + b"\n")
     try:
-        os.chmod(root / "runtime" / "dispatcher.key", 0o600)
+        os.chmod(root / "runtime" / "control_authority.key", 0o600)
     except OSError:
         pass
     for path in (root / "runtime" / "result_index.jsonl", root / "runtime" / "insight_index.jsonl", root / "runtime" / "cluster_registry.jsonl", root / "runtime" / "event_ledger.jsonl"):
@@ -764,7 +937,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     snapshot = {"schema_version": "1.0.0", "control_revision": 0, "last_event_sequence": 0, "counters": {"node": 0, "cluster": 0, "insight": 0}, "nodes": [], "plans": {}, "rounds": {}, "decisions": []}
     with writer_lock(root):
         _commit(root, control, snapshot, "run_initialized", {"run": control["run"]}, rotate_token=False)
-    print(json.dumps({"run_root": str(root), "control": str(control_path(root)), "next_action": "Use cs-conductor-dispatch to prepare and authorize RND0001."}, ensure_ascii=False, indent=2))
+    _print_compact(control, run_root=str(root), control_path=str(control_path(root)), next_action="Invoke /cs-conductor-orchestrator and explicitly authorize RND0001.")
     return 0
 
 
@@ -805,17 +978,17 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
         if args.required_deliverables_json:
             contract["required_deliverables"] = json.loads(Path(args.required_deliverables_json).read_text(encoding="utf-8") if Path(args.required_deliverables_json).is_file() else args.required_deliverables_json)
         validate(contract, "round_contract.schema.json")
-        token = secrets.token_urlsafe(32)
+        token = secrets.token_hex(32)
         request_record = {"schema_version": "1.0.0", "contract": contract, "authorization_token_hash": value_hash(token), "used": False, "created_at": utc_now()}
         request_path = root / "runtime" / "requests" / f"{round_id}_{request_hash[:12]}.json"
         write_json(request_path, request_record)
-    print(json.dumps({"round_contract": contract, "request_file": str(request_path), "authorization_token": token, "state_changed": False}, ensure_ascii=False, indent=2))
+    _print_compact(control, request_file=str(request_path), authorization_token=token, state_changed=False, proposed_round_id=round_id, contract_hash=value_hash(contract))
     return 0
 
 
 def cmd_authorize_round(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     request_path = Path(args.request_file).resolve()
     if request_path.parent != (root / "runtime" / "requests").resolve():
         raise ValueError("Round request must be inside this Run Root")
@@ -849,13 +1022,13 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         request["used_at"] = utc_now()
         write_json(request_path, request)
         _commit(root, control, snapshot, "round_authorized", {"contract": contract}, round_id=round_id, rotate_token=False)
-    print(json.dumps({"round_id": round_id, "round_state": "ACTIVE", "next_step": "Acquire an Orchestrator lease through cs-conductor-dispatch resume-round."}, ensure_ascii=False, indent=2))
+    _print_compact(control, next_step="Acquire the Main Agent Orchestrator lease with resume-round.")
     return 0
 
 
 def cmd_resume_round(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         recovered = _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -863,14 +1036,14 @@ def cmd_resume_round(args: argparse.Namespace) -> int:
             raise ValueError(f"No resumable Round: {control['round_state']}")
         live = _lease_live(control)
         if live:
-            print(json.dumps({"lease_acquired": False, "reason": "LIVE_LEASE_EXISTS", "owner_id": control["lease"]["owner_id"], "expires_at": control["lease"]["expires_at"], "control": control}, ensure_ascii=False, indent=2))
+            _print_compact(control, lease_acquired=False, reason="LIVE_LEASE_EXISTS", owner_id=control["lease"]["owner_id"], expires_at=control["lease"]["expires_at"])
             return 0
-        lease_token = secrets.token_urlsafe(32)
+        lease_token = secrets.token_hex(32)
         now = datetime.now(timezone.utc)
         control["lease"].update({"owner_id": args.owner_id, "token_hash": value_hash(lease_token), "action_token_hash": None, "expires_at": (now + timedelta(minutes=max(5, args.lease_minutes))).isoformat(), "heartbeat_at": now.isoformat(), "process_id": args.process_id})
         action_token = _commit(root, control, snapshot, "orchestrator_lease_acquired", {"owner_id": args.owner_id, "recovered_transactions": recovered}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"lease_acquired": True, "lease_token": lease_token, "action_token": action_token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=action_token, lease_acquired=True, lease_token=lease_token, recovered_transactions=recovered)
     return 0
 
 
@@ -883,12 +1056,13 @@ def cmd_release_lease(args: argparse.Namespace) -> int:
         owner = control["lease"]["owner_id"]
         control["lease"] = {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
         _commit(root, control, snapshot, "orchestrator_lease_released", {"owner_id": owner, "reason": args.reason}, round_id=control.get("active_round_id"), rotate_token=False)
+    _print_compact(control, lease_released=True, released_owner=owner)
     return 0
 
 
 def cmd_continue_round(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     if args.additional_walltime_minutes < 1:
         raise ValueError("Additional walltime must be at least one minute")
     with writer_lock(root):
@@ -906,28 +1080,31 @@ def cmd_continue_round(args: argparse.Namespace) -> int:
         control.update({"round_state": "ACTIVE", "blocker": None})
         control["closure"] = {"contract_satisfied": False, "interpretation_ready": False, "audit_ready": False, "outcome": "undetermined"}
         _commit(root, control, snapshot, "round_continued_by_human", {"reason": args.reason, "additional_walltime_minutes": minutes}, round_id=round_id, rotate_token=False)
+    _print_compact(control, continued_round_id=round_id, additional_walltime_minutes=minutes)
     return 0
 
 
 def cmd_revise_report(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        if control["round_state"] != "AWAITING_HUMAN_REVIEW":
-            raise ValueError("Report revision requires AWAITING_HUMAN_REVIEW")
+        blocked_finalizing = control["round_state"] == "FINALIZING" and (control.get("blocker") or {}).get("code") == "INTERPRETATION_RETRY_EXHAUSTED"
+        if control["round_state"] != "AWAITING_HUMAN_REVIEW" and not blocked_finalizing:
+            raise ValueError("Report revision requires human review or a blocked Interpretation gate")
         round_id = control["active_round_id"]
         record = snapshot["rounds"][round_id]
-        record.update({"state": "FINALIZING", "latest_audit": None, "report_revision_reason": args.reason, "interpretation_revision_required": True, "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1})
+        record.update({"state": "FINALIZING", "latest_audit": None, "report_revision_reason": args.reason, "interpretation_revision_required": True, "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1, "human_interpretation_retry_authorized": blocked_finalizing})
         control.update({"round_state": "FINALIZING", "blocker": None})
         _commit(root, control, snapshot, "report_revision_requested", {"reason": args.reason}, round_id=round_id, rotate_token=False)
+    _print_compact(control, report_revision_requested=True, round_id=round_id)
     return 0
 
 
 def cmd_accept_round(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -949,6 +1126,7 @@ def cmd_accept_round(args: argparse.Namespace) -> int:
         control.update({"active_round_id": None, "round_state": "CLOSED", "blocker": None})
         control["lease"] = {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
         _commit(root, control, snapshot, "round_accepted_by_human", {"note": args.note}, round_id=round_id, rotate_token=False)
+    _print_compact(control, accepted_round_id=round_id)
     return 0
 
 
@@ -959,9 +1137,9 @@ def cmd_verify_return(args: argparse.Namespace) -> int:
         control, snapshot = _read_state(root)
         reclaimed = False
         if args.confirm_returned:
-            if not args.dispatcher_key or not args.owner_id or args.start_revision is None:
-                raise ValueError("Confirmed return requires dispatcher authority, owner ID, and start revision")
-            _require_dispatcher(root, args.dispatcher_key)
+            if not args.control_key or not args.owner_id or args.start_revision is None:
+                raise ValueError("Confirmed return requires Main control authority, owner ID, and start revision")
+            _require_control_authority(root, args.control_key)
             lease = control["lease"]
             if lease.get("owner_id") and lease.get("owner_id") != args.owner_id:
                 raise ValueError("Returned Orchestrator owner does not match the live lease")
@@ -976,9 +1154,9 @@ def cmd_verify_return(args: argparse.Namespace) -> int:
         lease = control["lease"]
         no_progress = int(snapshot.get("rounds", {}).get(str(control.get("active_round_id")), {}).get("no_progress_returns", 0)) if control.get("active_round_id") else 0
         resumable = bool(control.get("active_round_id") and control["round_state"] in {"ACTIVE", "FINALIZING"} and not _lease_live(control))
-        human_stop = control["required_action"]["code"] in {"HUMAN_APPROVAL_REQUIRED", "HUMAN_REVIEW_REQUIRED", "AWAIT_HUMAN_ROUND"}
-        response = {"control": control, "ledger_ok": sequence == control["last_event_sequence"] and checksum == control["last_event_checksum"], "lease_live": _lease_live(control), "lease_reclaimed": reclaimed, "recovered_transactions": recovered, "same_round_resume_allowed": resumable, "automatic_same_round_resume_recommended": bool(resumable and not human_stop and no_progress < 2), "no_progress_returns": no_progress, "new_round_allowed": not control.get("active_round_id")}
-    print(json.dumps(response, ensure_ascii=False, indent=2))
+        human_stop = control["required_action"]["code"] in {"HUMAN_APPROVAL_REQUIRED", "HUMAN_REVIEW_REQUIRED", "INTERPRETATION_BLOCKED", "AWAIT_HUMAN_ROUND"}
+        response = {"ledger_ok": sequence == control["last_event_sequence"] and checksum == control["last_event_checksum"], "lease_live": _lease_live(control), "lease_reclaimed": reclaimed, "recovered_transactions": recovered, "same_round_resume_allowed": resumable, "automatic_same_round_resume_recommended": bool(resumable and not human_stop and no_progress < 2), "no_progress_returns": no_progress, "new_round_allowed": not control.get("active_round_id")}
+    _print_compact(control, **response)
     return 0
 
 
@@ -1207,7 +1385,7 @@ def _plan_mutation(args: argparse.Namespace, allowed: set[str], event_type: str,
         planned = planner(root, control, snapshot)
         token = _commit(root, control, snapshot, event_type, {"planned_node_ids": planned}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"planned_node_ids": planned, "action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, planned_node_ids=planned[:100], planned_count=len(planned))
     return 0
 
 
@@ -1258,13 +1436,13 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
         snapshot["decisions"].append({"round_id": control["active_round_id"], "candidate_ids": selected_ids, "planned_node_ids": planned, "rationale": args.rationale, "created_at": utc_now()})
         token = _commit(root, control, snapshot, "scientific_decision_applied", {"candidate_ids": selected_ids, "planned_node_ids": planned, "rationale": args.rationale, "finish_reason": args.finish_reason}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"planned_node_ids": planned, "action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, planned_node_ids=planned[:100], planned_count=len(planned))
     return 0
 
 
 def cmd_approve_high_cost(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -1282,6 +1460,7 @@ def cmd_approve_high_cost(args: argparse.Namespace) -> int:
                     node["status"] = "cancelled"
                     node["finished_at"] = utc_now()
         _commit(root, control, snapshot, "high_cost_bundle_decided", {"approved": bool(args.approve), "rationale": args.rationale}, round_id=control["active_round_id"], rotate_token=False)
+    _print_compact(control, high_cost_bundle_approved=bool(args.approve))
     return 0
 
 
@@ -1654,15 +1833,163 @@ def _run_one(command: list[str], log_path: Path, process_path: Path, timeout_sec
         return {"returncode": 125, "timed_out": False, "started_at": started, "finished_at": finished, "runner_error": str(exc)}
 
 
+def _classify_execution_failure(log_path: Path, outcome: dict[str, Any], error: Exception) -> tuple[str, bool]:
+    text = ""
+    if log_path.is_file():
+        text = log_path.read_text(encoding="utf-8", errors="replace")[-12000:].lower()
+    message = f"{error} {outcome.get('runner_error') or ''}".lower()
+    combined = f"{message}\n{text}"
+    if outcome.get("timed_out"):
+        return "transient_process_failure", True
+    if any(token in combined for token in ("unrecognized arguments", "unknown option", "no such option", "argument contract")):
+        return "argument_contract_mismatch", True
+    if any(token in combined for token in ("pixi", "environment", "conda", "uv cache")) and outcome.get("returncode") in {1, 125, 127}:
+        return "environment_initialization_failure", True
+    if any(token in combined for token in ("working directory", "no such file", "cannot find the path", "file not found")):
+        return "path_or_working_directory_mismatch", True
+    if any(token in combined for token in ("missing column", "column not found", "required column", "csv")):
+        return "input_format_or_column_mismatch", True
+    if any(token in combined for token in ("schema", "identity or status mismatch", "missing or invalid skill artifact")):
+        return "payload_validation_failure", False
+    if outcome.get("returncode") in {125}:
+        return "transient_process_failure", True
+    return "non_recoverable_implementation_failure", False
+
+
+def _write_failure_packet(
+    root: Path,
+    node: dict[str, Any],
+    attempt: dict[str, Any],
+    outcome: dict[str, Any],
+    error: Exception,
+) -> Path:
+    log_path = root / attempt["log"]
+    classification, recoverable = _classify_execution_failure(log_path, outcome, error)
+    packet = {
+        "schema_version": "1.0.0",
+        "protocol_version": PROTOCOL_VERSION,
+        "node_id": node["node_id"],
+        "attempt_id": attempt["attempt_id"],
+        "round_id": node["assigned_round"],
+        "capability_id": node["capability_id"],
+        "classification": classification,
+        "recoverable": recoverable,
+        "attempt_count": len(node.get("attempts") or []),
+        "attempt_limit": MAX_EXECUTION_ATTEMPTS,
+        "error": str(error)[:2000],
+        "log_pointer": attempt["log"],
+        "scratch_pointer": str(Path(attempt["scratch"]).relative_to(root)),
+        "created_at": utc_now(),
+    }
+    validate(packet, "failure_packet.schema.json")
+    path = Path(attempt["scratch"]) / "failure_packet.json"
+    write_json(path, packet)
+    return path
+
+
+def _command_options(command: list[str]) -> dict[str, str | bool]:
+    values: dict[str, str | bool] = {}
+    index = 2  # executable and Skill launcher are immutable
+    while index < len(command):
+        token = command[index]
+        if token.startswith("--"):
+            if index + 1 < len(command) and not command[index + 1].startswith("--"):
+                values[token] = command[index + 1]
+                index += 2
+            else:
+                values[token] = True
+                index += 1
+        else:
+            index += 1
+    return values
+
+
+def _load_recovery_override(
+    root: Path,
+    packet: dict[str, Any],
+    command_path_value: str | None,
+    manifest_path_value: str | None,
+) -> tuple[dict[str, list[str]], dict[str, dict[str, Any]]]:
+    if not command_path_value and not manifest_path_value:
+        return {}, {}
+    if not command_path_value or not manifest_path_value:
+        raise ValueError("Recovery command and recovery manifest must be supplied together")
+    if len(packet["execution_contracts"]) != 1:
+        raise ValueError("Adaptive recovery is limited to a one-Node execution packet")
+    contract = packet["execution_contracts"][0]
+    recovery_root = (Path(contract["scratch"]) / "recovery").resolve()
+    command_path = Path(command_path_value).resolve()
+    manifest_path = Path(manifest_path_value).resolve()
+    if recovery_root not in command_path.parents or recovery_root not in manifest_path.parents:
+        raise PermissionError("Recovery files must stay below the assigned Node Attempt recovery directory")
+    command_record = read_json(command_path)
+    manifest = read_json(manifest_path)
+    validate(manifest, "recovery_manifest.schema.json")
+    if command_record.get("node_id") != contract["node_id"] or not isinstance(command_record.get("command_argv"), list):
+        raise ValueError("Recovery command identity is invalid")
+    command = [str(item) for item in command_record["command_argv"]]
+    if manifest["node_id"] != contract["node_id"] or manifest["attempt_id"] != contract["attempt_id"] or manifest["node_signature"] != contract["node_signature"]:
+        raise ValueError("Recovery manifest does not match the signed execution contract")
+    if manifest["command_hash"] != value_hash(command):
+        raise ValueError("Recovery command hash does not match its manifest")
+    base = contract["command_argv"]
+    if len(command) < 2 or command[:2] != base[:2]:
+        raise PermissionError("Recovery cannot replace the Python executable or scientific Skill launcher")
+    protected = {
+        "--conductor", "--project", "--run-id", "--round-id", "--node-id", "--attempt-id",
+        "--endpoint", "--higher-is-better", "--no-higher-is-better", "--input-representation",
+        "--metric", "--cluster-id", "--scope", "--random-seed", "--seed",
+    }
+    before, after = _command_options(base), _command_options(command)
+    changed_protected = sorted(name for name in protected if before.get(name) != after.get(name))
+    if changed_protected:
+        raise PermissionError(f"Recovery changed protected scientific arguments: {changed_protected}")
+    path_options = {"--input", "--output-dir", "--model-dir", "--description-manifest", "--membership", "--metadata"}
+    changed_values = sorted(name for name in set(before) & set(after) if before[name] != after[name] and name not in path_options)
+    if changed_values:
+        raise PermissionError(f"Recovery changed existing parameter values: {changed_values}")
+    removed = {name: before[name] for name in set(before) - set(after) if name not in path_options}
+    added = {name: after[name] for name in set(after) - set(before) if name not in path_options}
+    unmatched_added = dict(added)
+    for old_name, old_value in removed.items():
+        match = next((new_name for new_name, new_value in unmatched_added.items() if new_value == old_value), None)
+        if match is None:
+            raise PermissionError(f"Recovery removed an option without a value-preserving alias: {old_name}")
+        unmatched_added.pop(match)
+    if unmatched_added:
+        raise PermissionError(f"Recovery added options that are not value-preserving aliases: {sorted(unmatched_added)}")
+    for relative, expected_hash in manifest["temporary_file_hashes"].items():
+        path = (recovery_root / relative).resolve()
+        if recovery_root not in path.parents or not path.is_file() or file_hash(path) != expected_hash:
+            raise ValueError(f"Recovery temporary file is missing or changed: {relative}")
+    prior_pointer = contract.get("prior_failure_pointer")
+    if not prior_pointer:
+        raise PermissionError("Adaptive recovery requires a prior classified failure")
+    prior = read_json(root / prior_pointer)
+    if not prior.get("recoverable") or prior.get("classification") != manifest["failure_classification"]:
+        raise PermissionError("Prior failure is not eligible for this recovery manifest")
+    return {contract["node_id"]: command}, {contract["node_id"]: manifest}
+
+
 def cmd_execute_batch(args: argparse.Namespace) -> int:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     root = resolve_root(args.run_root)
+    executor_packet: dict[str, Any] | None = None
+    command_overrides: dict[str, list[str]] = {}
+    recovery_manifests: dict[str, dict[str, Any]] = {}
+    packet_path = Path(args.packet).resolve() if getattr(args, "packet", None) else None
     selected: list[tuple[dict[str, Any], dict[str, Any], Path, list[str]]] = []
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"EXECUTE_RUNNABLE_BATCH"})
+        if packet_path:
+            executor_packet = _validate_execution_packet(root, control, packet_path, args.executor_token)
+            args.timeout_minutes = int(executor_packet["timeout_minutes"])
+            args.clean_scratch = bool(executor_packet["clean_scratch"])
+            command_overrides, recovery_manifests = _load_recovery_override(root, executor_packet, getattr(args, "recovery_command", None), getattr(args, "recovery_manifest", None))
+        else:
+            _require_action(control, args.lease_token, args.action_token, {"EXECUTE_RUNNABLE_BATCH"})
         if args.timeout_minutes < 1:
             raise ValueError("Node timeout must be at least one minute")
         soft_stop = parse_time(snapshot["rounds"][control["active_round_id"]].get("soft_stop_at"))
@@ -1672,19 +1999,31 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
         remaining_seconds = max(1, int((soft_stop - now).total_seconds())) if soft_stop else args.timeout_minutes * 60
         execution_timeout_seconds = min(args.timeout_minutes * 60, remaining_seconds)
         runnable = {node["node_id"]: node for node in _runnable(control, snapshot)}
-        requested = [item for item in (args.node_ids or "").split(",") if item] or list(runnable)
+        requested = list(executor_packet["node_ids"]) if executor_packet else ([item for item in (args.node_ids or "").split(",") if item] or list(runnable))
         if not requested:
             raise ValueError("No runnable Nodes")
         if set(requested) - set(runnable):
             raise ValueError(f"Requested Nodes are not currently runnable: {sorted(set(requested) - set(runnable))}")
         requested = requested[: control["run"]["parallel_limit"]]
+        contract_lookup = {item["node_id"]: item for item in executor_packet.get("execution_contracts", [])} if executor_packet else {}
         for node_id in requested:
             node = runnable[node_id]
             attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
             scratch = root / "runtime" / "scratch" / node["assigned_round"] / node_id / attempt_id
-            scratch.mkdir(parents=True, exist_ok=False)
+            if scratch.exists():
+                if node_id not in recovery_manifests or any(path.name != "recovery" for path in scratch.iterdir()):
+                    raise FileExistsError(f"Unexpected pre-existing Attempt scratch: {scratch}")
+            else:
+                scratch.mkdir(parents=True, exist_ok=False)
             command = _skill_command(root, control, snapshot, node, attempt_id, scratch)
+            if executor_packet:
+                contract = contract_lookup.get(node_id)
+                if not contract or contract["attempt_id"] != attempt_id or Path(contract["scratch"]).resolve() != scratch.resolve() or contract["command_hash"] != value_hash(command):
+                    raise PermissionError(f"Execution contract changed after packet creation: {node_id}")
+            command = command_overrides.get(node_id, command)
             attempt = {"attempt_id": attempt_id, "status": "running", "started_at": utc_now(), "finished_at": None, "command_argv": command, "scratch": str(scratch), "log": str((root / "runtime" / "logs" / f"{node_id}_{attempt_id}.log").relative_to(root))}
+            if node_id in recovery_manifests:
+                attempt.update({"execution_mode": "adaptive_recovery", "recovery_manifest_hash": value_hash(recovery_manifests[node_id])})
             node["attempts"].append(attempt)
             node["current_attempt_id"] = attempt_id
             node["status"] = "running"
@@ -1703,7 +2042,10 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, interim_token, {"WAIT_OR_RECONCILE_RUNNING"})
+        if executor_packet:
+            _require_executor_followup(control, executor_packet, interim_token)
+        else:
+            _require_action(control, args.lease_token, interim_token, {"WAIT_OR_RECONCILE_RUNNING"})
         lookup = _node_lookup(snapshot)
         event_payload: list[dict[str, Any]] = []
         for node_id, outcome in outcomes.items():
@@ -1726,21 +2068,51 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
                 cards = _adapt_success(root, control, snapshot, node, attempt, scratch, event)
                 node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": node.get("result_quality") or {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": []}})
                 attempt.update({"status": "succeeded", "finished_at": node["finished_at"]})
+                if node_id in recovery_manifests:
+                    recovery_dir = root / "runtime" / "recovery"
+                    recovery_dir.mkdir(parents=True, exist_ok=True)
+                    recovery_record = recovery_dir / f"{node_id}_{attempt['attempt_id']}.json"
+                    write_json(recovery_record, recovery_manifests[node_id])
+                    attempt["recovery_manifest"] = str(recovery_record.relative_to(root))
+                    node["result_quality"].setdefault("quality_flags", []).append("adaptive_recovery")
                 committed.append(node_id)
-                event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "succeeded", "result_refs": [card["result_ref"] for card in cards]})
+                event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "succeeded", "execution_mode": attempt.get("execution_mode", "standard"), "recovery_manifest_hash": attempt.get("recovery_manifest_hash"), "result_refs": [card["result_ref"] for card in cards]})
                 if args.clean_scratch:
                     shutil.rmtree(scratch, ignore_errors=True)
             except Exception as exc:
+                failure_path = _write_failure_packet(root, node, attempt, outcome, exc)
+                failure_packet = read_json(failure_path)
                 node.update({"status": "failed", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": {"validation_passed": False, "eligible_for_downstream": False, "quality_flags": ["technical_failure"]}})
-                attempt.update({"status": "failed", "finished_at": node["finished_at"], "error": str(exc), "returncode": outcome["returncode"]})
+                attempt.update({"status": "failed", "finished_at": node["finished_at"], "error": str(exc), "returncode": outcome["returncode"], "failure_classification": failure_packet["classification"], "failure_packet": str(failure_path.relative_to(root))})
                 failed.append(node_id)
-                event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "failed", "error": str(exc)})
+                event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "failed", "failure_code": failure_packet["classification"], "recoverable": failure_packet["recoverable"], "failure_pointer": str(failure_path.relative_to(root))})
         control["lease"]["heartbeat_at"] = utc_now()
         control["lease"]["expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
         token = _commit(root, control, snapshot, "batch_reconciled", {"outcomes": event_payload}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"succeeded": committed, "failed": failed, "action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    detail_dir = root / "runtime" / "logs"
+    _print_compact(
+        control,
+        action_token=token,
+        detail_pointer=str(detail_dir.relative_to(root)),
+        action="EXECUTE_RUNNABLE_BATCH",
+        succeeded_count=len(committed),
+        failed_count=len(failed),
+        affected_node_ids=(committed + failed)[:50],
+        packet_id=executor_packet.get("packet_id") if executor_packet else None,
+    )
     return 1 if failed and not committed else 0
+
+
+def cmd_execute_packet(args: argparse.Namespace) -> int:
+    # Delegate to the same transactional implementation while withholding the
+    # Main Agent's lease and one-use Action token from the Executor.
+    args.lease_token = None
+    args.action_token = None
+    args.node_ids = None
+    args.timeout_minutes = 180
+    args.clean_scratch = True
+    return cmd_execute_batch(args)
 
 
 def _recover_promoted_output(root: Path, snapshot: dict[str, Any], node: dict[str, Any]) -> list[str]:
@@ -1818,7 +2190,7 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
                 reconciled.append({"node_id": node["node_id"], "status": "failed", "error": str(exc)})
         token = _commit(root, control, snapshot, "running_attempts_reconciled", {"outcomes": reconciled}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"outcomes": reconciled, "action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, action="WAIT_OR_RECONCILE_RUNNING", outcome_count=len(reconciled), outcomes=reconciled[:50])
     return 0
 
 
@@ -1835,13 +2207,13 @@ def cmd_retry_node(args: argparse.Namespace) -> int:
             raise ValueError("Only a failed Node can be retried")
         if control["required_action"].get("node_id") != node["node_id"]:
             raise ValueError("Runtime selected a different failed Node for bounded retry")
-        if len(node.get("attempts") or []) >= 2:
+        if len(node.get("attempts") or []) >= MAX_EXECUTION_ATTEMPTS:
             raise ValueError("The bounded retry allowance for this Node is exhausted")
         node["status"] = "pending"
         node["finished_at"] = None
         node["assigned_round"] = control["active_round_id"]
         token = _commit(root, control, snapshot, "node_retry_requested", {"reason": args.reason}, round_id=control["active_round_id"], node_id=node["node_id"])
-    print(json.dumps({"node_id": node["node_id"], "action_token": token, "control": control}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, action="RETRY_FAILED_NODE", node_id=node["node_id"])
     return 0
 
 
@@ -1855,7 +2227,7 @@ def cmd_heartbeat(args: argparse.Namespace) -> int:
         control["lease"]["heartbeat_at"] = now.isoformat()
         control["lease"]["expires_at"] = (now + timedelta(minutes=max(5, args.lease_minutes))).isoformat()
         token = _commit(root, control, snapshot, "orchestrator_heartbeat", {}, round_id=control["active_round_id"])
-    print(json.dumps({"action_token": token, "control": control}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, heartbeat_at=control["lease"]["heartbeat_at"], lease_expires_at=control["lease"]["expires_at"])
     return 0
 
 
@@ -1924,7 +2296,7 @@ def cmd_enter_finalizing(args: argparse.Namespace) -> int:
         control["round_state"] = "FINALIZING"
         token = _commit(root, control, snapshot, "round_entered_finalizing", {"reason": reason}, round_id=round_id)
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, action="ENTER_FINALIZING")
     return 0
 
 
@@ -1953,14 +2325,14 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         node, _created = _add_node(snapshot, control, "I001", analysis_nodes, "round_commit", {"mode": "multi_scope"}, {"reviewed_result_refs": review["detailed_result_refs"], "focus": effective_focus, "revision_serial": revision_serial}, supersedes=previous)
         scratch = root / "runtime" / "scratch" / round_id / node["node_id"] / "interpretation"
         scratch.mkdir(parents=True, exist_ok=True)
-        context = {"schema_version": "1.0.0", "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_manifest": review, "comparison_batches": [[card["result_ref"] for card in selected_cards[index:index + 20]] for index in range(0, len(selected_cards), 20)], "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "comparison_claim_requires_comparison_results": True}, "created_at": utc_now()}
+        context = {"schema_version": "1.0.0", "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "interpretation_policy": str((module_root() / "docs" / "CONDUCTOR_interpretation_policy.md").resolve()), "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_manifest": review, "comparison_batches": [[card["result_ref"] for card in selected_cards[index:index + 20]] for index in range(0, len(selected_cards), 20)], "role_contract": {"read_only_evidence_space": True, "scientific_computation_allowed": False, "node_creation_allowed": False, "followups_are_recommendations_only": True}, "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "comparison_claim_requires_comparison_results": True, "japanese_human_report": True}, "created_at": utc_now()}
         draft = {"title": "CONDUCTOR解析結果の解釈", "executive_summary": "", "coverage_summary": "", "insights": []}
         write_json(scratch / "context.json", context)
         write_json(scratch / "draft.json", draft)
         node["parameters"].update({"context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json"), "review_manifest": review})
         token = _commit(root, control, snapshot, "interpretation_prepared", {"node": node, "context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json")}, round_id=round_id, node_id=node["node_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"node_id": node["node_id"], "context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json"), "action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, node_id=node["node_id"], context_path=str(scratch / "context.json"), draft_path=str(scratch / "draft.json"), interpreter_agent="cs-conductor-interpreter")
     return 0
 
 
@@ -2046,17 +2418,41 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
         draft_path = Path(args.draft).resolve() if args.draft else Path(node["parameters"]["draft_path"])
         if draft_path != Path(node["parameters"]["draft_path"]).resolve():
             raise ValueError("Draft path does not match the Runtime-prepared Interpretation workspace")
-        draft = read_json(draft_path)
-        context = read_json(Path(node["parameters"]["context_path"]))
-        cards = {card["result_ref"]: card for card in context["result_cards"]}
-        insights = _formalize_insights(root, snapshot, draft, cards, control["active_round_id"], node["node_id"])
-        outcome = _anticipated_outcome(root, control, snapshot)
-        report = {"schema_version": "3.0.0", "run_id": control["run"]["run_id"], "round_id": control["active_round_id"], "node_id": node["node_id"], "supersedes": node.get("supersedes"), "title": str(draft.get("title") or "CONDUCTOR解析結果の解釈"), "report_header": {"project": control["run"]["project"], "endpoint": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "endpoint_unit": control["run"].get("endpoint_unit"), "endpoint_transform": control["run"].get("endpoint_transform"), "completion": outcome}, "executive_summary": str(draft.get("executive_summary") or ("今回の詳細確認範囲では、支持結果と反証結果を突き合わせても報告基準を満たすInsightは抽出されませんでした。これは解析失敗ではなく、明瞭な差異・一致・矛盾を確認できなかったnegative resultです。" if not insights else "今回の解析で得られた主要なInsightを示します。")), "coverage_summary": str(draft.get("coverage_summary") or f"当該Roundから選択したOperator Result {len(cards)}件を、ScopeとOperatorの偏りを抑えた順序で詳細確認しました。未確認結果はreview manifestに明記しています。"), "insights": insights, "result_catalog": list(cards.values()), "review_manifest": context["review_manifest"], "created_at": utc_now()}
-        validate(report, "interpretation.schema.json")
-        renderer = _renderer_module()
-        issues = renderer.quality_issues(report)
-        if issues:
-            raise ValueError("Interpretation quality gate failed: " + "; ".join(issues))
+        candidate_snapshot = json.loads(json.dumps(snapshot))
+        try:
+            draft = read_json(draft_path)
+            context = read_json(Path(node["parameters"]["context_path"]))
+            cards = {card["result_ref"]: card for card in context["result_cards"]}
+            insights = _formalize_insights(root, candidate_snapshot, draft, cards, control["active_round_id"], node["node_id"])
+            outcome = _anticipated_outcome(root, control, snapshot)
+            report = {"schema_version": "3.0.0", "run_id": control["run"]["run_id"], "round_id": control["active_round_id"], "node_id": node["node_id"], "supersedes": node.get("supersedes"), "title": str(draft.get("title") or "CONDUCTOR解析結果の解釈"), "report_header": {"project": control["run"]["project"], "endpoint": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "endpoint_unit": control["run"].get("endpoint_unit"), "endpoint_transform": control["run"].get("endpoint_transform"), "completion": outcome}, "executive_summary": str(draft.get("executive_summary") or ("今回の詳細確認範囲では、支持結果と反証結果を突き合わせても報告基準を満たすInsightは抽出されませんでした。これは解析失敗ではなく、明瞭な差異・一致・矛盾を確認できなかったnegative resultです。" if not insights else "今回の解析で得られた主要なInsightを示します。")), "coverage_summary": str(draft.get("coverage_summary") or f"当該Roundから選択したOperator Result {len(cards)}件を、ScopeとOperatorの偏りを抑えた順序で詳細確認しました。未確認結果はreview manifestに明記しています。"), "insights": insights, "result_catalog": list(cards.values()), "review_manifest": context["review_manifest"], "created_at": utc_now()}
+            validate(report, "interpretation.schema.json")
+            renderer = _renderer_module()
+            issues = renderer.quality_issues(report)
+            if issues:
+                raise ValueError("Interpretation quality gate failed: " + "; ".join(issues))
+        except Exception as exc:
+            attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
+            failure = {
+                "schema_version": "1.0.0",
+                "node_id": node["node_id"],
+                "attempt_id": attempt_id,
+                "error": str(exc)[:4000],
+                "created_at": utc_now(),
+            }
+            failure_path = Path(node["parameters"]["draft_path"]).with_name(f"quality_failure_{attempt_id}.json")
+            write_json(failure_path, failure)
+            node["attempts"].append({"attempt_id": attempt_id, "status": "failed", "started_at": utc_now(), "finished_at": utc_now(), "draft_path": str(draft_path), "error": str(exc), "failure_pointer": str(failure_path.relative_to(root))})
+            node.update({"status": "failed", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": {"validation_passed": False, "eligible_for_downstream": False, "quality_flags": ["interpretation_quality_failure"]}})
+            attempt_limit = min(MAX_INTERPRETER_ATTEMPTS, max(1, int(_active_contract(root, control)["budgets"]["interpretation_iterations"])))
+            exhausted = len(node["attempts"]) >= attempt_limit
+            if exhausted:
+                control["blocker"] = {"code": "INTERPRETATION_RETRY_EXHAUSTED", "node_id": node["node_id"], "attempts": len(node["attempts"]), "failure_pointer": str(failure_path.relative_to(root))}
+            token = _commit(root, control, snapshot, "interpretation_draft_rejected", {"node_id": node["node_id"], "attempt_id": attempt_id, "failure_pointer": str(failure_path.relative_to(root)), "retry_exhausted": exhausted}, round_id=control["active_round_id"], node_id=node["node_id"])
+            _write_working_set(root, control, snapshot)
+            _print_compact(control, action_token=token, node_id=node["node_id"], quality_status="fail", retry_exhausted=exhausted, failure_pointer=str(failure_path.relative_to(root)))
+            return 1
+        snapshot["counters"]["insight"] = candidate_snapshot["counters"]["insight"]
         final = Path(node["output_ref"])
         temporary = final.with_name(f".{final.name}.commit")
         if temporary.exists():
@@ -2077,10 +2473,12 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
         node["attempts"].append({"attempt_id": attempt_id, "status": "succeeded", "started_at": utc_now(), "finished_at": utc_now(), "draft_path": str(draft_path)})
         node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": []}})
         snapshot["rounds"][control["active_round_id"]].update({"current_interpretation_node": node["node_id"], "latest_audit": None, "interpretation_revision_required": False, "report_revision_reason": None})
+        if (control.get("blocker") or {}).get("code") == "INTERPRETATION_RETRY_EXHAUSTED":
+            control["blocker"] = None
         control["closure"]["outcome"] = outcome
         token = _commit(root, control, snapshot, "interpretation_committed", {"node_id": node["node_id"], "insight_ids": [item["insight_id"] for item in insights], "report_hash": quality["report_hash"]}, round_id=control["active_round_id"], node_id=node["node_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"interpretation_dir": str(final), "insight_ids": [item["insight_id"] for item in insights], "action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, interpretation_dir=str(final), insight_ids=[item["insight_id"] for item in insights], quality_status="pass")
     return 0
 
 
@@ -2153,6 +2551,22 @@ def _audit(root: Path, mode: str) -> dict[str, Any]:
             if not source or source["status"] != "succeeded" or source["kind"] != "clustering" or not membership.is_file():
                 invalid_clusters.append({"cluster_id": row.get("cluster_id"), "source_node_id": row.get("source_node_id"), "membership_path": row.get("membership_path")})
         check("CLUSTER_REGISTRY_SOURCES", not invalid_clusters, invalid_clusters)
+        invalid_recoveries: list[str] = []
+        for node in snapshot["nodes"]:
+            for attempt in node.get("attempts") or []:
+                if attempt.get("execution_mode") != "adaptive_recovery":
+                    continue
+                pointer = attempt.get("recovery_manifest")
+                try:
+                    if not pointer:
+                        raise ValueError("missing recovery manifest pointer")
+                    manifest = read_json(root / pointer)
+                    validate(manifest, "recovery_manifest.schema.json")
+                    if manifest["node_id"] != node["node_id"] or manifest["attempt_id"] != attempt["attempt_id"] or value_hash(manifest) != attempt.get("recovery_manifest_hash"):
+                        raise ValueError("recovery manifest identity or hash mismatch")
+                except Exception as exc:
+                    invalid_recoveries.append(f"{node['node_id']}@{attempt.get('attempt_id')}: {exc}")
+        check("ADAPTIVE_RECOVERY_MANIFESTS", not invalid_recoveries, invalid_recoveries)
         if control.get("active_round_id") and control["round_state"] in {"FINALIZING", "AWAITING_HUMAN_REVIEW"}:
             fresh, interpretation_node = _interpretation_fresh(snapshot, control["active_round_id"])
             check("INTERPRETATION_FRESH", fresh, {"node_id": interpretation_node})
@@ -2205,7 +2619,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         snapshot["rounds"][control["active_round_id"]]["latest_audit"] = {"status": audit["status"], "path": str((output / "audit.json").relative_to(root)), "created_at": audit["created_at"], "after_interpretation_node": interpretation}
         token = _commit(root, control, snapshot, "full_audit_registered", {"status": audit["status"], "path": str(output.relative_to(root)), "after_interpretation_node": interpretation}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    print(json.dumps({"output_dir": str(output), "audit": audit, "action_token": token, "control": control, "working_set": str(working)}, ensure_ascii=False, indent=2))
+    _print_compact(control, action_token=token, output_dir=str(output), audit_status=audit["status"], error_count=audit["error_count"], warning_count=audit["warning_count"])
     return 1 if audit["status"] == "fail" else 0
 
 
@@ -2236,7 +2650,7 @@ def cmd_complete_finalizing(args: argparse.Namespace) -> int:
         control["lease"] = {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
         _commit(root, control, snapshot, "round_handed_to_human", {"outcome": outcome, "released_owner": owner}, round_id=round_id, rotate_token=False)
         _write_working_set(root, control, snapshot)
-    print(json.dumps({"round_id": round_id, "round_state": "AWAITING_HUMAN_REVIEW", "outcome": outcome, "control": control}, ensure_ascii=False, indent=2))
+    _print_compact(control, round_outcome=outcome, human_review_required=True)
     return 0
 
 
@@ -2288,7 +2702,7 @@ def cmd_node_inspect(args: argparse.Namespace) -> int:
 
 def cmd_node_cancel(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -2305,7 +2719,7 @@ def cmd_node_cancel(args: argparse.Namespace) -> int:
 
 def cmd_result_disable(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -2354,7 +2768,7 @@ def cmd_result_disable(args: argparse.Namespace) -> int:
 
 def cmd_insight_attention(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -2370,7 +2784,7 @@ def cmd_insight_attention(args: argparse.Namespace) -> int:
 
 def cmd_request_checkpoint(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
-    _require_dispatcher(root, args.dispatcher_key)
+    _require_control_authority(root, args.control_key)
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -2379,6 +2793,7 @@ def cmd_request_checkpoint(args: argparse.Namespace) -> int:
         snapshot["rounds"][control["active_round_id"]]["human_checkpoint_requested"] = True
         snapshot["rounds"][control["active_round_id"]]["checkpoint_reason"] = args.reason
         _commit(root, control, snapshot, "human_checkpoint_requested", {"reason": args.reason}, round_id=control["active_round_id"], rotate_token=False)
+    _print_compact(control, checkpoint_requested=True)
     return 0
 
 
@@ -2389,7 +2804,7 @@ def _action_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.2 deterministic Runtime Controller")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.3 deterministic Runtime Controller")
     commands = parser.add_subparsers(dest="command", required=True)
 
     item = commands.add_parser("init")
@@ -2420,14 +2835,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("authorize-round")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--request-file", required=True)
     item.add_argument("--authorization-token", required=True)
     item.set_defaults(func=cmd_authorize_round)
 
     item = commands.add_parser("resume-round")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--owner-id", required=True)
     item.add_argument("--process-id", type=int)
     item.add_argument("--lease-minutes", type=int, default=30)
@@ -2435,26 +2850,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("continue-round")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--additional-walltime-minutes", type=int, required=True)
     item.add_argument("--reason", required=True)
     item.set_defaults(func=cmd_continue_round)
 
     item = commands.add_parser("revise-report")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--reason", required=True)
     item.set_defaults(func=cmd_revise_report)
 
     item = commands.add_parser("accept-round")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--note", default="")
     item.set_defaults(func=cmd_accept_round)
 
     item = commands.add_parser("approve-high-cost")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     decision = item.add_mutually_exclusive_group(required=True)
     decision.add_argument("--approve", action="store_true")
     decision.add_argument("--reject", dest="approve", action="store_false")
@@ -2463,14 +2878,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("request-checkpoint")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--reason", required=True)
     item.set_defaults(func=cmd_request_checkpoint)
 
     item = commands.add_parser("verify-return")
     item.add_argument("--run-root", required=True)
     item.add_argument("--confirm-returned", action="store_true")
-    item.add_argument("--dispatcher-key")
+    item.add_argument("--control-key")
     item.add_argument("--owner-id")
     item.add_argument("--start-revision", type=int)
     item.set_defaults(func=cmd_verify_return)
@@ -2503,6 +2918,21 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--timeout-minutes", type=int, default=180)
     item.add_argument("--clean-scratch", action=argparse.BooleanOptionalAction, default=True)
     item.set_defaults(func=cmd_execute_batch)
+
+    item = commands.add_parser("prepare-execution-packet")
+    _action_args(item)
+    item.add_argument("--node-ids")
+    item.add_argument("--timeout-minutes", type=int, default=180)
+    item.add_argument("--clean-scratch", action=argparse.BooleanOptionalAction, default=True)
+    item.set_defaults(func=cmd_prepare_execution_packet)
+
+    item = commands.add_parser("execute-packet")
+    item.add_argument("--run-root", required=True)
+    item.add_argument("--packet", required=True)
+    item.add_argument("--executor-token", required=True)
+    item.add_argument("--recovery-command")
+    item.add_argument("--recovery-manifest")
+    item.set_defaults(func=cmd_execute_packet)
 
     item = commands.add_parser("reconcile-running")
     _action_args(item)
@@ -2557,21 +2987,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("node-cancel")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--node-id", required=True)
     item.add_argument("--reason", required=True)
     item.set_defaults(func=cmd_node_cancel)
 
     item = commands.add_parser("result-disable")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--node-id", required=True)
     item.add_argument("--reason", required=True)
     item.set_defaults(func=cmd_result_disable)
 
     item = commands.add_parser("insight-attention")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--dispatcher-key", required=True)
+    item.add_argument("--control-key", required=True)
     item.add_argument("--insight-id", required=True)
     item.add_argument("--attention", choices=["pinned", "active", "watch", "background"], required=True)
     item.add_argument("--reason", required=True)

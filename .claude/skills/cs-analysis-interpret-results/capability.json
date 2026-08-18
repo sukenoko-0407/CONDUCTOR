@@ -3,7 +3,7 @@
   "capability_id": "I001",
   "skill_name": "cs-analysis-interpret-results",
   "display_name": "SAR result interpretation",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "interpretation",
   "family": "result_integration",
   "description": "Use when the dedicated Claude Code Interpreter must compare CONDUCTOR Operator results across representations, Clusters, scopes, and Rounds, preserve contradictions, and prepare Japanese human reports under a read-only Policy.",

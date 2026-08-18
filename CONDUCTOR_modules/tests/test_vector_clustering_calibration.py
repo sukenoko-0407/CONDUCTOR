@@ -61,6 +61,8 @@ class VectorClusteringCalibrationTests(unittest.TestCase):
     def test_auto_methods_return_a_non_degenerate_partition(self) -> None:
         for method in ("butina", "hierarchical", "dbscan", "louvain", "leiden", "connected_components"):
             with self.subTest(method=method):
+                if method == "leiden" and not (importlib.util.find_spec("igraph") and importlib.util.find_spec("leidenalg")):
+                    self.skipTest("Leiden is verified in its Skill Pixi environment")
                 labels, selection = VECTOR.vector_partition(
                     self.distance,
                     arguments(),
@@ -195,7 +197,7 @@ class VectorClusteringCalibrationTests(unittest.TestCase):
             self.assertFalse((general / "clustering_manifest.json").exists())
             conductor = temporary / "conductor"
             completed = subprocess.run(
-                [sys.executable, str(RUNNER), "--input", str(vector_path), "--description-manifest", str(manifest_path), "--input-representation", "D001", "--conductor", "--project", "unit", "--run-id", "run", "--round-id", "RND0002", "--node-id", "NC000001", "--attempt-id", "ATT0001", "--output-dir", str(conductor)],
+                [sys.executable, str(RUNNER), "--input", str(vector_path), "--description-manifest", str(manifest_path), "--input-representation", "D001", "--conductor", "--project", "unit", "--run-id", "run", "--round-id", "RND0002", "--node-id", "N000001", "--attempt-id", "ATT0001", "--output-dir", str(conductor)],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,

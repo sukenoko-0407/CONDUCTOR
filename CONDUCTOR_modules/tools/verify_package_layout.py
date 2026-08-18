@@ -7,7 +7,7 @@ from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = MODULE_ROOT.parent
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 
 
 def main() -> int:
@@ -23,6 +23,8 @@ def main() -> int:
         "schemas/round_outcome.schema.json", "schemas/analysis_subject.schema.json",
         "schemas/result_card.schema.json", "schemas/working_set.schema.json",
         "schemas/interpretation.schema.json", "tools/runtime_controller.py",
+        "schemas/execution_packet.schema.json", "schemas/failure_packet.schema.json",
+        "schemas/compact_runtime_response.schema.json", "schemas/recovery_manifest.schema.json",
         "tools/templates/state_manager.py", "pyproject.toml", "uv.lock",
     ]
     for relative in required:
@@ -32,9 +34,11 @@ def main() -> int:
     if version != VERSION:
         errors.append(f"unexpected package version: {version}")
 
-    for name in ("cs-conductor-orchestrator.md", "cs-conductor-interpreter.md"):
+    for name in ("cs-conductor-executor.md", "cs-conductor-interpreter.md"):
         if not (PROJECT_ROOT / ".claude" / "agents" / name).is_file():
             errors.append(f"missing Agent: {name}")
+    if (PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-orchestrator.md").exists():
+        errors.append("obsolete Orchestrator Agent remains; 0.1.3 uses an inline Main Agent Skill")
     if (PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-description-migrator.md").exists():
         errors.append("obsolete migration Agent remains")
 
@@ -46,6 +50,9 @@ def main() -> int:
     for path in obsolete:
         if path.exists():
             errors.append(f"obsolete path remains: {path.relative_to(PROJECT_ROOT)}")
+    old_dispatch = PROJECT_ROOT / ".claude" / "skills" / "cs-conductor-dispatch"
+    if any((old_dispatch / name).exists() for name in ("SKILL.md", "capability.json", "README.md")):
+        errors.append("obsolete cs-conductor-dispatch Skill remains")
 
     selection_path = MODULE_ROOT / "catalog" / "included_skills.json"
     catalog_path = MODULE_ROOT / "catalog" / "catalog.json"
@@ -106,11 +113,17 @@ def main() -> int:
                     if token in text:
                         errors.append(f"obsolete public token {token}: {path.relative_to(PROJECT_ROOT)}")
 
+    orchestrator = PROJECT_ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "SKILL.md"
+    if not orchestrator.is_file():
+        errors.append("missing Main Agent Orchestrator Skill")
+    elif "disable-model-invocation: true" not in orchestrator.read_text(encoding="utf-8"):
+        errors.append("Main Agent Orchestrator Skill is not manual-only")
+
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print("CONDUCTOR 0.1.2 package layout is valid")
+    print("CONDUCTOR 0.1.3 package layout is valid")
     return 0
 
 

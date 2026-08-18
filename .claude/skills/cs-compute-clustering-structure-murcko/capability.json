@@ -3,7 +3,7 @@
   "capability_id": "C001",
   "skill_name": "cs-compute-clustering-structure-murcko",
   "display_name": "Murcko scaffold clustering",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "clustering",
   "family": "direct_structure",
   "description": "Cluster compounds from a compound-ID/SMILES CSV with Murcko scaffold clustering, without generating a hidden descriptor vector.",

@@ -1,0 +1,19 @@
+{
+  "schema_version": "2.0.0",
+  "capability_id": "O005",
+  "skill_name": "cs-conductor-orchestrator",
+  "display_name": "CONDUCTOR Main Agent Orchestrator",
+  "version": "0.1.3",
+  "stage": "orchestration",
+  "family": "control",
+  "dependencies": ["O001"],
+  "scope_support": [],
+  "implementation": {
+    "algorithm": "main_agent_orchestration",
+    "invocation": "manual_inline_skill",
+    "state_access": "runtime_only"
+  },
+  "cost": {"class": "low", "human_approval_required": false},
+  "default_parameters": {},
+  "output": {"basename": "orchestration", "filename": "compact_runtime_response.json"}
+}

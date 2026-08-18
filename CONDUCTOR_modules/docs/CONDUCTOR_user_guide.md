@@ -2,7 +2,7 @@
 
 ## 新規Run
 
-Main Agentへ入力CSV、endpoint、`higher_is_better`、project、parallel limit、Wall Timeを示し、`cs-conductor-dispatch`からRound 1を開始するよう依頼します。Dispatcherは契約案を作り、人間依頼と一致する場合だけauthorizeし、一つのOrchestratorを起動します。
+Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`higher_is_better`、project、parallel limit、Wall Timeを示してRound 1を開始します。Mainは契約案を人間依頼と照合した場合だけauthorizeします。
 
 高コスト基本計算は最初に一括承認できます。MCSは基本計算であり個別承認不要です。Wall Timeは上限であって消費目標ではありませんが、実行可能で有用な作業が残る限りOrchestratorは早期終了しません。
 
@@ -10,7 +10,7 @@ endpointの単位変換やpActivity化はRun開始前に人間側で行います
 
 ## 中断と別session再開
 
-Run Rootだけを指定し、同じRoundを再開するよう依頼します。Dispatcherは`conductor_control.json`を確認し、live leaseがあれば二重起動を拒否し、期限切れなら同じRoundをtake overします。新しいRoundは作りません。長いInterpretationやDAG全文をプロンプトへ貼る必要はありません。
+新しいMain sessionで`/cs-conductor-orchestrator`を明示し、Run Rootと「同じRoundを再開」を指定します。Mainは`conductor_control.json`を確認し、live leaseがあれば二重実行を拒否し、期限切れなら同じRoundを再開します。新しいRoundは作りません。長いInterpretationやDAG全文をプロンプトへ貼る必要はありません。
 
 ## Round終了後
 
@@ -24,10 +24,10 @@ Run Rootだけを指定し、同じRoundを再開するよう依頼します。D
 
 ## 異常Node
 
-失敗したNodeは自動で別Nodeへ置換しません。通常retryはRuntimeが同じNodeへ新Attemptを付けます。pending Nodeの取消や、成功resultを今後の自動探索から除外したい場合だけ、人間が`cs-conductor-node-review`を明示的に使用します。
+失敗したNodeは自動で別Nodeへ置換しません。通常retryはRuntimeが同じNodeへ有限回の新Attemptを付けます。Executorのraw errorはMainへ貼られず、分類codeとpointerだけが返ります。pending Nodeの取消や、成功resultを今後の自動探索から除外したい場合だけ、人間が`cs-conductor-node-review`を明示的に使用します。
 
 ## 読み取り専用支援
 
 - `cs-conductor-state-report`: 明示されたRun RootのDAGをHTML／SVG化する。
-- `cs-conductor-result-concierge`: `AWAITING_HUMAN_REVIEW`または完了後のRunを変更せず、既存結果の説明、比較、Figure化を行う。
+- `cs-conductor-result-concierge`: `AWAITING_HUMAN_REVIEW`または完了後のRunを変更せず、既存結果の説明、依頼固有の追加集計、比較、Figure化を行う。補助Pythonと一時領域は`run_root/concierge/REQ######/scratch/`へ隔離する。
 - `cs-conductor-run-audit`: Quick／Full整合性監査を行う。

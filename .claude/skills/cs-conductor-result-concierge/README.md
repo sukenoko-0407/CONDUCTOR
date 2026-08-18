@@ -12,6 +12,8 @@ Interpretation reportで気になった項目の根拠を詳しく確認した�
 
 `scripts/launch.py`が`env/pixi.toml`から環境を自動作成または再利用する。cacheはすべて本Skillの`env/`配下に置かれる。
 
+依頼固有のPython処理は`<request_dir>/scratch/`へスクリプトを置き、`run-helper`で実行できる。作業場所、標準出力、標準エラー、一時領域は同じrequest内に隔離される。
+
 ## 利用例
 
 ```bash
@@ -27,11 +29,20 @@ python .claude/skills/cs-conductor-result-concierge/scripts/launch.py finalize \
   --request-dir results/CONDUCTOR/PROJECT/RUN/concierge/REQ000001
 ```
 
+既存結果の追加集計やFigure作成に補助Pythonが必要な場合：
+
+```bash
+python .claude/skills/cs-conductor-result-concierge/scripts/launch.py run-helper \
+  --request-dir results/CONDUCTOR/PROJECT/RUN/concierge/REQ000001 \
+  --script results/CONDUCTOR/PROJECT/RUN/concierge/REQ000001/scratch/check.py
+```
+
 ## 制約事項
 
 - `ACTIVE`／`FINALIZING`または実行中NodeがあるRunでは開始しない。`AWAITING_HUMAN_REVIEW`は解析が凍結されているため利用できる。
 - 出力先は`<run_root>/concierge/REQ######/`に固定される。
 - Runtime、DAG、解析artifactを変更せず、新しい科学解析も実行しない。
+- 既存artifactに対する依頼固有の抽出、統計要約、比較、Figure作成は可能。補助コードはrequest内`scratch/`に限定する。
 - 追加解析は`next_round_prompt.md`として提案できるが、自動実行しない。
 
 ## 変更履歴

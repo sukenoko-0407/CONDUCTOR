@@ -7,7 +7,7 @@
 | `A###` | Operator capability | A008 | Catalog／人間 |
 | `I###` | Interpretation capability | I001 | Catalog／人間 |
 | `O###` | 制御・補助capability | O001 | Catalog／人間 |
-| `RND####` | 人間が開始した解析Round | RND0002 | Dispatcher／Runtime |
+| `RND####` | 人間が開始した解析Round | RND0002 | Main Orchestrator／Runtime |
 | `N######` | Run全体で一意の実行Node | N000125 | Runtime |
 | `ATT####` | 同一Node内の実行attempt | ATT0002 | Runtime |
 | `C######` | Run全体で一意のCluster | C000041 | Runtime |

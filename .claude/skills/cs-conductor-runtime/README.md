@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、実行attempt、事故復旧、Interpretation終端条件を決定論的に管理します。
+CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名付きExecutor packet、実行attempt、事故復旧、Interpretation終端条件を決定論的に管理します。
 
 ## 想定利用シーン
 
@@ -26,4 +26,5 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-r
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | 0.1.2のControl／Event Ledger／5状態DAG Runtimeを実装 |
+| 1.0.0 | Control／Event Ledger／5状態DAG Runtimeを実装 |
+| 1.1.0 | 0.1.3のcompact protocol、Executor packet、有限Interpretation retryを追加 |

@@ -7,6 +7,9 @@
 .claude/skills/*/env/state/
 .claude/skills/*/env/tmp/
 .claude/skills/*/env/pixi-home/
+.claude/skills/*/env/.environment-ready
+.claude/skills/*/env/.bootstrap.lock
+/Archive/
 /CONDUCTOR_modules/Archive/
 results/
 outputs/*
@@ -16,6 +19,11 @@ groups/
 analysis/
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 .smoke-v43-html/
 .validation-site/
 *.pyc

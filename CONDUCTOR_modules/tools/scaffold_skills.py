@@ -448,7 +448,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --context path/to/interpretation_context.json --draft path/to/interpretation_draft.json --output-dir path/to/preview'
         conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --context path/to/context.json --draft path/to/draft.json --output-dir path/to/preview'
         output_contract = '''- 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
-- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.2 Runtimeだけが確定する。'''
+- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.3 Runtimeだけが確定する。'''
         option_guidance = "`references/interpretation_policy.md`を完全に読む。summaryはnavigationにだけ使い、保持するInsightは原数値artifactを確認する。矛盾、negative result、反証探索を記録し、State更新とOperator実行はRuntime／Orchestratorへ委ねる。"
     if kind == "description":
         workflow_input = "入力形式、compound ID列、SMILES列を確認し、曖昧な列だけを明示指定する。"
@@ -474,7 +474,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
 - 意図が曖昧なら、出力契約が変わることを示して実行前に確認する。確認できない場合は通常モードとして`--conductor`を省略する。
 - 通常モードではCONDUCTOR context引数を指定しない。CONDUCTORモードでは`--conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001`をすべて指定する。CLIもこの組合せを検証する。
 
-Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証され、成功時に0.1.2の最小正本artifactへ昇格される。'''
+Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証され、成功時に0.1.3の最小正本artifactへ昇格される。'''
     return f'''---
 name: {name}
 description: {capability["description"]} General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
@@ -714,7 +714,7 @@ def base_capability(identifier: str, name: str, display: str, stage: str, family
         "capability_id": identifier,
         "skill_name": name,
         "display_name": display,
-        "version": "0.1.2",
+        "version": "0.1.3",
         "stage": stage,
         "family": family,
         "description": f"Use when Claude Code needs to run {display} from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -748,7 +748,7 @@ def create_skill(capability: dict[str, Any], kind: str, template: Path, schemas:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create or refresh CONDUCTOR 0.1.2 Skill folders from canonical templates.")
+    parser = argparse.ArgumentParser(description="Create or refresh CONDUCTOR 0.1.3 Skill folders from canonical templates.")
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated Skill files. Manual customizations may be lost.")
     parser.add_argument("--only", action="append", help="Refresh only the named Skill; repeat for multiple Skills.")
     args = parser.parse_args()

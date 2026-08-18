@@ -21,6 +21,6 @@ else:
     raise SystemExit("ERROR: Runtime Controller not found")
 runtime_command = {"inspect": "node-inspect", "cancel": "node-cancel", "disable-result": "result-disable"}[operation]
 if operation != "inspect":
-    key = (run_root / "runtime" / "dispatcher.key").read_text(encoding="utf-8").strip()
-    arguments += ["--dispatcher-key", key]
+    key = (run_root / "runtime" / "control_authority.key").read_text(encoding="utf-8").strip()
+    arguments += ["--control-key", key]
 raise SystemExit(subprocess.call([sys.executable, str(controller), runtime_command, *arguments]))

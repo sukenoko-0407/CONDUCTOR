@@ -1,6 +1,6 @@
 ---
 name: cs-analysis-interpret-results
-description: Use when the dedicated Claude Code Interpreter must compare CONDUCTOR Operator results across representations, Clusters, scopes, and Rounds, preserve contradictions, and prepare Japanese human reports under a read-only Policy. General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
+description: Use when the dedicated Claude Code Interpreter must validate an ID-free Japanese draft built from a Runtime-bounded evidence set. It compares existing Operator results but never executes new scientific analysis or mutates State.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
@@ -20,7 +20,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 2. Runtimeが作成したcontextとdraftを確認し、許可されたOperator resultだけを扱う。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
-5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
+5. 実行後にpreview JSON／Markdown／HTMLを確認する。正式成果物はRuntimeだけがcommitする。
 
 ## Algorithm-specific options
 
@@ -35,7 +35,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Output contract
 
 - 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
-- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.2 Runtimeだけが確定する。
+- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.3 Runtimeだけが確定する。
 
 `<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
@@ -67,4 +67,4 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --context path/to/context.json --
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
-- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+- Description、Clustering、Operatorを実行しない。追加計算が必要なら`recommended_followups`として提案する。

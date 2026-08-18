@@ -3,7 +3,7 @@
   "capability_id": "A011",
   "skill_name": "cs-analysis-cluster-enrichment",
   "display_name": "Cluster activity enrichment",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "analysis",
   "family": "cluster_profile",
   "description": "Use when Claude Code needs to run Cluster activity enrichment from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

@@ -3,7 +3,7 @@
   "capability_id": "A007",
   "skill_name": "cs-analysis-knn-activity-consistency",
   "display_name": "kNN activity consistency",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "analysis",
   "family": "feature_space",
   "description": "Use when Claude Code needs to run kNN activity consistency from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

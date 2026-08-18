@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -100,8 +101,8 @@ def validate_run_root(value: str) -> tuple[Path, Path, Path, dict[str, Any], dic
     if not control_path.is_file() or not snapshot_path.is_file():
         raise FileNotFoundError("conductor_control.json or runtime/dag_snapshot.json is missing")
     control, snapshot = load_json(control_path), load_json(snapshot_path)
-    if control.get("conductor_version") != "0.1.2" or not isinstance(snapshot.get("nodes"), list):
-        raise ValueError("The supplied directory is not a CONDUCTOR 0.1.2 Run Root")
+    if control.get("conductor_version") != "0.1.3" or not isinstance(snapshot.get("nodes"), list):
+        raise ValueError("The supplied directory is not a CONDUCTOR 0.1.3 Run Root")
     errors = frozen_state_errors(control, snapshot)
     if errors:
         raise RuntimeError("Run is not frozen; concierge request refused: " + "; ".join(errors))
@@ -330,15 +331,86 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     write_json(request_dir / "dag_snapshot.json", snapshot)
     write_json(request_dir / "context.json", state_context(control, snapshot, paths, focus_ids, run_root))
     write_json(request_dir / "response_draft.json", draft)
+    (request_dir / "scratch").mkdir(exist_ok=True)
     return {
         "status": "prepared",
         "request_id": request_id,
         "request_dir": str(request_dir),
         "context": str(request_dir / "context.json"),
         "draft": str(request_dir / "response_draft.json"),
+        "scratch": str(request_dir / "scratch"),
         "captured_source_count": len(paths),
         "inventoried_run_file_count": len(inventory),
     }
+
+
+def run_helper(args: argparse.Namespace) -> dict[str, Any]:
+    """Run one request-local Python helper without granting writes to the frozen Run."""
+    request_dir, run_root, request = resolve_request_dir(args.request_dir)
+    validate_run_root(str(run_root))
+    if request.get("status") not in {"prepared", "completed"}:
+        raise ValueError(f"Unsupported concierge request status: {request.get('status')}")
+    scratch = (request_dir / "scratch").resolve()
+    scratch.mkdir(parents=True, exist_ok=True)
+    script = Path(args.script).expanduser().resolve()
+    if not script.is_file() or not is_relative_to(script, scratch) or script.suffix.lower() != ".py":
+        raise ValueError("Helper must be an existing Python file below request_dir/scratch/")
+    helper_args = list(args.script_args or [])
+    if helper_args[:1] == ["--"]:
+        helper_args = helper_args[1:]
+    invocation_id = datetime.now(timezone.utc).strftime("HELPER_%Y%m%dT%H%M%S%fZ")
+    invocation_dir = scratch / invocation_id
+    invocation_dir.mkdir(parents=True, exist_ok=False)
+    temporary = invocation_dir / "tmp"
+    temporary.mkdir()
+    command = [sys.executable, str(script), *helper_args]
+    environment = os.environ.copy()
+    environment.update({
+        "TMPDIR": str(temporary),
+        "TMP": str(temporary),
+        "TEMP": str(temporary),
+        "JOBLIB_TEMP_FOLDER": str(temporary / "joblib"),
+        "MPLCONFIGDIR": str(temporary / "matplotlib"),
+        "NUMBA_CACHE_DIR": str(temporary / "numba"),
+        "PYTHONPYCACHEPREFIX": str(temporary / "pycache"),
+    })
+    timeout_seconds = min(28800, max(1, int(args.timeout_seconds)))
+    write_json(invocation_dir / "command.json", {
+        "schema_version": "1.0.0",
+        "script": str(script.relative_to(request_dir)),
+        "script_sha256": sha256_file(script),
+        "arguments": helper_args,
+        "working_directory": str(scratch),
+        "timeout_seconds": timeout_seconds,
+        "created_at": utc_now(),
+    })
+    returncode = 124
+    timed_out = False
+    with (invocation_dir / "stdout.log").open("w", encoding="utf-8") as stdout, (invocation_dir / "stderr.log").open("w", encoding="utf-8") as stderr:
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=scratch,
+                env=environment,
+                stdout=stdout,
+                stderr=stderr,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            returncode = int(completed.returncode)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+    result = {
+        "status": "succeeded" if returncode == 0 else "error",
+        "request_id": request_dir.name,
+        "returncode": returncode,
+        "timed_out": timed_out,
+        "invocation_dir": str(invocation_dir),
+        "stdout": str(invocation_dir / "stdout.log"),
+        "stderr": str(invocation_dir / "stderr.log"),
+    }
+    write_json(invocation_dir / "result.json", result)
+    return result
 
 
 def resolve_source(value: str, run_root: Path) -> Path:
@@ -754,7 +826,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Explain and visualize frozen CONDUCTOR results without mutating analysis State.")
     subparsers = root.add_subparsers(dest="command", required=True)
     prepare_parser = subparsers.add_parser("prepare", help="Create a frozen concierge request workspace.")
-    prepare_parser.add_argument("--run-root", required=True, help="Explicit path to a completed CONDUCTOR 0.1.2 Run Root.")
+    prepare_parser.add_argument("--run-root", required=True, help="Explicit path to a completed CONDUCTOR 0.1.3 Run Root.")
     request_group = prepare_parser.add_mutually_exclusive_group(required=True)
     request_group.add_argument("--request", help="Human question or explanation request.")
     request_group.add_argument("--request-file", help="UTF-8 file containing the human request.")
@@ -766,6 +838,13 @@ def parser() -> argparse.ArgumentParser:
     source_parser.add_argument("--request-dir", required=True)
     source_parser.add_argument("--source", action="append", required=True, help="Artifact path; repeatable.")
     source_parser.set_defaults(handler=add_source)
+
+    helper_parser = subparsers.add_parser("run-helper", help="Run a request-local Python helper in an isolated scratch directory.")
+    helper_parser.add_argument("--request-dir", required=True)
+    helper_parser.add_argument("--script", required=True, help="Python file below request_dir/scratch/.")
+    helper_parser.add_argument("--timeout-seconds", type=int, default=1800)
+    helper_parser.add_argument("script_args", nargs=argparse.REMAINDER)
+    helper_parser.set_defaults(handler=run_helper)
 
     finalize_parser = subparsers.add_parser("finalize", help="Validate the draft and render Markdown/HTML/Figures.")
     finalize_parser.add_argument("--request-dir", required=True)

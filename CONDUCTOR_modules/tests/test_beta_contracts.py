@@ -14,8 +14,8 @@ SKILLS=ROOT/".claude"/"skills"
 
 class BetaContracts(unittest.TestCase):
     def test_catalog_and_ids(self)->None:
-        self.assertEqual("0.1.2",(MODULES/"VERSION").read_text(encoding="utf-8").strip())
-        catalog=json.loads((MODULES/"catalog"/"catalog.json").read_text(encoding="utf-8"));self.assertEqual("0.1.2",catalog["conductor_version"])
+        self.assertEqual("0.1.3",(MODULES/"VERSION").read_text(encoding="utf-8").strip())
+        catalog=json.loads((MODULES/"catalog"/"catalog.json").read_text(encoding="utf-8"));self.assertEqual("0.1.3",catalog["conductor_version"])
         by_id={item["capability_id"]:item for item in catalog["capabilities"]}
         self.assertEqual([f"D{i:03d}" for i in range(1,17)]+["D019","D020"],sorted(k for k in by_id if k.startswith("D")))
         self.assertEqual([f"C{i:03d}" for i in range(1,13)],sorted(k for k in by_id if k.startswith("C")))
@@ -38,7 +38,7 @@ class BetaContracts(unittest.TestCase):
 
     def test_public_contract_uses_cluster_terms(self)->None:
         selection=json.loads((MODULES/"catalog"/"included_skills.json").read_text(encoding="utf-8"))
-        roots=[ROOT/".claude"/"agents"/"cs-conductor-orchestrator.md",ROOT/".claude"/"agents"/"cs-conductor-interpreter.md"]
+        roots=[ROOT/".claude"/"agents"/"cs-conductor-executor.md",ROOT/".claude"/"agents"/"cs-conductor-interpreter.md",SKILLS/"cs-conductor-orchestrator"/"SKILL.md"]
         for name in selection["included_skills"]: roots.extend([SKILLS/name/"SKILL.md",SKILLS/name/"README.md",SKILLS/name/"capability.json"])
         for path in roots:
             text=path.read_text(encoding="utf-8")

@@ -3,10 +3,10 @@
   "capability_id": "O001",
   "skill_name": "cs-conductor-runtime",
   "display_name": "CONDUCTOR deterministic runtime",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "orchestration",
   "family": "graph_orchestration",
-  "description": "Deterministic Runtime owning compact Control, five-state Nodes, leases, attempts, crash recovery, bounded working sets, Interpretation gates, and Round finalization.",
+    "description": "Deterministic Runtime owning compact Control, five-state Nodes, signed Executor packets, attempts, crash recovery, bounded working sets, Interpretation gates, and Round finalization.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -39,7 +39,7 @@
   },
   "implementation": {
     "purpose": "deterministic_multiround_dag_runtime",
-    "state_access": "dispatcher_authorized_single_writer_lease",
+    "state_access": "human_authorized_main_agent_single_writer_lease",
     "interpretation_execution_authority": "runtime_commit_only"
   }
 }

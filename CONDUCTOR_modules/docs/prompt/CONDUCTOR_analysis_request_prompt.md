@@ -3,7 +3,7 @@
 ## Round 1
 
 ```text
-cs-conductor-dispatch Skillを入口として、新しいCONDUCTOR RunのRND0001を開始してください。
+/cs-conductor-orchestrator をMain sessionで有効化し、新しいCONDUCTOR RunのRND0001を開始してください。
 
 入力CSV: <absolute path>
 endpoint: <column name>
@@ -12,23 +12,24 @@ project: <project name>
 parallel_limit: <number>
 Wall Time: <minutes>
 高コスト基本計算一括承認: <yes/no>
+Run Root出力先: <absolute path>
 
-契約案を人間依頼と照合してからauthorizeし、Orchestratorは一つだけ起動してください。基本計算、初期探索、Interpretation、Full Auditまで同じRoundで実行し、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動acceptしないでください。
+既存Controlがない場合だけRuntimeでRunを初期化し、契約案を人間依頼と照合してからauthorizeしてください。Main自身がOrchestratorであり、科学計算は署名付きpacketごとにExecutorを一つだけ起動してください。基本計算、初期探索、Interpretation、Full Auditまで同じRoundで実行し、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動acceptしないでください。
 ```
 
 ## Active Roundの再開
 
 ```text
-cs-conductor-dispatch Skillを使い、次のRun Rootに存在するActive Roundを再開してください。
+/cs-conductor-orchestrator をMain sessionで有効化し、次のRun Rootに存在するActive Roundを再開してください。
 Run Root: <absolute path>
 
-新Roundは作らず、同じRoundのrequired_actionから継続してください。live leaseがある場合は二つ目のOrchestratorを起動しないでください。InterpretationとFull Auditを含む人間レビュー状態まで進め、終了後にverify-returnしてください。
+新Roundは作らず、同じRoundのrequired_actionから継続してください。live leaseがある場合は二重実行しないでください。InterpretationとFull Auditを含む人間レビュー状態まで進めてください。
 ```
 
 ## Round 2以降
 
 ```text
-cs-conductor-dispatch Skillを入口として、前Roundを人間の指示によりacceptして閉じた後、次のCONDUCTOR Roundの契約案を作成して開始してください。
+/cs-conductor-orchestrator をMain sessionで有効化し、前Roundを人間の指示によりacceptして閉じた後、次のCONDUCTOR Roundの契約案を作成して開始してください。
 Run Root: <absolute path>
 期待する次Round No: <number>（実際の番号はControlで照合）
 parallel_limit: <number>
@@ -49,5 +50,5 @@ Run Root <path> のRND####について、次の一つを実行してください
 - Interpretationを改訂: <修正理由>
 - Roundを受理して閉じる
 
-cs-conductor-dispatchを使い、明示していない別操作や新Round開始は行わないでください。
+cs-conductor-orchestratorを使い、明示していない別操作や新Round開始は行わないでください。
 ```

@@ -3,7 +3,7 @@
   "capability_id": "A012",
   "skill_name": "cs-analysis-cluster-overlap",
   "display_name": "Cluster overlap",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "analysis",
   "family": "cluster_quality",
   "description": "Use when Claude Code needs to run Cluster overlap from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

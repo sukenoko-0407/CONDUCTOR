@@ -3,7 +3,7 @@
   "capability_id": "D019",
   "skill_name": "cs-compute-description-tblite-xtb",
   "display_name": "GFN2-xTB quantum descriptors",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "description",
   "family": "quantum",
   "description": "Use when Claude Code needs to run GFN2-xTB quantum descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

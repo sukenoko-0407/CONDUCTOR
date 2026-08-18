@@ -21,10 +21,10 @@ python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context 
 ```
 
 
-CONDUCTORのState nodeとして利用する場合:
+CONDUCTORのInterpreter draftを事前検査する場合:
 
 ```bash
-python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context path/to/context.json --draft path/to/draft.json --output-dir path/to/preview --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
+python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context path/to/context.json --draft path/to/draft.json --output-dir path/to/preview
 ```
 
 ## 制約事項
@@ -33,6 +33,7 @@ python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context 
 - 全Insight候補で反証を探索し、同じanalysis signatureを再要求しない。
 - 多重探索結果、negative result、矛盾を削除しない。
 - scope・Insight正式ID付与、State更新、Operator実行、approval判断、新規SMILES生成は行わない。
+- 新しい科学計算が必要な場合は提案だけを記録し、Main AgentとRuntimeへ判断を戻す。
 
 ## 変更履歴
 

@@ -28,7 +28,7 @@ def copy_targets(target: Path) -> list[tuple[Path, Path]]:
             target / ".claude" / "agents" / name,
         )
         for name in [
-            "cs-conductor-orchestrator.md",
+            "cs-conductor-executor.md",
             "cs-conductor-interpreter.md",
         ]
     ]
@@ -62,12 +62,21 @@ def main() -> int:
     pairs = copy_targets(target)
     missing = [source for source, _destination in pairs if not source.exists()]
     conflicts = [destination for _source, destination in pairs if destination.exists()]
+    obsolete_present = [path for path in [target / ".claude" / "agents" / "cs-conductor-orchestrator.md"] if path.exists()]
+    old_dispatch = target / ".claude" / "skills" / "cs-conductor-dispatch"
+    if any((old_dispatch / name).exists() for name in ("SKILL.md", "capability.json", "README.md")):
+        obsolete_present.append(old_dispatch)
     if missing:
         raise FileNotFoundError("Package source is incomplete:\n" + "\n".join(str(path) for path in missing))
     if conflicts:
         raise FileExistsError(
             "Installation would overwrite existing CONDUCTOR paths. Resolve them manually first:\n"
             + "\n".join(str(path) for path in conflicts)
+        )
+    if obsolete_present:
+        raise FileExistsError(
+            "Obsolete pre-0.1.3 CONDUCTOR control components remain. Verify and remove them before installation:\n"
+            + "\n".join(str(path) for path in obsolete_present)
         )
 
     for source, destination in pairs:

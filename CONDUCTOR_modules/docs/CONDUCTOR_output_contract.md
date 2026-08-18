@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.2 output contract
+# CONDUCTOR 0.1.3 output contract
 
 ```text
 <run_root>/
@@ -14,6 +14,8 @@
 │   ├── cluster_membership.csv
 │   ├── logs/
 │   └── scratch/
+│       ├── packets/PKT.../execution_packet.json
+│       └── RND####/N######/ATT####/
 ├── rounds/RND####/
 ├── description/N######/{features.csv,result.json}
 ├── clustering/N######/{membership.csv,result.json}
@@ -25,6 +27,8 @@
 ```
 
 Description、Clustering、Operator Skillの既存計算CLIは一般利用のため維持します。CONDUCTORではそれらの詳細manifestやwarningをRuntime scratchで検証し、Run Rootへは上記の最小正本だけを昇格します。
+
+`runtime/scratch/packets/`のExecution packet、Node Attempt scratch、failure packetは制御用一時情報であり、新しいState正本ではありません。署名、Control revision、Action token、期限により一回の実行だけに結び付けられます。Main向けRuntime応答は16 KiB以下のcompact JSONとし、raw log、完全DAG、完全Auditはpointer先へ保持します。
 
 `runtime/input.csv`はRun開始時に元CSVから作る変更不能なcanonical copyです。既存ID列は`compound_id`へ写し、ID列がなければ`CMP######`を一度だけ付与します。以後の全Skill、Cluster matrix、監査はこのcopyを参照し、元CSVは変更しません。
 

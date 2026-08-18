@@ -2,7 +2,7 @@
 
 ## 目的
 
-Orchestratorは一人の探索チーム指揮者として、全体に一貫した関係を無理に求めず、GlobalとLocalの変化、異Description間の支持と矛盾、例外を見つけます。機械的状態管理はRuntimeへ委ね、科学的選択へ集中します。
+手動起動されたClaude Code Main AgentがOrchestratorとして一人の探索チーム指揮者を担います。全体に一貫した関係を無理に求めず、GlobalとLocalの変化、異Description間の支持と矛盾、例外を見つけます。機械的状態管理はRuntimeへ、Tool-heavyな実行は短命Executorへ、既存結果の横断解釈は短命Interpreterへ委ね、Mainは科学的選択へ集中します。
 
 ## 解析順序
 

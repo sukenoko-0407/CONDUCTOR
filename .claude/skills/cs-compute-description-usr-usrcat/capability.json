@@ -3,7 +3,7 @@
   "capability_id": "D013",
   "skill_name": "cs-compute-description-usr-usrcat",
   "display_name": "USR and USRCAT",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "stage": "description",
   "family": "3d_shape",
   "description": "Use when Claude Code needs to run USR and USRCAT from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
