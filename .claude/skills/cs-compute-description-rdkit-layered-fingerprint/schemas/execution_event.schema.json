@@ -9,7 +9,7 @@
     "project": {"type": "string", "minLength": 1},
     "run_id": {"type": "string", "minLength": 1},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
-    "node_id": {"type": "string", "pattern": "^N[DCAI][0-9]{6}$"},
+    "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
     "attempt_id": {"type": "string", "pattern": "^ATT[0-9]{4}$"},
     "capability_id": {"type": "string", "pattern": "^[DCAI][0-9]{3}$"},
     "skill_name": {"type": "string", "pattern": "^[a-z0-9-]{1,63}$"},

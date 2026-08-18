@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-REQUEST_PATTERN = re.compile(r"^CRQ(\d{6,})$")
+REQUEST_PATTERN = re.compile(r"^REQ(\d{6,})$")
 FOCUS_PATTERN = re.compile(r"^[A-Z][A-Z0-9_-]*\d+$")
 MAX_FOCUS_MATCHES = 100
 MAX_FIGURES = 12
@@ -70,19 +70,22 @@ def parse_datetime(value: Any) -> datetime | None:
         return None
 
 
-def frozen_state_errors(state: dict[str, Any]) -> list[str]:
+def frozen_state_errors(control: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    active_round = (state.get("round_control") or {}).get("active_round_id")
-    if active_round:
-        errors.append(f"active Round exists: {active_round}")
+    active_round = control.get("active_round_id")
+    round_state = control.get("round_state")
+    if round_state in {"ACTIVE", "FINALIZING"}:
+        errors.append(f"mutable Round state: {round_state} ({active_round})")
+    elif round_state not in {"AWAITING_HUMAN_REVIEW", "CLOSED", "NO_ACTIVE_ROUND"}:
+        errors.append(f"unsupported Round state: {round_state}")
     running = [
         str(node.get("node_id"))
-        for node in (state.get("execution_graph") or {}).get("nodes") or []
+        for node in snapshot.get("nodes") or []
         if node.get("status") == "running"
     ]
     if running:
         errors.append("running Nodes exist: " + ", ".join(running[:20]))
-    lease = (state.get("orchestration_control") or {}).get("lease") or {}
+    lease = control.get("lease") or {}
     owner = lease.get("owner_id")
     expiry = parse_datetime(lease.get("expires_at"))
     if owner and (expiry is None or expiry > datetime.now(timezone.utc)):
@@ -90,19 +93,19 @@ def frozen_state_errors(state: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate_state_path(value: str) -> tuple[Path, Path, dict[str, Any]]:
-    state_path = Path(value).expanduser().resolve()
-    if not state_path.is_file():
-        raise FileNotFoundError(f"State JSON does not exist: {state_path}")
-    if state_path.name != "state.json":
-        raise ValueError("The explicitly supplied State file must be named state.json")
-    state = load_json(state_path)
-    if "execution_graph" not in state or "round_control" not in state:
-        raise ValueError("The supplied JSON is not a CONDUCTOR State")
-    errors = frozen_state_errors(state)
+def validate_run_root(value: str) -> tuple[Path, Path, Path, dict[str, Any], dict[str, Any]]:
+    run_root = Path(value).expanduser().resolve()
+    control_path = run_root / "conductor_control.json"
+    snapshot_path = run_root / "runtime" / "dag_snapshot.json"
+    if not control_path.is_file() or not snapshot_path.is_file():
+        raise FileNotFoundError("conductor_control.json or runtime/dag_snapshot.json is missing")
+    control, snapshot = load_json(control_path), load_json(snapshot_path)
+    if control.get("conductor_version") != "0.1.2" or not isinstance(snapshot.get("nodes"), list):
+        raise ValueError("The supplied directory is not a CONDUCTOR 0.1.2 Run Root")
+    errors = frozen_state_errors(control, snapshot)
     if errors:
         raise RuntimeError("Run is not frozen; concierge request refused: " + "; ".join(errors))
-    return state_path, state_path.parent, state
+    return run_root, control_path, snapshot_path, control, snapshot
 
 
 def path_from_state(value: str, run_root: Path) -> Path | None:
@@ -115,23 +118,19 @@ def path_from_state(value: str, run_root: Path) -> Path | None:
     return None
 
 
-def candidate_sources(state: dict[str, Any], state_path: Path, run_root: Path) -> list[Path]:
-    candidates: list[Path] = [state_path]
-    for name in ["state_summary.json", "orchestrator_brief.json"]:
-        path = run_root / name
-        if path.is_file():
-            candidates.append(path.resolve())
-    nodes = (state.get("execution_graph") or {}).get("nodes") or []
+def candidate_sources(control_path: Path, snapshot_path: Path, snapshot: dict[str, Any], run_root: Path) -> list[Path]:
+    candidates: list[Path] = [control_path, snapshot_path]
+    nodes = snapshot.get("nodes") or []
     for node in nodes:
-        if node.get("stage") != "interpretation" or node.get("status") != "succeeded":
+        if node.get("kind") != "interpretation" or node.get("status") != "succeeded":
             continue
-        output_value = node.get("output_dir")
+        output_value = node.get("output_ref")
         if not isinstance(output_value, str):
             continue
         output_dir = path_from_state(output_value, run_root)
         if output_dir is None or not output_dir.is_dir():
             continue
-        for name in ["interpretation.json", "interpretation.md", "interpretation.html", "artifact_manifest.json"]:
+        for name in ["interpretation.json", "interpretation.md", "interpretation.html", "quality_report.json"]:
             path = output_dir / name
             if path.is_file():
                 candidates.append(path.resolve())
@@ -164,37 +163,35 @@ def focus_matches(paths: list[Path], focus_ids: list[str], run_root: Path) -> li
     return matches
 
 
-def state_context(state: dict[str, Any], source_paths: list[Path], focus_ids: list[str], run_root: Path) -> dict[str, Any]:
-    nodes = (state.get("execution_graph") or {}).get("nodes") or []
+def state_context(control: dict[str, Any], snapshot: dict[str, Any], source_paths: list[Path], focus_ids: list[str], run_root: Path) -> dict[str, Any]:
+    nodes = snapshot.get("nodes") or []
     by_stage: dict[str, Counter[str]] = defaultdict(Counter)
     for node in nodes:
-        by_stage[str(node.get("stage", "unknown"))][str(node.get("status", "unknown"))] += 1
-    rounds = []
-    for item in (state.get("round_control") or {}).get("rounds") or []:
-        rounds.append({key: item.get(key) for key in ["round_id", "number", "status", "started_at", "ended_at"]})
+        by_stage[str(node.get("kind", "unknown"))][str(node.get("status", "unknown"))] += 1
+    rounds = list(snapshot.get("rounds", {}).values())
     interpretations = [
         {
             "node_id": node.get("node_id"),
-            "round_id": node.get("round_id"),
+            "round_id": node.get("created_in_round"),
             "status": node.get("status"),
-            "output_dir": node.get("output_dir"),
+            "output_dir": node.get("output_ref"),
             "finished_at": node.get("finished_at"),
         }
         for node in nodes
-        if node.get("stage") == "interpretation"
+        if node.get("kind") == "interpretation"
     ]
     return {
         "generated_at": utc_now(),
-        "run": state.get("run") or {},
+        "run": control.get("run") or {},
         "rounds": rounds,
-        "active_round_id": (state.get("round_control") or {}).get("active_round_id"),
+        "active_round_id": control.get("active_round_id"),
         "node_counts": {stage: dict(sorted(counts.items())) for stage, counts in sorted(by_stage.items())},
         "interpretation_nodes": interpretations,
         "focus_ids": focus_ids,
         "focus_matches": focus_matches(source_paths, focus_ids, run_root),
         "captured_sources": [path.relative_to(run_root).as_posix() for path in source_paths],
         "instructions": [
-            "Read state_snapshot.json instead of the live state.json after prepare.",
+            "Read control_snapshot.json and dag_snapshot.json instead of live Runtime files after prepare.",
             "Register every additional artifact with add-source before reading it.",
             "Write only response_draft.json inside this request directory.",
         ],
@@ -211,7 +208,7 @@ def allocate_request_dir(run_root: Path) -> tuple[str, Path]:
             existing.append(int(match.group(1)))
     candidate = max(existing, default=0) + 1
     while True:
-        request_id = f"CRQ{candidate:06d}"
+        request_id = f"REQ{candidate:06d}"
         request_dir = root / request_id
         try:
             request_dir.mkdir()
@@ -258,11 +255,10 @@ def resolve_request_dir(value: str) -> tuple[Path, Path, dict[str, Any]]:
     if not request_path.is_file():
         raise FileNotFoundError(f"Missing request.json: {request_path}")
     request = load_json(request_path)
-    state_path = Path(str(request.get("state_path", ""))).expanduser().resolve()
     run_root = Path(str(request.get("run_root", ""))).expanduser().resolve()
     expected_root = (run_root / "concierge").resolve()
-    if request_dir.parent != expected_root or state_path != run_root / "state.json":
-        raise ValueError("Request directory is not bound to its recorded run_root/state.json")
+    if request_dir.parent != expected_root or Path(str(request.get("control_path", ""))).resolve() != run_root / "conductor_control.json":
+        raise ValueError("Request directory is not bound to its recorded Run Root")
     if request.get("request_id") != request_dir.name:
         raise ValueError("request_id does not match its directory")
     return request_dir, run_root, request
@@ -285,7 +281,7 @@ def read_request_text(args: argparse.Namespace) -> str:
 def prepare(args: argparse.Namespace) -> dict[str, Any]:
     if not args.explicit_request:
         raise ValueError("prepare requires --explicit-request")
-    state_path, run_root, state = validate_state_path(args.state)
+    run_root, control_path, snapshot_path, control, snapshot = validate_run_root(args.run_root)
     if (run_root / "concierge").resolve() == run_root:
         raise ValueError("Invalid run_root")
     focus_ids = list(dict.fromkeys(args.focus_id or []))
@@ -293,7 +289,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         if not FOCUS_PATTERN.match(focus_id):
             raise ValueError(f"Invalid focus ID: {focus_id}")
     question = read_request_text(args)
-    paths = candidate_sources(state, state_path, run_root)
+    paths = candidate_sources(control_path, snapshot_path, snapshot, run_root)
     inventory = run_inventory(run_root)
     request_id, request_dir = allocate_request_dir(run_root)
     manifest = {
@@ -301,7 +297,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "request_id": request_id,
         "captured_at": utc_now(),
         "run_root": str(run_root),
-        "sources": [source_entry(path, run_root, "state" if path == state_path else "artifact") for path in paths],
+        "sources": [source_entry(path, run_root, "runtime" if path in {control_path, snapshot_path} else "artifact") for path in paths],
     }
     request = {
         "schema_version": "1.0.0",
@@ -309,7 +305,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "status": "prepared",
         "created_at": utc_now(),
         "finalized_at": None,
-        "state_path": str(state_path),
+        "control_path": str(control_path),
+        "snapshot_path": str(snapshot_path),
         "run_root": str(run_root),
         "human_request": question,
         "focus_ids": focus_ids,
@@ -321,7 +318,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "request_summary": question,
         "answer_markdown": "REPLACE_WITH_EVIDENCE_BASED_ANSWER",
         "focus_ids": focus_ids,
-        "source_paths": ["state.json"],
+        "source_paths": ["conductor_control.json", "runtime/dag_snapshot.json"],
         "figures": [],
         "limitations": [],
         "suggested_next_round_prompt": None,
@@ -329,8 +326,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     write_json(request_dir / "request.json", request)
     write_json(request_dir / "source_manifest.json", manifest)
     write_json(request_dir / "run_inventory.json", {"captured_at": utc_now(), "files": inventory})
-    write_json(request_dir / "state_snapshot.json", state)
-    write_json(request_dir / "context.json", state_context(state, paths, focus_ids, run_root))
+    write_json(request_dir / "control_snapshot.json", control)
+    write_json(request_dir / "dag_snapshot.json", snapshot)
+    write_json(request_dir / "context.json", state_context(control, snapshot, paths, focus_ids, run_root))
     write_json(request_dir / "response_draft.json", draft)
     return {
         "status": "prepared",
@@ -668,9 +666,9 @@ def finalize(args: argparse.Namespace) -> dict[str, Any]:
     request_dir, run_root, request = resolve_request_dir(args.request_dir)
     if request.get("status") != "prepared":
         raise RuntimeError(f"Request is not in prepared status: {request.get('status')}")
-    state_path = Path(request["state_path"])
-    state = load_json(state_path)
-    errors = frozen_state_errors(state)
+    control = load_json(Path(request["control_path"]))
+    snapshot = load_json(Path(request["snapshot_path"]))
+    errors = frozen_state_errors(control, snapshot)
     if errors:
         raise RuntimeError("Run ceased to be frozen; finalize refused: " + "; ".join(errors))
     problems = verify_source_manifest(request_dir, run_root)
@@ -748,7 +746,7 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         "source_drift": source_problems,
         "run_files_unchanged_since_prepare": not run_drift,
         "run_file_drift": run_drift[:100],
-        "note": "Later Rounds may legitimately change live state.json; the request-local state_snapshot.json remains the reporting snapshot.",
+        "note": "Later Rounds may legitimately change live Runtime files; request-local snapshots remain the reporting source.",
     }
 
 
@@ -756,7 +754,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Explain and visualize frozen CONDUCTOR results without mutating analysis State.")
     subparsers = root.add_subparsers(dest="command", required=True)
     prepare_parser = subparsers.add_parser("prepare", help="Create a frozen concierge request workspace.")
-    prepare_parser.add_argument("--state", required=True, help="Explicit path to a completed run's state.json.")
+    prepare_parser.add_argument("--run-root", required=True, help="Explicit path to a completed CONDUCTOR 0.1.2 Run Root.")
     request_group = prepare_parser.add_mutually_exclusive_group(required=True)
     request_group.add_argument("--request", help="Human question or explanation request.")
     request_group.add_argument("--request-file", help="UTF-8 file containing the human request.")

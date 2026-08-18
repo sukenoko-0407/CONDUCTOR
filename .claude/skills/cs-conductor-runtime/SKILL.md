@@ -1,69 +1,42 @@
 ---
 name: cs-conductor-runtime
-description: Deterministically initialize, resume, inspect, plan, execute, audit-gate, and close a CONDUCTOR multi-Round DAG. Use internally from the cs-conductor-orchestrator Agent, or when a human explicitly requests a partial CONDUCTOR State update. Do not use as a scientific analysis method or for general non-CONDUCTOR execution.
+description: Deterministic CONDUCTOR 0.1.2 Runtime for Node IDs, five-state DAG records, execution, crash recovery, bounded working sets, Interpretation gates, and audit. Orchestrator uses it only inside an authorized Round.
+allowed-tools: Read, Bash
 ---
 
 # CONDUCTOR Runtime
 
-このSkillは推論を代替せず、Orchestratorが選んだ科学的行動を安全にStateへ反映する。Node ID、署名、依存関係、lease、parallel limit、Wall Time、実行attempt、Interpretation終端条件は必ずCLIに判定させる。
-
-## 最短の開始・再開手順
-
-1. 新規Runだけ `state init ...` を実行する。
-2. セッションごとに一意な短い `owner-id` を決め、`state bootstrap --state <state.json> --owner-id <id>` を1回実行する。
-3. `lease_acquired=false` なら別のWriterが稼働中である。Stateを変更せず終了する。
-4. `lease_acquired=true` なら返された `lease_token` を保持し、以降の全変更コマンドへ `--lease-token` を渡す。tokenをファイルへ保存しない。
-5. 通常は `summaries/orchestrator_brief.json` の `required_control_action` を上から処理する。科学的選択だけ `scientific_decision` を根拠にOrchestratorが判断する。
-6. 長時間処理中は `heartbeat` でleaseを更新する。
-7. Round終了前にInterpretationを成功記録する。`checkpoint` / `completed` はJSON・Markdown・HTMLが揃わなければ拒否される。
-8. 正常終了時は `release-lease` を実行する。
-
-すべてのコマンドは次のlauncher経由で実行する。
+Runtime owns mechanical state management. The Orchestrator must not edit `conductor_control.json`, `runtime/dag_snapshot.json`, or the Event Ledger.
 
 ```bash
-python .claude/skills/cs-conductor-runtime/scripts/launch.py state <command> ...
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state <command> --run-root /path/to/run ...
 ```
 
-launcherは共有Pixiを優先し、`PIXI_CACHE_DIR`、`UV_CACHE_DIR`、一時DirをすべてSkillの `env/` 配下へ設定する。
+The small `conductor_control.json` is the operational source of truth. Detailed Nodes are in the Runtime-owned DAG snapshot; the append-only Event Ledger and transaction journal keep it synchronized and auditable. Node status is only `pending`, `running`, `succeeded`, `failed`, or `cancelled`.
 
-## 制御アクション
+## Orchestrator loop
 
-- `START_NEXT_ROUND`: 人間指定のRound番号・並列数で`round-start --parallel-limit <number>`
-- `WAIT_OR_RECONCILE_RUNNING`: running attemptのevent、process、artifactを監査し、完了記録または明示的terminal化を行う
-- `PLAN_BASIC`: `plan-basic`
-- `REQUEST_BASIC_BUNDLE_APPROVAL`: 人間に一括承認を求め、`approve-basic-bundle`
-- `EXECUTE_RUNNABLE_BATCH`: 返されたNodeを上限内で `start` → 専門Skill → `record`
-- `RESOLVE_BASIC_GAPS`: 失敗・適用不能・未完了の基本計算をretryまたは明示的terminal化する
-- `PLAN_INITIAL_GLOBAL`: `plan-initial-global`
-- `RESOLVE_INITIAL_GLOBAL_GAPS`: 初期Globalのgapを解消する
-- `PLAN_INITIAL_LOCAL`: `plan-initial-local`
-- `RESOLVE_INITIAL_LOCAL_GAPS`: 初期Local／projection overlay／model surveyのgapを解消する
-- `SCIENTIFIC_DECISION`: 最大20件の候補とInsight／Next Actionを比較し、`plan-additional`、人間指定`add`、または`finish-exploration`を一つ選ぶ
-- `PLAN_INTERPRETATION`: `add-interpretation`後、`cs-conductor-interpreter`へ同じNI Nodeの完成を依頼し、`record`
-- `RUN_FULL_AUDIT`: Full Auditを実行し、index不整合なら`rebuild-indices`後に再監査する
-- `CLOSE_ROUND`: `round-end`後にleaseを解放する
+Use the command named by `required_action.code`. Mutating calls require `--lease-token` and the latest one-use `--action-token`. The returned Action token replaces the previous token.
 
-Node失敗後の再試行は新Nodeを追加せず、同じNodeを `start --retry` する。Interpreterの再試行も同じNIを完成させる。最終Interpretationは最後の成功Operatorより後に完成している必要があり、後発Operatorがある場合はRound終端用としてstaleになる。
+- `PLAN_BASIC` → `plan-basic`
+- `PLAN_INITIAL_GLOBAL` → `plan-initial-global`
+- `PLAN_INITIAL_LOCAL` → `plan-initial-local`
+- `EXECUTE_RUNNABLE_BATCH` → `execute-batch`
+- `WAIT_OR_RECONCILE_RUNNING` → `reconcile-running`
+- `RETRY_FAILED_NODE` → `retry-node --node-id <required_action.node_id>`
+- `SCIENTIFIC_DECISION` → inspect `runtime/working_set.json`, then `scientific-decision`
+- `ENTER_FINALIZING` → `enter-finalizing`
+- `PLAN_INTERPRETATION` → `prepare-interpretation`
+- `WRITE_INTERPRETATION` → Interpreter draft, `commit-interpretation`
+- `RUN_FULL_AUDIT` → `audit --mode full --register`
+- `COMPLETE_FINALIZING` → `complete-finalizing`
 
-Vector Clusteringのcommit時はmanifestの`selection_status`と`quality_flags`をNodeの短いsummaryへ保存する。`no_usable_partition`は失敗に変換せずnegative resultとして保持するが、そのNodeをCluster-local Operatorの上流候補にはしない。
+`HUMAN_APPROVAL_REQUIRED`, `HUMAN_REVIEW_REQUIRED`, and `AWAIT_HUMAN_ROUND` are stop-and-return conditions. Do not substitute a scientific command. If a live lease still exists at a human stop, consume the current token with `release-lease --reason <reason>` before returning. A scientific Node gets at most one deterministic retry of the same Node ID; a second failure remains explicit and the Round may continue with a partial outcome.
 
-## 事故復旧
+Runtime refuses Round finalization until the formal Interpretation JSON, Markdown, HTML, quality report, and Full Audit all pass. It never starts a new Round. Dispatcher alone performs human-authorized Round control.
 
-期限切れleaseは通常の `bootstrap` で引き継げる。まだ有効なleaseの強制取得は、人間が重複Writerでないことを確認した場合だけ `--force-takeover --takeover-reason <理由>` を使う。取得後はFull Auditを実行し、`running` Nodeを無条件で再実行せず、artifact/eventの有無を確認する。navigation indexの欠損・件数不一致だけが問題なら、`rebuild-indices --state <state.json> --lease-token <token>`を使い、Stateやledgerを直接編集しない。
+Interpretation input is a balanced, bounded set of Result Cards. Runtime records omitted cards as unreviewed instead of asking the Interpreter to load an unbounded history.
 
-## 部分実行
+All execution scratch and caches stay under the Skill `env/` or Run `runtime/scratch/`; scratch is not a scientific artifact. Scientific Skills keep their general-use interfaces, while Runtime validates and promotes only canonical minimal outputs.
 
-人間が特定のDescription、Clustering、Operator、Interpretationを指示した場合も、先にbootstrapしてから `add` または `add-interpretation` でDAGへ登録する。出力Dirを手作業で決めたりNode IDを手入力したりしない。
-
-## 読み込み規律
-
-通常再開時に長いPolicy全文や全Stateを読む必要はない。順序は `orchestrator_brief.json` → 必要なら `state_summary.json` → `query`で指定Node／Operator result／Insight／Next Action。原数値artifactとPolicyは科学的判断に必要な範囲だけ読む。
-
-## 禁止事項
-
-- `state.json` の直接編集
-- lease tokenなしの変更、tokenの共有ファイル保存
-- 複数Orchestrator Writerの並列実行
-- Round終端ゲートの回避
-- retryのための別Node生成
-- Wall Timeを「必ず使い切る時間」または単なるメモとして扱うこと
+For read-only navigation use `query`; for an abnormal Node use human-only `cs-conductor-node-review`. Do not repair JSON manually.

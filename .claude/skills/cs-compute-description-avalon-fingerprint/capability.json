@@ -3,7 +3,7 @@
   "capability_id": "D010",
   "skill_name": "cs-compute-description-avalon-fingerprint",
   "display_name": "Avalon fingerprint",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "description",
   "family": "2d_fingerprint",
   "description": "Use when Claude Code needs to run Avalon fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

@@ -3,7 +3,7 @@
   "capability_id": "A002",
   "skill_name": "cs-analysis-descriptor-activity-correlation",
   "display_name": "Descriptor-activity correlation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "analysis",
   "family": "interpretable_association",
   "description": "Use when Claude Code needs to run Descriptor-activity correlation from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

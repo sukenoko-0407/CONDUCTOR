@@ -1,56 +1,35 @@
-# CONDUCTOR 0.1.1 検証項目
-
-## 現在の検証結果
-
-- Catalog: 47 allowlisted Capabilityの生成・整合性検査に合格
-- Package: 48 Skill、2 Agentを独立Projectへ試験導入し、導入先layout検査に合格
-- Python: Skill／Runtime／tool sourceの構文検査に合格
-- Test suite: 17件すべて合格
-- 文書整理: 配布対象docsにPNG／PPTXなし
-
-指定共有Pixi binary、Linux/HPC、実ChemBERTa weight、実tbliteを必要とする検査は本番環境での受入項目です。未実施項目を成功扱いしません。詳細は`CONDUCTOR_0.1.1_vector_clustering_refactoring_plan.md`を参照してください。
+# CONDUCTOR 0.1.2 verification
 
 ## Package
 
-- `.claude/skills/`の全Skillに`SKILL.md`、`README.md`、`capability.json`、launcher、`env/pixi.toml`がある。
-- `.claude/agents/`にはOrchestratorとInterpreterだけがある。
-- Catalog allowlist、Capability ID、analysis profile、schemaが一致する。
-- `CONDUCTOR_modules/`へruntime結果を書かない。
+```bash
+python CONDUCTOR_modules/tools/verify_package_layout.py
+python .claude/skills/cs-conductor-runtime/scripts/launch.py catalog --check
+```
 
-## 用語・ID
+全schemaのJSON parse、CatalogのID一意性、Skill／Agent参照、Version統一を確認します。
 
-- 公開契約にGrouping／Group／NG／G######が残っていない。
-- Node、Cluster、Insight、Next Action IDはRuntimeだけが発行する。
-- Insight／Next Action番号はRoundを越えて単調増加する。
+## Runtime
 
-## 実行
+`CONDUCTOR_modules/tests/test_runtime_012.py`は次を検証します。
 
-- 一般利用では`--conductor`なしで主成果物だけを生成する。
-- CONDUCTOR利用ではNode／attempt directoryにmanifest、event、Operator reportを生成する。
-- structure Clusteringはcompound ID/SMILES CSV、Vector ClusteringはDescription vectorを受け取る。
-- C005～C010はnative distanceと手法別`auto` calibrationを使用し、endpoint列をparameter選択へ使わない。
-- Cluster構造が弱い入力では、Clusterを強制せず診断付き`no_usable_partition`を返せる。
-- 0.1.0→0.1.1 MigrationはDescriptionだけをRND0001へ移し、RND0002や解析を開始しない。
-- 全Clusteringで`min_cluster_size >= 5`を拒否不能な下限とする。
-- MCS pair上限は1000、pair samplingはseed付き一様ランダム非復元抽出である。
-- binary/MorganのmetricはTanimotoから変更できない。
+- 人間authorizeなしにRoundを開始できない。
+- live leaseとone-use Action tokenが二重Writerを防ぐ。
+- Node IDがRun全体の単調連番で、状態が5種類に限定される。
+- 中断後も同じRoundを再開し、勝手に次Roundを作らない。
+- InterpretationとFull Auditなしにhuman reviewへ移行できない。
+- Cluster scopeをGlobalとするdraft、誤ったCluster ID、sample不整合を拒否する。
+- partial Ledgerを伴うpending transactionとstale writer lockを復旧できる。
+- Working Setが設定上限を超えない。
+- 過去Roundの成功Nodeが次Roundの明示的な再利用参照となる。
+- Interpretation review contextがScope／Operatorを偏らせず上限内に収まる。
 
-## Orchestration
+## Scientific Skills
 
-- leaseなしにStateを変更できず、二重Orchestratorが同時commitできない。
-- retryは同一Nodeの新attemptとなり、旧attempt eventはcommitできない。
-- briefに必ず一つの`required_control_action`があり、サイズ上限を超えない。
-- Round終端はcurrent Interpretation JSON／Markdown／HTMLとFull Audit passを要求する。
+既存のDescription、Clustering、Operatorテストにより一般利用CLIと計算結果を確認します。Vector Clusteringは手法別auto calibration、endpoint非依存、minimum Cluster size、negative partition保持を確認します。
 
-## 新規Analysis
+## Human report
 
-- PCA／UMAPはAnalysis artifactであり、標準Clustering入力へ接続されない。
-- Cluster overlayはGlobal projectionを再fitしない。
-- A005はD001/D002/D006/D013/D016/D019を固定panelとし、Localは30化合物以上、feature selectionはfold内だけで行う。
+Interpretation HTMLは日本語、固定section、低彩度配色、print CSS、scope fact panel、evidence link、coverage、未確認範囲を持つことを確認します。scope、Cluster ID、sample count、Operator、Result別sample数はResult Cardから再計算して照合し、artifact linkはFull Auditで存在確認します。Operator reportとState reportの表示は導入先smoke testでも目視確認します。
 
-## Interpretation
-
-- draftは正式IDを持たず、Runtime commitがINS/ACTを割り当てる。
-- HTML／Markdownは固定rendererから毎回同じsection順・themeで生成する。
-- reportは作業記録ではなく、観察、解釈、反証、限界、Next Actionを示す。
-- Insightがゼロのreportを有効なnegative resultとして扱える。
+Windows開発環境での最終回帰結果は`23 passed, 7 skipped`です。skipされた7件はsystem PythonにRDKitがない場合のVector Clustering実計算であり、各SkillのPixi環境とLinux／共有filesystemは本番導入時に別途smoke testを行います。

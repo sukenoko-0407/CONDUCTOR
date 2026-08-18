@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-完了済みCONDUCTOR RunのInsight、Next Action、Node、Cluster、Operator結果を、人間の問いに合わせて説明・比較・再可視化する。
+人間レビュー待ちまたは完了済みのCONDUCTOR Runについて、Insight、Node、Cluster、Operator結果を人間の問いに合わせて説明・比較・再可視化する。
 
 ## 想定利用シーン
 
@@ -16,22 +16,22 @@ Interpretation reportで気になった項目の根拠を詳しく確認した�
 
 ```bash
 python .claude/skills/cs-conductor-result-concierge/scripts/launch.py prepare \
-  --state results/CONDUCTOR/PROJECT/RUN/state.json \
-  --request "INS0012の根拠と反証候補を説明する" --focus-id INS0012 --explicit-request
+  --run-root results/CONDUCTOR/PROJECT/RUN \
+  --request "INS000012の根拠と反証候補を説明する" --focus-id INS000012 --explicit-request
 ```
 
 表示されたrequest directory内の`response_draft.json`を記入後、次を実行する。
 
 ```bash
 python .claude/skills/cs-conductor-result-concierge/scripts/launch.py finalize \
-  --request-dir results/CONDUCTOR/PROJECT/RUN/concierge/CRQ000001
+  --request-dir results/CONDUCTOR/PROJECT/RUN/concierge/REQ000001
 ```
 
 ## 制約事項
 
-- active Roundや実行中NodeがあるRunでは開始しない。
-- 出力先は`<run_root>/concierge/CRQ######/`に固定される。
-- State、DAG、解析artifactを変更せず、新しい科学解析も実行しない。
+- `ACTIVE`／`FINALIZING`または実行中NodeがあるRunでは開始しない。`AWAITING_HUMAN_REVIEW`は解析が凍結されているため利用できる。
+- 出力先は`<run_root>/concierge/REQ######/`に固定される。
+- Runtime、DAG、解析artifactを変更せず、新しい科学解析も実行しない。
 - 追加解析は`next_round_prompt.md`として提案できるが、自動実行しない。
 
 ## 変更履歴

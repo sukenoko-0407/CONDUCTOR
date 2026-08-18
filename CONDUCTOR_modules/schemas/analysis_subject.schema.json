@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/analysis_subject.schema.json",
+  "title": "Canonical Analysis Subject",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scope_mode", "cluster_ids", "clustering_input_kind", "cluster_source_description_nodes", "analysis_description_nodes", "clustering_nodes", "population_count", "endpoint_valid_count", "analyzed_count", "excluded_count", "compound_set_hash"],
+  "properties": {
+    "scope_mode": {"enum": ["global", "single_cluster", "global_vs_cluster", "cluster_vs_cluster", "multi_scope", "projection"]},
+    "cluster_ids": {"type": "array", "items": {"type": "string", "pattern": "^C[0-9]{6}$"}, "uniqueItems": true},
+    "clustering_input_kind": {"enum": ["none", "structure", "vector", "categorical", "meta"]},
+    "cluster_source_description_nodes": {"type": "array", "items": {"type": "string", "pattern": "^N[0-9]{6}$"}, "uniqueItems": true},
+    "analysis_description_nodes": {"type": "array", "items": {"type": "string", "pattern": "^N[0-9]{6}$"}, "uniqueItems": true},
+    "clustering_nodes": {"type": "array", "items": {"type": "string", "pattern": "^N[0-9]{6}$"}, "uniqueItems": true},
+    "population_count": {"type": "integer", "minimum": 0},
+    "endpoint_valid_count": {"type": "integer", "minimum": 0},
+    "analyzed_count": {"type": "integer", "minimum": 0},
+    "excluded_count": {"type": "integer", "minimum": 0},
+    "compound_set_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "cluster_overlap": {"type": ["object", "null"]}
+  }
+}

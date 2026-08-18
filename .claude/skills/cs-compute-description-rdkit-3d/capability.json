@@ -3,7 +3,7 @@
   "capability_id": "D012",
   "skill_name": "cs-compute-description-rdkit-3d",
   "display_name": "RDKit 3D descriptors",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "description",
   "family": "3d_shape",
   "description": "Use when Claude Code needs to run RDKit 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

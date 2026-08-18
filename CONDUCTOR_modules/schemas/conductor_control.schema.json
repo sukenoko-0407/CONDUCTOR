@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/conductor_control.schema.json",
+  "title": "CONDUCTOR 0.1.2 Control State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "conductor_version", "revision", "run", "active_round_id", "round_state", "next_round_number", "required_action", "lease", "counts", "closure", "pointers", "last_event_sequence", "last_event_checksum", "updated_at"],
+  "properties": {
+    "schema_version": {"const": "3.0.0"},
+    "conductor_version": {"const": "0.1.2"},
+    "revision": {"type": "integer", "minimum": 0},
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "project", "run_root", "input", "input_hash", "source_input", "source_input_hash", "id_column", "endpoint", "higher_is_better", "row_count", "profile_id", "parallel_limit"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "project": {"type": "string", "minLength": 1},
+        "run_root": {"type": "string", "minLength": 1},
+        "input": {"type": "string", "minLength": 1},
+        "input_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_input": {"type": "string", "minLength": 1},
+        "source_input_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "id_column": {"const": "compound_id"},
+        "endpoint": {"type": "string", "minLength": 1},
+        "higher_is_better": {"type": "boolean"},
+        "endpoint_unit": {"type": ["string", "null"]},
+        "endpoint_transform": {"type": ["string", "null"]},
+        "row_count": {"type": "integer", "minimum": 1},
+        "profile_id": {"type": "string", "minLength": 1},
+        "parallel_limit": {"type": "integer", "minimum": 1}
+      }
+    },
+    "active_round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4}$"},
+    "round_state": {"enum": ["NO_ACTIVE_ROUND", "ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"]},
+    "next_round_number": {"type": "integer", "minimum": 1},
+    "required_action": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "reason"],
+      "properties": {"code": {"type": "string", "minLength": 1}, "reason": {"type": "string"}}
+    },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner_id", "token_hash", "action_token_hash", "expires_at", "heartbeat_at", "process_id"],
+      "properties": {
+        "owner_id": {"type": ["string", "null"]},
+        "token_hash": {"type": ["string", "null"]},
+        "action_token_hash": {"type": ["string", "null"]},
+        "expires_at": {"type": ["string", "null"]},
+        "heartbeat_at": {"type": ["string", "null"]},
+        "process_id": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_satisfied", "interpretation_ready", "audit_ready", "outcome"],
+      "properties": {
+        "contract_satisfied": {"type": "boolean"},
+        "interpretation_ready": {"type": "boolean"},
+        "audit_ready": {"type": "boolean"},
+        "outcome": {"enum": ["undetermined", "complete", "partial", "blocked"]}
+      }
+    },
+    "pointers": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+    "blocker": {"type": ["object", "null"]},
+    "last_event_sequence": {"type": "integer", "minimum": 0},
+    "last_event_checksum": {"type": ["string", "null"]},
+    "updated_at": {"type": "string", "format": "date-time"}
+  }
+}

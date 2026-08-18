@@ -3,7 +3,7 @@
 > この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
 
 Profile: `comprehensive-multiround-beta`
-Generated: `2026-08-10T14:25:37.345058+00:00`
+Generated: `2026-08-18T04:10:23.459251+00:00`
 
 ## Description
 
@@ -67,12 +67,12 @@ Generated: `2026-08-10T14:25:37.345058+00:00`
 
 | ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| I001 | `cs-analysis-interpret-results` | SAR result interpretation | - | result_integration | - | operator_summary_index, selected_result_artifacts, state_json_read_only, interpretation_policy_markdown | - | - | low | stable | False |
+| I001 | `cs-analysis-interpret-results` | SAR result interpretation | - | result_integration | - | runtime_interpretation_context, selected_result_artifacts, interpretation_policy_markdown | - | - | low | stable | False |
 
 ## Orchestration
 
 | ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | O001 | `cs-conductor-runtime` | CONDUCTOR deterministic runtime | - | graph_orchestration | - | catalog_json, analysis_profile_json, policy_markdown, interpretation_policy_markdown, endpoint_csv, round_request | - | - | low | stable | False |
-| O002 | `cs-conductor-state-report` | CONDUCTOR State DAG report | - | state_reporting | - | explicit_state_json_read_only | - | - | low | stable | False |
-| O003 | `cs-conductor-run-audit` | CONDUCTOR Run Audit | - | run_audit | - | explicit_state_json | - | - | low | stable | False |
+| O002 | `cs-conductor-state-report` | CONDUCTOR State DAG report | - | state_reporting | - | explicit_run_root_read_only | - | - | low | stable | False |
+| O003 | `cs-conductor-run-audit` | CONDUCTOR Run Audit | - | run_audit | - | explicit_run_root | - | - | low | stable | False |

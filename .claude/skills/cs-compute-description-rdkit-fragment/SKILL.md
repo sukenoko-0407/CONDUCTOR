@@ -17,7 +17,7 @@ CSVまたは1件以上のSMILESからRDKit fragment countsを計算する。
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. 入力列と必要な上流artifactを確認し、不明な列は明示指定する。OperatorのCONDUCTOR実行では、Stateが束縛したDescription／Clustering Capabilityとsource Node IDを表す`--evaluation-representation`、`--description-node-id`、`--clustering-representation`、`--clustering-node-id`を該当する上流入力とともに渡す。
+2. 入力形式、compound ID列、SMILES列を確認し、曖昧な列だけを明示指定する。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
 5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
@@ -36,6 +36,8 @@ RDKit fragment count集合を固定仕様で計算する。algorithm固有option
 - repository名、利用可能なCONDUCTOR artifact、Catalog収載、`results/CONDUCTOR/`形式の`--output-dir`だけを根拠にCONDUCTORモードを推測しない。
 - 意図が曖昧なら、出力契約が変わることを示して実行前に確認する。確認できない場合は通常モードとして`--conductor`を省略する。
 - 通常モードではCONDUCTOR context引数を指定しない。CONDUCTORモードでは`--conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001`をすべて指定する。CLIもこの組合せを検証する。
+
+Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証され、成功時に0.1.2の最小正本artifactへ昇格される。
 
 ## Output contract
 
@@ -63,7 +65,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id ge
 明示的なCONDUCTOR利用で、project、run、nodeが確定している場合だけこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id ND000001 --attempt-id ATT0001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001
 ```
 
 ## Boundaries

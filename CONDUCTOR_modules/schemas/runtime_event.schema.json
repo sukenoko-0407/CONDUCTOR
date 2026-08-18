@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/runtime_event.schema.json",
+  "title": "CONDUCTOR Runtime Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "sequence", "event_id", "event_type", "control_revision", "round_id", "node_id", "payload", "previous_checksum", "created_at", "checksum"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "event_id": {"type": "string", "pattern": "^EVT[0-9]{8}$"},
+    "event_type": {"type": "string", "minLength": 1},
+    "control_revision": {"type": "integer", "minimum": 1},
+    "round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4}$"},
+    "node_id": {"type": ["string", "null"], "pattern": "^N[0-9]{6}$"},
+    "payload": {"type": "object"},
+    "previous_checksum": {"type": ["string", "null"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "checksum": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

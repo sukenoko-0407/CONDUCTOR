@@ -1,24 +1,16 @@
 ---
 name: cs-conductor-run-audit
-description: Read and audit an explicitly supplied CONDUCTOR state.json without mutating State. Use Quick mode at bootstrap/control boundaries and Full mode after interruption or takeover, before Round close, or on explicit human request.
+description: Run a read-only Quick or Full audit of an explicitly supplied CONDUCTOR 0.1.2 Run Root. Full mode is a mandatory Round finalization gate.
+allowed-tools: Read, Bash
 ---
 
 # CONDUCTOR Run Audit
 
-指定された `state.json` と参照artifactを読み取り、`<run_root>/audit/<timestamp>/` に `audit.json` と `audit.md` を出力する。State、Node、index、解析結果は変更しない。
-
-launcherは共有Pixiを優先し、`PIXI_CACHE_DIR` と `UV_CACHE_DIR` をSkillの `env/` 配下へ設定する。
-
 ```bash
-python .claude/skills/cs-conductor-run-audit/scripts/launch.py \
-  --state /path/to/run_root/state.json --mode quick
-
-python .claude/skills/cs-conductor-run-audit/scripts/launch.py \
-  --state /path/to/run_root/state.json --mode full
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --run-root /path/to/run --mode quick
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --run-root /path/to/run --mode full
 ```
 
-QuickはDAG、ID、lease、parallel limit、running attempt、Interpretation終端条件を検査する。FullはQuickに加え、成功Nodeのartifact存在・hash、主要index、summary/briefも検査する。
+Quick mode validates Control, five-state DAG, lease, IDs, Event Ledger chain, revisions, transaction state, dependencies, attempts, Cluster registry, and parallel limit. Full mode additionally checks result files and hashes, Interpretation report integrity, and the closure contract. Reports are written to `<run_root>/audit/<timestamp>/` and never become scientific Nodes.
 
-`status=fail` の場合は新規Nodeを実行せず、Orchestratorが原因を解消する。`warning` は科学的判断を妨げないが、Round終端前に内容を確認する。
-
-このSkillは監査結果自体をDAG Nodeにしない。監査は制御面の記録であり、科学的なOperator resultではない。
+Do not proceed past a failing audit. Repair only through Runtime or Node Review; never edit State files directly.

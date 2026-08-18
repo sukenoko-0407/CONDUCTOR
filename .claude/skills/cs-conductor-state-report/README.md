@@ -2,11 +2,11 @@
 
 ## SKILLの目的
 
-明示的に指定された`state.json`を読み取り、解析進捗と実行DAGを人間向けHTMLおよびSVGとして可視化する。
+明示的に指定されたRun RootのControlとDAG snapshotを読み取り、解析進捗と実行DAGをHTMLおよびSVGとして可視化する。
 
 ## 想定利用シーン
 
-何が完了・未実行・失敗・stale・承認待ちかを確認し、Node間の依存関係やInterpretationの系譜を監査する場合。
+何が完了・未実行・失敗・取消済みか、Node間の依存関係、現在のRequired Actionを確認する場合。
 
 ## 環境構築
 
@@ -16,15 +16,15 @@
 
 ```bash
 python .claude/skills/cs-conductor-state-report/scripts/launch.py \
-  --state results/CONDUCTOR/PROJECT/RUN/state.json --explicit-request
+  --run-root results/CONDUCTOR/PROJECT/RUN --explicit-request
 ```
 
-出力はStateと同じdirectoryの`state/<UTC timestamp>/`へ保存される。
+出力はRun Rootの`state/<UTC timestamp>/`へ保存される。
 
 ## 制約事項
 
-- 人間がState可視化を明示し、対象State pathを指定した場合だけ使用する。
-- Stateを変更せず、DAG Nodeとしても登録しない。
+- 人間が可視化を明示し、対象Run Rootを指定した場合だけ使用する。
+- Runtimeを変更せず、DAG Nodeとしても登録しない。
 - 出力先は変更できず、`CONDUCTOR_modules/`には書き込まない。
 
 ## 変更履歴

@@ -2,36 +2,28 @@
 
 ## SKILLの目的
 
-CONDUCTORのDAG、Node ID、Round、単一Writer lease、実行attempt、Interpretation終端条件を決定論的に管理します。通常は `cs-conductor-orchestrator` Agentから内部利用します。
+CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、実行attempt、事故復旧、Interpretation終端条件を決定論的に管理します。
 
 ## 想定利用シーン
 
-- 新規Runの初期化と複数Roundの継続
-- Description / Clustering / Operator / Interpretationの部分追加
-- Agent停止後の安全な再開
-- navigation indexの監査後再構築
-- Round終端前の状態確認
-- Vector Clusteringの品質状態と`no_usable_partition`の下流除外
+人間が開始したRoundの計画登録、専門Skill実行、同一Node再試行、中断後再開、Interpretation commit、監査ゲートに使用します。通常はOrchestratorから内部利用します。
 
 ## 環境構築
 
-launcherがSkill内のPixi環境を自動的に作成または再利用します。Linuxでは共有Pixiバイナリを優先し、cacheはすべて `env/` 内へ置きます。
+launcherがSkill内Pixi環境を再利用または自動構築し、cacheも`env/`内へ置きます。
 
 ## 利用例
 
 ```bash
-python .claude/skills/cs-conductor-runtime/scripts/launch.py state bootstrap \
-  --state results/CONDUCTOR/project/run/state.json --owner-id session-01
+python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-root /path/to/run --kind control
 ```
-
-返されたlease tokenを、そのセッションのState変更コマンドへ `--lease-token` として渡します。
 
 ## 制約事項
 
-一般解析用Skillではありません。alpha版Runの移行は行いません。Stateの直接編集、複数Writer、最終Operatorより古いInterpretationによるRound完了は許可されません。
+人間の代わりにRoundを開始・受理しません。Runtime JSON/JSONLの直接編集、複数Writer、Action token再利用、InterpretationなしのRound終了は許可しません。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | 0.1.1の単一Writer・attempt・Cluster・Interpretation commit管理を実装 |
+| 1.0.0 | 0.1.2のControl／Event Ledger／5状態DAG Runtimeを実装 |

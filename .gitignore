@@ -17,4 +17,5 @@ analysis/
 __pycache__/
 .pytest_cache/
 .smoke-v43-html/
+.validation-site/
 *.pyc

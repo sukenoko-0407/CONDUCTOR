@@ -39,6 +39,7 @@ def arguments(**overrides: object) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
+@unittest.skipUnless(importlib.util.find_spec("rdkit") and importlib.util.find_spec("networkx"), "Run in the Skill Pixi environment with RDKit and NetworkX")
 class VectorClusteringCalibrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

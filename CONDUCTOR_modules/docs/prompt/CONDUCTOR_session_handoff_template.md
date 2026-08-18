@@ -1,16 +1,12 @@
 # CONDUCTOR session引継ぎテンプレート
 
-通常は次の短い情報だけで再開できます。
-
 ```text
-cs-conductor-orchestrator Agentを使ってCONDUCTORを再開してください。
-state.json: <absolute path>
-期待する次Round: RND####
-今回の依頼: <追加探索／特定Insightの深掘り／人間checkpoint等>
-parallel_limit: <number>
-Wall Time: <time>
+cs-conductor-dispatch Skillを使ってCONDUCTORを引き継いでください。
+Run Root: <absolute path>
+人間が意図する操作: <Active Round再開／同一Round継続／report revision／Round accept／新Round開始>
+今回の指示: <任意>
 
-Runtime bootstrapを行い、leaseを取得できない場合は変更せず停止してください。orchestrator_brief.jsonから開始し、必要な情報だけをqueryしてください。異常中断の痕跡があればFull Auditでattemptとartifactを照合してから続行してください。
+最初にconductor_control.jsonだけを確認してください。Active Roundがあれば同じRoundを再開し、別Roundを作らないでください。live leaseなら二重起動せず停止してください。OrchestratorにはControl、Working Set、lease token、Action tokenだけを渡してください。終了後はverify-returnで実状態を報告してください。
 ```
 
-手作業の引継ぎ文書は補助情報です。正本は`state.json`、`summaries/`、`indices/`、`rounds/`です。
+引継ぎ正本はRun Rootの`conductor_control.json`です。詳細は必要時だけ`runtime/dag_snapshot.json`、Event Ledger、Result Cardへ辿ります。長いInterpretation本文や独自handoff Markdownを毎回読ませる必要はありません。

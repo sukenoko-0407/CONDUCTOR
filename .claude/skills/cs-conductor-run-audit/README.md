@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-CONDUCTOR RunのDAG、ID、単一Writer制御、実行attempt、artifact、Interpretation終端条件をState非変更で監査します。
+CONDUCTOR RunのControl、DAG、Event Ledger、ID、単一Writer制御、実行attempt、artifact、Interpretation終端条件を変更せず監査します。
 
 ## 想定利用シーン
 
@@ -18,12 +18,12 @@ launcherがSkill内のPixi環境を自動構築・再利用し、cacheも `env/`
 
 ```bash
 python .claude/skills/cs-conductor-run-audit/scripts/launch.py \
-  --state results/CONDUCTOR/project/run/state.json --mode full
+  --run-root results/CONDUCTOR/project/run --mode full
 ```
 
 ## 制約事項
 
-Stateは変更しません。監査結果は科学的なOperator resultやDAG Nodeではありません。
+Runtimeと科学的結果は変更しません。監査結果はOperator resultやDAG Nodeではありません。
 
 ## 変更履歴
 

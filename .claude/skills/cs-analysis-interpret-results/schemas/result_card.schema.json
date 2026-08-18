@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/result_card.schema.json",
+  "title": "CONDUCTOR Result Card",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "result_ref", "node_id", "capability_id", "round_id", "analysis_subject", "endpoint", "metric", "headline", "key_metrics", "validation_passed", "eligible_for_downstream", "quality_flags", "artifact_links", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "result_ref": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
+    "capability_id": {"type": "string", "pattern": "^A[0-9]{3}$"},
+    "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+    "analysis_subject": {"$ref": "analysis_subject.schema.json"},
+    "endpoint": {"type": "object"},
+    "metric": {"type": ["string", "null"]},
+    "headline": {"type": "string", "maxLength": 1000},
+    "key_metrics": {"type": "object"},
+    "validation_passed": {"type": "boolean"},
+    "eligible_for_downstream": {"type": "boolean"},
+    "quality_flags": {"type": "array", "items": {"type": "string"}},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "artifact_links": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+    "attention": {"enum": ["pinned", "active", "watch", "background"]},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

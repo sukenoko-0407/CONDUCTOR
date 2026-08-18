@@ -3,7 +3,7 @@
   "capability_id": "C002",
   "skill_name": "cs-compute-clustering-structure-mcs",
   "display_name": "MCS clustering",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "clustering",
   "family": "direct_structure",
   "description": "Cluster compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR axis, without generating a hidden descriptor vector or requiring per-run human approval.",

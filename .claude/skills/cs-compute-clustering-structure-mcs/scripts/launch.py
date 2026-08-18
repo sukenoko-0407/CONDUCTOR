@@ -14,6 +14,7 @@ def prepare_runtime_environment(skill_dir: Path) -> dict[str, str]:
     env_dir = (skill_dir / "env").resolve()
     cache_root = env_dir / "cache"
     pixi_cache = cache_root / "pixi"
+    attempt_tmp = Path(os.environ.get("CONDUCTOR_ATTEMPT_TMP", str(env_dir / "tmp"))).resolve()
     locations = {
         "PIXI_HOME": env_dir / "pixi-home",
         "PIXI_CACHE_DIR": pixi_cache,
@@ -38,10 +39,10 @@ def prepare_runtime_environment(skill_dir: Path) -> dict[str, str]:
         "CUDA_CACHE_PATH": cache_root / "cuda",
         "TRITON_CACHE_DIR": cache_root / "triton",
         "TORCHINDUCTOR_CACHE_DIR": cache_root / "torchinductor",
-        "JOBLIB_TEMP_FOLDER": env_dir / "tmp" / "joblib",
-        "TMPDIR": env_dir / "tmp",
-        "TMP": env_dir / "tmp",
-        "TEMP": env_dir / "tmp",
+        "JOBLIB_TEMP_FOLDER": attempt_tmp / "joblib",
+        "TMPDIR": attempt_tmp,
+        "TMP": attempt_tmp,
+        "TEMP": attempt_tmp,
     }
     for path in set(locations.values()):
         path.mkdir(parents=True, exist_ok=True)

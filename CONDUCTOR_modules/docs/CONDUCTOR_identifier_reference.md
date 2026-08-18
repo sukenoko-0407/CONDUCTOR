@@ -1,20 +1,17 @@
-# CONDUCTOR 識別子リファレンス
+# CONDUCTOR identifier reference
 
-IDはRun内で通し番号を引き継ぎ、Roundが変わっても再初期化しません。
+| ID | 意味 | 例 | 発行主体 |
+|---|---|---|---|
+| `D###` | Description capability | D002 | Catalog／人間 |
+| `C###` | Clustering capability | C005 | Catalog／人間 |
+| `A###` | Operator capability | A008 | Catalog／人間 |
+| `I###` | Interpretation capability | I001 | Catalog／人間 |
+| `O###` | 制御・補助capability | O001 | Catalog／人間 |
+| `RND####` | 人間が開始した解析Round | RND0002 | Dispatcher／Runtime |
+| `N######` | Run全体で一意の実行Node | N000125 | Runtime |
+| `ATT####` | 同一Node内の実行attempt | ATT0002 | Runtime |
+| `C######` | Run全体で一意のCluster | C000041 | Runtime |
+| `INS######` | Run全体で一意のInsight | INS000023 | Runtime commit |
+| `REQ######` | Concierge依頼 | REQ000004 | Concierge |
 
-| ID | 対象 | 発行主体 |
-|---|---|---|
-| `RND####` | 解析Round | Runtime |
-| `ND######` | Description Node | Runtime |
-| `NC######` | Clustering Node | Runtime |
-| `NA######` | Operator／Analysis Node | Runtime |
-| `NI######` | Interpretation Node | Runtime |
-| `ATT####` | 同一Node内の実行attempt | Runtime |
-| `CL######` | Run-global Cluster | Clustering成功commit時のRuntime |
-| `NA######@ATT####` | Global Operator result reference | Operator／Runtime |
-| `NA######@ATT####/CL######` | Cluster-local Operator result reference | Operator／Runtime |
-| `INS####` | Interpretation Insight | Interpretation commit時のRuntime |
-| `ACT####` | Next Action | Interpretation commit時のRuntime |
-| `CRQ######` | read-only Concierge request | Concierge |
-
-`D###`、`C###`、`A###`、`I###`、`O###`はCatalogのCapability IDです。これらは実行instanceではありません。旧alpha版の`G`、`NG`、Finding／Hypothesis／Question／Evidence用IDは0.1.1では使用しません。
+旧alpha版の`ND/NC/NA/NI`、`F/H/E/Q/R/ACT`体系は使用しません。追加解析案はInsight内の文章であり、独立した永続IDやstatusを持ちません。

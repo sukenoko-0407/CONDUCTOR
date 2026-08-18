@@ -3,7 +3,7 @@
   "capability_id": "A005",
   "skill_name": "cs-analysis-multidescription-feature-model",
   "display_name": "Multi-Description feature model",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "analysis",
   "family": "feature_model",
   "description": "Use when Claude Code needs to run Multi-Description feature model from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

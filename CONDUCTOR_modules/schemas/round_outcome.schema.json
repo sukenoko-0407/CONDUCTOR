@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/round_outcome.schema.json",
+  "title": "CONDUCTOR Round Outcome",
+  "type": "object",
+  "required": ["schema_version", "round_id", "completion", "stop_reason", "deliverables", "interpretation_node_id", "audit_ref", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+    "completion": {"enum": ["complete", "partial", "blocked"]},
+    "stop_reason": {"enum": ["contract_satisfied", "budget_exhausted", "no_eligible_work", "human_checkpoint", "abnormal_interruption", "blocked"]},
+    "deliverables": {"type": "array"},
+    "interpretation_node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
+    "audit_ref": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

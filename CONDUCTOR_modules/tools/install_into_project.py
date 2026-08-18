@@ -30,7 +30,6 @@ def copy_targets(target: Path) -> list[tuple[Path, Path]]:
         for name in [
             "cs-conductor-orchestrator.md",
             "cs-conductor-interpreter.md",
-            "cs-conductor-description-migrator.md",
         ]
     ]
     pairs.extend(

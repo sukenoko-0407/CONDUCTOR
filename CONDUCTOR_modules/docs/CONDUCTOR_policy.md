@@ -1,36 +1,28 @@
 # CONDUCTOR Orchestration Policy
 
-## 基本原則
+## 目的
 
-- 一つのRunは一つの入力CSV、一つのendpoint、一つの`higher_is_better`を扱う。
-- 複数Roundを標準とし、各RoundをInterpretationとFull Auditまで完遂する。
-- 人間の明確な省略指示がなければ、全Descriptionと標準Clusteringからなる基本計算を先に揃える。
-- 高コストDescriptionは一つのbundleとして一回承認を求める。MCSは基本計算として別承認を求めない。
-- 初期探索は広さを優先する。Globalでは適用可能な全Operator、Localでは各Clusteringの代表Clusterへ適用可能なOperatorを偏りなく使う。
-- 追加探索は未実施signatureからseed付きで選び、Description family、Clustering family、Operator、scopeの偏りを抑える。
-- 深掘りはInsight、人間の指示、矛盾、反証候補を起点とし、同一Clusterの別Operator、兄弟Cluster、Global対Local、別Descriptionの少なくとも一つを比較する。
+Orchestratorは一人の探索チーム指揮者として、全体に一貫した関係を無理に求めず、GlobalとLocalの変化、異Description間の支持と矛盾、例外を見つけます。機械的状態管理はRuntimeへ委ね、科学的選択へ集中します。
 
-## 科学的判断と決定論的制御
+## 解析順序
 
-Runtimeが機械的に決めるものはID、依存関係、重複signature、attempt、metric契約、並列上限、approval、終端gateです。Orchestratorが考えるものは、どの比較が科学的に意味を持つか、何を優先するか、どの反証を試すかです。候補の意味まで固定ルールで決めません。
+1. 人間の明示的省略がなければ、高コストを含む基本Description、直接構造Clustering、代表DescriptionのVector Clusteringを揃える。
+2. 初期探索ではGlobalへ全Operatorを適用し、各Clusteringの代表Clusterへ一部だけでなく必要Operator集合を広く適用する。
+3. 追加探索では未実施cellをseed付きで候補化し、特定Description／Clustering／Operatorへ偏らないよう選ぶ。
+4. 深掘りでは同じClusterの別Operator、sibling Cluster、Global、別Description上の同一Clusterを比較する。
 
-Vector Clustering C005～C010の数値parameterは、通常はSkill内部の`auto` modeでendpointを使わず手法別に校正します。Orchestratorはcutoffや`eps`を推測しません。人間が再現試験または感度解析を明示した場合だけ`fixed` modeを別Nodeとして使います。
+初手は「狭く浅く」にしません。一定の計算コストを許容してヒントを取りこぼさないことを優先します。MCSは初手から実行します。
 
-## Clusterの扱い
+## Clusterとmetric
 
-- 5化合物未満はClusterとして登録しない。
-- 大きいClusterを優先候補にするが、全体の30%超は局所性が弱く、50%超はglobal-likeとして扱う。
-- 小さくてもMCS等で構造凝集性が高いClusterは解釈候補に残せる。
-- A005のLocal model surveyは30化合物以上かつendpoint変動のあるClusterだけを対象にする。
-- `no_usable_partition`は有効なnegative resultとして保存し、そのClusteringからLocal Operatorを計画しない。
+5化合物未満のClusterは登録しません。30化合物未満のlocal modelは作りません。全体の50%超を占めるClusterはGlobalに近いことを解釈へ明記します。構造凝集性が高い小Clusterは優先余地があります。
 
-## Interpretationと継続
+Vector Clusteringは手法別の自動calibrationを使います。binary fingerprintはTanimoto、USR/USRCATはManhattan、embedding／疎countはCosine、一般連続descriptorは標準化後Euclideanを原則とし、endpointをparameter選択へ使いません。人間が感度解析を指定した場合だけ固定parameterを使います。
 
-- 強い結果だけでなく、矛盾、negative result、適用不能も保存する。
-- 注目するInsightには必ず反証・代替説明を探索する。
-- InsightのattentionとNext Actionのstatusは後から変更可能とする。
-- 人間は次Roundのrequestへ見解、重視点、閉じたいNext Actionを添付できる。単に「次のRoundを継続」と指示しても、Stateから未実施領域を選べる。
+## 複数Round
 
-## 停止条件
+過去結果は削除せず、短いResult Cardと可変attentionで取捨選択します。Roundを跨いで全artifactや長文レポートを読み直しません。人間意見は次のRound contractへ明示的に添付します。Orchestratorは新Roundを自発的に作りません。
 
-Wall Timeは上限であり、必ず使い切る時間ではありません。Roundは予算消尽、実行候補なし、人間checkpoint、要求範囲完了、異常中断のいずれかを明記して停止し、正常なclosureには最新InterpretationとFull Auditを要求します。
+## 終端
+
+RoundはInterpretationとFull Auditまでが一単位です。ゼロInsightでもレポートを作ります。実行可能作業があるのにWall Time前に理由なく終えず、本当に継続不能ならblockerまたは人間checkpointをRuntimeへ記録します。

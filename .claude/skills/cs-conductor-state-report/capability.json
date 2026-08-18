@@ -3,10 +3,10 @@
   "capability_id": "O002",
   "skill_name": "cs-conductor-state-report",
   "display_name": "CONDUCTOR State DAG report",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "orchestration",
   "family": "state_reporting",
-  "description": "Use only on an explicit human request with an explicitly supplied state.json path to render a read-only timestamped HTML and SVG execution DAG report.",
+  "description": "Use only on an explicit human request with an explicitly supplied Run Root to render a read-only timestamped HTML and SVG execution DAG report.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -21,7 +21,7 @@
   },
   "dependencies": [],
   "input_contract": [
-    "explicit_state_json_read_only"
+    "explicit_run_root_read_only"
   ],
   "output": {
     "html": "state/<timestamp>/state_report.html",

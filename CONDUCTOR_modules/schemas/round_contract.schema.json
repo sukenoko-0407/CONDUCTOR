@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/round_contract.schema.json",
+  "title": "CONDUCTOR Round Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "round_id", "objective", "required_deliverables", "optional_directions", "human_priorities", "budgets", "omissions", "high_cost_bundle_approved", "request_hash", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+    "objective": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "required_deliverables": {"type": "array", "maxItems": 50, "items": {"type": "object", "required": ["deliverable_id", "type", "description"], "properties": {"deliverable_id": {"type": "string", "maxLength": 100}, "type": {"enum": ["capability_coverage", "artifact_exists", "comparison_completed", "interpretation_completed", "scientific_objective"]}, "description": {"type": "string", "maxLength": 500}, "parameters": {"type": "object"}, "human_acceptance_required": {"type": "boolean"}}, "additionalProperties": false}},
+    "optional_directions": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 1500}},
+    "human_priorities": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 1500}},
+    "budgets": {"type": "object", "required": ["walltime_minutes", "parallel_limit", "max_additional_nodes", "interpretation_iterations"], "properties": {"walltime_minutes": {"type": "integer", "minimum": 1}, "parallel_limit": {"type": "integer", "minimum": 1}, "max_additional_nodes": {"type": "integer", "minimum": 0}, "interpretation_iterations": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    "omissions": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 1000}},
+    "high_cost_bundle_approved": {"type": "boolean"},
+    "request_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

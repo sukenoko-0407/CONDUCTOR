@@ -1,34 +1,24 @@
 # CONDUCTOR modules
 
-このdirectoryはCONDUCTOR 0.1.1の共有定義packageです。Claude Codeが認識するAgent／Skill本体はProject rootの`.claude/agents/`と`.claude/skills/`に置き、ここにはCatalog、analysis profile、schema、Policy、template、検証toolを置きます。
-
-## 構成
+CONDUCTOR 0.1.2の共有定義packageです。Claude Codeが認識するAgent／SkillはProject rootの`.claude/`、Catalog、Policy、schema、Runtime、template、testは`CONDUCTOR_modules/`へ置きます。
 
 ```text
-CONDUCTOR_modules/
-├── VERSION
-├── catalog/
-│   ├── catalog.json
-│   ├── included_skills.json
-│   └── analysis_profile.json
-├── schemas/
-├── docs/
-├── tools/
-└── tests/
+project/
+├── .claude/agents/
+├── .claude/skills/
+└── CONDUCTOR_modules/
+    ├── VERSION
+    ├── catalog/
+    ├── schemas/
+    ├── docs/
+    ├── tools/
+    └── tests/
 ```
 
-`catalog.json`は各Skillの`capability.json`から生成しますが、収載対象は人間管理の`included_skills.json`で決まります。初手の基本計算・初期探索範囲は`analysis_profile.json`が正本です。
+`catalog.json`は各Skill metadataから生成しますが、収載対象は人間管理の`included_skills.json`、初手解析範囲は`analysis_profile.json`で決まります。
 
-## Runtime write boundary
+解析中、このdirectoryと`.claude/`はread-onlyです。Control、DAG、artifact、Interpretation、audit、State report、Concierge responseはすべてRun Rootへ書きます。したがってRun停止中ならpackage一式を同じVersionへ差し替えられます。
 
-通常の解析中、`CONDUCTOR_modules/`はread-onlyです。State、artifact、Interpretation、audit、State report、Concierge responseはすべて`results/CONDUCTOR/<project>/<run-id>/`へ保存します。そのためRun停止中であれば、このdirectoryと対応する`.claude/skills/`／`.claude/agents/`を同じpackage版へ一括差し替えできます。
+各Skillは`env/pixi.toml`を持ちます。Linuxでは`/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi`を優先し、cacheとtemporary fileをSkillの`env/`配下へ限定します。
 
-## Install
-
-既存Projectへ組み込む場合は、`.claude/skills/`、`.claude/agents/`をProject rootへ配置し、このdirectoryを`<project>/CONDUCTOR_modules/`として配置します。`tools/install_into_project.py`と`tools/verify_package_layout.py`を利用できます。
-
-## Environment
-
-各Skillは`env/pixi.toml`とlauncherを持ちます。Linuxでは共有Pixi binaryを優先し、環境・cache・temporary fileをSkillの`env/`配下に限定します。初回にlock／environmentを構築し、以後はlocked environmentを再利用します。
-
-詳細は[docs/README.md](docs/README.md)を参照してください。alpha版Runの汎用migrationは提供しません。0.1.0から0.1.1へは、成功済みDescriptionだけを新規Runへ引き継ぐ専用Patchがあります。
+既存Projectへは`.claude/`をProject rootへ、modulesを`CONDUCTOR_modules/`へ配置します。詳細は[docs/README.md](docs/README.md)を参照してください。0.1.1以前のRun migrationは提供しません。

@@ -3,7 +3,7 @@
   "capability_id": "A006",
   "skill_name": "cs-analysis-pairwise-structure-similarity",
   "display_name": "Pairwise structure similarity",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "analysis",
   "family": "feature_space",
   "description": "Use when Claude Code needs to run Pairwise structure similarity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

@@ -3,7 +3,7 @@
   "capability_id": "C009",
   "skill_name": "cs-compute-clustering-vector-leiden",
   "display_name": "Vector Leiden clustering",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "clustering",
   "family": "description_vector",
   "description": "Apply Vector Leiden clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",

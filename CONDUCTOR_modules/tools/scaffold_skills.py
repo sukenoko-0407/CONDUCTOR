@@ -202,6 +202,7 @@ def prepare_runtime_environment(skill_dir: Path) -> dict[str, str]:
     env_dir = (skill_dir / "env").resolve()
     cache_root = env_dir / "cache"
     pixi_cache = cache_root / "pixi"
+    attempt_tmp = Path(os.environ.get("CONDUCTOR_ATTEMPT_TMP", str(env_dir / "tmp"))).resolve()
     locations = {
         "PIXI_HOME": env_dir / "pixi-home",
         "PIXI_CACHE_DIR": pixi_cache,
@@ -226,10 +227,10 @@ def prepare_runtime_environment(skill_dir: Path) -> dict[str, str]:
         "CUDA_CACHE_PATH": cache_root / "cuda",
         "TRITON_CACHE_DIR": cache_root / "triton",
         "TORCHINDUCTOR_CACHE_DIR": cache_root / "torchinductor",
-        "JOBLIB_TEMP_FOLDER": env_dir / "tmp" / "joblib",
-        "TMPDIR": env_dir / "tmp",
-        "TMP": env_dir / "tmp",
-        "TEMP": env_dir / "tmp",
+        "JOBLIB_TEMP_FOLDER": attempt_tmp / "joblib",
+        "TMPDIR": attempt_tmp,
+        "TMP": attempt_tmp,
+        "TEMP": attempt_tmp,
     }
     for path in set(locations.values()):
         path.mkdir(parents=True, exist_ok=True)
@@ -346,7 +347,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         }
         option_guidance = description_options[algorithm]
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id ND000001 --attempt-id ATT0001'
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001'
         output_contract = f'''- 通常モード: `results/description/<input>/<skill>/<run-id>/`へ`{capability["output"]["basename"]}.csv`（または`--format parquet`）だけを生成する。
 - CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/description/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ主成果物、`description_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     elif kind == "clustering":
@@ -397,7 +398,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         if algorithm.startswith("vector_"):
             conductor_args += " --description-manifest path/to/description_manifest.json"
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {conductor_args} --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NC000001 --attempt-id ATT0001'
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {conductor_args} --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001'
         output_contract = '''- 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`、`cluster_summary.csv`、`clustering_diagnostics.csv`を生成する。
 - CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/clustering/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ通常成果物、Vector Clusteringでは`distance_profile.json`、さらに`clustering_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     elif kind == "analysis":
@@ -412,7 +413,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             dependency_text += " `--membership`でClustering membershipを必ず指定する。"
         base_args = f"--input compounds.csv --property-column pIC50 --higher-is-better{extra}"
         general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id NA000001 --round-id RND0001 --attempt-id ATT0001'
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id N000001 --round-id RND0001 --attempt-id ATT0001'
         inputs = f"元CSV、endpoint列、`--higher-is-better`または`--no-higher-is-better`を必ず指定する。{dependency_text}"
         operator = capability["implementation"]["operator"]
         if operator == "sali":
@@ -443,11 +444,11 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
 - CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ主成果物、`operator_report.html`、`operator_summary.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
     else:
         purpose = "専用Interpretation Policyに従い、複数Operator result、Cluster局所性、依存関係、失敗を読み取り専用で比較する。"
-        inputs = "`--context`と、Interpreterが作成したID未付与の`--draft`を指定する。CONDUCTORモードでは`--state`も必須とし、Runtimeが対象result、focus、正式IDを管理する。"
-        general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --context path/to/interpretation_context.json --draft path/to/interpretation_draft.json --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --state results/CONDUCTOR/PROJECT/RUN_ID/state.json --context path/to/interpretation_context.json --draft path/to/interpretation_draft.json --conductor --project PROJECT --run-id RUN_ID --node-id NI000001 --round-id RND0001 --attempt-id ATT0001'
+        inputs = "`--context`、Interpreterが作成したID未付与の`--draft`、新規の`--output-dir`を指定する。Runtimeが対象result、scope、正式IDを管理する。"
+        general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --context path/to/interpretation_context.json --draft path/to/interpretation_draft.json --output-dir path/to/preview'
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" --context path/to/context.json --draft path/to/draft.json --output-dir path/to/preview'
         output_contract = '''- 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
-- CONDUCTORモード: Skillはattempt directoryへ検証済みpreviewと`execution_event.json`を生成する。正式な`interpretation.json`、固定rendererによる`interpretation.md`／`interpretation.html`、Insight／Next Actionの通しID、ledger更新はRuntimeがevent commit時に一括確定する。'''
+- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.2 Runtimeだけが確定する。'''
         option_guidance = "`references/interpretation_policy.md`を完全に読む。summaryはnavigationにだけ使い、保持するInsightは原数値artifactを確認する。矛盾、negative result、反証探索を記録し、State更新とOperator実行はRuntime／Orchestratorへ委ねる。"
     if kind == "description":
         workflow_input = "入力形式、compound ID列、SMILES列を確認し、曖昧な列だけを明示指定する。"
@@ -458,7 +459,22 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
     elif kind == "analysis":
         workflow_input = "Stateが束縛したDescription／Clustering Capabilityとsource Node IDを、対応する上流artifactとともに渡す。"
     else:
-        workflow_input = "Runtimeが作成したcontext、draft、State参照を確認し、許可されたOperator resultだけを扱う。"
+        workflow_input = "Runtimeが作成したcontextとdraftを確認し、許可されたOperator resultだけを扱う。"
+    if kind == "interpretation":
+        mode_section = '''## Mode selection
+
+このSkillはID未付与draftの検査専用で、`--conductor`を受け付けない。正式なCONDUCTOR InterpretationはRuntimeがscopeとIDを確定してcommitする。一般利用でも既存の解析結果を読むだけでStateは作らない。'''
+    else:
+        mode_section = '''## Mode selection: mandatory
+
+- 通常モードをdefaultとする。ユーザーが単にこの計算・解析を依頼した場合は`--conductor`を付けない。
+- `--conductor`を付けるのは、ユーザーがCONDUCTORでの実行を明示した場合、OrchestratorがDAG nodeとして呼び出した場合、または既存CONDUCTOR runへの接続が明示され完全なrun contextが与えられた場合だけとする。
+- CONDUCTOR利用は明示されているがproject、run ID、node IDが未確定なら実行しない。Orchestratorでrun/nodeを初期化するか不足情報を確認し、IDを捏造したり通常モードへ黙って降格したりしない。
+- repository名、利用可能なCONDUCTOR artifact、Catalog収載、`results/CONDUCTOR/`形式の`--output-dir`だけを根拠にCONDUCTORモードを推測しない。
+- 意図が曖昧なら、出力契約が変わることを示して実行前に確認する。確認できない場合は通常モードとして`--conductor`を省略する。
+- 通常モードではCONDUCTOR context引数を指定しない。CONDUCTORモードでは`--conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001`をすべて指定する。CLIもこの組合せを検証する。
+
+Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証され、成功時に0.1.2の最小正本artifactへ昇格される。'''
     return f'''---
 name: {name}
 description: {capability["description"]} General mode is the default; use CONDUCTOR mode only as an explicit opt-in with complete project, run, and node context.
@@ -489,14 +505,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
-## Mode selection: mandatory
-
-- 通常モードをdefaultとする。ユーザーが単にこの計算・解析を依頼した場合は`--conductor`を付けない。
-- `--conductor`を付けるのは、ユーザーがCONDUCTORでの実行を明示した場合、OrchestratorがDAG nodeとして呼び出した場合、または既存CONDUCTOR runへの接続が明示され完全なrun contextが与えられた場合だけとする。
-- CONDUCTOR利用は明示されているがproject、run ID、node IDが未確定なら実行しない。Orchestratorでrun/nodeを初期化するか不足情報を確認し、IDを捏造したり通常モードへ黙って降格したりしない。
-- repository名、利用可能なCONDUCTOR artifact、Catalog収載、`results/CONDUCTOR/`形式の`--output-dir`だけを根拠にCONDUCTORモードを推測しない。
-- 意図が曖昧なら、出力契約が変わることを示して実行前に確認する。確認できない場合は通常モードとして`--conductor`を省略する。
-- 通常モードではCONDUCTOR context引数を指定しない。CONDUCTORモードでは`--conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001`をすべて指定する。CLIもこの組合せを検証する。
+{mode_section}
 
 ## Output contract
 
@@ -649,11 +658,11 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         primary_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}"
         extra_example = ""
     else:
-        purpose = "専用Interpretation Agentが作成したInsight／Next Action案を検証し、Runtimeによる正式な通しID付与と人間向け固定report生成へ引き渡す。"
+        purpose = "専用Interpretation Agentが作成したInsight案を検証し、Runtimeによる正式なscope・通しID付与と人間向け固定report生成へ引き渡す。"
         scenes = "異なるDescription・Clustering・Operator間の一致、矛盾、例外、global/local差を比較し、反証を伴う次の解析候補を作る場合。"
-        constraints = ["専用Policyを読み、Interpretation nodeを読み取り専用の終端として扱う。", "全Insight候補で反証を探索し、同じanalysis signatureを再要求しない。", "多重探索結果、negative result、矛盾を削除しない。", "InsightとNext Actionの正式ID付与、State更新、Operator実行、approval判断、新規SMILES生成は行わない。"]
+        constraints = ["専用Policyを読み、Interpretation nodeを読み取り専用のRound commitとして扱う。", "全Insight候補で反証を探索し、同じanalysis signatureを再要求しない。", "多重探索結果、negative result、矛盾を削除しない。", "scope・Insight正式ID付与、State更新、Operator実行、approval判断、新規SMILES生成は行わない。"]
         primary_example = f"python .claude/skills/{name}/scripts/launch.py --context path/to/interpretation_context.json --draft path/to/interpretation_draft.json"
-        general_args = "--context path/to/interpretation_context.json --draft path/to/interpretation_draft.json --state path/to/state.json"
+        general_args = "--context path/to/context.json --draft path/to/draft.json --output-dir path/to/preview"
         extra_example = ""
 
     constraint_text = "\n".join(f"- {item}" for item in constraints) if constraints else "- 特になし。"
@@ -705,7 +714,7 @@ def base_capability(identifier: str, name: str, display: str, stage: str, family
         "capability_id": identifier,
         "skill_name": name,
         "display_name": display,
-        "version": "0.1.1",
+        "version": "0.1.2",
         "stage": stage,
         "family": family,
         "description": f"Use when Claude Code needs to run {display} from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -739,7 +748,7 @@ def create_skill(capability: dict[str, Any], kind: str, template: Path, schemas:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create or refresh CONDUCTOR 0.1.1 Skill folders from canonical templates.")
+    parser = argparse.ArgumentParser(description="Create or refresh CONDUCTOR 0.1.2 Skill folders from canonical templates.")
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated Skill files. Manual customizations may be lost.")
     parser.add_argument("--only", action="append", help="Refresh only the named Skill; repeat for multiple Skills.")
     args = parser.parse_args()
@@ -839,11 +848,11 @@ def main() -> int:
         "description": "Use when the dedicated Claude Code Interpreter must compare CONDUCTOR Operator results across representations, Clusters, scopes, and Rounds, preserve contradictions, and prepare Japanese human reports under a read-only Policy.",
         "interpretation_id": "I001",
         "dependencies": ["analysis"],
-        "input_contract": ["operator_summary_index", "selected_result_artifacts", "state_json_read_only", "interpretation_policy_markdown"],
+        "input_contract": ["runtime_interpretation_context", "selected_result_artifacts", "interpretation_policy_markdown"],
         "output": {"json": "interpretation.json", "markdown": "interpretation.md", "html": "interpretation.html", "context": "interpretation_context.json", "quality": "report_quality.json", "draft": "interpretation_draft.json"},
         "implementation": {"purpose": "policy_guided_iterative_result_exploration", "state_access": "read_only", "execution_authority": "runtime_commit_only", "requires_dedicated_agent_review": True},
     })
-    interpretation_created = create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["execution_event.schema.json", "interpretation.schema.json", "operator_summary.schema.json", "analysis_profile.schema.json", "state.schema.json"], args.force) if not selected or interpretation["skill_name"] in selected else False
+    interpretation_created = create_skill(interpretation, "interpretation", TEMPLATES / "interpretation_run.py", ["interpretation.schema.json", "result_card.schema.json", "analysis_subject.schema.json", "working_set.schema.json"], args.force) if not selected or interpretation["skill_name"] in selected else False
     created += interpretation_created
     if interpretation_created:
         references = SKILLS_ROOT / interpretation["skill_name"] / "references"

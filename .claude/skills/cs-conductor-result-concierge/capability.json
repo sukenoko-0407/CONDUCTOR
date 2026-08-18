@@ -3,24 +3,24 @@
   "capability_id": "O004",
   "skill_name": "cs-conductor-result-concierge",
   "display_name": "CONDUCTOR Result Concierge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "stage": "orchestration",
   "family": "result_concierge",
-  "description": "Human-requested explanation and visualization of frozen CONDUCTOR results without State or scientific artifact mutation.",
+  "description": "Human-requested explanation and visualization of frozen CONDUCTOR results without Runtime or scientific artifact mutation.",
   "cost": {"class": "low", "human_approval_required": false, "hpc_profile": "cpu64"},
   "applicability": {"status": "stable", "platforms": ["linux-64", "win-64"]},
   "dependencies": [],
-  "input_contract": ["explicit_state_json", "explicit_human_question"],
+  "input_contract": ["explicit_run_root", "explicit_human_question"],
   "output": {
-    "markdown": "concierge/CRQ######/response.md",
-    "html": "concierge/CRQ######/response.html",
-    "figures": "concierge/CRQ######/figures/*.svg"
+    "markdown": "concierge/REQ######/response.md",
+    "html": "concierge/REQ######/response.html",
+    "figures": "concierge/REQ######/figures/*.svg"
   },
   "implementation": {
     "purpose": "read_only_human_result_explanation",
     "state_access": "read_only",
     "invocation": "explicit_human_request_only",
     "dag_registration": "forbidden",
-    "write_scope": "run_root/concierge/CRQ######"
+    "write_scope": "run_root/concierge/REQ######"
   }
 }

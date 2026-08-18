@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/node_record.schema.json",
+  "title": "CONDUCTOR Node Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["node_id", "kind", "capability_id", "skill_name", "input_nodes", "scope", "parameters", "signature", "status", "wave", "created_in_round", "assigned_round", "attempts", "output_ref", "created_at"],
+  "properties": {
+    "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
+    "kind": {"enum": ["description", "clustering", "analysis", "interpretation"]},
+    "capability_id": {"type": "string", "pattern": "^[DCAI][0-9]{3}$"},
+    "skill_name": {"type": "string", "minLength": 1},
+    "input_nodes": {"type": "array", "items": {"type": "string", "pattern": "^N[0-9]{6}$"}, "uniqueItems": true},
+    "scope": {"type": "object"},
+    "parameters": {"type": "object"},
+    "signature": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"enum": ["pending", "running", "succeeded", "failed", "cancelled"]},
+    "wave": {"enum": ["basic_compute", "initial_global", "initial_local", "additional_exploration", "deep_dive", "human_directed", "round_commit"]},
+    "created_in_round": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+    "assigned_round": {"type": ["string", "null"], "pattern": "^RND[0-9]{4}$"},
+    "attempts": {"type": "array", "items": {"type": "object"}},
+    "current_attempt_id": {"type": ["string", "null"], "pattern": "^ATT[0-9]{4}$"},
+    "output_ref": {"type": "string"},
+    "result_quality": {"type": ["object", "null"]},
+    "supersedes": {"type": ["string", "null"], "pattern": "^N[0-9]{6}$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

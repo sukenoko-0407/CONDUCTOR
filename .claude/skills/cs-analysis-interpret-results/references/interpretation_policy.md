@@ -22,26 +22,25 @@ Interpretationは作業記録ではなく、Operatorが生成した固定結果�
 
 ## 出力単位
 
-Interpretationが提案するentityは二種類だけである。
+永続entityは`Insight`だけである。観察、解釈、支持result、比較result、反証・不一致result、限界を一体で記録する。注目度は`pinned`、`active`、`watch`、`background`で可変とし、`pinned`への変更は人間だけが行う。
 
-1. `Insight`: 観察、解釈、支持result、反証・不一致result、scope、限界を一体で記録する。注目度は`priority`、`watch`、`background`で可変とする。
-2. `Next Action`: 追加で確認する価値のある解析候補。状態は`open`または`closed`だけとし、人間が閉じられる。
-
-Insightを無理に作る必要はない。明確な変化、矛盾、例外がなければゼロ件を許容し、その事実をexecutive summaryへ書く。Next Actionもゼロ件を許容する。
+Insightを無理に作る必要はない。明確な変化、矛盾、例外がなければゼロ件を許容し、その事実をexecutive summaryへ書く。追加解析案はInsight内の`recommended_followups`として提案できるが、IDや状態を持つ独立entityではなく、将来の人間承認Roundへ自動登録しない。
 
 ## 比較手順
 
-1. context内のOperator summaryから、scope、sample count、Description、Clustering、metric、主要統計、制約を確認する。
-2. RuntimeがOperatorとscopeを分散させた最大20件の`comparison_batches`を、許容された反復回数内で順に探索する。
+1. context内のResult Cardから、Runtimeが確定した`analysis_subject`、sample count、Description、Clustering、metric、主要統計、制約を確認する。
+2. RuntimeがOperator、scope、representationを分散させたbounded review setを、許容された反復回数内で順に探索する。
 3. 注目候補ごとに原数値artifactまたは個別Operator HTMLを確認する。summaryだけから保持Insightを確定しない。
 4. 支持resultと反証・不一致resultを明記する。同一計算signatureの反復を新しい反証として数えない。
 5. 人間向けに「どの解析の、どのscopeで、何がどう変わったか」を日本語で具体的に記す。
+
+正式Reportの品質ゲートは文章量だけでなく、参照Result Cardから再計算したscope mode、Cluster ID集合、sample count、Operator、Result別sample数との完全一致を検査する。Cluster-local結果をGlobalと記載したReport、根拠ResultのないGlobal比較、日本語の説明本文を欠くReportはcommitしない。
 6. 次の解析候補は必要最小限とし、同一signatureの再実行を要求しない。
 
 ## 境界
 
-- InterpreterはState、Cluster索引、Operator result索引を更新しない。
-- IDを自分で発行しない。Runtimeがcommit時に`INS####`と`ACT####`を割り当てる。
+- InterpreterはControl、DAG、Cluster索引、Operator result索引を更新しない。
+- ID、scope、sample countを自分で発行・上書きしない。Runtimeがcommit時に`INS######`を割り当て、参照Resultからscope factを確定する。
 - 新規Description、Clustering、Operatorを実行しない。
 - 因果やSAR機序を断定しない。
 - 解析結果を削除・上書きしない。

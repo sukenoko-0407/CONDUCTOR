@@ -1,41 +1,39 @@
-# CONDUCTOR 設計仕様
+# CONDUCTOR 0.1.2 design spec
 
-## Package境界
+## 権限境界
 
-Claude Codeが直接認識する`.claude/skills/`と`.claude/agents/`をProject直下へ配置し、共有定義、schema、Catalog、Policy、template、検証toolを`CONDUCTOR_modules/`へ配置します。科学Skillは実行codeと`env/pixi.toml`を自分のdirectoryに持ち、単独copy可能です。実行結果は`results/CONDUCTOR/<project>/<run-id>/`だけに書きます。
+| Component | 担当 | 禁止 |
+|---|---|---|
+| Human | Round開始・継続・レポート改訂・受理、資源承認 | なし |
+| Dispatcher | 人間依頼の契約化、単一Orchestrator起動、return検証 | 科学判断、Node生成 |
+| Orchestrator | 一つの既存Roundの科学的選択 | Round作成、JSON直接編集、別Orchestrator起動 |
+| Runtime | ID、FSM、lease、Action token、DAG、実行、commit、audit | 科学的価値判断 |
+| Interpreter | bounded evidenceからID-free draftを作る | scope／ID発行、計算、State変更 |
 
-## 実行主体
+## 正本と派生情報
 
-- `cs-conductor-orchestrator`: 唯一の人間向けController。科学的候補を選び、Roundを完遂する。
-- `cs-conductor-runtime`: Stateの唯一の書込API。ID、DAG、lease、attempt、gate、indexを管理する。
-- `cs-conductor-interpreter`: bounded contextを読み、IDなしのInterpretation draftを作る。Stateは変更しない。
-- `cs-conductor-run-audit`: Quick／Full監査を行う。Stateは変更しない。
-- `cs-conductor-description-migrator`: 0.1.0から成功済みDescriptionだけを新規0.1.1 Runへ決定論的に移す一回限りのAgent。解析は起動しない。
+`conductor_control.json`は小さな運用正本です。Run設定、active Round、FSM、lease、件数、単一`required_action`、closure gate、詳細fileへのpointerを持ちます。通常の再開で最初に読むのはこれだけです。
 
-## Stateの階層
+`runtime/event_ledger.jsonl`はchecksum chain付きappend-only監査履歴、`runtime/dag_snapshot.json`はRuntime専用の詳細Node記録です。Control、DAG snapshot、Eventを同一transaction journalで同期し、途中書き込みを復旧します。Ledger単体へ全Node内容を複製せず、状態肥大化を避けます。DAGは有向非巡回で、上流由来、実行可能性、再計算範囲、provenanceを表します。
 
-`state.json`が正本です。Orchestratorの日常入力は`orchestrator_brief.json`で、全体件数は`state_summary.json`、詳細はRuntime `query`で取得します。外部indexはOperator result、Insight、Next Action、Cluster registry/matrixを保持します。これにより、Roundが増えてもOrchestratorが全Nodeや長文を毎回読む必要はありません。
+## Round FSM
 
-人間が指定した`parallel_limit`は`round-start`で検証し、現在のRun上限と各Roundの`execution_control`へ記録します。指定を省略した場合だけ直前の値を引き継ぎます。
+`ACTIVE -> FINALIZING -> AWAITING_HUMAN_REVIEW -> CLOSED`です。`CLOSED`から新Roundへ進むには人間の新しい依頼が必要です。`AWAITING_HUMAN_REVIEW`では人間が同じRoundを継続、report revision、acceptのいずれかを指定します。
 
-navigation indexの欠損・件数不一致はAuditで検出します。lease所有者はRuntimeの`rebuild-indices`を使い、成功済attempt artifact、promoted Cluster artifact、State historyから再構築できます。通常運用でindexやledgerを手編集しません。
+過去Roundで成功した同一signatureのNodeは再実行せず、現在Roundの`reused_node_ids`へ参照だけを登録します。これにより、充足判定とInterpretationは既計算を利用しつつ、Nodeの由来と元Result Cardを改変しません。
 
-## DAGとNode
+## Node
 
-Node prefixはDescription `ND`、Clustering `NC`、Analysis `NA`、Interpretation `NI`です。Edgeは真の入力依存だけを示します。計画上の興味、類似、比較候補はDAG edgeにせずindexやInterpretationで扱います。同一analysis signatureは重複計画しません。
+Node IDはRun全体で`N######`です。状態は`pending / running / succeeded / failed / cancelled`だけです。再試行は同じNodeの新Attemptであり、status語を増やしません。技術的失敗には同じNode IDで一回だけ自動経路の再試行を許し、二回目の失敗は明示的に残します。`not applicable`や`usableでないpartition`は成功resultのquality field、実行しない判断はcancel reasonとして保持します。
 
-Clustering workerはNode-local Cluster IDを出力し、成功eventのcommit時にRuntimeがRun-global `CL######`へ昇格させます。全compound×ClusterのBoolean matrixとCluster registryを更新します。
+## 並列・中断制御
 
-## attemptと異常復旧
+一つのlive leaseとwriter lockで同時Writerを防ぎます。各変更は一回限りのAction tokenを消費します。Skill実行はRuntimeが検証済みcommandとして開始し、Run内scratchへ出力した後、hashとschemaを確認して正本へatomic promotionします。hard kill後はstale lock、pending transaction、停止したprocessの成果物を照合し、同じAttemptを成功または失敗へ確定します。
 
-Node実行のたびに`ATT####`を追加し、出力を`attempts/<attempt-id>/`へ分離します。Runtimeは`running`中のcurrent attemptと一致するeventだけをcommitします。中断時はbootstrapとFull Auditでevent・artifactを照合し、必要なら同じNodeをretryします。
+Main Agentが同期的に起動したOrchestratorの帰還を確認した場合、Dispatcherはowner IDと起動時revisionを指定してleaseを回収できます。進捗があれば同じRoundをreplacementへ引き継ぎ、進捗なしが二回連続した場合は自動再起動を止めます。これはlease期限切れを待つための代替であり、別Orchestratorのlive leaseを奪う操作ではありません。
 
-Interpretationは二段階commitです。SkillがIDなしdraftとeventを作り、RuntimeがState lock内でRun-global `INS####`／`ACT####`を割り当てて最終JSON／Markdown／HTMLとledgerを生成します。Operator summaryは短いnavigation indexへ圧縮され、最大20件ずつの多様化した比較batchとしてInterpreterへ渡されます。後発Operatorで再Interpretationが必要になった場合は同じNI Nodeの次attemptを使います。State保存後にcommit manifestを確定し、中間停止はbootstrapで再開します。
+## LLMへ渡す情報
 
-## Environment
+`runtime/working_set.json`はサイズと候補数に上限があり、現在必要なResult Card、candidate、human priorityだけを含みます。長いDAGや全Interpretationを毎Round読みません。Runtimeが機械判断を担い、Orchestratorは候補の科学的価値判断へ集中します。
 
-launcherはLinuxの共有Pixi `/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi`を優先します。manifest path、binary path、caller working directoryは独立に解決されます。`PIXI_HOME`、Pixi／uv cache、XDG cache、temporary directoryは各Skillの`env/`配下です。lockが未生成の初回だけ`pixi install`を行い、以後は`--locked`で実行します。
-
-## 互換性
-
-alpha版Stateとartifactの汎用的な自動migrationは提供しません。例外として0.1.0から0.1.1へは、成功済みDescription artifactだけを新規RunのRND0001へ移す専用Patchを提供します。旧Clustering、Analysis、Interpretation、IDは引き継がず、RND0002も自動作成しません。
+入力はRun開始時に`runtime/input.csv`へ固定し、`compound_id`を一意に確定します。元CSVの後日の変更やID列名の違いが、Cluster membershipとDescription resultの対応を崩さないようにします。
