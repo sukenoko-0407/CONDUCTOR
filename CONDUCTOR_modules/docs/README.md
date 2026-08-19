@@ -14,6 +14,7 @@
 ## 実装・監査
 
 - [CONDUCTOR_design_spec.md](CONDUCTOR_design_spec.md): Main Orchestrator、Executor、Interpreter、Runtime、Control、Event Ledger、詳細DAG snapshot
+- [CONDUCTOR_version_history_0.1.0_to_0.1.3.md](CONDUCTOR_version_history_0.1.0_to_0.1.3.md): beta系列0.1.0–0.1.3の仕様変更履歴
 - [CONDUCTOR_0.1.3_main_orchestrator_overview.md](CONDUCTOR_0.1.3_main_orchestrator_overview.md): 0.1.3制御系の設計根拠
 - [CONDUCTOR_0.1.3_implementation_plan.md](CONDUCTOR_0.1.3_implementation_plan.md): 実装計画と受入条件
 - [CONDUCTOR_skill_catalog.md](CONDUCTOR_skill_catalog.md): 人間allowlistから生成したCatalog
