@@ -35,7 +35,7 @@ Use the command named by `required_action.code`. Mutating calls require `--lease
 
 Runtime refuses Round finalization until the formal Interpretation JSON, Markdown, HTML, quality report, and Full Audit all pass. It never starts a new Round. The manually activated Main Orchestrator performs only human-authorized Round control.
 
-Mutation responses use the bounded `0.1.3` compact protocol. Full Control, DAG, Ledger, raw logs, and full Audit are returned only by explicit read-only queries or file pointers. Executor packets are signed, action-scoped, short-lived, and single-use through Control revision and Action-token binding; the Executor never receives the Main lease token.
+Mutation responses use the bounded `0.1.3` compact protocol. Full Control, DAG, Ledger, raw logs, and full Audit are returned only by explicit read-only queries or file pointers. Executor packets are signed, action-scoped, short-lived, and single-use through Control revision and Action-token binding; the Executor never receives the Main lease token. Packet command hashes use an environment-neutral Runtime Python token, which this Runtime resolves to its own `sys.executable` only after packet validation.
 
 Interpretation input is a balanced, bounded set of Result Cards. Runtime records omitted cards as unreviewed instead of asking the Interpreter to load an unbounded history.
 

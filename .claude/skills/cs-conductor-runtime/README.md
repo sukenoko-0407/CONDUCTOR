@@ -10,7 +10,7 @@ CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名�
 
 ## 環境構築
 
-launcherがSkill内Pixi環境を再利用または自動構築し、cacheも`env/`内へ置きます。
+launcherがSkill内Pixi環境を再利用または自動構築し、cacheも`env/`内へ置きます。Runtime Controllerが必要とするJSON Schema、Pandas、Parquet依存関係はこの環境へ集約されています。
 
 ## 利用例
 

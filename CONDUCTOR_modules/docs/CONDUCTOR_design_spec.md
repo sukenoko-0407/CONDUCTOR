@@ -18,7 +18,7 @@ Main AgentのOrchestrator役は手動起動Skillで一時的に有効化し、�
 
 `runtime/event_ledger.jsonl`はchecksum chain付きappend-only監査履歴、`runtime/dag_snapshot.json`はRuntime専用の詳細Node記録です。Control、DAG snapshot、Eventを同一transaction journalで同期します。DAGは有向非巡回で、上流由来、実行可能性、再計算範囲、provenanceを表しますが、LLMは直接編集しません。
 
-Execution packet、failure packet、Attempt scratch、compact responseは新しいState正本ではありません。packetは署名、Run／Round、Control revision、lease hash、Action-token hash、有効期限へ結び付けられ、一回のExecutor実行にだけ使用できます。
+Execution packet、failure packet、Attempt scratch、compact responseは新しいState正本ではありません。packetは署名、Run／Round、Control revision、lease hash、Action-token hash、有効期限へ結び付けられ、一回のExecutor実行にだけ使用できます。packetが署名する科学Skill commandは環境非依存のRuntime Python tokenを先頭に持つ論理commandであり、検証後に実行側Runtimeだけが自身のPython絶対pathへ解決します。
 
 ## Round FSM
 
@@ -32,7 +32,7 @@ Node IDはRun全体で`N######`です。状態は`pending / running / succeeded 
 
 Description、Clustering、Operatorの科学計算kernelと一般利用CLIは維持します。CONDUCTORではRuntimeが入力、metric、scope、Cluster、parameter、seed、出力schema、artifact hashを検証してから正本へatomic promotionします。
 
-失敗はbounded failure packetへ分類します。回復可能な一Node retryに限り、Executorは割当Attemptの`recovery/`内でoption alias、path、format adapter等を補正できます。Runtimeはlauncherの置換、既存parameter値、protected科学引数、Node signature、artifactを検査し、回復manifestを監査用に保存します。科学parameterを変える補正や一時scriptによるアルゴリズム再実装は拒否します。
+失敗はbounded failure packetへ分類します。Attempt rootはRuntime管理file用、`output/`はSkill成果物専用に分離し、Skill起動前の`output/`は存在させません。回復可能な一Node retryに限り、Executorは割当Attemptの`recovery/`内でoption alias、path、format adapter等を補正できます。Runtimeはlauncherの置換、既存parameter値、protected科学引数、Node signature、artifactを検査し、回復manifestを監査用に保存します。科学parameterを変える補正や一時scriptによるアルゴリズム再実装は拒否します。
 
 ## Main向け情報
 

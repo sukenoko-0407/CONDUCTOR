@@ -16,6 +16,8 @@
 │   └── scratch/
 │       ├── packets/PKT.../execution_packet.json
 │       └── RND####/N######/ATT####/
+│           ├── process.json / failure_packet.json / tmp/ / recovery/
+│           └── output/  # Skill専用。起動前は存在しない
 ├── rounds/RND####/
 ├── description/N######/{features.csv,result.json}
 ├── clustering/N######/{membership.csv,result.json}
@@ -28,7 +30,7 @@
 
 Description、Clustering、Operator Skillの既存計算CLIは一般利用のため維持します。CONDUCTORではそれらの詳細manifestやwarningをRuntime scratchで検証し、Run Rootへは上記の最小正本だけを昇格します。
 
-`runtime/scratch/packets/`のExecution packet、Node Attempt scratch、failure packetは制御用一時情報であり、新しいState正本ではありません。署名、Control revision、Action token、期限により一回の実行だけに結び付けられます。Main向けRuntime応答は16 KiB以下のcompact JSONとし、raw log、完全DAG、完全Auditはpointer先へ保持します。
+`runtime/scratch/packets/`のExecution packet、Node Attempt scratch、failure packetは制御用一時情報であり、新しいState正本ではありません。署名、Control revision、Action token、期限により一回の実行だけに結び付けられます。Attempt直下はRuntime管理専用とし、`process.json`、一時領域、回復fileを置きます。Skillには別の`output/`だけを`--output-dir`として渡し、空directoryを要求するSkillとRuntime管理fileを衝突させません。Main向けRuntime応答は16 KiB以下のcompact JSONとし、raw log、完全DAG、完全Auditはpointer先へ保持します。
 
 `runtime/input.csv`はRun開始時に元CSVから作る変更不能なcanonical copyです。既存ID列は`compound_id`へ写し、ID列がなければ`CMP######`を一度だけ付与します。以後の全Skill、Cluster matrix、監査はこのcopyを参照し、元CSVは変更しません。
 

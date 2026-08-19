@@ -7,8 +7,10 @@ platforms = ["linux-64", "win-64"]
 python = ">=3.12,<3.13"
 jsonschema = ">=4.21"
 pandas = ">=2.2"
+pyarrow = ">=15"
 
 [tasks]
 catalog = "python ../scripts/build_catalog.py"
 state = "python ../scripts/state_manager.py"
-smoke = "python ../scripts/state_manager.py --help"
+smoke = "python -c \"import jsonschema, pandas, pyarrow\""
+cli-help = "python ../scripts/state_manager.py --help"

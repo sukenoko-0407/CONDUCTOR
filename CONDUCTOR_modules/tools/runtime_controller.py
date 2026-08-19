@@ -31,6 +31,7 @@ MAX_COMPACT_RESPONSE_BYTES = 16 * 1024
 EXECUTION_PACKET_TTL_MINUTES = 15
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
+RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
 ROUND_STATES = {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"}
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
 
@@ -514,6 +515,7 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
             node = runnable[node_id]
             attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
             scratch = root / "runtime" / "scratch" / node["assigned_round"] / node_id / attempt_id
+            skill_output = _skill_output_dir(scratch)
             command = _skill_command(root, control, snapshot, node, attempt_id, scratch)
             prior_failure = next((attempt.get("failure_packet") for attempt in reversed(node.get("attempts") or []) if attempt.get("failure_packet")), None)
             execution_contracts.append({
@@ -526,6 +528,7 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
                 "command_hash": value_hash(command),
                 "working_directory": str(project_root()),
                 "scratch": str(scratch),
+                "skill_output": str(skill_output),
                 "environment": {"CONDUCTOR_ATTEMPT_TMP": str(scratch / "tmp")},
                 "expected_output_ref": node["output_ref"],
                 "validation": ["execution_event_identity", "artifact_sha256", "stage_schema", "analysis_subject", "scientific_invariants"],
@@ -1475,10 +1478,28 @@ def _result_path(node: dict[str, Any]) -> Path:
     return Path(node["output_ref"]) / "result.json"
 
 
+def _skill_output_dir(scratch: Path) -> Path:
+    return scratch / "output"
+
+
+def _validate_attempt_scratch(scratch: Path, recovery_allowed: bool) -> None:
+    if not scratch.exists():
+        return
+    entries = {path.name for path in scratch.iterdir()}
+    if not entries:
+        return
+    if recovery_allowed and entries == {"recovery"} and (scratch / "recovery").is_dir():
+        return
+    raise FileExistsError(f"Unexpected pre-existing Attempt scratch: {scratch}")
+
+
 def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt_id: str, scratch: Path) -> list[str]:
     capability = catalog()[node["capability_id"]]
     launcher = project_root() / ".claude" / "skills" / node["skill_name"] / "scripts" / "launch.py"
-    argv = [sys.executable, str(launcher), "--conductor", "--project", control["run"]["project"], "--run-id", control["run"]["run_id"], "--round-id", node["assigned_round"], "--node-id", node["node_id"], "--attempt-id", attempt_id, "--output-dir", str(scratch)]
+    # The signed execution contract must not depend on which Pixi environment
+    # happened to prepare the packet. Resolve this token only after the packet
+    # has been validated by the executing Runtime process.
+    argv = [RUNTIME_PYTHON_TOKEN, str(launcher), "--conductor", "--project", control["run"]["project"], "--run-id", control["run"]["run_id"], "--round-id", node["assigned_round"], "--node-id", node["node_id"], "--attempt-id", attempt_id, "--output-dir", str(_skill_output_dir(scratch))]
     lookup = _node_lookup(snapshot)
     inputs = [lookup[item] for item in node["input_nodes"]]
     if node["kind"] == "description":
@@ -1528,6 +1549,12 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         if cli_mode:
             argv += ["--scope-mode", cli_mode]
     return argv
+
+
+def _resolve_skill_command(command: list[str]) -> list[str]:
+    if len(command) < 2 or command[0] != RUNTIME_PYTHON_TOKEN:
+        raise PermissionError("Scientific command does not use the Runtime Python token")
+    return [sys.executable, *command[1:]]
 
 
 def _read_input_ids(control: dict[str, Any]) -> tuple[list[str], set[str]]:
@@ -1638,11 +1665,11 @@ def _copy_artifact(source: Path, destination: Path, expected_hash: str | None = 
     shutil.copy2(source, destination)
 
 
-def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any], scratch: Path, output: Path, manifest: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any], skill_output: Path, output: Path, manifest: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     import pandas as pd
 
-    registry = read_json(scratch / "cluster_registry.json")
-    membership = pd.read_csv(scratch / "cluster_membership.csv", dtype={"compound_id": "string"})
+    registry = read_json(skill_output / "cluster_registry.json")
+    membership = pd.read_csv(skill_output / "cluster_membership.csv", dtype={"compound_id": "string"})
     mapping: dict[str, str] = {}
     registry_rows: list[dict[str, Any]] = []
     for row in registry:
@@ -1662,8 +1689,8 @@ def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any]
     input_kind = "structure" if node["capability_id"] in {"C001", "C002", "C003", "C004"} else "vector" if node["capability_id"] in {"C005", "C006", "C007", "C008", "C009", "C010"} else "categorical" if node["capability_id"] == "C011" else "meta"
     result = {"schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "membership": "membership.csv", "cluster_count": len(registry_rows), "selection_status": manifest.get("selection_status", "selected"), "quality_flags": manifest.get("quality_flags") or [], "input_kind": input_kind, "source_description_nodes": [item for item in node["input_nodes"] if _node_lookup(snapshot)[item]["kind"] == "description"], "metric": manifest.get("natural_metric"), "payloads": {}, "created_at": utc_now()}
     for name in ("clustering_diagnostics.csv", "distance_profile.json"):
-        if (scratch / name).is_file():
-            _copy_artifact(scratch / name, output / name)
+        if (skill_output / name).is_file():
+            _copy_artifact(skill_output / name, output / name)
             result["payloads"][name.rsplit(".", 1)[0]] = name
     validate(result, "clustering_result.schema.json")
     return result, registry_rows
@@ -1701,7 +1728,7 @@ def _operator_report_html(control: dict[str, Any], node: dict[str, Any], subject
     return f"<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(node['capability_id'])} report</title><style>body{{margin:0;background:#f4f3ef;color:#263238;font-family:system-ui,sans-serif}}main{{max-width:1080px;margin:auto;padding:32px}}header{{border-left:7px solid #526b72;background:#fff;padding:20px 24px}}.facts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:20px 0}}.fact,section{{background:#fff;border:1px solid #d7d9d5;border-radius:8px;padding:14px}}small{{color:#5e6b70}}table{{border-collapse:collapse;width:100%}}th,td{{padding:8px;border-bottom:1px solid #ddd;text-align:left}}@media print{{body{{background:#fff}}main{{padding:0}}}}</style></head><body><main><header><small>CONDUCTOR Operator Result</small><h1>{html.escape(node['capability_id'])}: {html.escape(summary.get('headline') or '解析結果')}</h1></header><div class='facts'><div class='fact'><b>対象</b><br>{scope_label}</div><div class='fact'><b>Cluster</b><br>{html.escape(clusters)}</div><div class='fact'><b>Clustering手法</b><br>{html.escape(clustering_methods)}</div><div class='fact'><b>Cluster生成Description</b><br>{html.escape(source_descriptions)}</div><div class='fact'><b>解析Description</b><br>{html.escape(descriptions)}</div><div class='fact'><b>Endpoint</b><br>{html.escape(control['run']['endpoint'])}</div><div class='fact'><b>母集団 / endpoint有効 / 実解析 / 除外</b><br>{subject['population_count']} / {subject['endpoint_valid_count']} / {subject['analyzed_count']} / {subject['excluded_count']}</div><div class='fact'><b>Metric</b><br>{html.escape(str(summary.get('metric') or '—'))}</div></div><section><h2>主要数値</h2><table>{metrics}</table>{link}</section></main></body></html>"
 
 
-def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt: dict[str, Any], scratch: Path, event: dict[str, Any]) -> list[dict[str, Any]]:
+def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt: dict[str, Any], skill_output: Path, event: dict[str, Any]) -> list[dict[str, Any]]:
     artifacts = {item["type"]: item for item in event["artifacts"]}
     final = Path(node["output_ref"])
     temporary = final.with_name(f".{final.name}.{attempt['attempt_id']}.commit")
@@ -1713,26 +1740,26 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     if node["kind"] == "description":
         primary = artifacts["description"]
         payload_name = "features" + Path(primary["path"]).suffix.lower()
-        _copy_artifact(scratch / primary["path"], temporary / payload_name, primary["sha256"])
-        manifest = read_json(scratch / artifacts["manifest"]["path"])
+        _copy_artifact(skill_output / primary["path"], temporary / payload_name, primary["sha256"])
+        manifest = read_json(skill_output / artifacts["manifest"]["path"])
         result = {"schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "payload": payload_name, "row_count": int(manifest.get("row_count", 0)), "feature_count": int(manifest.get("feature_count", 0)), "value_semantics": manifest.get("value_semantics", "dense_continuous"), "natural_metric": manifest.get("natural_metric"), "feature_columns": manifest.get("feature_columns") or [], "quality_flags": ["row_errors"] if manifest.get("errors") else [], "created_at": utc_now()}
         validate(result, "description_result.schema.json")
         write_json(temporary / "result.json", result)
     elif node["kind"] == "clustering":
-        manifest = read_json(scratch / artifacts["manifest"]["path"])
-        result, cluster_registry_rows = _promote_clusters(root, snapshot, node, scratch, temporary, manifest)
+        manifest = read_json(skill_output / artifacts["manifest"]["path"])
+        result, cluster_registry_rows = _promote_clusters(root, snapshot, node, skill_output, temporary, manifest)
         write_json(temporary / "result.json", result)
         node["result_quality"] = {"validation_passed": True, "eligible_for_downstream": result["selection_status"] == "selected" and result["cluster_count"] > 0, "quality_flags": result["quality_flags"] or (["no_usable_clusters"] if result["cluster_count"] == 0 else [])}
     elif node["kind"] == "analysis":
         primary = artifacts["operator_result"]
         primary_name = "analysis" + Path(primary["path"]).suffix.lower()
-        _copy_artifact(scratch / primary["path"], temporary / primary_name, primary["sha256"])
-        summary = read_json(scratch / artifacts["operator_summary"]["path"])
+        _copy_artifact(skill_output / primary["path"], temporary / primary_name, primary["sha256"])
+        summary = read_json(skill_output / artifacts["operator_summary"]["path"])
         subject = _analysis_subject(root, control, snapshot, node, int(summary.get("sample_count", 0)))
         detail_name = None
         if "operator_report" in artifacts:
             detail_name = "detail.html"
-            _copy_artifact(scratch / artifacts["operator_report"]["path"], temporary / detail_name, artifacts["operator_report"]["sha256"])
+            _copy_artifact(skill_output / artifacts["operator_report"]["path"], temporary / detail_name, artifacts["operator_report"]["sha256"])
         report_name = "report.html"
         atomic_bytes(temporary / report_name, _operator_report_html(control, node, subject, summary, detail_name, snapshot).encode("utf-8"))
         result_ref = f"{node['node_id']}@{attempt['attempt_id']}"
@@ -1743,7 +1770,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         result_card_files = ["result_card.json"]
         result_cards.append(card)
         if "operator_summary_collection" in artifacts:
-            collection = read_json(scratch / artifacts["operator_summary_collection"]["path"])
+            collection = read_json(skill_output / artifacts["operator_summary_collection"]["path"])
             write_json(temporary / "cluster_result_cards_source.json", collection)
             for local_summary in collection:
                 cluster_id = str((local_summary.get("scope_context") or {}).get("cluster_ids", [None])[0])
@@ -1751,7 +1778,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
                     raise ValueError("Cluster survey summary lacks a canonical Cluster ID")
                 local_node = {**node, "scope": {"mode": "single_cluster", "cluster_ids": [cluster_id]}}
                 local_subject = _analysis_subject(root, control, snapshot, local_node, int(local_summary.get("sample_count", 0)))
-                source_payload = scratch / local_summary["primary_artifact"]["path"]
+                source_payload = skill_output / local_summary["primary_artifact"]["path"]
                 local_relative = Path("clusters") / cluster_id / "model_comparison.csv"
                 _copy_artifact(source_payload, temporary / local_relative, local_summary["primary_artifact"].get("sha256"))
                 local_card = {"schema_version": "1.0.0", "result_ref": str(local_summary["result_ref"]), "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": local_subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": local_summary.get("metric"), "headline": str(local_summary.get("headline") or ""), "key_metrics": local_summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": [], "limitations": local_summary.get("limitations") or [], "artifact_links": {"result": (final_relative / local_relative).as_posix(), "report": (final_relative / report_name).as_posix(), "detail": (final_relative / detail_name).as_posix() if detail_name else None}, "attention": "watch", "created_at": utc_now()}
@@ -1764,8 +1791,8 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         validate(result, "analysis_result.schema.json")
         write_json(temporary / "result.json", result)
         for name in ("global_oof_predictions.csv", "cluster_model_comparison.csv", "projection.png"):
-            if (scratch / name).is_file():
-                _copy_artifact(scratch / name, temporary / name)
+            if (skill_output / name).is_file():
+                _copy_artifact(skill_output / name, temporary / name)
     else:
         raise ValueError("Interpretation is committed through the dedicated gate")
     if final.exists():
@@ -1788,21 +1815,26 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     return result_cards
 
 
-def _run_one(command: list[str], log_path: Path, process_path: Path, timeout_seconds: int) -> dict[str, Any]:
+def _run_one(command: list[str], log_path: Path, process_path: Path, timeout_seconds: int, contract_command_hash: str) -> dict[str, Any]:
     started = utc_now()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     process: subprocess.Popen[str] | None = None
+    process_identity = {
+        "command_hash": contract_command_hash,
+        "resolved_command_hash": value_hash(command),
+        "runtime_python": command[0],
+    }
     try:
         attempt_tmp = process_path.parent / "tmp"
         attempt_tmp.mkdir(parents=True, exist_ok=True)
         process_env = os.environ.copy()
         process_env["CONDUCTOR_ATTEMPT_TMP"] = str(attempt_tmp.resolve())
         process = subprocess.Popen(command, cwd=project_root(), env=process_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        write_json(process_path, {"pid": process.pid, "started_at": started, "command_hash": value_hash(command)})
+        write_json(process_path, {"pid": process.pid, "started_at": started, **process_identity})
         output, _unused = process.communicate(timeout=timeout_seconds)
         log_path.write_text(output or "", encoding="utf-8")
         finished = utc_now()
-        write_json(process_path, {"pid": process.pid, "started_at": started, "finished_at": finished, "returncode": process.returncode, "command_hash": value_hash(command)})
+        write_json(process_path, {"pid": process.pid, "started_at": started, "finished_at": finished, "returncode": process.returncode, **process_identity})
         return {"returncode": process.returncode, "timed_out": False, "started_at": started, "finished_at": finished}
     except subprocess.TimeoutExpired as exc:
         process.terminate()
@@ -1816,7 +1848,7 @@ def _run_one(command: list[str], log_path: Path, process_path: Path, timeout_sec
             output = output.decode("utf-8", errors="replace")
         log_path.write_text(output + "\nTIMEOUT\n", encoding="utf-8")
         finished = utc_now()
-        write_json(process_path, {"pid": process.pid, "started_at": started, "finished_at": finished, "returncode": 124, "timed_out": True, "command_hash": value_hash(command)})
+        write_json(process_path, {"pid": process.pid, "started_at": started, "finished_at": finished, "returncode": 124, "timed_out": True, **process_identity})
         return {"returncode": 124, "timed_out": True, "started_at": started, "finished_at": finished}
     except Exception as exc:
         if process is not None and process.poll() is None:
@@ -1828,7 +1860,7 @@ def _run_one(command: list[str], log_path: Path, process_path: Path, timeout_sec
                 process.wait()
         log_path.write_text(f"PROCESS_START_OR_WAIT_FAILURE: {exc}\n", encoding="utf-8")
         finished = utc_now()
-        previous = read_json(process_path) if process_path.is_file() else {"started_at": started, "command_hash": value_hash(command)}
+        previous = read_json(process_path) if process_path.is_file() else {"started_at": started, **process_identity}
         write_json(process_path, {**previous, "finished_at": finished, "returncode": 125, "runner_error": str(exc)})
         return {"returncode": 125, "timed_out": False, "started_at": started, "finished_at": finished, "runner_error": str(exc)}
 
@@ -1980,6 +2012,7 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
     recovery_manifests: dict[str, dict[str, Any]] = {}
     packet_path = Path(args.packet).resolve() if getattr(args, "packet", None) else None
     selected: list[tuple[dict[str, Any], dict[str, Any], Path, list[str]]] = []
+    prepared_commands: list[tuple[dict[str, Any], str, Path, list[str], list[str]]] = []
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
@@ -2010,30 +2043,34 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
             node = runnable[node_id]
             attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
             scratch = root / "runtime" / "scratch" / node["assigned_round"] / node_id / attempt_id
-            if scratch.exists():
-                if node_id not in recovery_manifests or any(path.name != "recovery" for path in scratch.iterdir()):
-                    raise FileExistsError(f"Unexpected pre-existing Attempt scratch: {scratch}")
-            else:
-                scratch.mkdir(parents=True, exist_ok=False)
+            skill_output = _skill_output_dir(scratch)
             command = _skill_command(root, control, snapshot, node, attempt_id, scratch)
             if executor_packet:
                 contract = contract_lookup.get(node_id)
-                if not contract or contract["attempt_id"] != attempt_id or Path(contract["scratch"]).resolve() != scratch.resolve() or contract["command_hash"] != value_hash(command):
+                if not contract or contract["attempt_id"] != attempt_id or Path(contract["scratch"]).resolve() != scratch.resolve() or Path(contract["skill_output"]).resolve() != skill_output.resolve() or contract["command_hash"] != value_hash(command):
                     raise PermissionError(f"Execution contract changed after packet creation: {node_id}")
             command = command_overrides.get(node_id, command)
-            attempt = {"attempt_id": attempt_id, "status": "running", "started_at": utc_now(), "finished_at": None, "command_argv": command, "scratch": str(scratch), "log": str((root / "runtime" / "logs" / f"{node_id}_{attempt_id}.log").relative_to(root))}
-            if node_id in recovery_manifests:
-                attempt.update({"execution_mode": "adaptive_recovery", "recovery_manifest_hash": value_hash(recovery_manifests[node_id])})
+            resolved_command = _resolve_skill_command(command)
+            _validate_attempt_scratch(scratch, node_id in recovery_manifests)
+            if skill_output.exists():
+                raise FileExistsError(f"Skill output directory must be absent before execution: {skill_output}")
+            prepared_commands.append((node, attempt_id, scratch, command, resolved_command))
+        for node, attempt_id, scratch, command, resolved_command in prepared_commands:
+            if not scratch.exists():
+                scratch.mkdir(parents=True, exist_ok=False)
+            attempt = {"attempt_id": attempt_id, "status": "running", "started_at": utc_now(), "finished_at": None, "command_argv": command, "scratch": str(scratch), "log": str((root / "runtime" / "logs" / f"{node['node_id']}_{attempt_id}.log").relative_to(root))}
+            if node["node_id"] in recovery_manifests:
+                attempt.update({"execution_mode": "adaptive_recovery", "recovery_manifest_hash": value_hash(recovery_manifests[node["node_id"]])})
             node["attempts"].append(attempt)
             node["current_attempt_id"] = attempt_id
             node["status"] = "running"
-            selected.append((node, attempt, scratch, command))
+            selected.append((node, attempt, scratch, resolved_command))
         now = datetime.now(timezone.utc)
         control["lease"]["expires_at"] = (now + timedelta(seconds=execution_timeout_seconds + 600)).isoformat()
-        interim_token = _commit(root, control, snapshot, "batch_started", {"nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": command} for node, attempt, _scratch, command in selected], "execution_timeout_seconds": execution_timeout_seconds}, round_id=control["active_round_id"])
+        interim_token = _commit(root, control, snapshot, "batch_started", {"nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": attempt["command_argv"]} for node, attempt, _scratch, _resolved_command in selected], "execution_timeout_seconds": execution_timeout_seconds}, round_id=control["active_round_id"])
     outcomes: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=len(selected)) as executor:
-        futures = {executor.submit(_run_one, command, root / attempt["log"], scratch / "process.json", execution_timeout_seconds): (node, attempt, scratch) for node, attempt, scratch, command in selected}
+        futures = {executor.submit(_run_one, command, root / attempt["log"], scratch / "process.json", execution_timeout_seconds, value_hash(attempt["command_argv"])): (node, attempt, scratch) for node, attempt, scratch, command in selected}
         for future in as_completed(futures):
             node, attempt, scratch = futures[future]
             outcomes[node["node_id"]] = {**future.result(), "attempt_id": attempt["attempt_id"], "scratch": str(scratch)}
@@ -2052,20 +2089,21 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
             node = lookup[node_id]
             attempt = next(item for item in node["attempts"] if item["attempt_id"] == outcome["attempt_id"])
             scratch = Path(outcome["scratch"])
+            skill_output = _skill_output_dir(scratch)
             try:
                 if outcome["returncode"] != 0:
                     raise RuntimeError(f"Skill exited with code {outcome['returncode']}")
-                event_path = scratch / "execution_event.json"
+                event_path = skill_output / "execution_event.json"
                 if not event_path.is_file():
                     raise FileNotFoundError("Skill did not produce execution_event.json")
                 event = read_json(event_path)
                 if event.get("node_id") != node_id or event.get("attempt_id") != attempt["attempt_id"] or event.get("round_id") != node["assigned_round"] or event.get("capability_id") != node["capability_id"] or event.get("status") != "succeeded":
                     raise ValueError("Skill event identity or status mismatch")
                 for artifact in event.get("artifacts") or []:
-                    source = scratch / artifact["path"]
+                    source = skill_output / artifact["path"]
                     if not source.is_file() or file_hash(source) != artifact["sha256"]:
                         raise ValueError(f"Missing or invalid Skill artifact: {artifact['path']}")
-                cards = _adapt_success(root, control, snapshot, node, attempt, scratch, event)
+                cards = _adapt_success(root, control, snapshot, node, attempt, skill_output, event)
                 node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": node.get("result_quality") or {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": []}})
                 attempt.update({"status": "succeeded", "finished_at": node["finished_at"]})
                 if node_id in recovery_manifests:
@@ -2155,6 +2193,7 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
         for node in [item for item in snapshot["nodes"] if item["status"] == "running"]:
             attempt = next(item for item in node["attempts"] if item["attempt_id"] == node["current_attempt_id"])
             scratch = Path(attempt["scratch"])
+            skill_output = _skill_output_dir(scratch)
             process_record = read_json(scratch / "process.json") if (scratch / "process.json").is_file() else {}
             if not process_record.get("finished_at") and pid_alive(int(process_record.get("pid", -1))):
                 reconciled.append({"node_id": node["node_id"], "status": "still_running", "pid": process_record["pid"]})
@@ -2164,17 +2203,17 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
                 if (Path(node["output_ref"]) / "result.json").is_file():
                     result_refs = _recover_promoted_output(root, snapshot, node)
                 else:
-                    event_path = scratch / "execution_event.json"
+                    event_path = skill_output / "execution_event.json"
                     if not event_path.is_file():
                         raise RuntimeError("interrupted process produced no committable execution event")
                     event = read_json(event_path)
                     if event.get("node_id") != node["node_id"] or event.get("attempt_id") != attempt["attempt_id"] or event.get("round_id") != node["assigned_round"] or event.get("capability_id") != node["capability_id"] or event.get("status") != "succeeded":
                         raise ValueError("interrupted execution event identity or status mismatch")
                     for artifact in event.get("artifacts") or []:
-                        source = scratch / artifact["path"]
+                        source = skill_output / artifact["path"]
                         if not source.is_file() or file_hash(source) != artifact["sha256"]:
                             raise ValueError(f"missing or invalid interrupted artifact: {artifact['path']}")
-                    cards = _adapt_success(root, control, snapshot, node, attempt, scratch, event)
+                    cards = _adapt_success(root, control, snapshot, node, attempt, skill_output, event)
                     result_refs = [card["result_ref"] for card in cards]
                 node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": node.get("result_quality") or {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": ["recovered_after_interruption"]}})
                 attempt.update({"status": "succeeded", "finished_at": node["finished_at"], "recovered": True})

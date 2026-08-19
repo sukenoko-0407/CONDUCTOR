@@ -212,9 +212,9 @@ RuntimeはCapability metadataとCatalogから次を確定する。
 - timeout、parallel limit
 - expected Artifactとvalidation
 
-Executorは原則としてRuntime生成commandをそのまま実行する。
+ExecutorはRuntime生成packetを一度だけRuntime launcherへ渡し、packet内の科学Skill commandを自身で再構築または直接実行しない。
 
-Runtimeはexecution packetを作る際に、登録Capability、入力Node、入力Artifact、launcher path、CONDUCTOR共通引数、出力先を決定論的に組み立てる。packet作成に失敗した場合はExecutorを起動しない。Pixi環境の実初期化やCapability固有CLIの実行時不整合はExecutor内でfailure分類し、有限回の回復対象とする。独立したpreflight用Statusやrequired actionは増やさない。
+Runtimeはexecution packetを作る際に、登録Capability、入力Node、入力Artifact、launcher path、CONDUCTOR共通引数、出力先を決定論的に組み立てる。署名・hash対象は実行環境固有のPython絶対pathではなく`<CONDUCTOR_RUNTIME_PYTHON>`を先頭に置いた論理commandとし、packet検証後に実行側Runtimeが自身の`sys.executable`へ一度だけ解決する。Attempt rootはRuntime管理file用、`output/`はSkill成果物専用に分離し、Skill起動前には`output/`を作らない。OrchestratorのControl commandも薄いclientからRuntime SkillのPixi環境へ委譲し、packet作成と実行でRuntime依存関係を一元化する。packet作成に失敗した場合はExecutorを起動しない。Pixi環境の実初期化やCapability固有CLIの実行時不整合はExecutor内でfailure分類し、有限回の回復対象とする。独立したpreflight用Statusやrequired actionは増やさない。
 
 ### 6.4 適応的実行回復
 
@@ -270,7 +270,7 @@ run_root/runtime/scratch/<round>/<node>/<attempt>/recovery/
 
 ### 6.5 長時間実行と中断
 
-Executor contextが長時間processの正本になってはならない。Runtimeはprocess ID、command hash、開始時刻、heartbeat、timeout、scratch、expected Artifactを実行開始前に記録する。ExecutorまたはClaude Code tool callが中断しても、新しいExecutorはprocessとArtifactを照合し、同じNode／Attemptをreconcileする。
+Executor contextが長時間processの正本になってはならない。Runtimeはprocess ID、論理command hash、解決済みcommand hash、実行Python path、開始時刻、heartbeat、timeout、scratch、expected Artifactを実行開始前に記録する。ExecutorまたはClaude Code tool callが中断しても、新しいExecutorはprocessとArtifactを照合し、同じNode／Attemptをreconcileする。
 
 実行中Nodeがある場合、Runtimeは`still_running`とprocess IDをcompactに返す。Main Agentは短い間隔でpollしたり、別Nodeや別Executorを重複起動したりしない。processが親session終了等で停止した場合は、Runtimeが同じNode／AttemptのArtifactとprocess recordを照合し、正常終了したように扱わない。
 

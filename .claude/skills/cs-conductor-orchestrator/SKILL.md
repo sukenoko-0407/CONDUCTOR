@@ -17,7 +17,7 @@ allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 4. `ACTIVE`／`FINALIZING`は同じRoundを`resume-round`する。期限切れleaseでも新Roundを作らない。live leaseがあれば二重起動しない。
 5. `AWAITING_HUMAN_REVIEW`では、人間が明示した`continue-round`、`revise-report`、`accept-round`以外を行わない。
 
-Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。Runtime JSON／JSONLを直接編集しない。
+Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。この薄いlauncherは全Control commandを`cs-conductor-runtime`のPixi環境へ委譲するため、MainがRuntime Controllerを別のPythonから直接起動しない。Runtime JSON／JSONLを直接編集しない。
 
 project rootをworking directoryとし、次の固定形だけを使う。`<LEASE>`と`<ACTION>`は直前のcompact responseが返した値へ毎回置き換える。前のAction tokenを再利用しない。
 
@@ -57,6 +57,8 @@ Main sessionを意図的に終了する必要があり、まだlive leaseと現�
 - Mainは専門Skillの`launch.py`／`run.py`を直接実行しない。
 - Mainは`prepare-execution-packet`が返した`packet_path`と`executor_token`だけを`cs-conductor-executor`へ渡す。lease tokenとAction tokenは渡さない。
 - 同じRunに対するExecutorは一時点で一つだけとする。科学Nodeのprocess並列性はRuntimeの`parallel_limit`へ委ねる。
+- packet内の論理commandをMainまたはExecutorが再構築・直接実行しない。Runtimeだけが検証後に自身のPythonへ解決する。
+- Executorがpacketをstale、expired、invalid、consumedとして拒否された場合、同じpacketや同じExecutorを再起動しない。最新Controlをread-only確認し、単一の`required_action`へ戻る。
 - Executorの文章ではなく、Runtimeのcompact resultとControl revisionを確認する。
 - Tool call失敗のraw logを通常は読まない。科学判断に必要な場合だけfailure pointerまたはResult Cardをbounded queryする。
 

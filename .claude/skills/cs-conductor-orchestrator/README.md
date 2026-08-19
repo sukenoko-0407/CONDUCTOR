@@ -10,7 +10,7 @@ Claude CodeのMain Agentを、明示的なCONDUCTOR操作中だけOrchestrator�
 
 ## 環境構築
 
-初回CLI実行時にSkill内Pixi環境を自動構築します。cacheと一時領域は`env/`内に置かれます。
+初回CLI実行時にSkill内の軽量Pixi環境を自動構築します。このSkillはRuntime launcherへの薄い入口であり、Pandas等のRuntime依存関係は`cs-conductor-runtime`側のPixi環境で一元管理します。cacheと一時領域は各Skillの`env/`内に置かれます。
 
 ## 利用例
 
@@ -34,4 +34,3 @@ Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を�
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | CONDUCTOR 0.1.3でMain Agent Orchestrator方式を導入 |
-

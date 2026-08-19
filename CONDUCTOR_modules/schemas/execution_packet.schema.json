@@ -30,17 +30,23 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["node_id", "capability_id", "attempt_id", "node_signature", "input_nodes", "command_argv", "command_hash", "working_directory", "scratch", "environment", "expected_output_ref", "validation", "prior_failure_pointer"],
+        "required": ["node_id", "capability_id", "attempt_id", "node_signature", "input_nodes", "command_argv", "command_hash", "working_directory", "scratch", "skill_output", "environment", "expected_output_ref", "validation", "prior_failure_pointer"],
         "properties": {
           "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
           "capability_id": {"type": "string", "minLength": 2},
           "attempt_id": {"type": "string", "pattern": "^ATT[0-9]{4}$"},
           "node_signature": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "input_nodes": {"type": "array", "items": {"type": "string", "pattern": "^N[0-9]{6}$"}},
-          "command_argv": {"type": "array", "minItems": 2, "items": {"type": "string"}},
+          "command_argv": {
+            "type": "array",
+            "minItems": 2,
+            "prefixItems": [{"const": "<CONDUCTOR_RUNTIME_PYTHON>"}],
+            "items": {"type": "string"}
+          },
           "command_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "working_directory": {"type": "string", "minLength": 1},
           "scratch": {"type": "string", "minLength": 1},
+          "skill_output": {"type": "string", "minLength": 1},
           "environment": {"type": "object", "additionalProperties": {"type": "string"}},
           "expected_output_ref": {"type": "string", "minLength": 1},
           "validation": {"type": "array", "minItems": 1, "items": {"type": "string"}},

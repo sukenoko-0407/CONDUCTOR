@@ -443,7 +443,7 @@ CutoverはAgent、Skill、Runtime、schema、installer、Catalog、文書、test
 - 旧Orchestrator Agentと`cs-conductor-dispatch` Skillを廃止し、名称と起動責務の競合を解消した。
 - 短命Executorと短命InterpreterをMainの兄弟Subagentとして分離した。
 - Runtime応答を16 KiB上限のcompact protocolへ変更した。
-- leaseをExecutorへ渡さない署名済み・Action-scoped・期限付きexecution packetを実装した。
+- leaseをExecutorへ渡さない署名済み・Action-scoped・期限付きexecution packetを実装した。科学Skill commandは環境非依存の論理commandとして署名し、検証後に実行側RuntimeのPythonへ解決する。
 - 標準実行一回と最大二回の同一Node retry、failure分類、failure packet、scratch限定adaptive recovery、科学引数不変検査を実装した。
 - Interpretation quality failureを同一Interpretation Nodeの有限Attemptとして記録し、上限到達時は人間停止にした。
 - Interpretation、固定HTML、Full Auditが揃わなければRoundを人間確認待ちへ移せないgateを維持・検証した。

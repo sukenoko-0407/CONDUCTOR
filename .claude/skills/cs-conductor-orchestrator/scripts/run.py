@@ -8,7 +8,7 @@ from pathlib import Path
 def project_root() -> Path:
     here = Path(__file__).resolve()
     for candidate in [here.parent, *here.parents, Path.cwd(), *Path.cwd().parents]:
-        if (candidate / "CONDUCTOR_modules" / "tools" / "runtime_controller.py").is_file():
+        if (candidate / ".claude" / "skills" / "cs-conductor-runtime" / "scripts" / "launch.py").is_file():
             return candidate
     raise FileNotFoundError("CONDUCTOR Project root was not found")
 
@@ -28,6 +28,8 @@ if needs_authority and "--control-key" not in arguments:
         raise SystemExit("ERROR: --run-root is required") from exc
     key = (run_root / "runtime" / "control_authority.key").read_text(encoding="utf-8").strip()
     arguments += ["--control-key", key]
-controller = project_root() / "CONDUCTOR_modules" / "tools" / "runtime_controller.py"
-raise SystemExit(subprocess.call([sys.executable, str(controller), *arguments], cwd=project_root()))
-
+root = project_root()
+runtime_launcher = root / ".claude" / "skills" / "cs-conductor-runtime" / "scripts" / "launch.py"
+if not runtime_launcher.is_file():
+    raise SystemExit(f"ERROR: CONDUCTOR Runtime launcher was not found: {runtime_launcher}")
+raise SystemExit(subprocess.call([sys.executable, str(runtime_launcher), "state", *arguments], cwd=root))

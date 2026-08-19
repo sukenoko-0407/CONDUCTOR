@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,9 +53,27 @@ class Runtime013Tests(unittest.TestCase):
         skill = ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "SKILL.md"
         self.assertTrue(skill.is_file())
         self.assertIn("disable-model-invocation: true", skill.read_text(encoding="utf-8"))
+        orchestrator_manifest = tomllib.loads((skill.parent / "env" / "pixi.toml").read_text(encoding="utf-8"))
+        self.assertEqual({"python"}, set(orchestrator_manifest["dependencies"]))
+        self.assertIn("py_compile", orchestrator_manifest["tasks"]["smoke"])
+        orchestrator_runner = (skill.parent / "scripts" / "run.py").read_text(encoding="utf-8")
+        self.assertIn("cs-conductor-runtime", orchestrator_runner)
+        self.assertNotIn('"runtime_controller.py"', orchestrator_runner)
+        runtime_manifest = tomllib.loads((ROOT / ".claude" / "skills" / "cs-conductor-runtime" / "env" / "pixi.toml").read_text(encoding="utf-8"))
+        for dependency in ("jsonschema", "pandas", "pyarrow"):
+            self.assertIn(dependency, runtime_manifest["dependencies"])
+            self.assertIn(dependency, runtime_manifest["tasks"]["smoke"])
         self.assertFalse((ROOT / ".claude" / "agents" / "cs-conductor-orchestrator.md").exists())
         self.assertTrue((ROOT / ".claude" / "agents" / "cs-conductor-executor.md").is_file())
         self.assertTrue((ROOT / ".claude" / "agents" / "cs-conductor-interpreter.md").is_file())
+
+        executor = (ROOT / ".claude" / "agents" / "cs-conductor-executor.md").read_text(encoding="utf-8")
+        frontmatter = executor.split("---", 2)[1]
+        executor_tools = next(line for line in frontmatter.splitlines() if line.startswith("tools:"))
+        self.assertNotIn("Agent", executor_tools)
+        self.assertNotIn("Skill", executor_tools)
+        for instruction in ("short-lived", "execute exactly once", "End after this single Runtime call", "never start a second packet"):
+            self.assertIn(instruction, executor)
 
     def test_compact_response_is_bounded_and_does_not_embed_control(self) -> None:
         control = {
@@ -79,6 +100,15 @@ class Runtime013Tests(unittest.TestCase):
             packet_path = Path(response["packet_path"])
             packet = json.loads(packet_path.read_text(encoding="utf-8"))
             self.assertNotIn("lease_token", packet)
+            self.assertTrue(packet["execution_contracts"])
+            self.assertTrue(all(contract["command_argv"][0] == RUNTIME.RUNTIME_PYTHON_TOKEN for contract in packet["execution_contracts"]))
+            for contract in packet["execution_contracts"]:
+                scratch = Path(contract["scratch"])
+                skill_output = Path(contract["skill_output"])
+                self.assertEqual(scratch / "output", skill_output)
+                output_option = contract["command_argv"].index("--output-dir")
+                self.assertEqual(str(skill_output), contract["command_argv"][output_option + 1])
+                self.assertFalse(skill_output.exists())
             control = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
             validated = RUNTIME._validate_execution_packet(run_root, control, packet_path, response["executor_token"])
             self.assertEqual(response["packet_id"], validated["packet_id"])
@@ -88,6 +118,98 @@ class Runtime013Tests(unittest.TestCase):
             changed = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
             with self.assertRaises(PermissionError):
                 RUNTIME._validate_execution_packet(run_root, changed, packet_path, response["executor_token"])
+
+    def test_skill_command_hash_is_independent_of_controller_python(self) -> None:
+        capability = RUNTIME.catalog()["D001"]
+        control = {"run": {"project": "test", "run_id": "run-013", "input": "input.csv"}}
+        node = {
+            "node_id": "N000001", "capability_id": "D001", "skill_name": capability["skill_name"],
+            "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
+        }
+        snapshot = {"nodes": [node]}
+        scratch = ROOT / "scratch" / "N000001" / "ATT0001"
+        with mock.patch.object(RUNTIME.sys, "executable", "/orchestrator/env/python"):
+            prepared = RUNTIME._skill_command(ROOT, control, snapshot, node, "ATT0001", scratch)
+            prepared_resolved = RUNTIME._resolve_skill_command(prepared)
+        with mock.patch.object(RUNTIME.sys, "executable", "/runtime/env/python"):
+            executed = RUNTIME._skill_command(ROOT, control, snapshot, node, "ATT0001", scratch)
+            executed_resolved = RUNTIME._resolve_skill_command(executed)
+
+        self.assertEqual(RUNTIME.RUNTIME_PYTHON_TOKEN, prepared[0])
+        self.assertEqual(str(scratch / "output"), prepared[prepared.index("--output-dir") + 1])
+        self.assertEqual(prepared, executed)
+        self.assertEqual(RUNTIME.value_hash(prepared), RUNTIME.value_hash(executed))
+        self.assertEqual("/orchestrator/env/python", prepared_resolved[0])
+        self.assertEqual("/runtime/env/python", executed_resolved[0])
+        self.assertEqual(prepared_resolved[1:], executed_resolved[1:])
+        with self.assertRaises(PermissionError):
+            RUNTIME._resolve_skill_command(["/unexpected/python", *prepared[1:]])
+
+    def test_runtime_management_files_do_not_dirty_skill_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary) / "ATT0001"
+            scratch.mkdir()
+            skill_output = RUNTIME._skill_output_dir(scratch)
+            logical = [RUNTIME.RUNTIME_PYTHON_TOKEN, "empty-output-check"]
+            script = (
+                "from pathlib import Path; import sys; "
+                "output=Path(sys.argv[1]); "
+                "assert not output.exists(), 'skill output was pre-created'; "
+                "output.mkdir(); (output/'ok.txt').write_text('ok', encoding='utf-8')"
+            )
+            outcome = RUNTIME._run_one(
+                [sys.executable, "-c", script, str(skill_output)],
+                scratch / "run.log",
+                scratch / "process.json",
+                30,
+                RUNTIME.value_hash(logical),
+            )
+
+            self.assertEqual(0, outcome["returncode"])
+            self.assertTrue((scratch / "tmp").is_dir())
+            self.assertTrue((scratch / "process.json").is_file())
+            self.assertEqual("ok", (skill_output / "ok.txt").read_text(encoding="utf-8"))
+            process = json.loads((scratch / "process.json").read_text(encoding="utf-8"))
+            self.assertEqual(RUNTIME.value_hash(logical), process["command_hash"])
+            self.assertEqual(sys.executable, process["runtime_python"])
+
+    def test_only_empty_or_recovery_scratch_can_be_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary) / "ATT0001"
+            scratch.mkdir()
+            RUNTIME._validate_attempt_scratch(scratch, recovery_allowed=False)
+            recovery = scratch / "recovery"
+            recovery.mkdir()
+            RUNTIME._validate_attempt_scratch(scratch, recovery_allowed=True)
+            with self.assertRaises(FileExistsError):
+                RUNTIME._validate_attempt_scratch(scratch, recovery_allowed=False)
+            (scratch / "process.json").write_text("{}", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                RUNTIME._validate_attempt_scratch(scratch, recovery_allowed=True)
+
+    def test_invalid_execution_contract_does_not_create_attempt_scratch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_root, lease, action = self.active_basic_round(Path(temporary))
+            response = json.loads(self.command(
+                "prepare-execution-packet", "--run-root", str(run_root),
+                "--lease-token", lease, "--action-token", action, "--timeout-minutes", "5",
+            ).stdout)
+            packet = json.loads(Path(response["packet_path"]).read_text(encoding="utf-8"))
+            scratch_paths = [Path(contract["scratch"]) for contract in packet["execution_contracts"]]
+            original = RUNTIME._skill_command
+
+            def changed_command(*arguments: object, **keywords: object) -> list[str]:
+                command = original(*arguments, **keywords)
+                return [*command, "--unexpected-contract-change"]
+
+            arguments = argparse.Namespace(
+                run_root=str(run_root), packet=response["packet_path"], executor_token=response["executor_token"],
+                recovery_command=None, recovery_manifest=None,
+            )
+            with mock.patch.object(RUNTIME, "_skill_command", side_effect=changed_command):
+                with self.assertRaises(PermissionError):
+                    RUNTIME.cmd_execute_packet(arguments)
+            self.assertTrue(all(not path.exists() for path in scratch_paths))
 
     def test_interpretation_retry_exhaustion_is_a_human_stop(self) -> None:
         control = {
@@ -110,8 +232,8 @@ class Runtime013Tests(unittest.TestCase):
             prior = root / "runtime" / "scratch" / "RND0001" / "N000001" / "ATT0001" / "failure_packet.json"
             prior.parent.mkdir(parents=True)
             prior.write_text(json.dumps({"recoverable": True, "classification": "argument_contract_mismatch"}), encoding="utf-8")
-            base = [sys.executable, "skill-launch.py", "--node-id", "N000001", "--metric", "euclidean", "--input", "old.csv"]
-            changed = [sys.executable, "skill-launch.py", "--node-id", "N000001", "--metric", "manhattan", "--input", "old.csv"]
+            base = [RUNTIME.RUNTIME_PYTHON_TOKEN, "skill-launch.py", "--node-id", "N000001", "--metric", "euclidean", "--input", "old.csv"]
+            changed = [RUNTIME.RUNTIME_PYTHON_TOKEN, "skill-launch.py", "--node-id", "N000001", "--metric", "manhattan", "--input", "old.csv"]
             command_path = recovery / "command.json"
             command_path.write_text(json.dumps({"node_id": "N000001", "command_argv": changed}), encoding="utf-8")
             manifest = {

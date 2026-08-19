@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -113,11 +114,60 @@ def main() -> int:
                     if token in text:
                         errors.append(f"obsolete public token {token}: {path.relative_to(PROJECT_ROOT)}")
 
-    orchestrator = PROJECT_ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "SKILL.md"
+    orchestrator_root = PROJECT_ROOT / ".claude" / "skills" / "cs-conductor-orchestrator"
+    orchestrator = orchestrator_root / "SKILL.md"
     if not orchestrator.is_file():
         errors.append("missing Main Agent Orchestrator Skill")
     elif "disable-model-invocation: true" not in orchestrator.read_text(encoding="utf-8"):
         errors.append("Main Agent Orchestrator Skill is not manual-only")
+    orchestrator_manifest = orchestrator_root / "env" / "pixi.toml"
+    if not orchestrator_manifest.is_file():
+        errors.append("missing Main Agent Orchestrator Pixi manifest")
+    else:
+        try:
+            manifest = tomllib.loads(orchestrator_manifest.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            errors.append(f"invalid Main Agent Orchestrator Pixi manifest: {exc}")
+        else:
+            dependencies = manifest.get("dependencies", {})
+            if set(dependencies) != {"python"}:
+                errors.append("Orchestrator Pixi environment must remain a Python-only Runtime launcher")
+            smoke = manifest.get("tasks", {}).get("smoke", "")
+            if "py_compile" not in smoke:
+                errors.append("Orchestrator smoke task must compile its thin launcher")
+    orchestrator_runner = orchestrator_root / "scripts" / "run.py"
+    if orchestrator_runner.is_file():
+        runner_text = orchestrator_runner.read_text(encoding="utf-8")
+        if "cs-conductor-runtime" not in runner_text or '"runtime_controller.py"' in runner_text:
+            errors.append("Orchestrator must delegate every control command through the Runtime launcher")
+
+    runtime_root = PROJECT_ROOT / ".claude" / "skills" / "cs-conductor-runtime"
+    runtime_manifest = runtime_root / "env" / "pixi.toml"
+    if not runtime_manifest.is_file():
+        errors.append("missing CONDUCTOR Runtime Pixi manifest")
+    else:
+        try:
+            manifest = tomllib.loads(runtime_manifest.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            errors.append(f"invalid CONDUCTOR Runtime Pixi manifest: {exc}")
+        else:
+            dependencies = manifest.get("dependencies", {})
+            for dependency in ("jsonschema", "pandas", "pyarrow"):
+                if dependency not in dependencies:
+                    errors.append(f"missing CONDUCTOR Runtime dependency: {dependency}")
+                if dependency not in manifest.get("tasks", {}).get("smoke", ""):
+                    errors.append(f"Runtime smoke task does not import: {dependency}")
+
+    executor = PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-executor.md"
+    if executor.is_file():
+        executor_text = executor.read_text(encoding="utf-8")
+        for token in ("short-lived", "execute exactly once", "End after this single Runtime call", "never start a second packet", "<CONDUCTOR_RUNTIME_PYTHON>"):
+            if token not in executor_text:
+                errors.append(f"Executor contract is missing: {token}")
+        frontmatter = executor_text.split("---", 2)[1]
+        tools_line = next((line for line in frontmatter.splitlines() if line.startswith("tools:")), "")
+        if "Agent" in tools_line or "Skill" in tools_line:
+            errors.append("Executor must not have Agent or Skill tools")
 
     if errors:
         for error in errors:

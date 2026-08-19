@@ -5,8 +5,6 @@ platforms = ["linux-64", "win-64"]
 
 [dependencies]
 python = ">=3.12,<3.13"
-jsonschema = ">=4.21"
 
 [tasks]
-smoke = "python ../scripts/run.py --help"
-
+smoke = "python -m py_compile ../scripts/run.py"
