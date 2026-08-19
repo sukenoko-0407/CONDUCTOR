@@ -121,7 +121,7 @@ class Runtime013Tests(unittest.TestCase):
 
     def test_skill_command_hash_is_independent_of_controller_python(self) -> None:
         capability = RUNTIME.catalog()["D001"]
-        control = {"run": {"project": "test", "run_id": "run-013", "input": "input.csv"}}
+        control = {"run": {"project": "test", "run_id": "run-013", "input": "input.csv", "smiles_column": "smiles"}}
         node = {
             "node_id": "N000001", "capability_id": "D001", "skill_name": capability["skill_name"],
             "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
@@ -144,6 +144,154 @@ class Runtime013Tests(unittest.TestCase):
         self.assertEqual(prepared_resolved[1:], executed_resolved[1:])
         with self.assertRaises(PermissionError):
             RUNTIME._resolve_skill_command(["/unexpected/python", *prepared[1:]])
+
+    def test_direct_structure_skills_receive_resolved_smiles_column(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / "input.csv"
+            source.write_text(
+                "compound_id,Standardized_SMILES,pIC50\nCMP1,CCO,5.1\nCMP2,CCN,5.4\n",
+                encoding="utf-8",
+            )
+            run_root = base / "run"
+            self.command(
+                "init", "--input", str(source), "--endpoint", "pIC50", "--higher-is-better",
+                "--project", "test", "--parallel-limit", "2", "--run-id", "smiles-column",
+                "--output-dir", str(run_root),
+            )
+            control = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
+            self.assertEqual("Standardized_SMILES", control["run"]["smiles_column"])
+            description_capability = RUNTIME.catalog()["D001"]
+            description_node = {
+                "node_id": "N000100", "capability_id": "D001",
+                "skill_name": description_capability["skill_name"], "assigned_round": "RND0001",
+                "kind": "description", "input_nodes": [], "parameters": {},
+            }
+            description_command = RUNTIME._skill_command(
+                ROOT, control, {"nodes": [description_node]}, description_node, "ATT0001",
+                base / "D001" / "ATT0001",
+            )
+            self.assertEqual(
+                "Standardized_SMILES",
+                description_command[description_command.index("--smiles-column") + 1],
+            )
+            for capability_id in ("C001", "C002", "C003", "C004"):
+                capability = RUNTIME.catalog()[capability_id]
+                node = {
+                    "node_id": f"N{int(capability_id[1:]):06d}", "capability_id": capability_id,
+                    "skill_name": capability["skill_name"], "assigned_round": "RND0001",
+                    "kind": "clustering", "input_nodes": [], "parameters": {"min_cluster_size": 5},
+                }
+                command = RUNTIME._skill_command(
+                    ROOT, control, {"nodes": [node]}, node, "ATT0001", base / capability_id / "ATT0001",
+                )
+                option = command.index("--smiles-column")
+                self.assertEqual("Standardized_SMILES", command[option + 1])
+
+            for capability_id in ("A006", "A009", "A013"):
+                capability = RUNTIME.catalog()[capability_id]
+                node = {
+                    "node_id": f"N{100 + int(capability_id[1:]):06d}", "capability_id": capability_id,
+                    "skill_name": capability["skill_name"], "assigned_round": "RND0001",
+                    "kind": "analysis", "input_nodes": [], "parameters": {}, "scope": {"mode": "global"},
+                }
+                command = RUNTIME._skill_command(
+                    ROOT, control, {"nodes": [node]}, node, "ATT0001", base / capability_id / "ATT0001",
+                )
+                option = command.index("--smiles-column")
+                self.assertEqual("Standardized_SMILES", command[option + 1])
+
+            capability = RUNTIME.catalog()["A001"]
+            nonstructure_node = {
+                "node_id": "N000201", "capability_id": "A001", "skill_name": capability["skill_name"],
+                "assigned_round": "RND0001", "kind": "analysis", "input_nodes": [],
+                "parameters": {}, "scope": {"mode": "global"},
+            }
+            nonstructure_command = RUNTIME._skill_command(
+                ROOT, control, {"nodes": [nonstructure_node]}, nonstructure_node, "ATT0001",
+                base / "A001" / "ATT0001",
+            )
+            self.assertNotIn("--smiles-column", nonstructure_command)
+
+    def test_init_requires_explicit_smiles_column_only_when_ambiguous(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / "input.csv"
+            source.write_text(
+                "compound_id,parent_smiles,product_smiles,pIC50\nCMP1,CCO,CCN,5.1\n",
+                encoding="utf-8",
+            )
+            failed = self.command(
+                "init", "--input", str(source), "--endpoint", "pIC50", "--higher-is-better",
+                "--project", "test", "--parallel-limit", "1", "--run-id", "ambiguous",
+                "--output-dir", str(base / "failed-run"), ok=False,
+            )
+            self.assertIn("Ambiguous SMILES columns", failed.stderr)
+            run_root = base / "explicit-run"
+            self.command(
+                "init", "--input", str(source), "--smiles-column", "product_smiles",
+                "--endpoint", "pIC50", "--higher-is-better", "--project", "test",
+                "--parallel-limit", "1", "--run-id", "explicit", "--output-dir", str(run_root),
+            )
+            control = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
+            self.assertEqual("product_smiles", control["run"]["smiles_column"])
+
+    def test_legacy_run_without_smiles_metadata_uses_deterministic_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / "input.csv"
+            source.write_text(
+                "compound_id,source_SMILES_text,pIC50\nCMP1,CCO,5.1\nCMP2,CCN,5.4\n",
+                encoding="utf-8",
+            )
+            control = {"run": {"project": "test", "run_id": "legacy", "input": str(source)}}
+            capability = RUNTIME.catalog()["C001"]
+            node = {
+                "node_id": "N000001", "capability_id": "C001", "skill_name": capability["skill_name"],
+                "assigned_round": "RND0001", "kind": "clustering", "input_nodes": [],
+                "parameters": {"min_cluster_size": 5},
+            }
+            command = RUNTIME._skill_command(
+                ROOT, control, {"nodes": [node]}, node, "ATT0001", base / "scratch" / "ATT0001",
+            )
+            option = command.index("--smiles-column")
+            self.assertEqual("source_SMILES_text", command[option + 1])
+
+    def test_legacy_run_can_record_explicit_smiles_column_when_resumed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / "input.csv"
+            source.write_text(
+                "compound_id,molecule_text,pIC50\nCMP1,CCO,5.1\nCMP2,CCN,5.4\n",
+                encoding="utf-8",
+            )
+            run_root = base / "run"
+            self.command(
+                "init", "--input", str(source), "--smiles-column", "molecule_text",
+                "--endpoint", "pIC50", "--higher-is-better", "--project", "test",
+                "--parallel-limit", "1", "--run-id", "legacy-explicit", "--output-dir", str(run_root),
+            )
+            control_path = run_root / "conductor_control.json"
+            legacy_control = json.loads(control_path.read_text(encoding="utf-8"))
+            legacy_control["run"].pop("smiles_column")
+            RUNTIME.write_json(control_path, legacy_control)
+            prepared = json.loads(self.command(
+                "prepare-round", "--run-root", str(run_root), "--objective", "legacy resume",
+                "--walltime-minutes", "60", "--parallel-limit", "1", "--approve-high-cost",
+            ).stdout)
+            control_key = (run_root / "runtime" / "control_authority.key").read_text(encoding="utf-8").strip()
+            self.command(
+                "authorize-round", "--run-root", str(run_root), "--control-key", control_key,
+                "--request-file", prepared["request_file"],
+                "--authorization-token", prepared["authorization_token"],
+            )
+            resumed = json.loads(self.command(
+                "resume-round", "--run-root", str(run_root), "--control-key", control_key,
+                "--owner-id", "legacy-main", "--smiles-column", "molecule_text",
+            ).stdout)
+            self.assertTrue(resumed["lease_acquired"])
+            control = json.loads(control_path.read_text(encoding="utf-8"))
+            self.assertEqual("molecule_text", control["run"]["smiles_column"])
 
     def test_runtime_management_files_do_not_dirty_skill_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -20,7 +20,7 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-r
 
 ## 制約事項
 
-人間の代わりにRoundを開始・受理しません。Runtime JSON/JSONLの直接編集、複数Writer、Action token再利用、InterpretationなしのRound終了は許可しません。
+人間の代わりにRoundを開始・受理しません。Runtime JSON/JSONLの直接編集、複数Writer、Action token再利用、InterpretationなしのRound終了は許可しません。新規RunではSMILES列を一意に確定し、Description、構造ベースClustering、構造を直接読むOperatorへ明示的に引き渡します。候補が複数の場合は`init --smiles-column <column>`が必要です。旧Runだけは、同じ列を`resume-round --smiles-column <column>`で補えます。
 
 ## 変更履歴
 
@@ -28,3 +28,5 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-r
 |---|---|
 | 1.0.0 | Control／Event Ledger／5状態DAG Runtimeを実装 |
 | 1.1.0 | 0.1.3のcompact protocol、Executor packet、有限Interpretation retryを追加 |
+| 1.1.1 | SMILES列をRun入力契約へ記録し、DescriptionとC001～C004へ明示的に引き渡す処理を追加 |
+| 1.1.2 | 記録済みSMILES列をA006・A009・A013へも明示的に引き渡す処理を追加 |

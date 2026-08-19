@@ -14,6 +14,8 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state <command> --run-root /path/
 
 The small `conductor_control.json` is the operational source of truth. Detailed Nodes are in the Runtime-owned DAG snapshot; the append-only Event Ledger and transaction journal keep it synchronized and auditable. Node status is only `pending`, `running`, `succeeded`, `failed`, or `cancelled`.
 
+`init`は入力CSVのSMILES列を一意に解決してControlへ記録する。列名が曖昧な場合は`--smiles-column`を必須とし、全Description、C001～C004、ならびに構造を直接読むA006・A009・A013へ記録済み列名を明示的に渡す。旧Runに記録がない場合は保存済み`runtime/input.csv`から同じ規則で解決し、それも不可能なら人間指定の`resume-round --smiles-column`で一度だけ補う。既存値は変更できない。
+
 ## Orchestrator loop
 
 Use the command named by `required_action.code`. Mutating calls require `--lease-token` and the latest one-use `--action-token`. The returned Action token replaces the previous token.

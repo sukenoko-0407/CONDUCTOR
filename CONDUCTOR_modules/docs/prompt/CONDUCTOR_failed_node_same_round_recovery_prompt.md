@@ -70,6 +70,7 @@ Run Root: <absolute run_root>
 対象Round: <RND####>
 優先対象Node: <N######>
 修正内容: <修正した技術的不具合の要約>
+SMILES列名（旧Runでmetadataがなく自動推定できない場合のみ）: <column name>
 
 最初にconductor_control.jsonを確認し、対象RoundがACTIVEであることを照合してください。
 修正済みのfailed Nodeを、同じNode IDの新しいAttemptとして再実行してください。

@@ -11,10 +11,10 @@ allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 
 ## 最初の判定
 
-1. 新規Runで`conductor_control.json`がまだ無い場合は、人間が指定した入力CSV、endpoint、`higher_is_better`、project、parallel limit、出力先を使ってRuntime `init`を一回だけ実行する。既存Runでは指定された`run_root/conductor_control.json`だけを最初に読む。
+1. 新規Runで`conductor_control.json`がまだ無い場合は、人間が指定した入力CSV、endpoint、`higher_is_better`、project、parallel limit、出力先を使ってRuntime `init`を一回だけ実行する。SMILES列を一意に推定できない場合だけ人間指定の`--smiles-column`を渡す。既存Runでは指定された`run_root/conductor_control.json`だけを最初に読む。
 2. 人間依頼を`inspect`、`start new Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`のいずれかへ分類する。
 3. 新Roundは人間が明示した場合だけ`prepare-round`と`authorize-round`を別操作として行う。曖昧ならStateを変更しない。
-4. `ACTIVE`／`FINALIZING`は同じRoundを`resume-round`する。期限切れleaseでも新Roundを作らない。live leaseがあれば二重起動しない。
+4. `ACTIVE`／`FINALIZING`は同じRoundを`resume-round`する。期限切れleaseでも新Roundを作らない。live leaseがあれば二重起動しない。旧RunにSMILES列metadataがなく自動推定もできない場合だけ、人間が示した`--smiles-column`をresume時に記録する。既存値は変更しない。
 5. `AWAITING_HUMAN_REVIEW`では、人間が明示した`continue-round`、`revise-report`、`accept-round`以外を行わない。
 
 Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。この薄いlauncherは全Control commandを`cs-conductor-runtime`のPixi環境へ委譲するため、MainがRuntime Controllerを別のPythonから直接起動しない。Runtime JSON／JSONLを直接編集しない。

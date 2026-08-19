@@ -23,7 +23,9 @@ walltime: 8h
 parallel_limit: 8
 ```
 
-Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を明示します。
+Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を明示します。旧RunでSMILES列を自動認識できなかった場合は、再開依頼に使用するSMILES列名も記載します。
+
+新規RunでSMILES候補列が複数ある場合は、依頼に使用するSMILES列名を明記します。一意に推定できる場合は省略できます。
 
 ## 制約事項
 
@@ -34,3 +36,4 @@ Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を�
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | CONDUCTOR 0.1.3でMain Agent Orchestrator方式を導入 |
+| 1.0.1 | 新規Runの曖昧なSMILES列を人間指定としてRuntimeへ渡す手順を追加 |

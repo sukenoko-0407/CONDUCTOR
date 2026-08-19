@@ -8,9 +8,11 @@ Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`
 
 endpointの単位変換やpActivity化はRun開始前に人間側で行います。`endpoint_transform`は実施済み変換の記録用metadataであり、Runtimeが値を変換する指定ではありません。
 
+RuntimeはRun初期化時にSMILES列を確定し、全Description、Murcko、MCS、BRICS、RECAP、および構造を直接読むPairwise structure similarity、Activity cliff、Cluster structural diversityへ同じ列名を明示的に渡します。`smiles`、`canonical_smiles`等や、名前に`smiles`を含む列を一意に推定できます。候補が複数ある場合は、新規Run依頼でSMILES列名を明示してください。
+
 ## 中断と別session再開
 
-新しいMain sessionで`/cs-conductor-orchestrator`を明示し、Run Rootと「同じRoundを再開」を指定します。Mainは`conductor_control.json`を確認し、live leaseがあれば二重実行を拒否し、期限切れなら同じRoundを再開します。新しいRoundは作りません。長いInterpretationやDAG全文をプロンプトへ貼る必要はありません。
+新しいMain sessionで`/cs-conductor-orchestrator`を明示し、Run Rootと「同じRoundを再開」を指定します。Mainは`conductor_control.json`を確認し、live leaseがあれば二重実行を拒否し、期限切れなら同じRoundを再開します。新しいRoundは作りません。長いInterpretationやDAG全文をプロンプトへ貼る必要はありません。旧RunでSMILES列metadataがなく列名からも一意に推定できない場合だけ、再開依頼にSMILES列名を追加してください。
 
 ## Round終了後
 

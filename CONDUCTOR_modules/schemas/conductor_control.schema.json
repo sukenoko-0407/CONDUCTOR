@@ -22,6 +22,7 @@
         "source_input": {"type": "string", "minLength": 1},
         "source_input_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "id_column": {"const": "compound_id"},
+        "smiles_column": {"type": "string", "minLength": 1},
         "endpoint": {"type": "string", "minLength": 1},
         "higher_is_better": {"type": "boolean"},
         "endpoint_unit": {"type": ["string", "null"]},

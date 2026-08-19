@@ -11,6 +11,7 @@
 
 操作: 新規Runを初期化し、RND0001を開始
 入力CSV: <absolute path>
+SMILES列名（自動推定が曖昧な場合のみ）: <column name>
 endpoint: <column name>
 higher_is_better: <true/false>
 project: <project name>

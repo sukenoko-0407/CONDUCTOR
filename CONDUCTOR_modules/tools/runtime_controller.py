@@ -32,6 +32,8 @@ EXECUTION_PACKET_TTL_MINUTES = 15
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
 RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
+DIRECT_STRUCTURE_CLUSTERING = {"C001", "C002", "C003", "C004"}
+DIRECT_STRUCTURE_ANALYSIS = {"A006", "A009", "A013"}
 ROUND_STATES = {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"}
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
 
@@ -863,6 +865,42 @@ def _infer_compound_column(columns: Iterable[Any]) -> str | None:
     return None
 
 
+def _infer_smiles_column(columns: Iterable[Any], explicit: str | None = None) -> str:
+    names = [str(column) for column in columns]
+    if explicit:
+        if explicit not in names:
+            raise ValueError(f"SMILES column not found: {explicit}")
+        return explicit
+    normalized = {
+        name: "".join(character for character in name.lower() if character.isalnum())
+        for name in names
+    }
+    preferred = ("inputsmiles", "canonicalsmiles", "isomericsmiles", "smiles", "structure")
+    for candidate in preferred:
+        matches = [name for name, value in normalized.items() if value == candidate]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous SMILES columns: {matches}; specify --smiles-column")
+    contained = [name for name, value in normalized.items() if "smiles" in value]
+    if len(contained) == 1:
+        return contained[0]
+    if len(contained) > 1:
+        raise ValueError(f"Ambiguous SMILES columns: {contained}; specify --smiles-column")
+    raise ValueError("SMILES column could not be inferred; specify --smiles-column")
+
+
+def _run_smiles_column(control: dict[str, Any]) -> str:
+    import pandas as pd
+
+    recorded = control["run"].get("smiles_column")
+    if recorded:
+        return str(recorded)
+    input_path = Path(control["run"]["input"])
+    columns = list(pd.read_csv(input_path, nrows=0).columns)
+    return _infer_smiles_column(columns)
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     import pandas as pd
 
@@ -874,6 +912,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         raise ValueError(f"Endpoint column not found: {args.endpoint}")
     if len(frame) < 1:
         raise ValueError("Input must contain at least one compound")
+    smiles_column = _infer_smiles_column(frame.columns, args.smiles_column)
     run_id = args.run_id or timestamp()
     root = Path(args.output_dir).expanduser().resolve() if args.output_dir else (project_root() / "results" / "CONDUCTOR" / args.project / run_id).resolve()
     if root.exists() and any(root.iterdir()):
@@ -916,6 +955,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             "source_input": str(source),
             "source_input_hash": file_hash(source),
             "id_column": "compound_id",
+            "smiles_column": smiles_column,
             "endpoint": args.endpoint,
             "higher_is_better": bool(args.higher_is_better),
             "endpoint_unit": args.endpoint_unit,
@@ -1041,10 +1081,21 @@ def cmd_resume_round(args: argparse.Namespace) -> int:
         if live:
             _print_compact(control, lease_acquired=False, reason="LIVE_LEASE_EXISTS", owner_id=control["lease"]["owner_id"], expires_at=control["lease"]["expires_at"])
             return 0
+        if args.smiles_column:
+            import pandas as pd
+
+            existing = control["run"].get("smiles_column")
+            resolved = _infer_smiles_column(
+                list(pd.read_csv(control["run"]["input"], nrows=0).columns),
+                args.smiles_column,
+            )
+            if existing and existing != resolved:
+                raise ValueError(f"Run SMILES column is immutable: {existing}")
+            control["run"]["smiles_column"] = resolved
         lease_token = secrets.token_hex(32)
         now = datetime.now(timezone.utc)
         control["lease"].update({"owner_id": args.owner_id, "token_hash": value_hash(lease_token), "action_token_hash": None, "expires_at": (now + timedelta(minutes=max(5, args.lease_minutes))).isoformat(), "heartbeat_at": now.isoformat(), "process_id": args.process_id})
-        action_token = _commit(root, control, snapshot, "orchestrator_lease_acquired", {"owner_id": args.owner_id, "recovered_transactions": recovered}, round_id=control["active_round_id"])
+        action_token = _commit(root, control, snapshot, "orchestrator_lease_acquired", {"owner_id": args.owner_id, "recovered_transactions": recovered, "smiles_column": control["run"].get("smiles_column")}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
     _print_compact(control, action_token=action_token, lease_acquired=True, lease_token=lease_token, recovered_transactions=recovered)
     return 0
@@ -1503,14 +1554,18 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     lookup = _node_lookup(snapshot)
     inputs = [lookup[item] for item in node["input_nodes"]]
     if node["kind"] == "description":
-        argv += ["--input", control["run"]["input"]]
+        argv += ["--input", control["run"]["input"], "--smiles-column", _run_smiles_column(control)]
     elif node["kind"] == "clustering":
         description = next((item for item in inputs if item["kind"] == "description"), None)
         argv += ["--input", str(_primary_payload(description)) if description else control["run"]["input"]]
         if description:
             argv += ["--input-representation", description["capability_id"], "--description-manifest", str(_result_path(description))]
+        elif node["capability_id"] in DIRECT_STRUCTURE_CLUSTERING:
+            argv += ["--smiles-column", _run_smiles_column(control)]
     elif node["kind"] == "analysis":
         argv += ["--input", control["run"]["input"], "--property-column", control["run"]["endpoint"], "--higher-is-better" if control["run"]["higher_is_better"] else "--no-higher-is-better"]
+        if node["capability_id"] in DIRECT_STRUCTURE_ANALYSIS:
+            argv += ["--smiles-column", _run_smiles_column(control)]
         descriptions = [item for item in inputs if item["kind"] == "description"]
         clusterings = [item for item in inputs if item["kind"] == "clustering"]
         projections = [item for item in inputs if item["kind"] == "analysis" and item["capability_id"] in {"A003", "A004"}]
@@ -1970,7 +2025,7 @@ def _load_recovery_override(
     protected = {
         "--conductor", "--project", "--run-id", "--round-id", "--node-id", "--attempt-id",
         "--endpoint", "--higher-is-better", "--no-higher-is-better", "--input-representation",
-        "--metric", "--cluster-id", "--scope", "--random-seed", "--seed",
+        "--metric", "--cluster-id", "--scope", "--random-seed", "--seed", "--id-column", "--smiles-column",
     }
     before, after = _command_options(base), _command_options(command)
     changed_protected = sorted(name for name in protected if before.get(name) != after.get(name))
@@ -2848,6 +2903,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("init")
     item.add_argument("--input", required=True)
+    item.add_argument("--smiles-column", help="SMILES column in the input CSV; required only when deterministic inference is ambiguous")
     item.add_argument("--endpoint", required=True)
     item.add_argument("--higher-is-better", action=argparse.BooleanOptionalAction, required=True)
     item.add_argument("--endpoint-unit")
@@ -2885,6 +2941,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--owner-id", required=True)
     item.add_argument("--process-id", type=int)
     item.add_argument("--lease-minutes", type=int, default=30)
+    item.add_argument("--smiles-column", help="Populate missing SMILES metadata when resuming a legacy Run; an existing value is immutable")
     item.set_defaults(func=cmd_resume_round)
 
     item = commands.add_parser("continue-round")
