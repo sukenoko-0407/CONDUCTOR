@@ -49,6 +49,152 @@ class Runtime013Tests(unittest.TestCase):
         planned = json.loads(self.command("plan-basic", "--run-root", str(run_root), "--lease-token", lease, "--action-token", action).stdout)
         return run_root, lease, planned["action_token"]
 
+    def test_default_lease_and_executor_timeout_are_six_hours(self) -> None:
+        parser = RUNTIME.build_parser()
+        resumed = parser.parse_args([
+            "resume-round", "--run-root", "run", "--control-key", "key", "--owner-id", "owner",
+        ])
+        heartbeat = parser.parse_args([
+            "heartbeat", "--run-root", "run", "--lease-token", "lease", "--action-token", "action",
+        ])
+        direct = parser.parse_args([
+            "execute-batch", "--run-root", "run", "--lease-token", "lease", "--action-token", "action",
+        ])
+        packet = parser.parse_args([
+            "prepare-execution-packet", "--run-root", "run", "--lease-token", "lease", "--action-token", "action",
+        ])
+
+        self.assertEqual(360, RUNTIME.DEFAULT_LEASE_MINUTES)
+        self.assertEqual(360, RUNTIME.DEFAULT_EXECUTION_TIMEOUT_MINUTES)
+        self.assertEqual(360, resumed.lease_minutes)
+        self.assertEqual(360, heartbeat.lease_minutes)
+        self.assertEqual(360, direct.timeout_minutes)
+        self.assertEqual(360, packet.timeout_minutes)
+
+    def test_bundled_schema_references_resolve_offline(self) -> None:
+        subject = {
+            "scope_mode": "global",
+            "cluster_ids": [],
+            "clustering_input_kind": "none",
+            "cluster_source_description_nodes": [],
+            "analysis_description_nodes": ["N000001"],
+            "clustering_nodes": [],
+            "population_count": 2,
+            "endpoint_valid_count": 2,
+            "analyzed_count": 2,
+            "excluded_count": 0,
+            "compound_set_hash": "0" * 64,
+        }
+        created_at = "2026-08-20T00:00:00+00:00"
+        card = {
+            "schema_version": "1.0.0",
+            "result_ref": "N000002@ATT0001",
+            "node_id": "N000002",
+            "capability_id": "A001",
+            "round_id": "RND0001",
+            "analysis_subject": subject,
+            "endpoint": {"name": "pIC50"},
+            "metric": None,
+            "headline": "offline validation",
+            "key_metrics": {},
+            "validation_passed": True,
+            "eligible_for_downstream": True,
+            "quality_flags": [],
+            "artifact_links": {},
+            "created_at": created_at,
+        }
+        analysis_result = {
+            "document_type": "analysis_result",
+            "schema_version": "1.0.0",
+            "node_id": "N000002",
+            "capability_id": "A001",
+            "analysis_subject": subject,
+            "primary_payload": "analysis.csv",
+            "report": "analysis.html",
+            "result_cards": ["result_card.json"],
+            "created_at": created_at,
+        }
+        interpretation = {
+            "schema_version": "3.0.0",
+            "run_id": "run-013",
+            "round_id": "RND0001",
+            "node_id": "N000003",
+            "title": "Offline interpretation",
+            "report_header": {
+                "project": "test",
+                "endpoint": "pIC50",
+                "higher_is_better": True,
+                "endpoint_unit": None,
+                "endpoint_transform": None,
+                "completion": "complete",
+            },
+            "executive_summary": "Summary",
+            "coverage_summary": "Coverage",
+            "insights": [],
+            "result_catalog": [card],
+            "review_manifest": {
+                "schema_version": "1.0.0",
+                "round_id": "RND0001",
+                "detailed_result_refs": ["N000002@ATT0001"],
+                "aggregate_result_refs": [],
+                "unreviewed_results": [],
+                "scope_counts": {"global": 1},
+                "operator_counts": {"A001": 1},
+                "description_counts": {"N000001": 1},
+                "created_at": created_at,
+            },
+            "created_at": created_at,
+        }
+
+        RUNTIME._local_schema_registry.cache_clear()
+        with mock.patch("urllib.request.urlopen", side_effect=AssertionError("HTTP retrieval attempted")):
+            RUNTIME.validate(analysis_result, "analysis_result.schema.json")
+            RUNTIME.validate(card, "result_card.schema.json")
+            RUNTIME.validate(interpretation, "interpretation.schema.json")
+        from referencing.exceptions import NoSuchResource
+
+        schemas, registry = RUNTIME._local_schema_registry()
+        self.assertEqual(
+            "https://json-schema.org/draft/2020-12/schema",
+            schemas["analysis_result.schema.json"]["$schema"],
+        )
+        with self.assertRaises(NoSuchResource):
+            registry.get_or_retrieve("https://example.invalid/not-bundled.schema.json")
+
+        interpretation_runner = (
+            ROOT
+            / ".claude"
+            / "skills"
+            / "cs-analysis-interpret-results"
+            / "scripts"
+            / "run.py"
+        )
+        interpretation_spec = importlib.util.spec_from_file_location(
+            "conductor_interpretation_schema_review",
+            interpretation_runner,
+        )
+        interpretation_module = importlib.util.module_from_spec(interpretation_spec)
+        assert interpretation_spec and interpretation_spec.loader
+        interpretation_spec.loader.exec_module(interpretation_module)
+        with mock.patch("urllib.request.urlopen", side_effect=AssertionError("HTTP retrieval attempted")):
+            self.assertEqual(
+                [],
+                interpretation_module.validate_context_schemas(
+                    {
+                        "result_cards": [card],
+                        "review_manifest": interpretation["review_manifest"],
+                    }
+                ),
+            )
+            invalid_card = {**card, "node_id": "invalid"}
+            context_issues = interpretation_module.validate_context_schemas(
+                {
+                    "result_cards": [invalid_card],
+                    "review_manifest": interpretation["review_manifest"],
+                }
+            )
+            self.assertTrue(any("result_cards[1] schema error" in issue for issue in context_issues))
+
     def test_main_orchestrator_is_manual_skill_not_agent(self) -> None:
         skill = ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "SKILL.md"
         self.assertTrue(skill.is_file())
@@ -60,9 +206,20 @@ class Runtime013Tests(unittest.TestCase):
         self.assertIn("cs-conductor-runtime", orchestrator_runner)
         self.assertNotIn('"runtime_controller.py"', orchestrator_runner)
         runtime_manifest = tomllib.loads((ROOT / ".claude" / "skills" / "cs-conductor-runtime" / "env" / "pixi.toml").read_text(encoding="utf-8"))
-        for dependency in ("jsonschema", "pandas", "pyarrow"):
+        for dependency in ("jsonschema", "referencing", "pandas", "pyarrow"):
             self.assertIn(dependency, runtime_manifest["dependencies"])
             self.assertIn(dependency, runtime_manifest["tasks"]["smoke"])
+        self.assertEqual(">=4.21,<5", runtime_manifest["dependencies"]["jsonschema"])
+        interpretation_root = ROOT / ".claude" / "skills" / "cs-analysis-interpret-results"
+        interpretation_manifest = tomllib.loads((interpretation_root / "env" / "pixi.toml").read_text(encoding="utf-8"))
+        self.assertEqual(">=4.21,<5", interpretation_manifest["dependencies"]["jsonschema"])
+        self.assertIn("referencing", interpretation_manifest["dependencies"])
+        self.assertIn("referencing", interpretation_manifest["tasks"]["smoke"])
+        self.assertTrue((interpretation_root / "schemas" / "interpretation_review_manifest.schema.json").is_file())
+        interpretation_skill = (interpretation_root / "SKILL.md").read_text(encoding="utf-8")
+        interpretation_readme = (interpretation_root / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("--overwrite", interpretation_skill)
+        self.assertIn("--output-dir path/to/preview", interpretation_readme)
         self.assertFalse((ROOT / ".claude" / "agents" / "cs-conductor-orchestrator.md").exists())
         self.assertTrue((ROOT / ".claude" / "agents" / "cs-conductor-executor.md").is_file())
         self.assertTrue((ROOT / ".claude" / "agents" / "cs-conductor-interpreter.md").is_file())

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/interpretation_review_manifest.schema.json",
+  "title": "Interpretation Review Manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "round_id",
+    "detailed_result_refs",
+    "aggregate_result_refs",
+    "unreviewed_results",
+    "scope_counts",
+    "operator_counts",
+    "description_counts",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+    "detailed_result_refs": {"type": "array", "items": {"type": "string"}},
+    "aggregate_result_refs": {"type": "array", "items": {"type": "string"}},
+    "unreviewed_results": {"type": "array", "items": {"type": "object"}},
+    "scope_counts": {"type": "object"},
+    "operator_counts": {"type": "object"},
+    "description_counts": {"type": "object"},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

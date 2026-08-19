@@ -152,7 +152,7 @@ def main() -> int:
             errors.append(f"invalid CONDUCTOR Runtime Pixi manifest: {exc}")
         else:
             dependencies = manifest.get("dependencies", {})
-            for dependency in ("jsonschema", "pandas", "pyarrow"):
+            for dependency in ("jsonschema", "referencing", "pandas", "pyarrow"):
                 if dependency not in dependencies:
                     errors.append(f"missing CONDUCTOR Runtime dependency: {dependency}")
                 if dependency not in manifest.get("tasks", {}).get("smoke", ""):

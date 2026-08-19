@@ -5,8 +5,12 @@ import html
 import json
 import shutil
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+
+SKILL_DIR = Path(__file__).resolve().parents[1]
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -16,6 +20,64 @@ def read_json(path: Path) -> dict[str, Any]:
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+@lru_cache(maxsize=1)
+def _local_schema_registry() -> tuple[dict[str, dict[str, Any]], Any]:
+    from referencing import Registry, Resource
+    from referencing.jsonschema import DRAFT202012
+
+    schemas: dict[str, dict[str, Any]] = {}
+    resources: list[tuple[str, Any]] = []
+    registered_ids: set[str] = set()
+    for path in sorted((SKILL_DIR / "schemas").glob("*.schema.json")):
+        schema = read_json(path)
+        schema_id = schema.get("$id")
+        if not isinstance(schema_id, str) or not schema_id:
+            raise ValueError(f"Bundled Schema has no $id: {path.name}")
+        if schema_id in registered_ids:
+            raise ValueError(f"Duplicate bundled Schema $id: {schema_id}")
+        registered_ids.add(schema_id)
+        schemas[path.name] = schema
+        resource = Resource.from_contents(schema, default_specification=DRAFT202012)
+        resources.extend(((schema_id, resource), (path.resolve().as_uri(), resource)))
+    return schemas, Registry().with_resources(resources)
+
+
+def validate_schema(instance: dict[str, Any], schema_name: str) -> None:
+    import jsonschema
+
+    schemas, registry = _local_schema_registry()
+    if schema_name not in schemas:
+        raise FileNotFoundError(f"Bundled Schema is not registered: {schema_name}")
+    schema = schemas[schema_name]
+    validator_class = jsonschema.validators.validator_for(schema)
+    validator_class.check_schema(schema)
+    validator_class(
+        schema,
+        registry=registry,
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(instance)
+
+
+def validate_context_schemas(context: dict[str, Any]) -> list[str]:
+    import jsonschema
+
+    issues: list[str] = []
+    for index, card in enumerate(context.get("result_cards") or [], 1):
+        try:
+            validate_schema(card, "result_card.schema.json")
+        except jsonschema.ValidationError as exc:
+            location = ".".join(str(item) for item in exc.absolute_path) or "<root>"
+            issues.append(f"result_cards[{index}] schema error at {location}: {exc.message}")
+    review_manifest = context.get("review_manifest")
+    if review_manifest is not None:
+        try:
+            validate_schema(review_manifest, "interpretation_review_manifest.schema.json")
+        except jsonschema.ValidationError as exc:
+            location = ".".join(str(item) for item in exc.absolute_path) or "<root>"
+            issues.append(f"review_manifest schema error at {location}: {exc.message}")
+    return issues
 
 
 def validate_draft(context: dict[str, Any], draft: dict[str, Any]) -> list[str]:
@@ -57,7 +119,7 @@ def main() -> int:
     args = parser.parse_args()
     context = read_json(Path(args.context))
     draft = read_json(Path(args.draft))
-    issues = validate_draft(context, draft)
+    issues = [*validate_context_schemas(context), *validate_draft(context, draft)]
     output = Path(args.output_dir)
     if output.exists():
         raise FileExistsError(output)

@@ -13,10 +13,10 @@ import socket
 import subprocess
 import sys
 import time
-import warnings
 from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
@@ -29,6 +29,9 @@ MAX_WORKING_SET_BYTES = 64 * 1024
 MAX_CANDIDATES = 20
 MAX_COMPACT_RESPONSE_BYTES = 16 * 1024
 EXECUTION_PACKET_TTL_MINUTES = 15
+DEFAULT_LEASE_MINUTES = 360
+DEFAULT_EXECUTION_TIMEOUT_MINUTES = 360
+EXECUTION_LEASE_GRACE_MINUTES = 10
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
 RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
@@ -195,17 +198,43 @@ def module_root() -> Path:
     return project_root() / "CONDUCTOR_modules"
 
 
+@lru_cache(maxsize=1)
+def _local_schema_registry() -> tuple[dict[str, dict[str, Any]], Any]:
+    from referencing import Registry, Resource
+    from referencing.jsonschema import DRAFT202012
+
+    schema_dir = module_root() / "schemas"
+    schemas: dict[str, dict[str, Any]] = {}
+    resources: list[tuple[str, Resource[Any]]] = []
+    registered_ids: set[str] = set()
+    for path in sorted(schema_dir.glob("*.schema.json")):
+        schema = read_json(path)
+        schema_id = schema.get("$id")
+        if not isinstance(schema_id, str) or not schema_id:
+            raise ValueError(f"Bundled Schema has no $id: {path.name}")
+        if schema_id in registered_ids:
+            raise ValueError(f"Duplicate bundled Schema $id: {schema_id}")
+        registered_ids.add(schema_id)
+        schemas[path.name] = schema
+        resource = Resource.from_contents(schema, default_specification=DRAFT202012)
+        resources.extend(((schema_id, resource), (path.resolve().as_uri(), resource)))
+    return schemas, Registry().with_resources(resources)
+
+
 def validate(instance: dict[str, Any], schema_name: str) -> None:
     import jsonschema
 
-    schema_dir = module_root() / "schemas"
-    schema = read_json(schema_dir / schema_name)
-    # jsonschema still supports this resolver and it keeps copied Skill schemas
-    # self-contained. Hide only its deprecation warning from human-facing CLI output.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        resolver = jsonschema.RefResolver(base_uri=schema_dir.resolve().as_uri() + "/", referrer=schema)
-        jsonschema.validate(instance=instance, schema=schema, resolver=resolver, format_checker=jsonschema.FormatChecker())
+    schemas, registry = _local_schema_registry()
+    if schema_name not in schemas:
+        raise FileNotFoundError(f"Bundled Schema is not registered: {schema_name}")
+    schema = schemas[schema_name]
+    validator_class = jsonschema.validators.validator_for(schema)
+    validator_class.check_schema(schema)
+    validator_class(
+        schema,
+        registry=registry,
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(instance)
 
 
 def catalog() -> dict[str, dict[str, Any]]:
@@ -2180,7 +2209,13 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
             node["status"] = "running"
             selected.append((node, attempt, scratch, resolved_command))
         now = datetime.now(timezone.utc)
-        control["lease"]["expires_at"] = (now + timedelta(seconds=execution_timeout_seconds + 600)).isoformat()
+        control["lease"]["expires_at"] = (
+            now
+            + timedelta(
+                seconds=execution_timeout_seconds,
+                minutes=EXECUTION_LEASE_GRACE_MINUTES,
+            )
+        ).isoformat()
         interim_token = _commit(root, control, snapshot, "batch_started", {"nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": attempt["command_argv"]} for node, attempt, _scratch, _resolved_command in selected], "execution_timeout_seconds": execution_timeout_seconds}, round_id=control["active_round_id"])
     outcomes: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=len(selected)) as executor:
@@ -2240,7 +2275,9 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
                 failed.append(node_id)
                 event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "failed", "failure_code": failure_packet["classification"], "recoverable": failure_packet["recoverable"], "failure_pointer": str(failure_path.relative_to(root))})
         control["lease"]["heartbeat_at"] = utc_now()
-        control["lease"]["expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+        control["lease"]["expires_at"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=DEFAULT_LEASE_MINUTES)
+        ).isoformat()
         token = _commit(root, control, snapshot, "batch_reconciled", {"outcomes": event_payload}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
     detail_dir = root / "runtime" / "logs"
@@ -2263,7 +2300,7 @@ def cmd_execute_packet(args: argparse.Namespace) -> int:
     args.lease_token = None
     args.action_token = None
     args.node_ids = None
-    args.timeout_minutes = 180
+    args.timeout_minutes = DEFAULT_EXECUTION_TIMEOUT_MINUTES
     args.clean_scratch = True
     return cmd_execute_batch(args)
 
@@ -3001,7 +3038,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--control-key", required=True)
     item.add_argument("--owner-id", required=True)
     item.add_argument("--process-id", type=int)
-    item.add_argument("--lease-minutes", type=int, default=30)
+    item.add_argument("--lease-minutes", type=int, default=DEFAULT_LEASE_MINUTES)
     item.add_argument("--smiles-column", help="Populate missing SMILES metadata when resuming a legacy Run; an existing value is immutable")
     item.set_defaults(func=cmd_resume_round)
 
@@ -3054,7 +3091,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("heartbeat")
     _action_args(item)
-    item.add_argument("--lease-minutes", type=int, default=30)
+    item.add_argument("--lease-minutes", type=int, default=DEFAULT_LEASE_MINUTES)
     item.set_defaults(func=cmd_heartbeat)
 
     for name, function in (("plan-basic", cmd_plan_basic), ("plan-initial-global", cmd_plan_initial_global), ("plan-initial-local", cmd_plan_initial_local)):
@@ -3072,14 +3109,14 @@ def build_parser() -> argparse.ArgumentParser:
     item = commands.add_parser("execute-batch")
     _action_args(item)
     item.add_argument("--node-ids")
-    item.add_argument("--timeout-minutes", type=int, default=180)
+    item.add_argument("--timeout-minutes", type=int, default=DEFAULT_EXECUTION_TIMEOUT_MINUTES)
     item.add_argument("--clean-scratch", action=argparse.BooleanOptionalAction, default=True)
     item.set_defaults(func=cmd_execute_batch)
 
     item = commands.add_parser("prepare-execution-packet")
     _action_args(item)
     item.add_argument("--node-ids")
-    item.add_argument("--timeout-minutes", type=int, default=180)
+    item.add_argument("--timeout-minutes", type=int, default=DEFAULT_EXECUTION_TIMEOUT_MINUTES)
     item.add_argument("--clean-scratch", action=argparse.BooleanOptionalAction, default=True)
     item.set_defaults(func=cmd_prepare_execution_packet)
 

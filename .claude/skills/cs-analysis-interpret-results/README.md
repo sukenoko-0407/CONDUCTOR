@@ -17,7 +17,7 @@
 一般利用（主成果物のみ）:
 
 ```bash
-python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context path/to/interpretation_context.json --draft path/to/interpretation_draft.json
+python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context path/to/interpretation_context.json --draft path/to/interpretation_draft.json --output-dir path/to/preview
 ```
 
 

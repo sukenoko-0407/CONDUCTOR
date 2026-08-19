@@ -19,7 +19,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
 2. Runtimeが作成したcontextとdraftを確認し、許可されたOperator resultだけを扱う。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
-4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
+4. `--output-dir`には存在しない新規directoryを指定する。既存出力を上書きしない。
 5. 実行後にpreview JSON／Markdown／HTMLを確認する。正式成果物はRuntimeだけがcommitする。
 
 ## Algorithm-specific options
