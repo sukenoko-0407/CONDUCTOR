@@ -213,6 +213,75 @@ class Runtime013Tests(unittest.TestCase):
             )
             self.assertNotIn("--smiles-column", nonstructure_command)
 
+    def test_runtime_passes_only_the_canonical_description_result_downstream(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name)
+        control = {
+            "run": {
+                "project": "test", "run_id": "run-013", "input": "input.csv",
+                "endpoint": "pIC50", "higher_is_better": True, "smiles_column": "smiles",
+            }
+        }
+        description_capability = RUNTIME.catalog()["D001"]
+        description = {
+            "node_id": "N000001", "capability_id": "D001", "skill_name": description_capability["skill_name"],
+            "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
+            "output_ref": str(base / "description" / "N000001"),
+        }
+        description_output = Path(description["output_ref"])
+        description_output.mkdir(parents=True)
+        (description_output / "features.csv").write_text("compound_id,f1\nC001,1\nC002,2\n", encoding="utf-8")
+        RUNTIME.write_json(
+            description_output / "result.json",
+            {
+                "document_type": "description_result", "schema_version": "1.0.0", "node_id": "N000001", "capability_id": "D001",
+                "payload": "features.csv", "row_count": 2, "feature_count": 1,
+                "value_semantics": "dense_continuous", "natural_metric": "euclidean",
+                "feature_columns": ["f1"], "quality_flags": [], "created_at": RUNTIME.utc_now(),
+            },
+        )
+        for capability_id, kind in (("C005", "clustering"), ("A003", "analysis"), ("A004", "analysis")):
+            capability = RUNTIME.catalog()[capability_id]
+            node = {
+                "node_id": f"N{int(capability_id[1:]) + 10:06d}", "capability_id": capability_id,
+                "skill_name": capability["skill_name"], "assigned_round": "RND0001", "kind": kind,
+                "input_nodes": [description["node_id"]], "parameters": {}, "scope": {"mode": "global"},
+            }
+            command = RUNTIME._skill_command(
+                ROOT, control, {"nodes": [description, node]}, node, "ATT0001",
+                base / capability_id / "ATT0001",
+            )
+            option = command.index("--description-result")
+            self.assertEqual(str(Path(description["output_ref"]) / "result.json"), command[option + 1])
+
+    def test_canonical_result_identity_and_artifact_paths_are_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "description" / "N000001"
+            output.mkdir(parents=True)
+            node = {
+                "node_id": "N000001", "capability_id": "D001", "kind": "description",
+                "output_ref": str(output),
+            }
+            payload = output / "features.csv"
+            payload.write_text("compound_id,f1\nC001,1\n", encoding="utf-8")
+            result = {
+                "document_type": "description_result", "schema_version": "1.0.0",
+                "node_id": "N000001", "capability_id": "D001", "payload": payload.name,
+                "row_count": 1, "feature_count": 1, "value_semantics": "dense_continuous",
+                "natural_metric": "euclidean", "feature_columns": ["f1"], "quality_flags": [],
+                "created_at": RUNTIME.utc_now(),
+            }
+            RUNTIME.write_json(output / "result.json", result)
+            self.assertEqual(payload, RUNTIME._primary_payload(node))
+            result["capability_id"] = "D002"
+            RUNTIME.write_json(output / "result.json", result)
+            with self.assertRaises(Exception):
+                RUNTIME._canonical_result(node)
+            with self.assertRaises(ValueError):
+                RUNTIME._skill_artifact_path(root, "../escaped.json")
+
     def test_init_requires_explicit_smiles_column_only_when_ambiguous(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

@@ -53,8 +53,10 @@ class BetaContracts(unittest.TestCase):
         runner=(SKILLS/mcs["skill_name"]/"scripts"/"run.py").read_text(encoding="utf-8")
         self.assertIn("rng.sample",runner);self.assertIn('parser.error("--min-cluster-size must be >= 5")',runner)
         vector=next(x for x in clusters if x["capability_id"]=="C005")
-        self.assertEqual(["description_vector_csv"],vector["input_contract"])
-        self.assertIn("Binary Description vectors require --metric tanimoto",(SKILLS/vector["skill_name"]/"scripts"/"run.py").read_text(encoding="utf-8"))
+        self.assertEqual(["description_vector_payload","canonical_description_result_in_conductor","explicit_semantics_metric_in_general"],vector["input_contract"])
+        vector_runner=(SKILLS/vector["skill_name"]/"scripts"/"run.py").read_text(encoding="utf-8")
+        self.assertIn("Binary Description vectors require --metric tanimoto",vector_runner)
+        self.assertIn("--description-result",vector_runner);self.assertNotIn("--description-manifest",vector_runner)
         operator=(SKILLS/"cs-analysis-sali"/"scripts"/"run.py").read_text(encoding="utf-8");self.assertIn('representation == "D020"',operator);self.assertNotIn('representation == "D019" or any("embedding"',operator)
 
     def test_docs_and_layout_verifier(self)->None:

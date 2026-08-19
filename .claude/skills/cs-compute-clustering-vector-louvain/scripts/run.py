@@ -125,7 +125,8 @@ def parse_args() -> argparse.Namespace:
     if algorithm.startswith("vector_"):
         parser.add_argument("--metric", choices=["auto", "tanimoto", "cosine", "euclidean", "manhattan"], default="auto")
         parser.add_argument("--input-representation", help="Description capability ID, for example D002 or D013.")
-        parser.add_argument("--description-manifest", help="Description manifest whose value semantics and natural metric bind this run.")
+        parser.add_argument("--description-result", help="Canonical Runtime Description Result 1.0.0 that binds the vector payload and metric.")
+        parser.add_argument("--value-semantics", choices=["binary_fingerprint", "sparse_count", "dense_continuous", "dense_shape_moment", "dense_embedding"], help="Required with an explicit non-auto metric for standalone vectors that have no Runtime Description Result.")
         parser.add_argument("--parameter-mode", choices=["auto", "fixed"], default="auto", help="Select parameters from the observed distance geometry, or use explicit fixed values.")
     method = algorithm.split("_", 1)[1] if algorithm.startswith(("structure_", "vector_")) else ("connected_components" if algorithm == "meta_overlap" else None)
     if algorithm.startswith("vector_") and method in {"butina", "connected_components"}:
@@ -326,30 +327,41 @@ def rule_clusters(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace,
     raise ValueError(f"Unsupported rule clustering: {algorithm}")
 
 
-def description_manifest(args: argparse.Namespace) -> dict[str, Any]:
-    if not getattr(args, "description_manifest", None):
+def description_contract(args: argparse.Namespace) -> dict[str, Any]:
+    result_path_value = getattr(args, "description_result", None)
+    if not result_path_value:
         if args.conductor:
-            raise ValueError("CONDUCTOR Vector Clustering requires --description-manifest")
-        return {}
-    manifest = json.loads(Path(args.description_manifest).read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != "2.0.0" or manifest.get("artifact_stage") != "description":
-        raise ValueError("Description manifest must be a schema 2.0.0 description artifact")
+            raise ValueError("CONDUCTOR Vector Clustering requires --description-result")
+        if not getattr(args, "value_semantics", None) or args.metric == "auto":
+            raise ValueError("Standalone vectors without --description-result require --value-semantics and an explicit non-auto --metric")
+        expected_metric = {"binary_fingerprint": "tanimoto", "sparse_count": "cosine", "dense_continuous": "euclidean", "dense_shape_moment": "manhattan", "dense_embedding": "cosine"}[args.value_semantics]
+        if args.metric != expected_metric:
+            raise ValueError(f"{args.value_semantics} vectors require --metric {expected_metric}")
+        return {"value_semantics": args.value_semantics, "natural_metric": args.metric, "feature_columns": []}
+    if getattr(args, "value_semantics", None):
+        raise ValueError("--value-semantics cannot be combined with --description-result; the canonical result is authoritative")
+    result_path = Path(result_path_value).resolve()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    validate_json(result, "description_result.schema.json")
+    declared_payload = (result_path.parent / result["payload"]).resolve()
+    if Path(args.input).resolve() != declared_payload:
+        raise ValueError("--input does not match the payload bound by --description-result")
     representation = str(args.input_representation or "").upper()
-    manifest_representation = str(manifest.get("capability_id") or manifest.get("representation_id") or "").upper()
-    if representation and manifest_representation and representation != manifest_representation:
-        raise ValueError("--input-representation conflicts with --description-manifest")
-    return manifest
+    result_representation = str(result["capability_id"]).upper()
+    if representation and representation != result_representation:
+        raise ValueError("--input-representation conflicts with --description-result")
+    return result
 
 
-def resolve_vector_metric(values: pd.DataFrame, features: list[str], args: argparse.Namespace, manifest: dict[str, Any]) -> str:
+def resolve_vector_metric(values: pd.DataFrame, features: list[str], args: argparse.Namespace, contract: dict[str, Any]) -> str:
     observed = values.to_numpy(dtype=float)
     finite = observed[np.isfinite(observed)]
     is_binary = bool(finite.size) and bool(np.isin(finite, [0.0, 1.0]).all())
     representation = str(args.input_representation or "").upper()
-    manifest_representation = str(manifest.get("capability_id") or manifest.get("representation_id") or "").upper()
-    representation = representation or manifest_representation
-    semantics = str(manifest.get("value_semantics") or "")
-    bound_metric = str(manifest.get("natural_metric") or "")
+    contract_representation = str(contract.get("capability_id") or "").upper()
+    representation = representation or contract_representation
+    semantics = str(contract.get("value_semantics") or "")
+    bound_metric = str(contract.get("natural_metric") or "")
     fingerprint_ids = {"D002", "D003", "D007", "D008", "D009", "D010", "D011"}
     representation_metrics = {
         **{item: "tanimoto" for item in fingerprint_ids},
@@ -373,7 +385,7 @@ def resolve_vector_metric(values: pd.DataFrame, features: list[str], args: argpa
         raise ValueError("--metric tanimoto requires non-negative Description values")
     if requested != "auto":
         if bound_metric and requested != bound_metric:
-            raise ValueError(f"Requested metric {requested} conflicts with Description manifest metric {bound_metric}")
+            raise ValueError(f"Requested metric {requested} conflicts with the Description Result metric {bound_metric}")
         return requested
     if bound_metric:
         return bound_metric
@@ -479,13 +491,13 @@ def vector_distances(df: pd.DataFrame, args: argparse.Namespace) -> tuple[list[i
     from sklearn.impute import SimpleImputer
     from sklearn.metrics import pairwise_distances
     from sklearn.preprocessing import StandardScaler
-    manifest = description_manifest(args)
+    contract = description_contract(args)
     excluded = {"compound_id", "input_smiles", "canonical_smiles", "mol_parse_ok", "description_error", "descriptor_error", "cluster_id"}
-    declared_features = [str(column) for column in manifest.get("feature_columns") or []]
+    declared_features = [str(column) for column in contract.get("feature_columns") or []]
     if declared_features:
         missing_declared = [column for column in declared_features if column not in df.columns]
         if missing_declared:
-            raise ValueError(f"Description artifact is missing manifest feature columns: {missing_declared[:10]}")
+            raise ValueError(f"Description payload is missing Result-bound feature columns: {missing_declared[:10]}")
         features = [column for column in declared_features if pd.api.types.is_numeric_dtype(df[column])]
         non_numeric = sorted(set(declared_features) - set(features))
         if non_numeric:
@@ -502,14 +514,19 @@ def vector_distances(df: pd.DataFrame, args: argparse.Namespace) -> tuple[list[i
     positions = np.flatnonzero(valid_mask.to_numpy()).tolist()
     if not positions:
         empty = np.zeros((0, 0), dtype=float)
-        profile = distance_profile(empty, args.metric, raw_feature_count, 0, {"all_missing": raw_feature_count, "constant": 0}, len(df), 0, 0)
-        return [], empty, [], args.metric, profile
+        empty_metric = str(contract.get("natural_metric") or args.metric)
+        profile = distance_profile(empty, empty_metric, raw_feature_count, 0, {"all_missing": raw_feature_count, "constant": 0}, len(df), 0, 0)
+        return [], empty, [], empty_metric, profile
     all_missing = [column for column in features if not df.iloc[positions][column].notna().any()]
     features = [column for column in features if column not in all_missing]
     if not features:
         raise ValueError("No usable numeric feature columns were found")
     values = df.iloc[positions][features]
-    resolved_metric = resolve_vector_metric(values, features, args, manifest)
+    if contract.get("row_count") is not None and int(contract["row_count"]) != len(df):
+        raise ValueError("Description Result row_count does not match the vector payload")
+    if declared_features and int(contract["feature_count"]) != len(declared_features):
+        raise ValueError("Description Result feature_count does not match feature_columns")
+    resolved_metric = resolve_vector_metric(values, features, args, contract)
     if resolved_metric == "tanimoto":
         matrix = SimpleImputer(strategy="constant", fill_value=0).fit_transform(values).astype(float)
     else:

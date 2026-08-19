@@ -17,14 +17,14 @@ Description空間をPCAで2次元投影し、endpoint勾配やCluster配置を�
 一般利用（主成果物のみ）:
 
 ```bash
-python .claude/skills/cs-analysis-projection-pca/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv
+python .claude/skills/cs-analysis-projection-pca/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv --value-semantics dense_continuous --metric euclidean
 ```
 
 
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-analysis-projection-pca/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
+python .claude/skills/cs-analysis-projection-pca/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv --description-result path/to/run_root/description/N000001/result.json --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
@@ -32,9 +32,11 @@ python .claude/skills/cs-analysis-projection-pca/scripts/launch.py --input compo
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
 - CONDUCTORモードではState由来のDescription／Clustering Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。
+- CONDUCTORのprojection-fitではCanonical Description Result 1.0.0だけを受け付け、Skill内部Artifact Manifestは入力にしない。一般利用でResultがない場合はvalue semanticsとMetricを明示する。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
+| 1.0.1 | 下流入力をCanonical Description Result 1.0.0へ一本化し、互換分岐を廃止。 |

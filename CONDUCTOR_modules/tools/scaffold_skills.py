@@ -382,7 +382,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
         }
         if algorithm.startswith(("structure_", "vector_")) and algorithm.split("_", 1)[1] not in {"murcko", "mcs", "brics", "recap"}:
             method = algorithm.split("_", 1)[1]
-            source_options = "`--metric auto`でDescription manifestに固定されたMetricを使用する。`--parameter-mode auto`を既定とし、Clustering Skill自身がactivityを使わず距離・近傍構造から手法固有parameterを選ぶ。人間が再現条件を固定する場合だけ`--parameter-mode fixed`を使う。"
+            source_options = "`--metric auto`でCanonical Description Resultに固定されたMetricを使用する。`--parameter-mode auto`を既定とし、Clustering Skill自身がactivityを使わず距離・近傍構造から手法固有parameterを選ぶ。人間が再現条件を固定する場合だけ`--parameter-mode fixed`を使う。"
             method_options = {
                 "butina": "autoではk近傍距離からnative-distance cutoffを選ぶ。fixedでは`--distance-cutoff`を指定する。",
                 "hierarchical": "autoではaverage-linkage距離gapから切断候補を選ぶ。fixedでは`--n-clusters`または`--distance-threshold`を指定する。",
@@ -394,10 +394,12 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             option_guidance = f"`--min-cluster-size`未満のClusterを登録しない。{source_options}{method_options}"
         else:
             option_guidance = clustering_options[algorithm]
+        general_args = base_args
         conductor_args = base_args
         if algorithm.startswith("vector_"):
-            conductor_args += " --description-manifest path/to/description_manifest.json"
-        general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
+            general_args += " --value-semantics dense_continuous --metric euclidean"
+            conductor_args += " --description-result path/to/run_root/description/N000001/result.json"
+        general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {general_args} --run-id general-001'
         conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {conductor_args} --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001'
         output_contract = '''- 通常モード: `results/clustering/<input>/<skill>/<run-id>/`へ`cluster_membership.csv`、`cluster_summary.csv`、`clustering_diagnostics.csv`を生成する。
 - CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/clustering/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ通常成果物、Vector Clusteringでは`distance_profile.json`、さらに`clustering_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。'''
@@ -412,8 +414,10 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             extra += " --membership path/to/cluster_membership.csv"
             dependency_text += " `--membership`でClustering membershipを必ず指定する。"
         base_args = f"--input compounds.csv --property-column pIC50 --higher-is-better{extra}"
-        general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --run-id general-001'
-        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args} --conductor --project PROJECT --run-id RUN_ID --node-id N000001 --round-id RND0001 --attempt-id ATT0001'
+        metadata_general = " --value-semantics dense_continuous --metric euclidean" if capability["implementation"]["operator"] in {"projection_pca", "projection_umap"} else ""
+        metadata_conductor = " --description-result path/to/run_root/description/N000001/result.json" if capability["implementation"]["operator"] in {"projection_pca", "projection_umap"} else ""
+        general_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args}{metadata_general} --run-id general-001'
+        conductor_example = f'python "${{CLAUDE_SKILL_DIR}}/scripts/launch.py" {base_args}{metadata_conductor} --conductor --project PROJECT --run-id RUN_ID --node-id N000002 --round-id RND0001 --attempt-id ATT0001'
         inputs = f"元CSV、endpoint列、`--higher-is-better`または`--no-higher-is-better`を必ず指定する。{dependency_text}"
         operator = capability["implementation"]["operator"]
         if operator == "sali":
@@ -453,9 +457,11 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
     if kind == "description":
         workflow_input = "入力形式、compound ID列、SMILES列を確認し、曖昧な列だけを明示指定する。"
     elif kind == "clustering" and capability["implementation"]["algorithm"].startswith("vector_"):
-        workflow_input = "Description CSVのrepresentationを確認する。CONDUCTORモードではStateが束縛した`--input-representation`と`--description-manifest`を必ず渡す。"
+        workflow_input = "Description CSVのrepresentationを確認する。CONDUCTORモードではStateが束縛した`--input-representation`とCanonical Description Result 1.0.0を`--description-result`で必ず渡す。一般利用でResultがない場合は`--value-semantics`と非autoの`--metric`を明示する。"
     elif kind == "clustering":
         workflow_input = "入力列とClustering固有の上流artifactを確認し、曖昧な列だけを明示指定する。"
+    elif kind == "analysis" and capability["implementation"]["operator"] in {"projection_pca", "projection_umap"}:
+        workflow_input = "CONDUCTORモードのprojection-fitではCanonical Description Result 1.0.0を`--description-result`で必ず渡す。一般利用でResultがない場合は`--value-semantics`と`--metric`を明示する。cluster-overlayでは既存projectionとmembershipを使い、再fitしない。"
     elif kind == "analysis":
         workflow_input = "Stateが束縛したDescription／Clustering Capabilityとsource Node IDを、対応する上流artifactとともに渡す。"
     else:
@@ -555,6 +561,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
     )
     conductor_args = "--conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001"
     readme_conductor_extra = ""
+    conductor_base_args = None
 
     if kind == "description":
         algorithm = capability["implementation"]["algorithm"]
@@ -598,8 +605,9 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         elif algorithm.startswith("vector_"):
             purpose = f"Description Skillが生成した数値vectorへ{display}を適用し、cluster membershipとsummaryを生成する。"
             scenes = "descriptor、fingerprint、embedding空間で化合物をCluster化し、SMILESを直接扱う構造Clusteringと比較する場合。"
-            general_args = "--input description.csv --input-representation D001"
-            readme_conductor_extra = " --description-manifest path/to/description_manifest.json"
+            general_args = "--input description.csv --input-representation D001 --value-semantics dense_continuous --metric euclidean"
+            conductor_base_args = "--input description.csv --input-representation D001"
+            readme_conductor_extra = " --description-result path/to/run_root/description/N000001/result.json"
         elif algorithm == "categorical":
             purpose = "CSVのカテゴリ列からClusterを作り、cluster membershipとsummaryを生成する。"
             scenes = "assay条件、既知series、sourceなど、人間が付与したカテゴリで化合物を分ける場合。"
@@ -617,6 +625,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             constraints.append("`--max-pairs`は1～1000に制限し、`--max-core-clusters`の既定値は300とする。")
         if algorithm.startswith("vector_"):
             constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。MetricはDescription表現に固定し、`--parameter-mode auto`ではactivityを使わず手法固有の距離・近傍parameterを決定する。")
+            constraints.append("CONDUCTORではCanonical Description Result 1.0.0だけを受け付け、Skill内部Artifact Manifestは下流入力にしない。一般利用でResultがない場合はvalue semanticsとMetricを明示する。")
             constraints.append("自動候補がすべて断片化または崩壊する場合は、Clusterを強制せず`no_usable_partition`を返す。")
         if approval:
             constraints.append("高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。")
@@ -646,9 +655,15 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             general_args += " --description description.csv"
         if "clustering" in capability.get("dependencies", []):
             general_args += " --membership cluster_membership.csv"
+        if operator in {"projection_pca", "projection_umap"}:
+            conductor_base_args = general_args
+            general_args += " --value-semantics dense_continuous --metric euclidean"
+            readme_conductor_extra = " --description-result path/to/run_root/description/N000001/result.json"
         constraints = ["endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。"]
         constraints.append("数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。")
         constraints.append("CONDUCTORモードではState由来のDescription／Clustering Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。")
+        if operator in {"projection_pca", "projection_umap"}:
+            constraints.append("CONDUCTORのprojection-fitではCanonical Description Result 1.0.0だけを受け付け、Skill内部Artifact Manifestは入力にしない。一般利用でResultがない場合はvalue semanticsとMetricを明示する。")
         if operator in {"knn_activity_consistency", "sali"}:
             constraints.append("`--metric auto`はfeature特性から距離を選び、Morgan表現にはTanimoto以外を使用しない。")
         if operator == "sali":
@@ -666,7 +681,12 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
         extra_example = ""
 
     constraint_text = "\n".join(f"- {item}" for item in constraints) if constraints else "- 特になし。"
-    conductor_example = f"python .claude/skills/{name}/scripts/launch.py {general_args}{readme_conductor_extra} {conductor_args}"
+    conductor_example = f"python .claude/skills/{name}/scripts/launch.py {conductor_base_args or general_args}{readme_conductor_extra} {conductor_args}"
+    contract_history = ""
+    if (kind == "clustering" and capability["implementation"]["algorithm"].startswith("vector_")) or (
+        kind == "analysis" and capability["implementation"]["operator"] in {"projection_pca", "projection_umap"}
+    ):
+        contract_history = "\n| 1.0.1 | 下流入力をCanonical Description Result 1.0.0へ一本化し、互換分岐を廃止。 |"
     return f'''# {display}
 
 ## SKILLの目的
@@ -704,7 +724,7 @@ CONDUCTORのState nodeとして利用する場合:
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
+| 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |{contract_history}
 '''
 
 
@@ -792,7 +812,7 @@ def main() -> int:
             clustering_kind, dependency, input_contract = "direct_structure", [], ["compound_id_smiles_csv"]
             description = f"Cluster compounds from a compound-ID/SMILES CSV with {display}, without generating a hidden descriptor vector."
         elif algorithm.startswith("vector_"):
-            clustering_kind, dependency, input_contract = "description_vector", ["description"], ["description_vector_csv"]
+            clustering_kind, dependency, input_contract = "description_vector", ["description"], ["description_vector_payload", "canonical_description_result_in_conductor", "explicit_semantics_metric_in_general"]
             description = f"Apply {display} to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally."
         elif algorithm == "meta_overlap":
             clustering_kind, dependency, input_contract = "meta", ["clustering"], ["cluster_membership_csv"]
@@ -805,7 +825,10 @@ def main() -> int:
             capability["description"] = "Cluster compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR axis, without generating a hidden descriptor vector or requiring per-run human approval."
         apply_capability_defaults(capability)
         if not selected or name in selected:
-            created += create_skill(capability, "clustering", TEMPLATES / "clustering_run.py", ["execution_event.schema.json", "artifact_manifest.schema.json"], args.force)
+            clustering_schemas = ["execution_event.schema.json", "artifact_manifest.schema.json"]
+            if algorithm.startswith("vector_"):
+                clustering_schemas.append("description_result.schema.json")
+            created += create_skill(capability, "clustering", TEMPLATES / "clustering_run.py", clustering_schemas, args.force)
         included.append(name)
     for identifier, name, display, operator, family, cost, status, wide, dependencies in OPERATORS:
         capability = base_capability(identifier, name, display, "analysis", family, cost, status, wide)
@@ -830,7 +853,7 @@ def main() -> int:
         if identifier in {"A006", "A009", "A013"}:
             capability["internal_representation"] = {"kind": "morgan", "radius": 2, "n_bits": 2048, "metric": "tanimoto"}
         if identifier in {"A003", "A004"}:
-            capability["input_contract"] = ["endpoint_csv", "description", "optional_clustering", "optional_projection"]
+            capability["input_contract"] = ["endpoint_csv", "description_vector_payload", "canonical_description_result_in_conductor", "explicit_semantics_metric_in_general", "optional_clustering", "optional_projection"]
         if identifier == "A005":
             capability["cost"]["human_approval_required"] = False
             capability["approval_policy"] = "preauthorized_initial"
@@ -838,7 +861,10 @@ def main() -> int:
             capability["input_contract"] = ["endpoint_csv", "six_description_artifacts", "optional_clustering", "optional_global_model"]
         apply_capability_defaults(capability)
         template = TEMPLATES / ("projection_run.py" if identifier in {"A003", "A004"} else "multidescription_model_run.py" if identifier == "A005" else "operator_run.py")
-        analysis_created = create_skill(capability, "analysis", template, ["execution_event.schema.json", "operator_summary.schema.json", "artifact_manifest.schema.json"], args.force) if not selected or name in selected else False
+        analysis_schemas = ["execution_event.schema.json", "operator_summary.schema.json", "artifact_manifest.schema.json"]
+        if identifier in {"A003", "A004"}:
+            analysis_schemas.append("description_result.schema.json")
+        analysis_created = create_skill(capability, "analysis", template, analysis_schemas, args.force) if not selected or name in selected else False
         created += analysis_created
         if analysis_created:
             shutil.copy2(TEMPLATES / "operator_report.py", SKILLS_ROOT / name / "scripts" / "operator_report.py")

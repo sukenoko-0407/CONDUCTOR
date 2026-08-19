@@ -3,7 +3,7 @@
 > この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
 
 Profile: `comprehensive-multiround-beta`
-Generated: `2026-08-18T11:49:01.232436+00:00`
+Generated: `2026-08-19T14:24:42.899063+00:00`
 
 ## Description
 
@@ -36,12 +36,12 @@ Generated: `2026-08-18T11:49:01.232436+00:00`
 | C002 | `cs-compute-clustering-structure-mcs` | MCS clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | high | experimental | False |
 | C003 | `cs-compute-clustering-structure-brics` | BRICS fragment clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | medium | stable | False |
 | C004 | `cs-compute-clustering-structure-recap` | RECAP fragment clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | medium | stable | False |
-| C005 | `cs-compute-clustering-vector-butina` | Vector Butina clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
-| C006 | `cs-compute-clustering-vector-hierarchical` | Vector hierarchical clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
-| C007 | `cs-compute-clustering-vector-dbscan` | Vector DBSCAN clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
-| C008 | `cs-compute-clustering-vector-louvain` | Vector Louvain clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
-| C009 | `cs-compute-clustering-vector-leiden` | Vector Leiden clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
-| C010 | `cs-compute-clustering-vector-connected-components` | Vector connected-component clustering | - | description_vector | description_vector | description_vector_csv | - | - | medium | stable | False |
+| C005 | `cs-compute-clustering-vector-butina` | Vector Butina clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
+| C006 | `cs-compute-clustering-vector-hierarchical` | Vector hierarchical clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
+| C007 | `cs-compute-clustering-vector-dbscan` | Vector DBSCAN clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
+| C008 | `cs-compute-clustering-vector-louvain` | Vector Louvain clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
+| C009 | `cs-compute-clustering-vector-leiden` | Vector Leiden clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
+| C010 | `cs-compute-clustering-vector-connected-components` | Vector connected-component clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
 | C011 | `cs-compute-clustering-categorical` | Categorical-column clustering | - | human_context | categorical | categorical_csv | - | - | low | stable | False |
 | C012 | `cs-compute-clustering-meta-overlap` | Overlap-based meta clustering | - | meta | meta | cluster_membership_csv | - | - | medium | experimental | False |
 
@@ -51,8 +51,8 @@ Generated: `2026-08-18T11:49:01.232436+00:00`
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | A001 | `cs-analysis-activity-distribution` | Activity distribution | - | property_profile | - | endpoint_csv | - | - | low | stable | False |
 | A002 | `cs-analysis-descriptor-activity-correlation` | Descriptor-activity correlation | - | interpretable_association | - | endpoint_csv, description | - | - | low | stable | False |
-| A003 | `cs-analysis-projection-pca` | PCA projection | - | projection | - | endpoint_csv, description, optional_clustering, optional_projection | - | - | medium | stable | False |
-| A004 | `cs-analysis-projection-umap` | UMAP projection | - | projection | - | endpoint_csv, description, optional_clustering, optional_projection | - | - | medium | stable | False |
+| A003 | `cs-analysis-projection-pca` | PCA projection | - | projection | - | endpoint_csv, description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general, optional_clustering, optional_projection | - | - | medium | stable | False |
+| A004 | `cs-analysis-projection-umap` | UMAP projection | - | projection | - | endpoint_csv, description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general, optional_clustering, optional_projection | - | - | medium | stable | False |
 | A005 | `cs-analysis-multidescription-feature-model` | Multi-Description feature model | - | feature_model | - | endpoint_csv, six_description_artifacts, optional_clustering, optional_global_model | - | - | high | experimental | False |
 | A006 | `cs-analysis-pairwise-structure-similarity` | Pairwise structure similarity | - | feature_space | - | endpoint_csv | - | - | medium | stable | False |
 | A007 | `cs-analysis-knn-activity-consistency` | kNN activity consistency | - | feature_space | - | endpoint_csv, description | - | - | medium | stable | False |

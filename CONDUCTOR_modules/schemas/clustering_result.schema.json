@@ -1,1 +1,23 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://conductor.local/schemas/clustering_result.schema.json","title":"Clustering Result","type":"object","required":["schema_version","node_id","capability_id","membership","cluster_count","selection_status","quality_flags","input_kind","created_at"],"properties":{"schema_version":{"const":"1.0.0"},"node_id":{"type":"string","pattern":"^N[0-9]{6}$"},"capability_id":{"type":"string","pattern":"^C[0-9]{3}$"},"membership":{"type":"string"},"cluster_count":{"type":"integer","minimum":0},"selection_status":{"enum":["selected","no_usable_partition"]},"quality_flags":{"type":"array","items":{"type":"string"}},"input_kind":{"enum":["structure","vector","categorical","meta"]},"source_description_nodes":{"type":"array","items":{"type":"string","pattern":"^N[0-9]{6}$"}},"metric":{"type":["string","null"]},"payloads":{"type":"object"},"created_at":{"type":"string","format":"date-time"}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/clustering_result.schema.json",
+  "title": "Canonical Clustering Result",
+  "type": "object",
+  "required": ["document_type", "schema_version", "node_id", "capability_id", "membership", "cluster_count", "selection_status", "quality_flags", "input_kind", "created_at"],
+  "properties": {
+    "document_type": {"const": "clustering_result"},
+    "schema_version": {"const": "1.0.0"},
+    "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
+    "capability_id": {"type": "string", "pattern": "^C[0-9]{3}$"},
+    "membership": {"type": "string", "pattern": "^[^/\\\\]+$"},
+    "cluster_count": {"type": "integer", "minimum": 0},
+    "selection_status": {"enum": ["selected", "no_usable_partition"]},
+    "quality_flags": {"type": "array", "items": {"type": "string"}},
+    "input_kind": {"enum": ["structure", "vector", "categorical", "meta"]},
+    "source_description_nodes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^N[0-9]{6}$"}},
+    "metric": {"type": ["string", "null"]},
+    "payloads": {"type": "object"},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

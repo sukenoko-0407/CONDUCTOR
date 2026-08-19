@@ -36,9 +36,19 @@ class AnalysisAdditionTests(unittest.TestCase):
 
     def test_pca_general_mode_outputs_only_primary_csv(self)->None:
         with tempfile.TemporaryDirectory() as folder_name:
-            folder=Path(folder_name);endpoint,paths=self.tables(folder,24);manifest=folder/"manifest.json";manifest.write_text(json.dumps({"value_semantics":"dense_continuous","natural_metric":"euclidean"}),encoding="utf-8");out=folder/"pca"
-            self.run_cli(SKILLS/"cs-analysis-projection-pca"/"scripts"/"run.py","--input",str(endpoint),"--description",str(paths["D001"]),"--description-manifest",str(manifest),"--property-column","pIC50","--higher-is-better","--output-dir",str(out))
+            folder=Path(folder_name);endpoint,paths=self.tables(folder,24);out=folder/"pca"
+            self.run_cli(SKILLS/"cs-analysis-projection-pca"/"scripts"/"run.py","--input",str(endpoint),"--description",str(paths["D001"]),"--value-semantics","dense_continuous","--metric","euclidean","--property-column","pIC50","--higher-is-better","--output-dir",str(out))
             self.assertTrue((out/"A003_projection_pca.csv").is_file());self.assertFalse((out/"operator_summary.json").exists());self.assertTrue((out/"projection.png").is_file())
+
+    def test_projection_skills_accept_runtime_description_result(self)->None:
+        with tempfile.TemporaryDirectory() as folder_name:
+            folder=Path(folder_name);metadata=folder/"result.json"
+            payload=folder/"features.csv";payload.write_text("compound_id,f1,f2\nC001,1,2\nC002,2,3\n",encoding="utf-8")
+            metadata.write_text(json.dumps({"document_type":"description_result","schema_version":"1.0.0","node_id":"N000001","capability_id":"D001","payload":"features.csv","row_count":2,"feature_count":2,"value_semantics":"dense_continuous","natural_metric":"euclidean","feature_columns":["f1","f2"],"quality_flags":[],"created_at":"2026-01-01T00:00:00+00:00"}),encoding="utf-8")
+            for name in ("cs-analysis-projection-pca","cs-analysis-projection-umap"):
+                script=SKILLS/name/"scripts"/"run.py";spec=importlib.util.spec_from_file_location(name,script);module=importlib.util.module_from_spec(spec);assert spec and spec.loader;spec.loader.exec_module(module)
+                parsed=module.description_contract(type("Args",(),{"description_result":str(metadata),"value_semantics":None,"metric":None,"conductor":True,"role":"projection-fit","description":str(payload),"evaluation_representation":"D001"})())
+                self.assertEqual("1.0.0",parsed["schema_version"])
 
     def test_multidescription_model_fixed_panel_and_oof(self)->None:
         with tempfile.TemporaryDirectory() as folder_name:

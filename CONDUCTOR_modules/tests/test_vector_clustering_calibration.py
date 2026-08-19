@@ -114,7 +114,8 @@ class VectorClusteringCalibrationTests(unittest.TestCase):
             }
         )
         args = argparse.Namespace(
-            description_manifest=None,
+            description_result=None,
+            value_semantics="sparse_count",
             conductor=False,
             input_representation="D004",
             metric="cosine",
@@ -139,6 +140,64 @@ class VectorClusteringCalibrationTests(unittest.TestCase):
         )
         self.assertEqual("cosine", metric)
 
+    def test_runtime_description_result_is_the_only_conductor_vector_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            payload = Path(folder) / "features.csv"
+            payload.write_text("compound_id,f1,f2\nC001,1,0\n", encoding="utf-8")
+            result_path = Path(folder) / "result.json"
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "document_type": "description_result",
+                        "schema_version": "1.0.0",
+                        "node_id": "N000001",
+                        "capability_id": "D011",
+                        "payload": "features.csv",
+                        "row_count": 1,
+                        "feature_count": 2,
+                        "value_semantics": "dense_embedding",
+                        "natural_metric": "cosine",
+                        "feature_columns": ["f1", "f2"],
+                        "quality_flags": [],
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                description_result=str(result_path), value_semantics=None, conductor=True,
+                input=str(payload), input_representation="D011", metric="auto",
+            )
+            parsed = VECTOR.description_contract(args)
+            self.assertEqual("1.0.0", parsed["schema_version"])
+            self.assertEqual("cosine", parsed["natural_metric"])
+
+    def test_unknown_or_incomplete_description_contract_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            payload = Path(folder) / "features.csv"
+            payload.write_text("compound_id,f1\nC001,1\n", encoding="utf-8")
+            result_path = Path(folder) / "result.json"
+            result_path.write_text(
+                json.dumps({"schema_version": "1.0.0", "capability_id": "D001"}),
+                encoding="utf-8",
+            )
+            args = argparse.Namespace(
+                description_result=str(result_path), value_semantics=None, conductor=True,
+                input=str(payload), input_representation="D001", metric="auto",
+            )
+            with self.assertRaises(Exception):
+                VECTOR.description_contract(args)
+
+    def test_artifact_manifest_is_rejected_as_a_downstream_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            payload = Path(folder) / "features.csv"
+            payload.write_text("compound_id,f1\nC001,1\n", encoding="utf-8")
+            manifest = Path(folder) / "description_manifest.json"
+            manifest.write_text(json.dumps({"schema_version": "2.0.0", "artifact_stage": "description", "capability_id": "D001"}), encoding="utf-8")
+            args = argparse.Namespace(description_result=str(manifest), value_semantics=None, conductor=True, input=str(payload), input_representation="D001", metric="auto")
+            with self.assertRaises(Exception):
+                VECTOR.description_contract(args)
+
     def test_endpoint_column_does_not_change_distances_when_manifest_binds_features(self) -> None:
         import pandas as pd
 
@@ -151,12 +210,14 @@ class VectorClusteringCalibrationTests(unittest.TestCase):
             }
         )
         with tempfile.TemporaryDirectory() as folder:
-            manifest = Path(folder) / "description_manifest.json"
-            manifest.write_text(
-                json.dumps({"schema_version": "2.0.0", "artifact_stage": "description", "capability_id": "D001", "value_semantics": "dense_continuous", "natural_metric": "euclidean", "feature_columns": ["f1", "f2"]}),
+            result_path = Path(folder) / "result.json"
+            result_path.write_text(
+                json.dumps({"document_type": "description_result", "schema_version": "1.0.0", "node_id": "N000001", "capability_id": "D001", "payload": "description.csv", "row_count": 6, "feature_count": 2, "value_semantics": "dense_continuous", "natural_metric": "euclidean", "feature_columns": ["f1", "f2"], "quality_flags": [], "created_at": "2026-01-01T00:00:00+00:00"}),
                 encoding="utf-8",
             )
-            args = argparse.Namespace(description_manifest=str(manifest), conductor=True, input_representation="D001", metric="auto")
+            vector_path = Path(folder) / "description.csv"
+            base.to_csv(vector_path, index=False)
+            args = argparse.Namespace(description_result=str(result_path), value_semantics=None, conductor=True, input=str(vector_path), input_representation="D001", metric="auto")
             first = VECTOR.vector_distances(base, args)[1]
             changed = base.copy()
             changed["pIC50"] = [600, -50, 900, 2, 1000, -800]
@@ -179,14 +240,14 @@ class VectorClusteringCalibrationTests(unittest.TestCase):
             table.insert(0, "compound_id", [f"C{i:03d}" for i in range(len(table))])
             vector_path = temporary / "description.csv"
             table.to_csv(vector_path, index=False)
-            manifest_path = temporary / "description_manifest.json"
-            manifest_path.write_text(
-                json.dumps({"schema_version": "2.0.0", "artifact_stage": "description", "capability_id": "D001", "value_semantics": "dense_continuous", "natural_metric": "euclidean", "feature_columns": columns}),
+            result_path = temporary / "result.json"
+            result_path.write_text(
+                json.dumps({"document_type": "description_result", "schema_version": "1.0.0", "node_id": "N000010", "capability_id": "D001", "payload": "description.csv", "row_count": len(table), "feature_count": len(columns), "value_semantics": "dense_continuous", "natural_metric": "euclidean", "feature_columns": columns, "quality_flags": [], "created_at": "2026-01-01T00:00:00+00:00"}),
                 encoding="utf-8",
             )
             general = temporary / "general"
             completed = subprocess.run(
-                [sys.executable, str(RUNNER), "--input", str(vector_path), "--description-manifest", str(manifest_path), "--input-representation", "D001", "--output-dir", str(general)],
+                [sys.executable, str(RUNNER), "--input", str(vector_path), "--input-representation", "D001", "--value-semantics", "dense_continuous", "--metric", "euclidean", "--output-dir", str(general)],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
@@ -197,7 +258,7 @@ class VectorClusteringCalibrationTests(unittest.TestCase):
             self.assertFalse((general / "clustering_manifest.json").exists())
             conductor = temporary / "conductor"
             completed = subprocess.run(
-                [sys.executable, str(RUNNER), "--input", str(vector_path), "--description-manifest", str(manifest_path), "--input-representation", "D001", "--conductor", "--project", "unit", "--run-id", "run", "--round-id", "RND0002", "--node-id", "N000001", "--attempt-id", "ATT0001", "--output-dir", str(conductor)],
+                [sys.executable, str(RUNNER), "--input", str(vector_path), "--description-result", str(result_path), "--input-representation", "D001", "--conductor", "--project", "unit", "--run-id", "run", "--round-id", "RND0002", "--node-id", "N000001", "--attempt-id", "ATT0001", "--output-dir", str(conductor)],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,

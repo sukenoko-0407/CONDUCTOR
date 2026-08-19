@@ -17,14 +17,14 @@ descriptor、fingerprint、embedding空間で化合物をCluster化し、SMILES�
 一般利用（主成果物のみ）:
 
 ```bash
-python .claude/skills/cs-compute-clustering-vector-louvain/scripts/launch.py --input description.csv --input-representation D001
+python .claude/skills/cs-compute-clustering-vector-louvain/scripts/launch.py --input description.csv --input-representation D001 --value-semantics dense_continuous --metric euclidean
 ```
 
 
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-clustering-vector-louvain/scripts/launch.py --input description.csv --input-representation D001 --description-manifest path/to/description_manifest.json --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
+python .claude/skills/cs-compute-clustering-vector-louvain/scripts/launch.py --input description.csv --input-representation D001 --description-result path/to/run_root/description/N000001/result.json --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
 ```
 
 ## 制約事項
@@ -32,6 +32,7 @@ python .claude/skills/cs-compute-clustering-vector-louvain/scripts/launch.py --i
 - 一般利用とCONDUCTORの両方でClustering／Clusterと呼ぶ。入力分子やfeature値は変更しない。
 - 5化合物未満のClusterは出力・登録しない。
 - raw SMILESは入力にできず、Descriptionを内部生成しない。MetricはDescription表現に固定し、`--parameter-mode auto`ではactivityを使わず手法固有の距離・近傍parameterを決定する。
+- CONDUCTORではCanonical Description Result 1.0.0だけを受け付け、Skill内部Artifact Manifestは下流入力にしない。一般利用でResultがない場合はvalue semanticsとMetricを明示する。
 - 自動候補がすべて断片化または崩壊する場合は、Clusterを強制せず`no_usable_partition`を返す。
 
 ## 変更履歴
@@ -39,3 +40,4 @@ python .claude/skills/cs-compute-clustering-vector-louvain/scripts/launch.py --i
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
+| 1.0.1 | 下流入力をCanonical Description Result 1.0.0へ一本化し、互換分岐を廃止。 |

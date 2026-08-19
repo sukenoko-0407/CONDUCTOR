@@ -17,7 +17,7 @@ PCA projectionを実行し、客観的な数値結果とCONDUCTOR Operator summa
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. Stateが束縛したDescription／Clustering Capabilityとsource Node IDを、対応する上流artifactとともに渡す。
+2. CONDUCTORモードのprojection-fitではCanonical Description Result 1.0.0を`--description-result`で必ず渡す。一般利用でResultがない場合は`--value-semantics`と`--metric`を明示する。cluster-overlayでは既存projectionとmembershipを使い、再fitしない。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
 5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
@@ -57,7 +57,7 @@ Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証さ�
 CONDUCTOR利用が明示されていない場合はこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-column pIC50 --higher-is-better --description path/to/description.csv --run-id general-001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-column pIC50 --higher-is-better --description path/to/description.csv --value-semantics dense_continuous --metric euclidean --run-id general-001
 ```
 
 ## CONDUCTOR mode command
@@ -65,7 +65,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-
 明示的なCONDUCTOR利用で、project、run、nodeが確定している場合だけこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-column pIC50 --higher-is-better --description path/to/description.csv --conductor --project PROJECT --run-id RUN_ID --node-id N000001 --round-id RND0001 --attempt-id ATT0001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --property-column pIC50 --higher-is-better --description path/to/description.csv --description-result path/to/run_root/description/N000001/result.json --conductor --project PROJECT --run-id RUN_ID --node-id N000002 --round-id RND0001 --attempt-id ATT0001
 ```
 
 ## Boundaries

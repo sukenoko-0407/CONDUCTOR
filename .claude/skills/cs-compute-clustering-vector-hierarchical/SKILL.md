@@ -17,14 +17,14 @@ compound IDと数値featureを持つDescription CSVを必須入力とする。ra
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. Description CSVのrepresentationを確認する。CONDUCTORモードではStateが束縛した`--input-representation`と`--description-manifest`を必ず渡す。
+2. Description CSVのrepresentationを確認する。CONDUCTORモードではStateが束縛した`--input-representation`とCanonical Description Result 1.0.0を`--description-result`で必ず渡す。一般利用でResultがない場合は`--value-semantics`と非autoの`--metric`を明示する。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. 出力先が既存の場合は上書きせず、意図的な再計算に限って`--overwrite`を使う。
 5. 実行後に主成果物を確認する。CONDUCTORモードではmanifest、warnings、execution eventも確認し、Orchestratorへ渡す。
 
 ## Algorithm-specific options
 
-`--min-cluster-size`未満のClusterを登録しない。`--metric auto`でDescription manifestに固定されたMetricを使用する。`--parameter-mode auto`を既定とし、Clustering Skill自身がactivityを使わず距離・近傍構造から手法固有parameterを選ぶ。人間が再現条件を固定する場合だけ`--parameter-mode fixed`を使う。autoではaverage-linkage距離gapから切断候補を選ぶ。fixedでは`--n-clusters`または`--distance-threshold`を指定する。
+`--min-cluster-size`未満のClusterを登録しない。`--metric auto`でCanonical Description Resultに固定されたMetricを使用する。`--parameter-mode auto`を既定とし、Clustering Skill自身がactivityを使わず距離・近傍構造から手法固有parameterを選ぶ。人間が再現条件を固定する場合だけ`--parameter-mode fixed`を使う。autoではaverage-linkage距離gapから切断候補を選ぶ。fixedでは`--n-clusters`または`--distance-threshold`を指定する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -57,7 +57,7 @@ Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証さ�
 CONDUCTOR利用が明示されていない場合はこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv --input-representation D001 --run-id general-001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv --input-representation D001 --value-semantics dense_continuous --metric euclidean --run-id general-001
 ```
 
 ## CONDUCTOR mode command
@@ -65,7 +65,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv -
 明示的なCONDUCTOR利用で、project、run、nodeが確定している場合だけこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv --input-representation D001 --description-manifest path/to/description_manifest.json --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv --input-representation D001 --description-result path/to/run_root/description/N000001/result.json --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001
 ```
 
 ## Boundaries

@@ -26,7 +26,9 @@
   ],
   "input_contract": [
     "endpoint_csv",
-    "description",
+    "description_vector_payload",
+    "canonical_description_result_in_conductor",
+    "explicit_semantics_metric_in_general",
     "optional_clustering",
     "optional_projection"
   ],

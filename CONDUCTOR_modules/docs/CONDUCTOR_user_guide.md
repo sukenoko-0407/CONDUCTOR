@@ -10,6 +10,12 @@ endpointの単位変換やpActivity化はRun開始前に人間側で行います
 
 RuntimeはRun初期化時にSMILES列を確定し、全Description、Murcko、MCS、BRICS、RECAP、および構造を直接読むPairwise structure similarity、Activity cliff、Cluster structural diversityへ同じ列名を明示的に渡します。`smiles`、`canonical_smiles`等や、名前に`smiles`を含む列を一意に推定できます。候補が複数ある場合は、新規Run依頼でSMILES列名を明示してください。
 
+## Schema Versionの見方
+
+`schema_version`はCONDUCTOR本体のVersionではなく、そのJSON文書形式のVersionです。解析DAGの正本であるDescription／Clustering／Analysis Resultは、`document_type`と`schema_version`の組で識別します。現在のCanonical Resultはそれぞれ`description_result/1.0.0`、`clustering_result/1.0.0`、`analysis_result/1.0.0`です。
+
+Skillがscratch内に生成するArtifact ManifestとExecution Eventは、Runtime adapterが実行結果を検証・昇格するためだけの内部契約です。下流Nodeへは渡しません。Vector Clustering、PCA、UMAPはCanonical Description Resultだけを受け付け、旧ManifestやVersion違いを推測して読み替えません。一般利用でCanonical Resultがない場合は、value semanticsとMetricを利用者が明示します。
+
 ## 中断と別session再開
 
 新しいMain sessionで`/cs-conductor-orchestrator`を明示し、Run Rootと「同じRoundを再開」を指定します。Mainは`conductor_control.json`を確認し、live leaseがあれば二重実行を拒否し、期限切れなら同じRoundを再開します。新しいRoundは作りません。長いInterpretationやDAG全文をプロンプトへ貼る必要はありません。旧RunでSMILES列metadataがなく列名からも一意に推定できない場合だけ、再開依頼にSMILES列名を追加してください。

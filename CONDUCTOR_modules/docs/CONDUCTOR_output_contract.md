@@ -34,7 +34,7 @@ Description、Clustering、Operator Skillの既存計算CLIは一般利用のた
 
 `runtime/input.csv`はRun開始時に元CSVから作る変更不能なcanonical copyです。既存ID列は`compound_id`へ写し、ID列がなければ`CMP######`を一度だけ付与します。以後の全Skill、Cluster matrix、監査はこのcopyを参照し、元CSVは変更しません。
 
-`result.json`は機械的なstage結果、`result_card.json`はbounded navigation用です。Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clustering source、population／endpoint-valid／analyzed countとcompound-set hashを確定します。Interpretationはこのfactを上書きできません。
+`result.json`は機械的なstage結果、`result_card.json`はbounded navigation用です。Canonical `result.json`は`document_type`と`schema_version`を必須とし、Description／Clustering／Analysisはいずれも各文書型の`1.0.0`契約で検証します。下流Nodeはこの正本だけを参照し、scratch内のArtifact Manifestを入力にしません。Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clustering source、population／endpoint-valid／analyzed countとcompound-set hashを確定します。Interpretationはこのfactを上書きできません。
 
 Result Cardは生成時点の記録として不変です。人間がNode Reviewで結果を下流利用停止にした場合は、`dag_snapshot.json`のNode `result_quality`が現在値として優先され、Working Set、将来のInterpretation、`query result`に反映されます。科学artifact自体は削除しません。
 

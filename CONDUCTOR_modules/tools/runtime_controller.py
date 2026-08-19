@@ -1518,15 +1518,30 @@ def cmd_approve_high_cost(args: argparse.Namespace) -> int:
     return 0
 
 
-def _primary_payload(node: dict[str, Any]) -> Path:
+def _canonical_result(node: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
     result_path = Path(node["output_ref"]) / "result.json"
     result = read_json(result_path)
+    schema_name = {"description": "description_result.schema.json", "clustering": "clustering_result.schema.json", "analysis": "analysis_result.schema.json"}[node["kind"]]
+    validate(result, schema_name)
+    expected_type = f"{node['kind']}_result"
+    if result.get("document_type") != expected_type:
+        raise ValueError(f"Canonical Result type mismatch for {node['node_id']}: expected {expected_type}")
+    if result.get("node_id") != node["node_id"] or result.get("capability_id") != node["capability_id"]:
+        raise ValueError(f"Canonical Result identity mismatch for {node['node_id']}")
+    return result_path, result
+
+
+def _primary_payload(node: dict[str, Any]) -> Path:
+    result_path, result = _canonical_result(node)
     key = {"description": "payload", "clustering": "membership", "analysis": "primary_payload"}[node["kind"]]
-    return result_path.parent / result[key]
+    payload = result_path.parent / result[key]
+    if not payload.is_file():
+        raise FileNotFoundError(f"Canonical Result payload is missing for {node['node_id']}: {payload}")
+    return payload
 
 
 def _result_path(node: dict[str, Any]) -> Path:
-    return Path(node["output_ref"]) / "result.json"
+    return _canonical_result(node)[0]
 
 
 def _skill_output_dir(scratch: Path) -> Path:
@@ -1559,7 +1574,7 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         description = next((item for item in inputs if item["kind"] == "description"), None)
         argv += ["--input", str(_primary_payload(description)) if description else control["run"]["input"]]
         if description:
-            argv += ["--input-representation", description["capability_id"], "--description-manifest", str(_result_path(description))]
+            argv += ["--input-representation", description["capability_id"], "--description-result", str(_result_path(description))]
         elif node["capability_id"] in DIRECT_STRUCTURE_CLUSTERING:
             argv += ["--smiles-column", _run_smiles_column(control)]
     elif node["kind"] == "analysis":
@@ -1579,7 +1594,7 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         elif descriptions:
             description = descriptions[0]
             argv += ["--description", str(_primary_payload(description)), "--description-node-id", description["node_id"], "--evaluation-representation", description["capability_id"]]
-            argv += ["--description-manifest", str(_result_path(description))] if node["capability_id"] in {"A003", "A004"} else []
+            argv += ["--description-result", str(_result_path(description))] if node["capability_id"] in {"A003", "A004"} else []
         if clusterings:
             clustering = clusterings[0]
             argv += ["--membership", str(_primary_payload(clustering)), "--clustering-node-id", clustering["node_id"], "--clustering-representation", clustering["capability_id"]]
@@ -1720,20 +1735,45 @@ def _copy_artifact(source: Path, destination: Path, expected_hash: str | None = 
     shutil.copy2(source, destination)
 
 
-def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any], skill_output: Path, output: Path, manifest: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _skill_artifact_path(skill_output: Path, declared_path: str) -> Path:
+    relative = Path(declared_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"Skill artifact path must remain inside the Attempt output: {declared_path}")
+    root = skill_output.resolve()
+    resolved = (root / relative).resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(f"Skill artifact escaped the Attempt output: {declared_path}")
+    return resolved
+
+
+def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any], skill_output: Path, output: Path, manifest: dict[str, Any], artifacts: dict[str, dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     import pandas as pd
 
-    registry = read_json(skill_output / "cluster_registry.json")
-    membership = pd.read_csv(skill_output / "cluster_membership.csv", dtype={"compound_id": "string"})
+    for required in ("cluster_registry", "cluster_membership", "clustering_diagnostics"):
+        if required not in artifacts:
+            raise ValueError(f"Clustering execution event is missing {required}")
+    registry = read_json(_skill_artifact_path(skill_output, artifacts["cluster_registry"]["path"]))
+    membership = pd.read_csv(_skill_artifact_path(skill_output, artifacts["cluster_membership"]["path"]), dtype={"compound_id": "string"})
+    required_columns = {"compound_id", "cluster_id", "membership_value"}
+    if not required_columns.issubset(membership.columns):
+        raise ValueError(f"Clustering membership is missing columns: {sorted(required_columns - set(membership.columns))}")
+    if membership.duplicated(["compound_id", "cluster_id"]).any():
+        raise ValueError("Clustering membership contains duplicate compound/Cluster rows")
+    if not isinstance(registry, list):
+        raise ValueError("Clustering registry must be a list")
+    source_membership = pd.to_numeric(membership["membership_value"], errors="coerce").fillna(0)
     mapping: dict[str, str] = {}
     registry_rows: list[dict[str, Any]] = []
     for row in registry:
         count = int(row.get("compound_count", 0))
+        local = str(row.get("local_cluster_id") or row.get("cluster_id"))
+        observed_count = int(((membership["cluster_id"].astype(str) == local) & (source_membership > 0)).sum())
+        if count != observed_count:
+            raise ValueError(f"Clustering registry count mismatch for {local}: expected {count}, observed {observed_count}")
         if count < 5:
             continue
         snapshot["counters"]["cluster"] += 1
         cluster_id = f"C{snapshot['counters']['cluster']:06d}"
-        local = str(row.get("local_cluster_id") or row.get("cluster_id"))
         mapping[local] = cluster_id
         canonical_membership = Path(node["output_ref"]) / "membership.csv"
         registry_rows.append({"cluster_id": cluster_id, "local_cluster_id": local, "source_node_id": node["node_id"], "clustering_capability_id": node["capability_id"], "cluster_label": row.get("cluster_label") or local, "compound_count": count, "membership_path": str(canonical_membership.relative_to(root)), "status": "active", "created_at": utc_now()})
@@ -1742,11 +1782,11 @@ def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any]
     membership.loc[membership["cluster_id"].eq(""), "membership_value"] = 0
     membership.to_csv(output / "membership.csv", index=False)
     input_kind = "structure" if node["capability_id"] in {"C001", "C002", "C003", "C004"} else "vector" if node["capability_id"] in {"C005", "C006", "C007", "C008", "C009", "C010"} else "categorical" if node["capability_id"] == "C011" else "meta"
-    result = {"schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "membership": "membership.csv", "cluster_count": len(registry_rows), "selection_status": manifest.get("selection_status", "selected"), "quality_flags": manifest.get("quality_flags") or [], "input_kind": input_kind, "source_description_nodes": [item for item in node["input_nodes"] if _node_lookup(snapshot)[item]["kind"] == "description"], "metric": manifest.get("natural_metric"), "payloads": {}, "created_at": utc_now()}
-    for name in ("clustering_diagnostics.csv", "distance_profile.json"):
-        if (skill_output / name).is_file():
-            _copy_artifact(skill_output / name, output / name)
-            result["payloads"][name.rsplit(".", 1)[0]] = name
+    result = {"document_type": "clustering_result", "schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "membership": "membership.csv", "cluster_count": len(registry_rows), "selection_status": manifest.get("selection_status", "selected"), "quality_flags": manifest.get("quality_flags") or [], "input_kind": input_kind, "source_description_nodes": [item for item in node["input_nodes"] if _node_lookup(snapshot)[item]["kind"] == "description"], "metric": manifest.get("natural_metric"), "payloads": {}, "created_at": utc_now()}
+    for artifact_type, output_name in (("clustering_diagnostics", "clustering_diagnostics.csv"), ("distance_profile", "distance_profile.json")):
+        if artifact_type in artifacts:
+            _copy_artifact(_skill_artifact_path(skill_output, artifacts[artifact_type]["path"]), output / output_name, artifacts[artifact_type]["sha256"])
+            result["payloads"][output_name.rsplit(".", 1)[0]] = output_name
     validate(result, "clustering_result.schema.json")
     return result, registry_rows
 
@@ -1785,6 +1825,17 @@ def _operator_report_html(control: dict[str, Any], node: dict[str, Any], subject
 
 def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt: dict[str, Any], skill_output: Path, event: dict[str, Any]) -> list[dict[str, Any]]:
     artifacts = {item["type"]: item for item in event["artifacts"]}
+    if len(artifacts) != len(event["artifacts"]):
+        raise ValueError("Skill execution event contains duplicate artifact types")
+    if "manifest" not in artifacts:
+        raise ValueError("Skill execution event does not declare a stage Manifest")
+    manifest = read_json(_skill_artifact_path(skill_output, artifacts["manifest"]["path"]))
+    validate(manifest, "artifact_manifest.schema.json")
+    expected_stage = {"description": "description", "clustering": "clustering", "analysis": "analysis"}[node["kind"]]
+    if manifest.get("artifact_stage") != expected_stage or manifest.get("capability_id") != node["capability_id"]:
+        raise ValueError("Skill stage Manifest identity does not match the Node")
+    if manifest.get("node_id") != node["node_id"] or manifest.get("attempt_id") != attempt["attempt_id"]:
+        raise ValueError("Skill stage Manifest Node or Attempt identity mismatch")
     final = Path(node["output_ref"])
     temporary = final.with_name(f".{final.name}.{attempt['attempt_id']}.commit")
     if temporary.exists():
@@ -1795,26 +1846,34 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     if node["kind"] == "description":
         primary = artifacts["description"]
         payload_name = "features" + Path(primary["path"]).suffix.lower()
-        _copy_artifact(skill_output / primary["path"], temporary / payload_name, primary["sha256"])
-        manifest = read_json(skill_output / artifacts["manifest"]["path"])
-        result = {"schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "payload": payload_name, "row_count": int(manifest.get("row_count", 0)), "feature_count": int(manifest.get("feature_count", 0)), "value_semantics": manifest.get("value_semantics", "dense_continuous"), "natural_metric": manifest.get("natural_metric"), "feature_columns": manifest.get("feature_columns") or [], "quality_flags": ["row_errors"] if manifest.get("errors") else [], "created_at": utc_now()}
+        _copy_artifact(_skill_artifact_path(skill_output, primary["path"]), temporary / payload_name, primary["sha256"])
+        capability = catalog()[node["capability_id"]]
+        expected_semantics = capability.get("value_semantics")
+        expected_metric = capability.get("natural_metric")
+        if manifest.get("capability_id") != node["capability_id"]:
+            raise ValueError("Description Artifact Manifest capability does not match the Node")
+        if manifest.get("value_semantics") != expected_semantics or manifest.get("natural_metric") != expected_metric:
+            raise ValueError("Description Artifact Manifest semantics or metric conflicts with the Catalog")
+        if int(manifest.get("feature_count", -1)) != len(manifest.get("feature_columns") or []):
+            raise ValueError("Description Artifact Manifest feature_count does not match feature_columns")
+        result = {"document_type": "description_result", "schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "payload": payload_name, "row_count": int(manifest.get("row_count", 0)), "feature_count": int(manifest.get("feature_count", 0)), "value_semantics": manifest.get("value_semantics", "dense_continuous"), "natural_metric": manifest.get("natural_metric"), "feature_columns": manifest.get("feature_columns") or [], "quality_flags": ["row_errors"] if manifest.get("errors") else [], "created_at": utc_now()}
         validate(result, "description_result.schema.json")
         write_json(temporary / "result.json", result)
     elif node["kind"] == "clustering":
-        manifest = read_json(skill_output / artifacts["manifest"]["path"])
-        result, cluster_registry_rows = _promote_clusters(root, snapshot, node, skill_output, temporary, manifest)
+        result, cluster_registry_rows = _promote_clusters(root, snapshot, node, skill_output, temporary, manifest, artifacts)
         write_json(temporary / "result.json", result)
         node["result_quality"] = {"validation_passed": True, "eligible_for_downstream": result["selection_status"] == "selected" and result["cluster_count"] > 0, "quality_flags": result["quality_flags"] or (["no_usable_clusters"] if result["cluster_count"] == 0 else [])}
     elif node["kind"] == "analysis":
         primary = artifacts["operator_result"]
         primary_name = "analysis" + Path(primary["path"]).suffix.lower()
-        _copy_artifact(skill_output / primary["path"], temporary / primary_name, primary["sha256"])
-        summary = read_json(skill_output / artifacts["operator_summary"]["path"])
+        _copy_artifact(_skill_artifact_path(skill_output, primary["path"]), temporary / primary_name, primary["sha256"])
+        summary = read_json(_skill_artifact_path(skill_output, artifacts["operator_summary"]["path"]))
+        validate(summary, "operator_summary.schema.json")
         subject = _analysis_subject(root, control, snapshot, node, int(summary.get("sample_count", 0)))
         detail_name = None
         if "operator_report" in artifacts:
             detail_name = "detail.html"
-            _copy_artifact(skill_output / artifacts["operator_report"]["path"], temporary / detail_name, artifacts["operator_report"]["sha256"])
+            _copy_artifact(_skill_artifact_path(skill_output, artifacts["operator_report"]["path"]), temporary / detail_name, artifacts["operator_report"]["sha256"])
         report_name = "report.html"
         atomic_bytes(temporary / report_name, _operator_report_html(control, node, subject, summary, detail_name, snapshot).encode("utf-8"))
         result_ref = f"{node['node_id']}@{attempt['attempt_id']}"
@@ -1825,7 +1884,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         result_card_files = ["result_card.json"]
         result_cards.append(card)
         if "operator_summary_collection" in artifacts:
-            collection = read_json(skill_output / artifacts["operator_summary_collection"]["path"])
+            collection = read_json(_skill_artifact_path(skill_output, artifacts["operator_summary_collection"]["path"]))
             write_json(temporary / "cluster_result_cards_source.json", collection)
             for local_summary in collection:
                 cluster_id = str((local_summary.get("scope_context") or {}).get("cluster_ids", [None])[0])
@@ -1833,7 +1892,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
                     raise ValueError("Cluster survey summary lacks a canonical Cluster ID")
                 local_node = {**node, "scope": {"mode": "single_cluster", "cluster_ids": [cluster_id]}}
                 local_subject = _analysis_subject(root, control, snapshot, local_node, int(local_summary.get("sample_count", 0)))
-                source_payload = skill_output / local_summary["primary_artifact"]["path"]
+                source_payload = _skill_artifact_path(skill_output, local_summary["primary_artifact"]["path"])
                 local_relative = Path("clusters") / cluster_id / "model_comparison.csv"
                 _copy_artifact(source_payload, temporary / local_relative, local_summary["primary_artifact"].get("sha256"))
                 local_card = {"schema_version": "1.0.0", "result_ref": str(local_summary["result_ref"]), "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": local_subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": local_summary.get("metric"), "headline": str(local_summary.get("headline") or ""), "key_metrics": local_summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": [], "limitations": local_summary.get("limitations") or [], "artifact_links": {"result": (final_relative / local_relative).as_posix(), "report": (final_relative / report_name).as_posix(), "detail": (final_relative / detail_name).as_posix() if detail_name else None}, "attention": "watch", "created_at": utc_now()}
@@ -1842,7 +1901,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
                 write_json(temporary / card_file, local_card)
                 result_card_files.append(card_file)
                 result_cards.append(local_card)
-        result = {"schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "analysis_subject": subject, "primary_payload": primary_name, "report": report_name, "result_cards": result_card_files, "payloads": {"detail_report": detail_name} if detail_name else {}, "created_at": utc_now()}
+        result = {"document_type": "analysis_result", "schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "analysis_subject": subject, "primary_payload": primary_name, "report": report_name, "result_cards": result_card_files, "payloads": {"detail_report": detail_name} if detail_name else {}, "created_at": utc_now()}
         validate(result, "analysis_result.schema.json")
         write_json(temporary / "result.json", result)
         for name in ("global_oof_predictions.csv", "cluster_model_comparison.csv", "projection.png"):
@@ -2031,7 +2090,7 @@ def _load_recovery_override(
     changed_protected = sorted(name for name in protected if before.get(name) != after.get(name))
     if changed_protected:
         raise PermissionError(f"Recovery changed protected scientific arguments: {changed_protected}")
-    path_options = {"--input", "--output-dir", "--model-dir", "--description-manifest", "--membership", "--metadata"}
+    path_options = {"--input", "--output-dir", "--model-dir", "--description-result", "--membership", "--metadata"}
     changed_values = sorted(name for name in set(before) & set(after) if before[name] != after[name] and name not in path_options)
     if changed_values:
         raise PermissionError(f"Recovery changed existing parameter values: {changed_values}")
@@ -2152,10 +2211,11 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
                 if not event_path.is_file():
                     raise FileNotFoundError("Skill did not produce execution_event.json")
                 event = read_json(event_path)
+                validate(event, "execution_event.schema.json")
                 if event.get("node_id") != node_id or event.get("attempt_id") != attempt["attempt_id"] or event.get("round_id") != node["assigned_round"] or event.get("capability_id") != node["capability_id"] or event.get("status") != "succeeded":
                     raise ValueError("Skill event identity or status mismatch")
                 for artifact in event.get("artifacts") or []:
-                    source = skill_output / artifact["path"]
+                    source = _skill_artifact_path(skill_output, artifact["path"])
                     if not source.is_file() or file_hash(source) != artifact["sha256"]:
                         raise ValueError(f"Missing or invalid Skill artifact: {artifact['path']}")
                 cards = _adapt_success(root, control, snapshot, node, attempt, skill_output, event)
@@ -2262,10 +2322,11 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
                     if not event_path.is_file():
                         raise RuntimeError("interrupted process produced no committable execution event")
                     event = read_json(event_path)
+                    validate(event, "execution_event.schema.json")
                     if event.get("node_id") != node["node_id"] or event.get("attempt_id") != attempt["attempt_id"] or event.get("round_id") != node["assigned_round"] or event.get("capability_id") != node["capability_id"] or event.get("status") != "succeeded":
                         raise ValueError("interrupted execution event identity or status mismatch")
                     for artifact in event.get("artifacts") or []:
-                        source = skill_output / artifact["path"]
+                        source = _skill_artifact_path(skill_output, artifact["path"])
                         if not source.is_file() or file_hash(source) != artifact["sha256"]:
                             raise ValueError(f"missing or invalid interrupted artifact: {artifact['path']}")
                     cards = _adapt_success(root, control, snapshot, node, attempt, skill_output, event)

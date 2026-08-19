@@ -32,6 +32,8 @@ Node IDはRun全体で`N######`です。状態は`pending / running / succeeded 
 
 Description、Clustering、Operatorの科学計算kernelと一般利用CLIは維持します。CONDUCTORではRuntimeが入力、metric、scope、Cluster、parameter、seed、出力schema、artifact hashを検証してから正本へatomic promotionします。
 
+SkillがAttempt scratchへ出すArtifact ManifestとExecution Eventは、Runtime adapterだけが読む内部実行契約です。DAGの下流接続には`document_type`付きCanonical Resultだけを使います。Vector Clustering、PCA、UMAPへ渡せるDescription metadataは`description_result/1.0.0`の一種類であり、旧Manifest、Version違い、payload不一致、Catalogと異なるsemantics／Metricはfail closedとします。
+
 失敗はbounded failure packetへ分類します。Attempt rootはRuntime管理file用、`output/`はSkill成果物専用に分離し、Skill起動前の`output/`は存在させません。回復可能な一Node retryに限り、Executorは割当Attemptの`recovery/`内でoption alias、path、format adapter等を補正できます。Runtimeはlauncherの置換、既存parameter値、protected科学引数、Node signature、artifactを検査し、回復manifestを監査用に保存します。科学parameterを変える補正や一時scriptによるアルゴリズム再実装は拒否します。
 
 ## Main向け情報

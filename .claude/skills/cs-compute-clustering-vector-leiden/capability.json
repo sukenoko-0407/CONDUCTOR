@@ -26,7 +26,9 @@
     "description"
   ],
   "input_contract": [
-    "description_vector_csv"
+    "description_vector_payload",
+    "canonical_description_result_in_conductor",
+    "explicit_semantics_metric_in_general"
   ],
   "output": {
     "membership": "cluster_membership.csv",

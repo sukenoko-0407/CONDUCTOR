@@ -6,7 +6,7 @@
   "profile_hash": "573d84d60d40b64f7b2ec664ca221f677314898325bd5615b5742a2d1fe123fd",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-18T11:49:01.232436+00:00",
+  "generated_at": "2026-08-19T14:24:42.899063+00:00",
   "capabilities": [
     {
       "schema_version": "2.0.0",
@@ -123,7 +123,9 @@
       ],
       "input_contract": [
         "endpoint_csv",
-        "description",
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general",
         "optional_clustering",
         "optional_projection"
       ],
@@ -174,7 +176,9 @@
       ],
       "input_contract": [
         "endpoint_csv",
-        "description",
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general",
         "optional_clustering",
         "optional_projection"
       ],
@@ -861,7 +865,9 @@
         "description"
       ],
       "input_contract": [
-        "description_vector_csv"
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -906,7 +912,9 @@
         "description"
       ],
       "input_contract": [
-        "description_vector_csv"
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -951,7 +959,9 @@
         "description"
       ],
       "input_contract": [
-        "description_vector_csv"
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -997,7 +1007,9 @@
         "description"
       ],
       "input_contract": [
-        "description_vector_csv"
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -1044,7 +1056,9 @@
         "description"
       ],
       "input_contract": [
-        "description_vector_csv"
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general"
       ],
       "output": {
         "membership": "cluster_membership.csv",
@@ -1091,7 +1105,9 @@
         "description"
       ],
       "input_contract": [
-        "description_vector_csv"
+        "description_vector_payload",
+        "canonical_description_result_in_conductor",
+        "explicit_semantics_metric_in_general"
       ],
       "output": {
         "membership": "cluster_membership.csv",

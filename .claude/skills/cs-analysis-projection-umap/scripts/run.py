@@ -61,7 +61,9 @@ def args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=f"Run {CAPABILITY['display_name']}.")
     parser.add_argument("--input", required=True, help="Endpoint CSV.")
     parser.add_argument("--description", help="Description CSV or Parquet; required for projection-fit.")
-    parser.add_argument("--description-manifest")
+    parser.add_argument("--description-result", help="Canonical Runtime Description Result 1.0.0 that binds the Description payload and metric.")
+    parser.add_argument("--value-semantics", choices=["binary_fingerprint", "sparse_count", "dense_continuous", "dense_shape_moment", "dense_embedding"], help="Required with --metric for standalone projection-fit without a Runtime Description Result.")
+    parser.add_argument("--metric", choices=["tanimoto", "cosine", "euclidean", "manhattan"], help="Natural metric for standalone projection-fit without a Runtime Description Result.")
     parser.add_argument("--property-column", required=True)
     parser.add_argument("--id-column", default="compound_id")
     parser.add_argument("--higher-is-better", action=argparse.BooleanOptionalAction, default=None)
@@ -102,15 +104,36 @@ def outdir(a: argparse.Namespace) -> Path:
     return root / "analysis" / Path(a.input).stem / CAPABILITY["skill_name"] / run_id
 
 
-def semantics(a: argparse.Namespace, features: pd.DataFrame) -> tuple[str, str]:
-    manifest = json.loads(Path(a.description_manifest).read_text(encoding="utf-8")) if a.description_manifest else {}
-    kind = str(manifest.get("value_semantics") or "")
-    metric = str(manifest.get("natural_metric") or "")
-    values = features.to_numpy(dtype=float)
-    finite = values[np.isfinite(values)]
-    if not kind:
-        if finite.size and np.isin(finite, [0, 1]).all(): kind, metric = "binary_fingerprint", "tanimoto"
-        else: raise ValueError("Ambiguous vector semantics: provide --description-manifest")
+def description_contract(a: argparse.Namespace) -> dict[str, Any]:
+    if not a.description_result:
+        if a.conductor and a.role == "projection-fit":
+            raise ValueError("CONDUCTOR projection-fit requires --description-result")
+        if a.role == "projection-fit" and (not a.value_semantics or not a.metric):
+            raise ValueError("Standalone projection-fit without --description-result requires --value-semantics and --metric")
+        if a.role == "projection-fit":
+            expected_metric = {"binary_fingerprint": "tanimoto", "sparse_count": "cosine", "dense_continuous": "euclidean", "dense_shape_moment": "manhattan", "dense_embedding": "cosine"}[a.value_semantics]
+            if a.metric != expected_metric:
+                raise ValueError(f"{a.value_semantics} vectors require --metric {expected_metric}")
+        return {"value_semantics": a.value_semantics, "natural_metric": a.metric}
+    if a.value_semantics or a.metric:
+        raise ValueError("--value-semantics and --metric cannot be combined with --description-result; the canonical result is authoritative")
+    result_path = Path(a.description_result).resolve()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    validate(result, "description_result.schema.json")
+    if a.role == "projection-fit":
+        declared_payload = (result_path.parent / result["payload"]).resolve()
+        if not a.description or Path(a.description).resolve() != declared_payload:
+            raise ValueError("--description does not match the payload bound by --description-result")
+    if a.evaluation_representation and str(a.evaluation_representation).upper() != str(result["capability_id"]).upper():
+        raise ValueError("--evaluation-representation conflicts with --description-result")
+    return result
+
+
+def semantics(contract: dict[str, Any]) -> tuple[str, str]:
+    kind = str(contract.get("value_semantics") or "")
+    metric = str(contract.get("natural_metric") or "")
+    if not kind or not metric:
+        raise ValueError("Description value semantics and natural metric are required")
     return kind, metric
 
 
@@ -165,9 +188,17 @@ def run() -> int:
     if a.role == "projection-fit":
         desc = read_table(a.description)
         if "compound_id" not in desc: raise ValueError("Description must contain compound_id")
+        contract = description_contract(a)
+        declared_features = [str(column) for column in contract.get("feature_columns") or []]
+        if contract.get("row_count") is not None and int(contract["row_count"]) != len(desc):
+            raise ValueError("Description Result row_count does not match the Description payload")
+        if declared_features:
+            missing = [column for column in declared_features if column not in desc.columns]
+            if missing: raise ValueError(f"Description payload is missing Result-bound feature columns: {missing[:10]}")
+            if int(contract["feature_count"]) != len(declared_features): raise ValueError("Description Result feature_count does not match feature_columns")
         merged = endpoint.merge(desc, on="compound_id", how="inner")
-        feature_frame = merged.drop(columns=["compound_id", a.property_column], errors="ignore")
-        kind, metric = semantics(a, feature_frame); matrix, features, prep = preprocess(feature_frame, kind); details.update(prep)
+        feature_frame = merged[declared_features] if declared_features else merged.drop(columns=["compound_id", a.property_column], errors="ignore")
+        kind, metric = semantics(contract); matrix, features, prep = preprocess(feature_frame, kind); details.update(prep)
         if operator == "projection_pca":
             from sklearn.decomposition import PCA
             model = PCA(n_components=2, random_state=a.random_seed); coordinates = model.fit_transform(matrix)
@@ -202,7 +233,7 @@ def run() -> int:
     result_ref=f"{a.node_id}@{a.attempt_id}" if a.conductor else "standalone"
     if a.conductor and scope_mode=="cluster-overlay" and a.target_cluster:result_ref+=f"/{a.target_cluster}"
     summary = {"schema_version":"1.0.0","result_ref":result_ref,"node_id":a.node_id,"attempt_id":a.attempt_id,"operator_id":CAPABILITY["operator_id"],"run_id":a.run_id or "standalone","round_id":a.round_id or "RND0000","scope":{"mode":scope_mode,"target_cluster_id":a.target_cluster},"scope_context":{"description_node_ids":[a.description_node_id] if a.description_node_id else [],"clustering_node_ids":[a.clustering_node_id] if a.clustering_node_id else [],"cluster_ids":[a.target_cluster] if a.target_cluster else []},"sample_count":len(result),"endpoint":{"column":a.property_column,"higher_is_better":bool(a.higher_is_better)},"metric":metric,"headline":headline,"key_metrics":details,"top_records":[],"limitations":["次元削減による情報損失がある。","投影座標は標準DAGのClustering入力にしない。"],"warnings":[],"source_nodes":[v for v in (a.description_node_id,a.clustering_node_id,a.projection_node_id) if v],"primary_artifact":{"path":result_path.name,"sha256":sha(result_path)},"created_at":now()}
-    input_files=[Path(a.input),*[Path(v) for v in (a.description,a.description_manifest,a.projection,a.membership) if v]]
+    input_files=[Path(a.input),*[Path(v) for v in (a.description,a.description_result,a.projection,a.membership) if v]]
     manifest={"schema_version":"2.0.0","conductor_version":"0.1.3","artifact_stage":"analysis","run_id":a.run_id or "standalone","node_id":a.node_id,"attempt_id":a.attempt_id,"capability_id":CAPABILITY["capability_id"],"skill_name":CAPABILITY["skill_name"],"skill_version":CAPABILITY["version"],"input":a.input,"input_hash":value_hash([sha(path) for path in input_files]),"value_semantics":"projection_coordinates","natural_metric":metric,"warnings":[],"created_at":now(),"configuration":vars(a)}
     if a.conductor:
         (output/"operator_report.html").write_text(html_report(CAPABILITY["display_name"],details,image,result_path.name),encoding="utf-8")

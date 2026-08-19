@@ -56,8 +56,9 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
     elif kind == "description_vector":
         if not algorithm.startswith("vector_"):
             raise ValueError(f"{expected_name}: description_vector must use a vector_* implementation")
-        if contracts != ["description_vector_csv"] or dependencies != ["description"]:
-            raise ValueError(f"{expected_name}: description_vector must consume one Description vector artifact")
+        expected = ["description_vector_payload", "canonical_description_result_in_conductor", "explicit_semantics_metric_in_general"]
+        if contracts != expected or dependencies != ["description"]:
+            raise ValueError(f"{expected_name}: description_vector must consume one payload under the explicit canonical/general contract")
     elif kind not in {"categorical", "meta"}:
         raise ValueError(f"{expected_name}: clustering_kind is missing or unsupported")
 
