@@ -4,8 +4,10 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -135,6 +137,8 @@ def parse_args() -> argparse.Namespace:
     if algorithm == "tblite_xtb":
         parser.add_argument("--charge", type=float)
         parser.add_argument("--uhf", type=int)
+        parser.add_argument("--compound-workers", type=int, default=1, help="Number of compounds evaluated concurrently.")
+        parser.add_argument("--cores-per-compound", type=int, default=4, help="CPU threads reserved for each concurrent xTB calculation.")
     args = parser.parse_args()
     if args.conductor:
         missing = [name for name in ("project", "run_id", "round_id", "node_id", "attempt_id") if not getattr(args, name)]
@@ -142,7 +146,7 @@ def parse_args() -> argparse.Namespace:
             parser.error("--conductor requires --project, --run-id, --round-id, --node-id, and --attempt-id")
     elif args.project or args.round_id or args.node_id or args.attempt_id:
         parser.error("--project, --round-id, --node-id, and --attempt-id are valid only with --conductor")
-    for name in ("n_bits", "num_confs", "svd_dim", "batch_size", "max_length", "cpu_threads"):
+    for name in ("n_bits", "num_confs", "svd_dim", "batch_size", "max_length", "cpu_threads", "compound_workers", "cores_per_compound"):
         if hasattr(args, name) and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
     if hasattr(args, "radius") and args.radius < 0:
@@ -449,6 +453,79 @@ def tblite_values(prepared: Any, args: argparse.Namespace) -> dict[str, Any]:
     return values
 
 
+def _configure_xtb_threads(cores_per_compound: int) -> None:
+    value = str(int(cores_per_compound))
+    for name in (
+        "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+        "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS",
+    ):
+        os.environ[name] = value
+    os.environ["OMP_DYNAMIC"] = "FALSE"
+
+
+def _xtb_worker(index: int, smiles: str, settings: dict[str, Any]) -> tuple[int, dict[str, Any] | None, str | None, str | None]:
+    """Compute one molecule in an isolated process and return a serializable result."""
+    _configure_xtb_threads(int(settings["cores_per_compound"]))
+    try:
+        from rdkit import Chem
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError("RDKit could not parse input SMILES")
+        worker_args = argparse.Namespace(**settings)
+        return index, compute_one(mol, worker_args), None, None
+    except Exception as exc:
+        return index, None, str(exc), traceback.format_exc()
+
+
+def compute_xtb_parallel(
+    rows: list[dict[str, Any]],
+    mols: list[Any],
+    args: argparse.Namespace,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    valid_indices = [index for index, mol in enumerate(mols) if mol is not None]
+    workers = min(int(args.compound_workers), max(1, len(valid_indices)))
+    settings = {
+        "num_confs": int(args.num_confs),
+        "random_seed": int(args.random_seed),
+        "charge": args.charge,
+        "uhf": args.uhf,
+        "cores_per_compound": int(args.cores_per_compound),
+    }
+    errors: list[dict[str, Any]] = []
+    _configure_xtb_threads(settings["cores_per_compound"])
+    if workers == 1:
+        outcomes = (
+            _xtb_worker(index, rows[index]["input_smiles"], settings)
+            for index in valid_indices
+        )
+        for index, values, message, trace in outcomes:
+            if values is not None:
+                rows[index].update(values)
+            else:
+                rows[index]["description_error"] = message or "xTB calculation failed"
+                errors.append({"compound_id": rows[index]["compound_id"], "error_type": "description_error", "message": message, "traceback": trace})
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(_xtb_worker, index, rows[index]["input_smiles"], settings): index
+                for index in valid_indices
+            }
+            for future in as_completed(futures):
+                index, values, message, trace = future.result()
+                if values is not None:
+                    rows[index].update(values)
+                else:
+                    rows[index]["description_error"] = message or "xTB calculation failed"
+                    errors.append({"compound_id": rows[index]["compound_id"], "error_type": "description_error", "message": message, "traceback": trace})
+    resource_metadata = {
+        "compound_workers": workers,
+        "cores_per_compound": settings["cores_per_compound"],
+        "maximum_cpu_cores": workers * settings["cores_per_compound"],
+    }
+    return rows, errors, resource_metadata
+
+
 def compute_batch(rows: list[dict[str, Any]], mols: list[Any], args: argparse.Namespace) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     algorithm = CAPABILITY["implementation"]["algorithm"]
     valid_positions = [i for i, mol in enumerate(mols) if mol is not None]
@@ -576,7 +653,11 @@ def run() -> int:
         if args.reduction == "svd":
             value_semantics, natural_metric = "dense_embedding", "cosine"
             metadata.update({"value_semantics": value_semantics, "natural_metric": natural_metric})
-    if (algorithm == "gobbi_pharm2d" and args.reduction == "svd") or algorithm == "chemberta_embedding":
+    if algorithm == "tblite_xtb":
+        rows, xtb_errors, resource_metadata = compute_xtb_parallel(rows, mols, args)
+        errors.extend(xtb_errors)
+        metadata.update(resource_metadata)
+    elif (algorithm == "gobbi_pharm2d" and args.reduction == "svd") or algorithm == "chemberta_embedding":
         rows, batch_metadata = compute_batch(rows, mols, args)
         metadata.update(batch_metadata)
         if algorithm == "chemberta_embedding":

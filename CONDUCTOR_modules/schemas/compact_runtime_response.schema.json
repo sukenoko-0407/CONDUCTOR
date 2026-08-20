@@ -3,7 +3,7 @@
   "$id": "https://conductor.local/schemas/compact_runtime_response.schema.json",
   "title": "CONDUCTOR 0.1.3 Main Agent compact Runtime response",
   "type": "object",
-  "required": ["protocol_version", "control_revision", "run_id", "round_id", "round_state", "required_action", "counts", "closure", "working_set"],
+  "required": ["protocol_version", "control_revision", "run_id", "round_id", "round_state", "required_action", "counts", "closure", "working_set", "resources"],
   "properties": {
     "protocol_version": {"const": "0.1.3"},
     "control_revision": {"type": "integer", "minimum": 0},
@@ -14,6 +14,7 @@
     "counts": {"type": "object"},
     "closure": {"type": "object"},
     "working_set": {"type": ["string", "null"]},
+    "resources": {"type": "object", "required": ["parallel_limit", "available_cpu_cores"], "properties": {"parallel_limit": {"type": "integer", "minimum": 1}, "available_cpu_cores": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
     "action_token": {"type": "string"},
     "detail_pointer": {"type": "string"}
   }

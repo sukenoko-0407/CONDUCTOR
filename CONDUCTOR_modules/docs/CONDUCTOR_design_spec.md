@@ -40,6 +40,10 @@ SkillがAttempt scratchへ出すArtifact ManifestとExecution Eventは、Runtime
 
 `runtime/working_set.json`はサイズと候補数に上限があり、現在必要なResult Card、candidate、human priorityだけを含みます。Runtime mutationは16 KiB以下のcompact responseを返し、raw log、完全DAG、完全Auditはpointer先へ保持します。Mainは`SCIENTIFIC_DECISION`にだけ推論を使い、Node生成、依存判定、状態遷移、再試行、commit、終端判定はRuntimeへ委ねます。
 
+## Analysis計画量
+
+一つのRoundへ割り当てるAnalysis Nodeは最大200件です。初期Global／Localの全候補は、RuntimeがCapability、scope、入力Description／Clusteringの層を使って決定論的に並べ、最大50件ずつNode化します。初期Globalは最大100件で完了扱いとし、少なくとも残り100件分をCluster-local候補へ利用できるようにします。未Node化候補の巨大なqueueはStateへ保持しません。同じ計画Actionが再度要求された場合は次の50件を登録し、200件に達したらInterpretationへ進みます。次Roundでは既存成功signatureを再利用参照として除外し、残候補を再構成します。Wall TimeとCPU予算は実行資源であり、この件数上限を変更しません。
+
 ## Interpretation
 
 RuntimeはInterpretation対象、canonical scope、Result Card、比較batch、未確認範囲、人間のfocusを固定します。Interpreterは各Resultを個別に確認した後、Global／Cluster、兄弟Cluster、独立Description family、異なるOperator、Round間の比較、矛盾、反証、negative resultを探索します。新規計算が必要ならfollow-upとして提案するだけです。

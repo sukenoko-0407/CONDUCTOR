@@ -23,6 +23,7 @@ CONDUCTOR 0.1.3は、SARデータを一つの説明へ早急に収束させず�
 - DAG snapshotはRuntimeがControlと同一transactionで更新する詳細な追跡表現であり、LLMが直接編集する正本ではない。Event Ledgerは変更履歴を監査する。
 - 中断後も同じRound・同じNodeを再開し、勝手に次Roundを作らない。
 - 過去Roundの成功Nodeは再計算せず、次Roundの`reused_node_ids`として明示参照する。
+- Analysisは1 Round最大200 Node、RuntimeによるNode化は最大50件ずつ、初期Globalは最大100件とし、Local容量を確保しつつInterpretationの希薄化を防ぐ。未Node化候補は次Roundで再構成する。
 - RoundはInterpretation JSON／Markdown／HTMLとFull Auditが揃うまで人間レビュー状態へ進めない。
 
 ## 主成果物

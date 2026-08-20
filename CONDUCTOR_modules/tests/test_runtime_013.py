@@ -71,6 +71,18 @@ class Runtime013Tests(unittest.TestCase):
         self.assertEqual(360, direct.timeout_minutes)
         self.assertEqual(360, packet.timeout_minutes)
 
+    def test_cpu_budget_defaults_to_eight_and_is_independent_of_parallel_limit(self) -> None:
+        parser = RUNTIME.build_parser()
+        initialized = parser.parse_args([
+            "init", "--input", "input.csv", "--endpoint", "pIC50",
+            "--higher-is-better", "--project", "test", "--parallel-limit", "3",
+        ])
+        self.assertEqual(8, initialized.available_cpu_cores)
+        control = {"run": {"parallel_limit": 3, "available_cpu_cores": 8}}
+        self.assertEqual(3, RUNTIME._execution_capacity(control))
+        control["run"]["parallel_limit"] = 16
+        self.assertEqual(8, RUNTIME._execution_capacity(control))
+
     def test_bundled_schema_references_resolve_offline(self) -> None:
         subject = {
             "scope_mode": "global",
@@ -412,6 +424,116 @@ class Runtime013Tests(unittest.TestCase):
             option = command.index("--description-result")
             self.assertEqual(str(Path(description["output_ref"]) / "result.json"), command[option + 1])
 
+    def test_xtb_is_exclusive_and_uses_four_cores_per_compound(self) -> None:
+        capabilities = RUNTIME.catalog()
+        control = {
+            "run": {
+                "project": "test", "run_id": "run-013", "input": "input.csv",
+                "smiles_column": "smiles", "parallel_limit": 8, "available_cpu_cores": 10,
+            }
+        }
+        regular = {
+            "node_id": "N000001", "capability_id": "D001", "skill_name": capabilities["D001"]["skill_name"],
+            "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
+        }
+        xtb = {
+            "node_id": "N000019", "capability_id": "D019", "skill_name": capabilities["D019"]["skill_name"],
+            "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
+        }
+        runnable = {node["node_id"]: node for node in (regular, xtb)}
+        self.assertEqual([xtb["node_id"]], RUNTIME._select_execution_nodes([xtb["node_id"], regular["node_id"]], runnable, control))
+        self.assertEqual([regular["node_id"]], RUNTIME._select_execution_nodes([regular["node_id"], xtb["node_id"]], runnable, control))
+        command = RUNTIME._skill_command(
+            ROOT, control, {"nodes": [xtb]}, xtb, "ATT0001", ROOT / "scratch" / "D019",
+        )
+        self.assertEqual("4", command[command.index("--cores-per-compound") + 1])
+        self.assertEqual("2", command[command.index("--compound-workers") + 1])
+        self.assertEqual(10, RUNTIME._node_cpu_allocation(control, xtb))
+
+    def test_xtb_compound_parallel_dispatch_preserves_rows_and_cpu_metadata(self) -> None:
+        runner = ROOT / ".claude" / "skills" / "cs-compute-description-tblite-xtb" / "scripts" / "run.py"
+        spec = importlib.util.spec_from_file_location("xtb_parallel_dispatch_test", runner)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+
+        class ImmediateFuture:
+            def __init__(self, value: object) -> None:
+                self.value = value
+
+            def result(self) -> object:
+                return self.value
+
+        class ImmediateExecutor:
+            def __init__(self, max_workers: int) -> None:
+                self.max_workers = max_workers
+
+            def __enter__(self) -> "ImmediateExecutor":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+            def submit(self, function: object, *arguments: object) -> ImmediateFuture:
+                return ImmediateFuture(function(*arguments))
+
+        rows = [
+            {"compound_id": "C1", "input_smiles": "CCO", "description_error": ""},
+            {"compound_id": "C2", "input_smiles": "CCN", "description_error": ""},
+        ]
+        arguments = argparse.Namespace(
+            compound_workers=2, cores_per_compound=4, num_confs=1,
+            random_seed=61453, charge=None, uhf=None,
+        )
+        fake_worker = lambda index, _smiles, _settings: (index, {"xtb__test": float(index)}, None, None)
+        with mock.patch.object(module, "_xtb_worker", side_effect=fake_worker), mock.patch.object(
+            module, "ProcessPoolExecutor", ImmediateExecutor
+        ), mock.patch.object(module, "as_completed", side_effect=lambda futures: list(futures)), mock.patch.dict(
+            os.environ, {}, clear=False
+        ):
+            calculated, errors, resources = module.compute_xtb_parallel(rows, [object(), object()], arguments)
+        self.assertEqual([], errors)
+        self.assertEqual([0.0, 1.0], [row["xtb__test"] for row in calculated])
+        self.assertEqual(
+            {"compound_workers": 2, "cores_per_compound": 4, "maximum_cpu_cores": 8},
+            resources,
+        )
+
+    def test_projection_cluster_overlay_uses_clustering_node_id_not_unsupported_representation_option(self) -> None:
+        capabilities = RUNTIME.catalog()
+        control = {
+            "run": {
+                "project": "test", "run_id": "run-013", "input": "input.csv",
+                "endpoint": "pIC50", "higher_is_better": True, "smiles_column": "smiles",
+                "parallel_limit": 2, "available_cpu_cores": 8,
+            }
+        }
+        clustering = {
+            "node_id": "N000101", "capability_id": "C005", "skill_name": capabilities["C005"]["skill_name"],
+            "assigned_round": "RND0001", "kind": "clustering", "input_nodes": [], "parameters": {},
+        }
+        for offset, capability_id in enumerate(("A003", "A004"), 2):
+            global_projection = {
+                "node_id": f"N00010{offset}", "capability_id": capability_id,
+                "skill_name": capabilities[capability_id]["skill_name"],
+                "assigned_round": "RND0001", "kind": "analysis", "input_nodes": [], "parameters": {},
+            }
+            overlay = {
+                "node_id": f"N00011{offset}", "capability_id": capability_id,
+                "skill_name": capabilities[capability_id]["skill_name"],
+                "assigned_round": "RND0001", "kind": "analysis",
+                "input_nodes": [clustering["node_id"], global_projection["node_id"]],
+                "parameters": {"role": "cluster-overlay", "target_cluster": "CL000001"},
+                "scope": {"mode": "single_cluster"},
+            }
+            with mock.patch.object(RUNTIME, "_primary_payload", side_effect=lambda node: Path(f"{node['node_id']}.csv")):
+                command = RUNTIME._skill_command(
+                    ROOT, control, {"nodes": [clustering, global_projection, overlay]}, overlay,
+                    "ATT0001", ROOT / "scratch" / f"{capability_id}-overlay",
+                )
+            self.assertEqual(clustering["node_id"], command[command.index("--clustering-node-id") + 1])
+            self.assertNotIn("--clustering-representation", command)
+
     def test_canonical_result_identity_and_artifact_paths_are_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -584,6 +706,164 @@ class Runtime013Tests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     RUNTIME.cmd_execute_packet(arguments)
             self.assertTrue(all(not path.exists() for path in scratch_paths))
+
+    def test_analysis_planning_is_batched_and_capped_per_round(self) -> None:
+        maximum, batch_size = RUNTIME._analysis_planning_limits()
+        self.assertEqual(200, maximum)
+        self.assertEqual(50, batch_size)
+        self.assertEqual(100, RUNTIME._initial_global_analysis_limit())
+        control = {"active_round_id": "RND0001", "run": {"run_root": str(ROOT / ".test-run")}}
+        snapshot = {
+            "counters": {"node": 0, "cluster": 0, "insight": 0},
+            "nodes": [],
+            "rounds": {"RND0001": {"reused_node_ids": []}},
+            "plans": {"RND0001": {}},
+        }
+        specs = [
+            {
+                "capability_id": "A001",
+                "input_nodes": [],
+                "scope": {"mode": "single_cluster", "cluster_ids": [f"C{index:06d}"]},
+                "parameters": {"target_cluster": f"C{index:06d}"},
+            }
+            for index in range(1, 251)
+        ]
+
+        expected_deferred = [200, 150, 100, 50]
+        for expected in expected_deferred:
+            planned, deferred = RUNTIME._materialize_analysis_specs(snapshot, control, specs, "initial_local")
+            self.assertEqual(50, len(planned))
+            self.assertEqual(expected, deferred)
+        planned, deferred = RUNTIME._materialize_analysis_specs(snapshot, control, specs, "initial_local")
+        self.assertEqual([], planned)
+        self.assertEqual(50, deferred)
+        self.assertEqual(200, RUNTIME._round_analysis_work_count(snapshot, "RND0001"))
+
+        for node in snapshot["nodes"]:
+            node["status"] = "succeeded"
+            node["result_quality"] = {"eligible_for_downstream": True}
+        control["active_round_id"] = "RND0002"
+        snapshot["rounds"]["RND0002"] = {"reused_node_ids": []}
+        snapshot["plans"]["RND0002"] = {}
+        planned, deferred = RUNTIME._materialize_analysis_specs(snapshot, control, specs, "initial_local")
+        self.assertEqual(50, len(planned))
+        self.assertEqual(0, deferred)
+        self.assertEqual(50, RUNTIME._round_analysis_work_count(snapshot, "RND0002"))
+
+    def test_initial_global_reserves_capacity_for_local_analysis(self) -> None:
+        control = {"active_round_id": "RND0001", "run": {"run_root": str(ROOT / ".test-run")}}
+        snapshot = {
+            "counters": {"node": 0, "cluster": 0, "insight": 0},
+            "nodes": [],
+            "rounds": {"RND0001": {"reused_node_ids": []}},
+            "plans": {"RND0001": {}},
+        }
+        specs = [
+            {
+                "capability_id": capability_id,
+                "input_nodes": [],
+                "scope": {"mode": "global"},
+                "parameters": {"serial": serial},
+            }
+            for serial in range(100)
+            for capability_id in ("A001", "A002", "A003")
+        ]
+        ordered = RUNTIME._balanced_analysis_specs(snapshot, specs, "initial_global")
+        self.assertEqual({"A001", "A002", "A003"}, {item["capability_id"] for item in ordered[:3]})
+
+        planned, deferred = RUNTIME._materialize_analysis_specs(
+            snapshot, control, specs, "initial_global", wave_limit=100,
+        )
+        self.assertEqual((50, 250), (len(planned), deferred))
+        planned, deferred = RUNTIME._materialize_analysis_specs(
+            snapshot, control, specs, "initial_global", wave_limit=100,
+        )
+        self.assertEqual((50, 200), (len(planned), deferred))
+        planned, deferred = RUNTIME._materialize_analysis_specs(
+            snapshot, control, specs, "initial_global", wave_limit=100,
+        )
+        self.assertEqual((0, 200), (len(planned), deferred))
+        self.assertEqual(100, RUNTIME._round_analysis_work_count(snapshot, "RND0001"))
+
+    def test_initial_exploration_covers_global_and_local_within_two_hundred_nodes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "run"
+            (root / "runtime").mkdir(parents=True)
+            RUNTIME.write_json(root / "conductor_control.json", {"run": {"row_count": 1000}})
+            control = {"active_round_id": "RND0001", "run": {"run_root": str(root)}}
+            snapshot = {
+                "counters": {"node": 0, "cluster": 0, "insight": 0},
+                "nodes": [],
+                "rounds": {"RND0001": {"reused_node_ids": [], "finish_reason": None}},
+                "plans": {"RND0001": {"basic_compute": False, "initial_global": False, "initial_local": False}},
+            }
+            RUNTIME._plan_basic(control, snapshot)
+            cluster_rows = []
+            for node in snapshot["nodes"]:
+                node["status"] = "succeeded"
+                node["result_quality"] = {"eligible_for_downstream": True}
+                if node["kind"] == "clustering":
+                    cluster_rows.append({
+                        "cluster_id": f"C{len(cluster_rows) + 1:06d}",
+                        "source_node_id": node["node_id"],
+                        "compound_count": 20,
+                        "structural_cohesion": 0.8,
+                        "status": "active",
+                    })
+            (root / "runtime" / "cluster_registry.jsonl").write_text(
+                "".join(json.dumps(row) + "\n" for row in cluster_rows), encoding="utf-8",
+            )
+
+            for _ in range(2):
+                planned = RUNTIME._plan_initial_global(control, snapshot)
+                self.assertEqual(50, len(planned))
+                for node in snapshot["nodes"]:
+                    if node["node_id"] in planned:
+                        node["status"] = "succeeded"
+                        node["result_quality"] = {"eligible_for_downstream": True}
+            global_capabilities = {
+                node["capability_id"] for node in snapshot["nodes"] if node.get("wave") == "initial_global"
+            }
+            self.assertEqual(
+                set(RUNTIME.profile()["initial_exploration"]["global_operator_capabilities"]),
+                global_capabilities,
+            )
+            self.assertTrue(snapshot["plans"]["RND0001"]["initial_global"])
+
+            for _ in range(2):
+                planned = RUNTIME._plan_initial_local(root, control, snapshot)
+                self.assertEqual(50, len(planned))
+                for node in snapshot["nodes"]:
+                    if node["node_id"] in planned:
+                        node["status"] = "succeeded"
+                        node["result_quality"] = {"eligible_for_downstream": True}
+            local_capabilities = {
+                node["capability_id"] for node in snapshot["nodes"] if node.get("wave") == "initial_local"
+            }
+            self.assertTrue(
+                set(RUNTIME.profile()["initial_exploration"]["local_operator_capabilities"])
+                <= local_capabilities
+            )
+            self.assertEqual(200, RUNTIME._round_analysis_work_count(snapshot, "RND0001"))
+            self.assertTrue(snapshot["plans"]["RND0001"]["initial_local"])
+            self.assertEqual(
+                "analysis_node_budget_exhausted",
+                snapshot["rounds"]["RND0001"]["finish_reason"],
+            )
+
+    def test_analysis_node_limit_is_a_runtime_finalization_reason(self) -> None:
+        round_id = "RND0001"
+        snapshot = {
+            "nodes": [
+                {"kind": "analysis", "created_in_round": round_id, "assigned_round": round_id}
+                for _ in range(200)
+            ],
+            "rounds": {round_id: {}},
+        }
+        control = {"active_round_id": round_id}
+        allowed, reason = RUNTIME._finalize_allowed(Path("."), control, snapshot)
+        self.assertTrue(allowed)
+        self.assertEqual("analysis_node_budget_exhausted", reason)
 
     def test_interpretation_retry_exhaustion_is_a_human_stop(self) -> None:
         control = {

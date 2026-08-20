@@ -11,9 +11,9 @@ allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 
 ## 最初の判定
 
-1. 新規Runで`conductor_control.json`がまだ無い場合は、人間が指定した入力CSV、endpoint、`higher_is_better`、project、parallel limit、出力先を使ってRuntime `init`を一回だけ実行する。SMILES列を一意に推定できない場合だけ人間指定の`--smiles-column`を渡す。既存Runでは指定された`run_root/conductor_control.json`だけを最初に読む。
+1. 新規Runで`conductor_control.json`がまだ無い場合は、人間が指定した入力CSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、出力先を使ってRuntime `init`を一回だけ実行する。Available CPU Coresが未指定なら`--available-cpu-cores 8`とする。SMILES列を一意に推定できない場合だけ人間指定の`--smiles-column`を渡す。既存Runでは指定された`run_root/conductor_control.json`だけを最初に読む。
 2. 人間依頼を`inspect`、`start new Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`のいずれかへ分類する。
-3. 新Roundは人間が明示した場合だけ`prepare-round`と`authorize-round`を別操作として行う。曖昧ならStateを変更しない。
+3. 新Roundは人間が明示した場合だけ`prepare-round`と`authorize-round`を別操作として行う。曖昧ならStateを変更しない。RoundごとにCPU割当を変更する場合だけ`prepare-round --available-cpu-cores N`を指定する。`parallel_limit`は同時Node数、Available CPU CoresはCPU総予算であり、同じ値とは限らない。
 4. `ACTIVE`／`FINALIZING`は同じRoundを`resume-round`する。期限切れleaseでも新Roundを作らない。live leaseがあれば二重起動しない。旧RunにSMILES列metadataがなく自動推定もできない場合だけ、人間が示した`--smiles-column`をresume時に記録する。既存値は変更しない。
 5. `AWAITING_HUMAN_REVIEW`では、人間が明示した`continue-round`、`revise-report`、`accept-round`以外を行わない。
 
@@ -57,6 +57,7 @@ Main sessionを意図的に終了する必要があり、まだlive leaseと現�
 - Mainは専門Skillの`launch.py`／`run.py`を直接実行しない。
 - Mainは`prepare-execution-packet`が返した`packet_path`と`executor_token`だけを`cs-conductor-executor`へ渡す。lease tokenとAction tokenは渡さない。
 - 同じRunに対するExecutorは一時点で一つだけとする。科学Nodeのprocess並列性はRuntimeの`parallel_limit`へ委ねる。
+- D019（GFN2-xTB）とD020（ChemBERTa）はRuntimeが単独Execution packetへ分離する。Mainはこの分離や、D019へ割り当てられた化合物並列数・4コア/化合物のcommandを変更しない。
 - packet内の論理commandをMainまたはExecutorが再構築・直接実行しない。Runtimeだけが検証後に自身のPythonへ解決する。
 - Executorがpacketをstale、expired、invalid、consumedとして拒否された場合、同じpacketや同じExecutorを再起動しない。最新Controlをread-only確認し、単一の`required_action`へ戻る。
 - Executorの文章ではなく、Runtimeのcompact resultとControl revisionを確認する。
@@ -72,6 +73,8 @@ Main sessionを意図的に終了する必要があり、まだlive leaseと現�
 ## 科学判断
 
 推論が必要なのは`SCIENTIFIC_DECISION`だけである。Global／Cluster-local、兄弟Cluster、異なるDescription family、異なるOperatorのバランスと、人間のpriority、未確認領域、反証候補を考慮する。Node ID、依存関係、Status、Round gateはRuntimeへ委ねる。
+
+一つのRoundで新たに処理するAnalysis Nodeは最大200件とする。Runtimeは初期Global／Local候補を最大50件ずつ決定論的かつ層化してNode化し、初期Globalは最大100件で区切ってLocal用容量を残すため、`PLAN_INITIAL_GLOBAL`または`PLAN_INITIAL_LOCAL`が複数回返ることは正常である。Mainは件数を独自に拡大せず、毎回同じrequired actionへ従う。200件に達したら未Node化候補を当該Roundへ追加せずInterpretationへ進み、人間が開始した次Roundで既存成功Nodeを再利用しながら残候補を再構成する。Wall Timeの長さをNode件数の拡大理由にしない。Description／Clusteringの基本計算はこのAnalysis上限には含めない。
 
 Wall Timeは上限であり、早期終了の目標ではない。eligible workがなくなるか契約・budgetが終端を許すまで進め、必ずInterpretation、Full Audit、`AWAITING_HUMAN_REVIEW`まで完了する。人間の明示指示なしに次Roundを開始しない。
 

@@ -29,7 +29,9 @@
     "basename": "D019_tblite_xtb"
   },
   "implementation": {
-    "algorithm": "tblite_xtb"
+    "algorithm": "tblite_xtb",
+    "parallelization": "compound_processes_with_threaded_xtb",
+    "default_cores_per_compound": 4
   },
   "value_semantics": "dense_continuous",
   "natural_metric": "euclidean",

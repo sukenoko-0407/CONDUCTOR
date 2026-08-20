@@ -24,7 +24,9 @@ CSVまたは1件以上のSMILESからGFN2-xTB quantum descriptorsを計算する
 
 ## Algorithm-specific options
 
-`--num-confs`、`--random-seed`、必要に応じて`--charge`と`--uhf`を指定する。非常に高コストのため人間承認後に実行する。
+`--num-confs`、`--random-seed`、必要に応じて`--charge`と`--uhf`を指定する。一般利用では`--compound-workers`で同時計算する化合物数、`--cores-per-compound`で各xTB計算のCPU数を指定できる。積が実際の割当CPU数を超えないようにする。非常に高コストのため人間承認後に実行する。
+
+CONDUCTOR Runtime経由では人間が宣言した`available_cpu_cores`を正本とし、D019を他Nodeと同時実行しない。Runtimeは原則として1化合物4コア、化合物並列数`floor(available_cpu_cores / 4)`を設定する。割当が4コア未満の場合だけ、1化合物を割当全コアで処理する。この内部並列数はOrchestratorのNode `parallel_limit`とは別概念である。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -57,7 +59,7 @@ Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証さ�
 CONDUCTOR利用が明示されていない場合はこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id general-001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id general-001 --compound-workers 2 --cores-per-compound 4
 ```
 
 ## CONDUCTOR mode command
@@ -75,3 +77,4 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
 - 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+- 一般利用では`compound_workers × cores_per_compound`を利用可能CPU数以下にする責務は実行者にある。CONDUCTOR利用ではRuntimeがこの上限を決定論的に保証する。

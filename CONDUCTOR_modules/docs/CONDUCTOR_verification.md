@@ -27,6 +27,8 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py catalog --check
 - Executor packetが署名、revision、Action token、期限へ結び付けられ、二重利用できない。
 - ExecutorへMain lease tokenを渡さず、Runtime応答が16 KiB以下に収まる。
 - Interpretation quality失敗が同じNodeの有限Attemptとして記録され、正常終了扱いにならない。
+- Analysis Nodeが1 Round最大200件、1回の計画登録最大50件、初期Global最大100件に制限され、Local解析用容量が残る。
+- 未Node化候補が次の人間承認Roundで成功済みsignatureを除外して決定論的に再構成される。
 
 ## Scientific Skills
 

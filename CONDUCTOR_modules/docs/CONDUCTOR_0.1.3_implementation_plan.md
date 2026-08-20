@@ -149,7 +149,7 @@ MainがRuntime commandのraw stdoutを受け取らないよう、CLIはmachine-r
 - Runtimeがexecution packetを生成する。
 - packetにcommand、cwd、env、input、expected output、validation、timeout、recovery budgetを含める。
 - Executorは一packetまたは一batchを実行したら終了する。
-- Runtime内部process poolで`parallel_limit`を実現し、複数Executorを並列起動しない。
+- Runtime内部process poolで`parallel_limit`を実現し、複数Executorを並列起動しない。CPU総予算は別の`available_cpu_cores`で管理し、D019 xTBは単独packet内で原則4コア/化合物の化合物並列を行う。
 - stdout／stderrをNode scratchのlogへredirectする。
 - Executor final responseをcompact result envelopeへ固定する。
 - envelopeはRuntimeが生成・schema検証し、Executorの自由記述を正本にしない。
@@ -447,6 +447,7 @@ CutoverはAgent、Skill、Runtime、schema、installer、Catalog、文書、test
 - 標準実行一回と最大二回の同一Node retry、failure分類、failure packet、scratch限定adaptive recovery、科学引数不変検査を実装した。
 - Interpretation quality failureを同一Interpretation Nodeの有限Attemptとして記録し、上限到達時は人間停止にした。
 - Interpretation、固定HTML、Full Auditが揃わなければRoundを人間確認待ちへ移せないgateを維持・検証した。
+- Analysis計画を1 Round最大200 Node、50件単位の遅延Node化、初期Global最大100 Nodeへ制限し、Operator／Description／Clustering／scopeを層化してLocal解析用容量を確保した。
 - Package installer、Catalog、prompt、正本文書を0.1.3構成へ更新した。
 - Description、Clustering、Operatorの科学計算kernelにはVersion契約以外の一括変更を加えていない。
 

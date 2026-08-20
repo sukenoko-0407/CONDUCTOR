@@ -21,7 +21,12 @@ run_root: /path/to/run_root
 request: RND0002を開始し、INS000012を重視しながら追加探索してください
 walltime: 8h
 parallel_limit: 8
+available_cpu_cores: 8
 ```
+
+`parallel_limit`は同時Node数、`available_cpu_cores`はRunへ割り当てられたCPU総数です。後者を省略すると8です。D019（xTB）は単独Executor packetとなり、原則4コア/化合物で化合物並列数が自動計算されます。
+
+1 RoundのAnalysis Nodeは最大200件で、Runtimeが最大50件ずつNode化します。初期Globalは最大100件で区切り、Local解析用の容量を確保します。Wall Timeを長くしてもこの件数は増えず、残候補は次の人間承認Roundへ送られます。Description／Clusteringの基本計算は別枠です。
 
 Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を明示します。旧RunでSMILES列を自動認識できなかった場合は、再開依頼に使用するSMILES列名も記載します。
 
@@ -37,3 +42,5 @@ Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を�
 |---|---|
 | 1.0.0 | CONDUCTOR 0.1.3でMain Agent Orchestrator方式を導入 |
 | 1.0.1 | 新規Runの曖昧なSMILES列を人間指定としてRuntimeへ渡す手順を追加 |
+| 1.1.0 | Available CPU CoresとxTB単独・内部並列実行の手順を追加 |
+| 1.2.0 | Analysisを1 Round最大200件、最大50件ずつ計画する制御を追加 |

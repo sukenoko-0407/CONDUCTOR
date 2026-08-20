@@ -107,7 +107,9 @@ Main Agent = Orchestrator
          `-- Interpretation and Round closure gates
 ```
 
-Runtime内部の科学Skill processは`parallel_limit`まで並列実行できるが、同じRunに対するExecutor Subagentは一時点で一つだけとする。複数ExecutorによるState競合を避け、並列性はRuntimeのprocess管理へ集約する。
+Runtime内部の科学Skill processは`parallel_limit`まで並列実行できるが、同じRunに対するExecutor Subagentは一時点で一つだけとする。さらに`available_cpu_cores`（未指定時8）をCPU総予算として独立管理し、実効同時Node数と内部thread数を予算以下に保つ。D019 xTBは単独packetとし、原則4コア/化合物で化合物並列化する。複数ExecutorによるState競合を避け、並列性はRuntimeのprocess管理へ集約する。
+
+Runtimeは一つのRoundへ割り当てるAnalysis Nodeを最大200件に制限し、初期Global／Local候補を最大50件ずつ層化してNode化する。初期Globalは最大100件で区切り、Local解析用に少なくとも100件分の容量を残す。未Node化候補を巨大なqueueとしてDAGへ保存せず、次の人間承認Roundで成功済みsignatureを除外して再構成する。長いWall Timeはprocessを完了させる余裕であり、計画件数を増やす指定ではない。Description／Clusteringの基本計算はこのAnalysis上限の対象外とする。
 
 ## 5. Main Agent Orchestrator Skill
 
@@ -135,6 +137,7 @@ run_root: /path/to/run_root
 request: RND0002を開始し、F012を重視しつつ追加探索も実施する
 walltime: 8h
 parallel_limit: 8
+available_cpu_cores: 64
 ```
 
 Skill呼出しだけでは新Round開始の意味にしない。`request`に新Round開始、同一Round継続、Report修正、状態確認のいずれかが明示されていることをRuntime APIで区別する。曖昧な場合はStateを変更せず人間へ確認する。
@@ -147,7 +150,7 @@ Main Agentは次を担当する。
 2. 人間の依頼を状態確認、新Round開始、Active Round再開、同一Round継続、Report修正、acceptへ分類する。
 3. 新RoundではRound Contract案と人間依頼の一致を確認する。
 4. `SCIENTIFIC_DECISION`ではbounded Working Setから次の解析を選ぶ。
-5. RuntimeへNode候補を提出し、Runtimeが割り当てたNode IDを受け取る。
+5. RuntimeへNode候補を提出し、RuntimeがRound上限内で割り当てたNode IDを受け取る。
 6. 実行actionでは一つのExecutorを起動し、compact resultだけを受け取る。
 7. Interpretation actionではInterpreterを直接起動する。
 8. Interpretation commit、Quality gate、Full Audit、`AWAITING_HUMAN_REVIEW`到達を確認する。
@@ -209,7 +212,7 @@ RuntimeはCapability metadataとCatalogから次を確定する。
 - working directory
 - Pixi、UV、XDG cache
 - `TMPDIR`、`TMP`、`TEMP`
-- timeout、parallel limit
+- timeout、parallel limit、Available CPU Cores
 - expected Artifactとvalidation
 
 ExecutorはRuntime生成packetを一度だけRuntime launcherへ渡し、packet内の科学Skill commandを自身で再構築または直接実行しない。

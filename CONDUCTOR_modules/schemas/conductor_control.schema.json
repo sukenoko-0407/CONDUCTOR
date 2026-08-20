@@ -29,7 +29,8 @@
         "endpoint_transform": {"type": ["string", "null"]},
         "row_count": {"type": "integer", "minimum": 1},
         "profile_id": {"type": "string", "minLength": 1},
-        "parallel_limit": {"type": "integer", "minimum": 1}
+        "parallel_limit": {"type": "integer", "minimum": 1},
+        "available_cpu_cores": {"type": "integer", "minimum": 1, "default": 8}
       }
     },
     "active_round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4}$"},

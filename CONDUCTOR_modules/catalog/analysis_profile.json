@@ -24,6 +24,11 @@
     "stratify_by": ["description_family", "clustering_family", "operator", "scope"],
     "sampling": "seeded_balanced_without_replacement"
   },
+  "runtime_planning": {
+    "max_new_analysis_nodes_per_round": 200,
+    "analysis_materialization_batch_size": 50,
+    "initial_global_analysis_node_limit": 100
+  },
   "modeling": {
     "fixed_description_panel": ["D001", "D002", "D006", "D013", "D016", "D019"],
     "minimum_local_samples": 30

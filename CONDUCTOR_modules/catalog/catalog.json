@@ -3,7 +3,7 @@
   "conductor_version": "0.1.3",
   "profile_id": "comprehensive-multiround-beta",
   "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json",
-  "profile_hash": "573d84d60d40b64f7b2ec664ca221f677314898325bd5615b5742a2d1fe123fd",
+  "profile_hash": "daf5b17a79c196553d6a4d2d7044fff87c03f1e891d1772adef4f306b7e0de25",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
   "generated_at": "2026-08-19T14:24:42.899063+00:00",
@@ -1911,7 +1911,9 @@
         "basename": "D019_tblite_xtb"
       },
       "implementation": {
-        "algorithm": "tblite_xtb"
+        "algorithm": "tblite_xtb",
+        "parallelization": "compound_processes_with_threaded_xtb",
+        "default_cores_per_compound": 4
       },
       "value_semantics": "dense_continuous",
       "natural_metric": "euclidean",
@@ -2012,7 +2014,7 @@
       "version": "0.1.3",
       "stage": "orchestration",
       "family": "graph_orchestration",
-      "description": "Deterministic Runtime owning compact Control, five-state Nodes, signed Executor packets, attempts, crash recovery, bounded working sets, Interpretation gates, and Round finalization.",
+      "description": "Deterministic Runtime owning compact Control, five-state Nodes, signed Executor packets, CPU budgets, attempts, crash recovery, bounded working sets, Interpretation gates, and Round finalization.",
       "cost": {
         "class": "low",
         "human_approval_required": false,

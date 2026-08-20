@@ -13,6 +13,8 @@
 
 初手は「狭く浅く」にしません。一定の計算コストを許容してヒントを取りこぼさないことを優先します。MCSは初手から実行します。
 
+一方、単一RoundのInterpretation密度を維持するため、新たに処理するAnalysis Nodeは最大200件とします。RuntimeはOperator、Description、Clustering、scopeの偏りを抑えながら最大50件ずつNode化し、初期Globalを最大100件で区切ってLocal解析用の容量を残します。未選択候補はNodeとして保存せず、次の人間承認Roundで成功済み計算を除外して再構成します。長いWall Timeは実行余裕であり、Node上限を増やす指定ではありません。Description／Clusteringの基本計算はこのAnalysis上限とは別枠です。
+
 ## Clusterとmetric
 
 5化合物未満のClusterは登録しません。30化合物未満のlocal modelは作りません。全体の50%超を占めるClusterはGlobalに近いことを解釈へ明記します。構造凝集性が高い小Clusterは優先余地があります。
@@ -25,4 +27,4 @@ Vector Clusteringは手法別の自動calibrationを使います。binary finger
 
 ## 終端
 
-RoundはInterpretationとFull Auditまでが一単位です。ゼロInsightでもレポートを作ります。実行可能作業があるのにWall Time前に理由なく終えず、本当に継続不能ならblockerまたは人間checkpointをRuntimeへ記録します。
+RoundはInterpretationとFull Auditまでが一単位です。ゼロInsightでもレポートを作ります。実行可能作業があるのにWall Time前に理由なく終えませんが、Analysis Node上限へ達した場合は残候補を次Roundへ送り、そのRoundのInterpretationへ進みます。本当に継続不能ならblockerまたは人間checkpointをRuntimeへ記録します。

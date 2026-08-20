@@ -31,12 +31,15 @@ MAX_COMPACT_RESPONSE_BYTES = 16 * 1024
 EXECUTION_PACKET_TTL_MINUTES = 15
 DEFAULT_LEASE_MINUTES = 360
 DEFAULT_EXECUTION_TIMEOUT_MINUTES = 360
+DEFAULT_AVAILABLE_CPU_CORES = 8
+XTB_CORES_PER_COMPOUND = 4
 EXECUTION_LEASE_GRACE_MINUTES = 10
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
 RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
 DIRECT_STRUCTURE_CLUSTERING = {"C001", "C002", "C003", "C004"}
 DIRECT_STRUCTURE_ANALYSIS = {"A006", "A009", "A013"}
+EXCLUSIVE_CPU_CAPABILITIES = {"D019", "D020"}
 ROUND_STATES = {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"}
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
 
@@ -116,6 +119,10 @@ def _compact_response(
         "counts": clean(control.get("counts") or {}),
         "closure": clean(control.get("closure") or {}),
         "working_set": control.get("pointers", {}).get("working_set"),
+        "resources": {
+            "parallel_limit": int(control["run"].get("parallel_limit", 1)),
+            "available_cpu_cores": _available_cpu_cores(control),
+        },
     }
     if action_token is not None:
         response["action_token"] = action_token
@@ -132,6 +139,44 @@ def _compact_response(
 
 def _print_compact(control: dict[str, Any], **payload: Any) -> None:
     print(json.dumps(_compact_response(control, **payload), ensure_ascii=False, indent=2))
+
+
+def _available_cpu_cores(control: dict[str, Any]) -> int:
+    """Return the human-declared CPU allocation, including legacy Run fallback."""
+    value = int(control.get("run", {}).get("available_cpu_cores", DEFAULT_AVAILABLE_CPU_CORES))
+    if value < 1:
+        raise ValueError("available_cpu_cores must be at least one")
+    return value
+
+
+def _execution_capacity(control: dict[str, Any]) -> int:
+    """Bound concurrent Node processes independently by Node and CPU budgets."""
+    return min(int(control["run"]["parallel_limit"]), _available_cpu_cores(control))
+
+
+def _select_execution_nodes(
+    requested: list[str],
+    runnable: dict[str, dict[str, Any]],
+    control: dict[str, Any],
+) -> list[str]:
+    """Select a deterministic batch while keeping internally parallel CPU Nodes exclusive."""
+    selected: list[str] = []
+    for node_id in requested:
+        node = runnable[node_id]
+        if node["capability_id"] in EXCLUSIVE_CPU_CAPABILITIES:
+            if not selected:
+                return [node_id]
+            break
+        selected.append(node_id)
+        if len(selected) >= _execution_capacity(control):
+            break
+    return selected
+
+
+def _node_cpu_allocation(control: dict[str, Any], node: dict[str, Any]) -> int:
+    if node["capability_id"] in EXCLUSIVE_CPU_CAPABILITIES:
+        return _available_cpu_cores(control)
+    return 1
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -536,7 +581,7 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
             raise ValueError("No runnable Nodes")
         if set(requested) - set(runnable):
             raise ValueError(f"Requested Nodes are not currently runnable: {sorted(set(requested) - set(runnable))}")
-        requested = requested[: control["run"]["parallel_limit"]]
+        requested = _select_execution_nodes(requested, runnable, control)
         executor_token = secrets.token_hex(32)
         packet_id = f"PKT{timestamp()}_{secrets.token_hex(4)}"
         packet_dir = root / "runtime" / "scratch" / "packets" / packet_id
@@ -560,7 +605,11 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
                 "working_directory": str(project_root()),
                 "scratch": str(scratch),
                 "skill_output": str(skill_output),
-                "environment": {"CONDUCTOR_ATTEMPT_TMP": str(scratch / "tmp")},
+                "environment": {
+                    "CONDUCTOR_ATTEMPT_TMP": str(scratch / "tmp"),
+                    "CONDUCTOR_AVAILABLE_CPU_CORES": str(_available_cpu_cores(control)),
+                    "CONDUCTOR_NODE_CPU_CORES": str(_node_cpu_allocation(control, node)),
+                },
                 "expected_output_ref": node["output_ref"],
                 "validation": ["execution_event_identity", "artifact_sha256", "stage_schema", "analysis_subject", "scientific_invariants"],
                 "prior_failure_pointer": prior_failure,
@@ -609,7 +658,7 @@ def _runnable(control: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[st
         return []
     lookup = _node_lookup(snapshot)
     running_count = sum(node["status"] == "running" for node in snapshot["nodes"])
-    capacity = max(0, int(control["run"]["parallel_limit"]) - running_count)
+    capacity = max(0, _execution_capacity(control) - running_count)
     active = control["active_round_id"]
     contract = None
     try:
@@ -733,7 +782,10 @@ def _finalize_allowed(root: Path, control: dict[str, Any], snapshot: dict[str, A
     timing = _round_time(root, control, snapshot)
     if timing["soft_stop_reached"]:
         return True, "budget_exhausted"
-    if record.get("finish_reason") in {"no_eligible_work", "contract_satisfied"}:
+    maximum_analysis_nodes, _batch_size = _analysis_planning_limits()
+    if _round_analysis_work_count(snapshot, round_id) >= maximum_analysis_nodes:
+        return True, "analysis_node_budget_exhausted"
+    if record.get("finish_reason") in {"no_eligible_work", "contract_satisfied", "analysis_node_budget_exhausted"}:
         return True, record["finish_reason"]
     deliverables = _deliverable_status(root, control, snapshot)
     if deliverables and all(item["satisfied"] or item.get("human_acceptance_required") for item in deliverables if item["type"] != "interpretation_completed"):
@@ -809,6 +861,13 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
 def _refresh_control(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> None:
     counts = Counter(node["status"] for node in snapshot["nodes"])
     counts.update({f"kind_{kind}": sum(node["kind"] == kind for node in snapshot["nodes"]) for kind in ("description", "clustering", "analysis", "interpretation")})
+    maximum_analysis_nodes, batch_size = _analysis_planning_limits()
+    counts.update({
+        "round_analysis_nodes": _round_analysis_work_count(snapshot, control.get("active_round_id")),
+        "round_analysis_node_limit": maximum_analysis_nodes,
+        "analysis_materialization_batch_size": batch_size,
+        "initial_global_analysis_node_limit": _initial_global_analysis_limit(),
+    })
     control["counts"] = dict(sorted(counts.items()))
     deliverables = _deliverable_status(root, control, snapshot) if control.get("active_round_id") else []
     fresh, interpretation_node = _interpretation_fresh(snapshot, control["active_round_id"]) if control.get("active_round_id") else (False, None)
@@ -831,6 +890,130 @@ def _refresh_control(root: Path, control: dict[str, Any], snapshot: dict[str, An
 
 def _signature(capability_id: str, input_nodes: list[str], scope: dict[str, Any], parameters: dict[str, Any]) -> str:
     return value_hash({"capability_id": capability_id, "input_nodes": sorted(input_nodes), "scope": scope, "parameters": parameters})
+
+
+def _analysis_planning_limits() -> tuple[int, int]:
+    settings = profile().get("runtime_planning") or {}
+    maximum = int(settings.get("max_new_analysis_nodes_per_round", 200))
+    batch_size = int(settings.get("analysis_materialization_batch_size", 50))
+    if maximum < 1 or batch_size < 1 or batch_size > maximum:
+        raise ValueError("Invalid Runtime analysis planning limits")
+    return maximum, batch_size
+
+
+def _initial_global_analysis_limit() -> int:
+    maximum, _batch_size = _analysis_planning_limits()
+    value = int((profile().get("runtime_planning") or {}).get("initial_global_analysis_node_limit", 100))
+    if value < 1 or value > maximum:
+        raise ValueError("Invalid initial Global Analysis Node limit")
+    return value
+
+
+def _round_analysis_work_count(snapshot: dict[str, Any], round_id: str | None) -> int:
+    if not round_id:
+        return 0
+    return sum(
+        node["kind"] == "analysis"
+        and (node.get("created_in_round") == round_id or node.get("assigned_round") == round_id)
+        for node in snapshot["nodes"]
+    )
+
+
+def _balanced_analysis_specs(snapshot: dict[str, Any], specs: list[dict[str, Any]], wave: str) -> list[dict[str, Any]]:
+    unique: dict[str, dict[str, Any]] = {}
+    for spec in specs:
+        signature = _signature(spec["capability_id"], spec["input_nodes"], spec["scope"], spec["parameters"])
+        unique.setdefault(signature, {**spec, "signature": signature})
+    lookup = _node_lookup(snapshot)
+    strata: dict[tuple[str, str, tuple[str, ...]], list[dict[str, Any]]] = {}
+    for spec in unique.values():
+        input_capabilities = tuple(sorted(
+            lookup[node_id]["capability_id"]
+            for node_id in spec["input_nodes"]
+            if node_id in lookup
+        ))
+        key = (spec["capability_id"], str(spec["scope"].get("mode", "unknown")), input_capabilities)
+        strata.setdefault(key, []).append(spec)
+    for key, values in strata.items():
+        values.sort(key=lambda spec: (value_hash([wave, key, spec["signature"]]), spec["signature"]))
+    capability_queues: dict[str, list[dict[str, Any]]] = {}
+    for capability_id in sorted({key[0] for key in strata}):
+        keys = sorted(
+            (key for key in strata if key[0] == capability_id),
+            key=lambda key: (value_hash([wave, capability_id, key]), key),
+        )
+        queue: list[dict[str, Any]] = []
+        while keys:
+            next_keys: list[tuple[str, str, tuple[str, ...]]] = []
+            for key in keys:
+                queue.append(strata[key].pop(0))
+                if strata[key]:
+                    next_keys.append(key)
+            keys = next_keys
+        capability_queues[capability_id] = queue
+    ordered_capabilities = sorted(
+        capability_queues,
+        key=lambda capability_id: (value_hash([wave, capability_id]), capability_id),
+    )
+    balanced: list[dict[str, Any]] = []
+    while ordered_capabilities:
+        next_capabilities: list[str] = []
+        for capability_id in ordered_capabilities:
+            balanced.append(capability_queues[capability_id].pop(0))
+            if capability_queues[capability_id]:
+                next_capabilities.append(capability_id)
+        ordered_capabilities = next_capabilities
+    return balanced
+
+
+def _materialize_analysis_specs(
+    snapshot: dict[str, Any],
+    control: dict[str, Any],
+    specs: list[dict[str, Any]],
+    wave: str,
+    wave_limit: int | None = None,
+) -> tuple[list[str], int]:
+    """Materialize a bounded, deterministic slice without storing deferred candidates as Nodes."""
+    round_id = control["active_round_id"]
+    maximum, batch_size = _analysis_planning_limits()
+    remaining_budget = max(0, maximum - _round_analysis_work_count(snapshot, round_id))
+    if wave_limit is not None:
+        wave_count = sum(
+            node["kind"] == "analysis"
+            and node.get("wave") == wave
+            and (node.get("created_in_round") == round_id or node.get("assigned_round") == round_id)
+            for node in snapshot["nodes"]
+        )
+        remaining_budget = min(remaining_budget, max(0, wave_limit - wave_count))
+    activation_limit = min(batch_size, remaining_budget)
+    planned: list[str] = []
+    deferred = 0
+    by_signature = {node["signature"]: node for node in snapshot["nodes"]}
+    for spec in _balanced_analysis_specs(snapshot, specs, wave):
+        existing = by_signature.get(spec["signature"])
+        if existing and existing["status"] == "succeeded" and (existing.get("result_quality") or {}).get("eligible_for_downstream", True):
+            continue
+        if existing and existing.get("assigned_round") == round_id:
+            continue
+        if len(planned) >= activation_limit:
+            deferred += 1
+            continue
+        node, created = _add_node(
+            snapshot,
+            control,
+            spec["capability_id"],
+            spec["input_nodes"],
+            wave,
+            spec["scope"],
+            spec["parameters"],
+        )
+        by_signature[spec["signature"]] = node
+        activated = created or (existing is not None and node.get("assigned_round") == round_id)
+        if activated:
+            planned.append(node["node_id"])
+        elif not (node["status"] == "succeeded" and (node.get("result_quality") or {}).get("eligible_for_downstream", True)):
+            deferred += 1
+    return planned, deferred
 
 
 def _add_node(snapshot: dict[str, Any], control: dict[str, Any], capability_id: str, input_nodes: list[str], wave: str, scope: dict[str, Any] | None = None, parameters: dict[str, Any] | None = None, supersedes: str | None = None) -> tuple[dict[str, Any], bool]:
@@ -933,6 +1116,10 @@ def _run_smiles_column(control: dict[str, Any]) -> str:
 def cmd_init(args: argparse.Namespace) -> int:
     import pandas as pd
 
+    if args.parallel_limit < 1:
+        raise ValueError("parallel_limit must be at least one")
+    if args.available_cpu_cores < 1:
+        raise ValueError("available_cpu_cores must be at least one")
     source = Path(args.input).expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(source)
@@ -992,6 +1179,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             "row_count": len(frame),
             "profile_id": profile()["profile_id"],
             "parallel_limit": args.parallel_limit,
+            "available_cpu_cores": args.available_cpu_cores,
         },
         "active_round_id": None,
         "round_state": "NO_ACTIVE_ROUND",
@@ -1036,12 +1224,22 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
         control, snapshot = _read_state(root)
         if control.get("active_round_id"):
             raise ValueError(f"Active Round already exists: {control['active_round_id']}")
+        if args.parallel_limit is not None and args.parallel_limit < 1:
+            raise ValueError("parallel_limit must be at least one")
+        if args.available_cpu_cores is not None and args.available_cpu_cores < 1:
+            raise ValueError("available_cpu_cores must be at least one")
         round_id = f"RND{control['next_round_number']:04d}"
         request_payload = {
             "objective": args.objective,
             "optional_directions": args.optional_direction or [],
             "human_priorities": args.human_priority or [],
-            "budgets": {"walltime_minutes": args.walltime_minutes, "parallel_limit": args.parallel_limit or control["run"]["parallel_limit"], "max_additional_nodes": args.max_additional_nodes, "interpretation_iterations": args.interpretation_iterations},
+            "budgets": {
+                "walltime_minutes": args.walltime_minutes,
+                "parallel_limit": args.parallel_limit or control["run"]["parallel_limit"],
+                "available_cpu_cores": args.available_cpu_cores or _available_cpu_cores(control),
+                "max_additional_nodes": args.max_additional_nodes,
+                "interpretation_iterations": args.interpretation_iterations,
+            },
             "omissions": args.omission or [],
             "high_cost_bundle_approved": bool(args.approve_high_cost),
         }
@@ -1087,9 +1285,23 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         reserve = min(90, max(5, total_minutes // 5), max(1, total_minutes - 1))
         deadline = started + timedelta(minutes=contract["budgets"]["walltime_minutes"])
         snapshot["rounds"][round_id] = {"state": "ACTIVE", "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": False, "latest_audit": None, "current_interpretation_node": None, "no_progress_returns": 0}
-        snapshot["plans"][round_id] = {"basic_compute": False, "initial_global": False, "initial_local": False, "additional_nodes_planned": 0}
+        maximum_analysis_nodes, batch_size = _analysis_planning_limits()
+        snapshot["plans"][round_id] = {
+            "basic_compute": False,
+            "initial_global": False,
+            "initial_local": False,
+            "additional_nodes_planned": 0,
+            "analysis_node_limit": maximum_analysis_nodes,
+            "analysis_materialization_batch_size": batch_size,
+            "initial_global_analysis_node_limit": _initial_global_analysis_limit(),
+            "initial_global_deferred": 0,
+            "initial_local_deferred": 0,
+        }
         control.update({"active_round_id": round_id, "round_state": "ACTIVE", "next_round_number": control["next_round_number"] + 1, "blocker": None})
         control["run"]["parallel_limit"] = contract["budgets"]["parallel_limit"]
+        control["run"]["available_cpu_cores"] = contract["budgets"].get(
+            "available_cpu_cores", DEFAULT_AVAILABLE_CPU_CORES
+        )
         request["used"] = True
         request["used_at"] = utc_now()
         write_json(request_path, request)
@@ -1315,22 +1527,51 @@ def _plan_initial_global(control: dict[str, Any], snapshot: dict[str, Any]) -> l
     descriptions = _succeeded(snapshot, "description", p["initial_exploration"]["description_master_panel"])
     clusterings = _usable_clusterings(snapshot)
     by_desc = {node["capability_id"]: node for node in _succeeded(snapshot, "description")}
-    planned: list[str] = []
+    specs: list[dict[str, Any]] = []
     for capability_id in p["initial_exploration"]["global_operator_capabilities"]:
         capability = caps[capability_id]
         if capability_id == "A005":
             panel = p["modeling"]["fixed_description_panel"]
             if all(item in by_desc for item in panel):
-                node, created = _add_node(snapshot, control, capability_id, [by_desc[item]["node_id"] for item in panel], "initial_global", {"mode": "global"}, {"role": "global-model"})
-                if created:
-                    planned.append(node["node_id"])
+                specs.append({
+                    "capability_id": capability_id,
+                    "input_nodes": [by_desc[item]["node_id"] for item in panel],
+                    "scope": {"mode": "global"},
+                    "parameters": {"role": "global-model"},
+                })
             continue
         inputs = _analysis_inputs(capability, descriptions, clusterings, "global")
         for input_nodes in inputs:
-            node, created = _add_node(snapshot, control, capability_id, input_nodes, "initial_global", {"mode": "global"}, {})
-            if created:
-                planned.append(node["node_id"])
-    snapshot["plans"][control["active_round_id"]]["initial_global"] = True
+            specs.append({
+                "capability_id": capability_id,
+                "input_nodes": input_nodes,
+                "scope": {"mode": "global"},
+                "parameters": {},
+            })
+    global_limit = _initial_global_analysis_limit()
+    planned, deferred = _materialize_analysis_specs(
+        snapshot,
+        control,
+        specs,
+        "initial_global",
+        wave_limit=global_limit,
+    )
+    plan = snapshot["plans"][control["active_round_id"]]
+    maximum, _batch_size = _analysis_planning_limits()
+    budget_exhausted = _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum
+    global_limit_exhausted = sum(
+        node["kind"] == "analysis"
+        and node.get("wave") == "initial_global"
+        and (node.get("created_in_round") == control["active_round_id"] or node.get("assigned_round") == control["active_round_id"])
+        for node in snapshot["nodes"]
+    ) >= global_limit
+    plan.update({
+        "initial_global": deferred == 0 or global_limit_exhausted or budget_exhausted,
+        "initial_global_deferred": deferred,
+    })
+    if budget_exhausted and deferred:
+        plan.update({"initial_local": True, "initial_local_deferred": None})
+        snapshot["rounds"][control["active_round_id"]]["finish_reason"] = "analysis_node_budget_exhausted"
     return planned
 
 
@@ -1368,7 +1609,7 @@ def _plan_initial_local(root: Path, control: dict[str, Any], snapshot: dict[str,
     by_desc = {node["capability_id"]: node for node in _succeeded(snapshot, "description")}
     clusterings = _usable_clusterings(snapshot)
     limit = int(p["initial_exploration"]["representative_clusters_per_clustering"])
-    planned: list[str] = []
+    specs: list[dict[str, Any]] = []
     for clustering in clusterings:
         cluster_ids = _representative_cluster_ids(root, clustering, limit)
         for cluster_id in cluster_ids:
@@ -1376,24 +1617,42 @@ def _plan_initial_local(root: Path, control: dict[str, Any], snapshot: dict[str,
             for capability_id in p["initial_exploration"]["local_operator_capabilities"]:
                 capability = caps[capability_id]
                 for input_nodes in _analysis_inputs(capability, descriptions, [clustering], "local"):
-                    node, created = _add_node(snapshot, control, capability_id, input_nodes, "initial_local", local_scope, {"target_cluster": cluster_id})
-                    if created:
-                        planned.append(node["node_id"])
+                    specs.append({
+                        "capability_id": capability_id,
+                        "input_nodes": input_nodes,
+                        "scope": local_scope,
+                        "parameters": {"target_cluster": cluster_id},
+                    })
             for projection_id in p["initial_exploration"].get("projection_overlay_capabilities", []):
                 for description in descriptions:
                     global_projection = next((node for node in _succeeded(snapshot, "analysis", [projection_id]) if node["input_nodes"] == [description["node_id"]] and node["scope"].get("mode") == "global"), None)
                     if global_projection:
-                        node, created = _add_node(snapshot, control, projection_id, [global_projection["node_id"], clustering["node_id"]], "initial_local", local_scope, {"role": "cluster-overlay", "target_cluster": cluster_id})
-                        if created:
-                            planned.append(node["node_id"])
+                        specs.append({
+                            "capability_id": projection_id,
+                            "input_nodes": [global_projection["node_id"], clustering["node_id"]],
+                            "scope": local_scope,
+                            "parameters": {"role": "cluster-overlay", "target_cluster": cluster_id},
+                        })
         global_model = next((node for node in _succeeded(snapshot, "analysis", ["A005"]) if node["parameters"].get("role") == "global-model"), None)
         panel = p["modeling"]["fixed_description_panel"]
         if global_model and all(item in by_desc for item in panel):
             inputs = [by_desc[item]["node_id"] for item in panel] + [clustering["node_id"], global_model["node_id"]]
-            node, created = _add_node(snapshot, control, "A005", inputs, "initial_local", {"mode": "multi_scope", "clustering_node": clustering["node_id"]}, {"role": "cluster-survey", "min_local_samples": p["modeling"]["minimum_local_samples"]})
-            if created:
-                planned.append(node["node_id"])
-    snapshot["plans"][control["active_round_id"]]["initial_local"] = True
+            specs.append({
+                "capability_id": "A005",
+                "input_nodes": inputs,
+                "scope": {"mode": "multi_scope", "clustering_node": clustering["node_id"]},
+                "parameters": {"role": "cluster-survey", "min_local_samples": p["modeling"]["minimum_local_samples"]},
+            })
+    planned, deferred = _materialize_analysis_specs(snapshot, control, specs, "initial_local")
+    plan = snapshot["plans"][control["active_round_id"]]
+    maximum, _batch_size = _analysis_planning_limits()
+    budget_exhausted = _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum
+    plan.update({
+        "initial_local": deferred == 0 or budget_exhausted,
+        "initial_local_deferred": deferred,
+    })
+    if budget_exhausted and deferred:
+        snapshot["rounds"][control["active_round_id"]]["finish_reason"] = "analysis_node_budget_exhausted"
     return planned
 
 
@@ -1401,6 +1660,9 @@ def _candidate_cells(root: Path, control: dict[str, Any], snapshot: dict[str, An
     p = profile()
     contract = _active_contract(root, control)
     round_plan = snapshot.get("plans", {}).get(str(control.get("active_round_id")), {})
+    maximum, _batch_size = _analysis_planning_limits()
+    if _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum:
+        return []
     if contract and int(round_plan.get("additional_nodes_planned", 0)) >= int(contract["budgets"]["max_additional_nodes"]):
         return []
     caps = catalog()
@@ -1492,6 +1754,13 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
         _require_action(control, args.lease_token, args.action_token, {"SCIENTIFIC_DECISION"})
         candidates = {item["candidate_id"]: item for item in _candidate_cells(root, control, snapshot)}
         selected_ids = [item for item in (args.candidate_ids or "").split(",") if item]
+        maximum, _batch_size = _analysis_planning_limits()
+        remaining_round_capacity = max(0, maximum - _round_analysis_work_count(snapshot, control["active_round_id"]))
+        if len(selected_ids) > remaining_round_capacity:
+            raise ValueError(
+                f"Round Analysis Node limit would be exceeded: selected={len(selected_ids)}, "
+                f"remaining={remaining_round_capacity}, limit={maximum}"
+            )
         planned: list[str] = []
         for candidate_id in selected_ids:
             if candidate_id not in candidates:
@@ -1514,6 +1783,8 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
             if args.finish_reason == "no_eligible_work" and remaining:
                 raise ValueError("Runtime refuses no_eligible_work while validated candidates remain")
             record.update({"scientific_finish_requested": True, "finish_reason": args.finish_reason})
+        elif _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum:
+            record.update({"scientific_finish_requested": True, "finish_reason": "analysis_node_budget_exhausted"})
         if not planned and not args.finish_reason:
             raise ValueError("Select at least one candidate or supply a Runtime-verifiable finish reason")
         snapshot["decisions"].append({"round_id": control["active_round_id"], "candidate_ids": selected_ids, "planned_node_ids": planned, "rationale": args.rationale, "created_at": utc_now()})
@@ -1599,6 +1870,16 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     inputs = [lookup[item] for item in node["input_nodes"]]
     if node["kind"] == "description":
         argv += ["--input", control["run"]["input"], "--smiles-column", _run_smiles_column(control)]
+        if node["capability_id"] == "D019":
+            available = _available_cpu_cores(control)
+            cores_per_compound = min(XTB_CORES_PER_COMPOUND, available)
+            compound_workers = max(1, available // cores_per_compound)
+            argv += [
+                "--cores-per-compound", str(cores_per_compound),
+                "--compound-workers", str(compound_workers),
+            ]
+        elif node["capability_id"] == "D020":
+            argv += ["--cpu-threads", str(_available_cpu_cores(control))]
     elif node["kind"] == "clustering":
         description = next((item for item in inputs if item["kind"] == "description"), None)
         argv += ["--input", str(_primary_payload(description)) if description else control["run"]["input"]]
@@ -1626,11 +1907,16 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
             argv += ["--description-result", str(_result_path(description))] if node["capability_id"] in {"A003", "A004"} else []
         if clusterings:
             clustering = clusterings[0]
-            argv += ["--membership", str(_primary_payload(clustering)), "--clustering-node-id", clustering["node_id"], "--clustering-representation", clustering["capability_id"]]
+            argv += ["--membership", str(_primary_payload(clustering)), "--clustering-node-id", clustering["node_id"]]
+            if node["capability_id"] not in {"A003", "A004"}:
+                argv += ["--clustering-representation", clustering["capability_id"]]
         if projections:
             projection = projections[0]
             argv += ["--projection", str(_primary_payload(projection)), "--projection-node-id", projection["node_id"]]
-    excluded = {"input_representation", "min_cluster_size"}
+    excluded = {
+        "input_representation", "min_cluster_size", "compound_workers",
+        "cores_per_compound", "cpu_threads", "available_cpu_cores",
+    }
     mapping = {"target_cluster": "--target-cluster", "comparison_cluster": "--comparison-cluster"}
     for key, value in node["parameters"].items():
         if key in excluded or value is None:
@@ -1958,7 +2244,15 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     return result_cards
 
 
-def _run_one(command: list[str], log_path: Path, process_path: Path, timeout_seconds: int, contract_command_hash: str) -> dict[str, Any]:
+def _run_one(
+    command: list[str],
+    log_path: Path,
+    process_path: Path,
+    timeout_seconds: int,
+    contract_command_hash: str,
+    cpu_cores: int = 1,
+    available_cpu_cores: int | None = None,
+) -> dict[str, Any]:
     started = utc_now()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     process: subprocess.Popen[str] | None = None
@@ -1972,6 +2266,14 @@ def _run_one(command: list[str], log_path: Path, process_path: Path, timeout_sec
         attempt_tmp.mkdir(parents=True, exist_ok=True)
         process_env = os.environ.copy()
         process_env["CONDUCTOR_ATTEMPT_TMP"] = str(attempt_tmp.resolve())
+        process_env["CONDUCTOR_NODE_CPU_CORES"] = str(cpu_cores)
+        process_env["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores or cpu_cores)
+        for name in (
+            "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+            "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS",
+            "NUMBA_NUM_THREADS", "RAYON_NUM_THREADS",
+        ):
+            process_env[name] = str(cpu_cores)
         process = subprocess.Popen(command, cwd=project_root(), env=process_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         write_json(process_path, {"pid": process.pid, "started_at": started, **process_identity})
         output, _unused = process.communicate(timeout=timeout_seconds)
@@ -2180,7 +2482,7 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
             raise ValueError("No runnable Nodes")
         if set(requested) - set(runnable):
             raise ValueError(f"Requested Nodes are not currently runnable: {sorted(set(requested) - set(runnable))}")
-        requested = requested[: control["run"]["parallel_limit"]]
+        requested = _select_execution_nodes(requested, runnable, control)
         contract_lookup = {item["node_id"]: item for item in executor_packet.get("execution_contracts", [])} if executor_packet else {}
         for node_id in requested:
             node = runnable[node_id]
@@ -2219,7 +2521,19 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
         interim_token = _commit(root, control, snapshot, "batch_started", {"nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": attempt["command_argv"]} for node, attempt, _scratch, _resolved_command in selected], "execution_timeout_seconds": execution_timeout_seconds}, round_id=control["active_round_id"])
     outcomes: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=len(selected)) as executor:
-        futures = {executor.submit(_run_one, command, root / attempt["log"], scratch / "process.json", execution_timeout_seconds, value_hash(attempt["command_argv"])): (node, attempt, scratch) for node, attempt, scratch, command in selected}
+        futures = {
+            executor.submit(
+                _run_one,
+                command,
+                root / attempt["log"],
+                scratch / "process.json",
+                execution_timeout_seconds,
+                value_hash(attempt["command_argv"]),
+                _node_cpu_allocation(control, node),
+                _available_cpu_cores(control),
+            ): (node, attempt, scratch)
+            for node, attempt, scratch, command in selected
+        }
         for future in as_completed(futures):
             node, attempt, scratch = futures[future]
             outcomes[node["node_id"]] = {**future.result(), "attempt_id": attempt["attempt_id"], "scratch": str(scratch)}
@@ -2703,6 +3017,7 @@ def _audit(root: Path, mode: str) -> dict[str, Any]:
     running = [node for node in snapshot["nodes"] if node["status"] == "running"]
     check("RUNNING_ATTEMPTS_VALID", all(node.get("current_attempt_id") for node in running))
     check("PARALLEL_LIMIT", len(running) <= control["run"]["parallel_limit"], {"running": len(running), "limit": control["run"]["parallel_limit"]})
+    check("CPU_CORE_LIMIT", len(running) <= _available_cpu_cores(control), {"running": len(running), "available_cpu_cores": _available_cpu_cores(control)})
     registry = {row["cluster_id"]: row for row in read_jsonl(root / "runtime" / "cluster_registry.jsonl")}
     registry_rows = read_jsonl(root / "runtime" / "cluster_registry.jsonl")
     check("CLUSTER_IDS_UNIQUE", len(registry) == len(registry_rows))
@@ -3008,6 +3323,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--endpoint-transform", help="Metadata describing a transform already applied to the endpoint column; Runtime does not transform values")
     item.add_argument("--project", required=True)
     item.add_argument("--parallel-limit", type=int, required=True)
+    item.add_argument("--available-cpu-cores", type=int, default=DEFAULT_AVAILABLE_CPU_CORES)
     item.add_argument("--run-id")
     item.add_argument("--output-dir")
     item.set_defaults(func=cmd_init)
@@ -3020,6 +3336,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--omission", action="append")
     item.add_argument("--walltime-minutes", type=int, default=480)
     item.add_argument("--parallel-limit", type=int)
+    item.add_argument("--available-cpu-cores", type=int)
     item.add_argument("--max-additional-nodes", type=int, default=300)
     item.add_argument("--interpretation-iterations", type=int, default=3)
     item.add_argument("--approve-high-cost", action="store_true")

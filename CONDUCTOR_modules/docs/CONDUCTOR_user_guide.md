@@ -2,9 +2,13 @@
 
 ## 新規Run
 
-Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`higher_is_better`、project、parallel limit、Wall Timeを示してRound 1を開始します。Mainは契約案を人間依頼と照合した場合だけauthorizeします。
+Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、Wall Timeを示してRound 1を開始します。Available CPU Coresを省略した場合は8です。Mainは契約案を人間依頼と照合した場合だけauthorizeします。
+
+parallel limitは同時に実行するNode数、Available CPU Coresは科学計算へ割り当てるCPU総数です。D019（GFN2-xTB）はRuntimeにより単独実行され、原則として1化合物4コア、`floor(Available CPU Cores / 4)`化合物並列になります。
 
 高コスト基本計算は最初に一括承認できます。MCSは基本計算であり個別承認不要です。Wall Timeは上限であって消費目標ではありませんが、実行可能で有用な作業が残る限りOrchestratorは早期終了しません。
+
+初期探索を含むAnalysisは、1 Roundにつき最大200 Nodeです。Runtimeは最大50 Nodeずつ登録し、初期Globalを最大100 Nodeで区切ってLocal解析用の容量を残します。計画Actionが複数回現れても異常ではありません。上限到達後はInterpretationを作成し、残りは人間が開始する次Roundで継続します。Wall Timeを長くしても200件は増えません。基本Description／Clusteringはこの上限に含まれません。
 
 endpointの単位変換やpActivity化はRun開始前に人間側で行います。`endpoint_transform`は実施済み変換の記録用metadataであり、Runtimeが値を変換する指定ではありません。
 

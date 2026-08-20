@@ -3,14 +3,15 @@
   "$id": "https://conductor.local/schemas/analysis_profile.schema.json",
   "title": "CONDUCTOR analysis profile",
   "type": "object",
-  "required": ["schema_version", "profile_id", "managed_by", "basic_compute", "initial_exploration", "additional_exploration", "modeling"],
+  "required": ["schema_version", "profile_id", "managed_by", "basic_compute", "initial_exploration", "additional_exploration", "runtime_planning", "modeling"],
   "properties": {
     "schema_version": {"const": "2.0.0"},
     "profile_id": {"type": "string", "minLength": 1},
     "managed_by": {"const": "human"},
     "basic_compute": {"type": "object", "required": ["description_capabilities", "direct_structure_clustering", "vector_clustering_capabilities", "vector_clustering_representations", "high_cost_bundle"]},
-    "initial_exploration": {"type": "object", "required": ["description_master_panel", "global_operator_capabilities", "local_operator_capabilities", "representative_clusters_per_clustering"]},
+    "initial_exploration": {"type": "object", "required": ["description_master_panel", "global_operator_capabilities", "local_operator_capabilities", "projection_overlay_capabilities", "representative_clusters_per_clustering"]},
     "additional_exploration": {"type": "object", "required": ["operator_capabilities", "stratify_by", "sampling"]},
+    "runtime_planning": {"type": "object", "required": ["max_new_analysis_nodes_per_round", "analysis_materialization_batch_size", "initial_global_analysis_node_limit"], "properties": {"max_new_analysis_nodes_per_round": {"const": 200}, "analysis_materialization_batch_size": {"const": 50}, "initial_global_analysis_node_limit": {"const": 100}}, "additionalProperties": false},
     "modeling": {"type": "object", "required": ["fixed_description_panel", "minimum_local_samples"]}
   },
   "additionalProperties": true

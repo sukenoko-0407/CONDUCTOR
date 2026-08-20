@@ -17,6 +17,7 @@ higher_is_better: <true/false>
 project: <project name>
 Run Root出力先: <absolute path>
 parallel_limit: <number>
+Available CPU Cores: <number; 省略時8>
 Wall Time: <minutes>
 高コスト基本計算一括承認: <yes/no>
 
@@ -26,6 +27,7 @@ Roundの目的・重視点（任意）:
 既存のconductor_control.jsonがないことを確認した場合だけ初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、科学計算は署名付きexecution packetごとにExecutorを一つだけ起動してください。
 
 基本計算、初期探索、Interpretation、Full Auditまで同じRND0001で進め、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動的に受理したり、RND0002を開始したりしないでください。
+標準のAnalysis上限（1 Round最大200 Node、最大50 Nodeずつ計画、初期Global最大100 Node）を変更せず、長いWall Timeを理由に一括計画を拡大しないでください。
 ```
 
 ## 状態確認のみ
@@ -110,6 +112,7 @@ Run Root: <absolute path>
 Run Root: <absolute path>
 期待する新Round: RND####（実際の番号はControlで照合）
 parallel_limit: <number>
+Available CPU Cores: <number; 変更しない場合は省略可>
 Wall Time: <minutes>
 
 Roundの目的:
