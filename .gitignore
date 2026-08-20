@@ -25,5 +25,6 @@ __pycache__/
 coverage.xml
 htmlcov/
 .smoke-v43-html/
+.smoke-mmp*/
 .validation-site/
 *.pyc

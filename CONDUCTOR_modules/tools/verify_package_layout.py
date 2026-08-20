@@ -8,7 +8,8 @@ from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = MODULE_ROOT.parent
-VERSION = "0.1.3"
+VERSION = "0.1.4"
+SUPPORTED_COMPONENT_VERSIONS = {"0.1.3", "0.1.4"}
 
 
 def main() -> int:
@@ -79,8 +80,10 @@ def main() -> int:
                 continue
             capability = json.loads((root / "capability.json").read_text(encoding="utf-8"))
             capability_ids.append(str(capability.get("capability_id")))
-            if capability.get("skill_name") != name or capability.get("version") != VERSION:
+            if capability.get("skill_name") != name or capability.get("version") not in SUPPORTED_COMPONENT_VERSIONS:
                 errors.append(f"{name}: metadata identity/version mismatch")
+            if name == "cs-analysis-matched-molecular-pairs" and capability.get("version") != VERSION:
+                errors.append("A014 must use the 0.1.4 component contract")
             stage = capability.get("stage")
             if stage in {"description", "clustering", "analysis"}:
                 run_text = (root / "scripts" / "run.py").read_text(encoding="utf-8")
@@ -100,7 +103,7 @@ def main() -> int:
     profile_path = MODULE_ROOT / "catalog" / "analysis_profile.json"
     if profile_path.is_file():
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
-        if set(profile.get("initial_exploration", {}).get("global_operator_capabilities", [])) != {f"A{i:03d}" for i in range(1, 14)}:
+        if set(profile.get("initial_exploration", {}).get("global_operator_capabilities", [])) != {f"A{i:03d}" for i in range(1, 15)}:
             errors.append("initial Global exploration must contain every Operator")
         if profile.get("modeling", {}).get("minimum_local_samples") != 30:
             errors.append("minimum Local model sample count mismatch")
@@ -173,7 +176,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print("CONDUCTOR 0.1.3 package layout is valid")
+    print("CONDUCTOR 0.1.4 package layout is valid")
     return 0
 
 

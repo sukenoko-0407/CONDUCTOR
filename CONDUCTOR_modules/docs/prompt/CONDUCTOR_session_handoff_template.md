@@ -1,6 +1,6 @@
 # CONDUCTOR session引継ぎテンプレート
 
-対象Version: `0.1.3`
+対象Version: `0.1.4`
 
 長いState、過去のInterpretation、独自の引継ぎMarkdownを貼り付ける必要はない。Run Rootと人間が意図する操作を新しいMain sessionへ渡す。
 

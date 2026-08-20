@@ -1,0 +1,7 @@
+compound_id,C000001,C000002,C000003
+CMPD_001,true,false,false
+CMPD_002,true,false,true
+CMPD_003,true,false,true
+CMPD_004,false,true,true
+CMPD_005,false,true,true
+CMPD_006,false,true,false

@@ -69,6 +69,7 @@ Description、Clustering、Endpointを入力として、関係性や局所的変
 | A011 | Cluster activity enrichment | 良好活性化合物のCluster内偏在 | Favorable化合物が特定Clusterに濃縮するかを評価 |
 | A012 | Cluster overlap | Cluster間のMembership重複 | 異なるClustering結果の一致・包含・重なりを評価 |
 | A013 | Cluster structural diversity | Cluster内部の構造多様性 | Clusterが構造的に均質か多様かを評価 |
+| A014 | Matched molecular pair analysis | 置換、Exact Core、周辺環境とEndpoint差 | Global MMP Databaseを網羅構築し、全Cluster screeningと選択Clusterの詳細比較に再利用 |
 
 OperatorはGlobalだけでなく、十分な化合物数を持つClusterにも適用できます。数値結果は因果関係の確定ではなく、比較・反証・深掘りの起点として扱います。
 

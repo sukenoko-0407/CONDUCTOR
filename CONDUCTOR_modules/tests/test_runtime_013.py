@@ -256,7 +256,7 @@ class Runtime013Tests(unittest.TestCase):
             "pointers": {"working_set": "runtime/working_set.json"},
         }
         response = RUNTIME._compact_response(control, action_token="token", detail_pointer="runtime/logs")
-        self.assertEqual("0.1.3", response["protocol_version"])
+        self.assertEqual("0.1.4", response["protocol_version"])
         self.assertNotIn("control", response)
         self.assertLessEqual(len(RUNTIME.canonical_bytes(response)), RUNTIME.MAX_COMPACT_RESPONSE_BYTES)
 
@@ -264,7 +264,7 @@ class Runtime013Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_root, lease, action = self.active_basic_round(Path(temporary))
             response = json.loads(self.command("prepare-execution-packet", "--run-root", str(run_root), "--lease-token", lease, "--action-token", action, "--timeout-minutes", "5").stdout)
-            self.assertEqual("0.1.3", response["protocol_version"])
+            self.assertEqual("0.1.4", response["protocol_version"])
             self.assertNotIn("lease_token", response)
             packet_path = Path(response["packet_path"])
             packet = json.loads(packet_path.read_text(encoding="utf-8"))
@@ -794,7 +794,7 @@ class Runtime013Tests(unittest.TestCase):
             snapshot = {
                 "counters": {"node": 0, "cluster": 0, "insight": 0},
                 "nodes": [],
-                "rounds": {"RND0001": {"reused_node_ids": [], "finish_reason": None}},
+                "rounds": {"RND0001": {"reused_node_ids": [], "finish_reason": None, "runtime_version": "0.1.4"}},
                 "plans": {"RND0001": {"basic_compute": False, "initial_global": False, "initial_local": False}},
             }
             RUNTIME._plan_basic(control, snapshot)

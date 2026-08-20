@@ -1,6 +1,6 @@
 # Failed Nodeを同一Roundで修復・再実行するプロンプト
 
-対象Version: `0.1.3`
+対象Version: `0.1.4`
 
 科学Nodeの技術的失敗を調査・修正し、Roundを閉じずに同じNode IDの新しいAttemptとして再実行するためのプロンプト例です。`<...>`を実際の値へ置き換えて使用してください。
 
@@ -84,7 +84,7 @@ State、DAG、Event Ledgerを直接編集して回避しないでください。
 
 ## 現行Runtimeの注意点
 
-`0.1.3`のRuntimeは、実行可能な`pending` Nodeを、有限再試行が可能な`failed` Nodeより先に選びます。そのため他のNodeがすでにrunnableの場合、プロンプトだけでfailed Nodeを割り込ませて再実行することはできません。上記プロンプトは、この場合に別解析へ進まず安全に停止させるためのものです。
+`0.1.4`のRuntimeは、実行可能な`pending` Nodeを、有限再試行が可能な`failed` Nodeより先に選びます。そのため他のNodeがすでにrunnableの場合、プロンプトだけでfailed Nodeを割り込ませて再実行することはできません。上記プロンプトは、この場合に別解析へ進まず安全に停止させるためのものです。
 
 - 他のNodeを先に実行してよい場合は、優先停止条件を外して同じRoundを通常再開します。
 - failed Nodeを必ず先に再実行する場合は、Runtimeのaction優先順位または人間承認の保守操作を先に改修します。

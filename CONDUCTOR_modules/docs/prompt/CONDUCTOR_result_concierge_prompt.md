@@ -1,6 +1,6 @@
 # Result Concierge依頼プロンプト
 
-対象Version: `0.1.3`
+対象Version: `0.1.4`
 
 既存Runを変更せず、Interpretationや個別結果を詳しく確認するためのプロンプトである。Conciergeの処理と出力は正式DAGへ登録されない。
 

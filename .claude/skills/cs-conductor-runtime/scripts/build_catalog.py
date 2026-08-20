@@ -85,6 +85,7 @@ def render_markdown(catalog: dict[str, Any]) -> str:
 
 def build(workspace: Path) -> tuple[dict[str, Any], str]:
     modules = workspace / "CONDUCTOR_modules"
+    conductor_version = (modules / "VERSION").read_text(encoding="utf-8").strip()
     selection_path = modules / "catalog" / "included_skills.json"
     selection = json.loads(selection_path.read_text(encoding="utf-8"))
     names = selection.get("included_skills") or []
@@ -118,10 +119,13 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
         referenced.update(profile["initial_exploration"][key])
     referenced.update(profile["additional_exploration"]["operator_capabilities"])
     referenced.update(profile["modeling"]["fixed_description_panel"])
+    if profile.get("matched_molecular_pairs"):
+        referenced.add(profile["matched_molecular_pairs"]["capability_id"])
+        referenced.update(profile["matched_molecular_pairs"]["representative_clustering_capabilities"])
     unknown = sorted(referenced - known)
     if unknown:
         raise ValueError(f"Analysis profile references unknown capabilities: {unknown}")
-    catalog = {"schema_version": "2.0.0", "conductor_version": "0.1.3", "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
+    catalog = {"schema_version": "2.0.0", "conductor_version": conductor_version, "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
     return catalog, render_markdown(catalog)
 
 

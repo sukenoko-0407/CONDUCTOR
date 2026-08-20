@@ -1,12 +1,12 @@
 {
   "schema_version": "2.0.0",
-  "conductor_version": "0.1.3",
+  "conductor_version": "0.1.4",
   "profile_id": "comprehensive-multiround-beta",
   "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json",
-  "profile_hash": "daf5b17a79c196553d6a4d2d7044fff87c03f1e891d1772adef4f306b7e0de25",
+  "profile_hash": "789ceb0f4e10f0ee011d6219412e47753c6fa9cef6640ebd8ce02ce659d4cc53",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-19T14:24:42.899063+00:00",
+  "generated_at": "2026-08-20T14:40:58.092017+00:00",
   "capabilities": [
     {
       "schema_version": "2.0.0",
@@ -667,6 +667,70 @@
       "default_parameters": {
         "max_pairs": 200000,
         "random_seed": 61453
+      }
+    },
+    {
+      "schema_version": "2.0.0",
+      "capability_id": "A014",
+      "skill_name": "cs-analysis-matched-molecular-pairs",
+      "display_name": "Matched molecular pair analysis",
+      "version": "0.1.4",
+      "stage": "analysis",
+      "family": "matched_molecular_pairs",
+      "description": "Build and query a reusable exhaustive matched molecular pair evidence database with exact-core and environment-aware Global-to-Cluster comparisons.",
+      "cost": {
+        "class": "high",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "approval_policy": "preauthorized_initial",
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ],
+        "molecule_standardization": "out_of_scope"
+      },
+      "operator_id": "A014",
+      "dependencies": [],
+      "input_contract": [
+        "endpoint_csv",
+        "smiles",
+        "optional_cluster_membership",
+        "optional_global_mmp_database"
+      ],
+      "output": {
+        "filename": "mmp_pair_detail.csv",
+        "report": "operator_report.html",
+        "summary": "operator_summary.json",
+        "manifest": "analysis_manifest.json"
+      },
+      "implementation": {
+        "operator": "matched_molecular_pairs",
+        "engine": "mmpdb",
+        "engine_version": "3.1.4"
+      },
+      "analysis_role": "matched_molecular_pairs",
+      "roles": [
+        "global-build",
+        "local-screen",
+        "local-detail"
+      ],
+      "scope_support": [
+        "global",
+        "cluster-survey",
+        "within-cluster"
+      ],
+      "default_parameters": {
+        "num_cuts": 3,
+        "min_core_heavy_atoms": 6,
+        "extended_core_fraction": 0.4,
+        "primary_core_fraction": 0.5,
+        "min_radius": 0,
+        "max_radius": 5,
+        "max_compounds": 2000,
+        "fragment_jobs": 8
       }
     },
     {
@@ -1965,7 +2029,7 @@
       "capability_id": "I001",
       "skill_name": "cs-analysis-interpret-results",
       "display_name": "SAR result interpretation",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "stage": "interpretation",
       "family": "result_integration",
       "description": "Use when the dedicated Claude Code Interpreter must compare CONDUCTOR Operator results across representations, Clusters, scopes, and Rounds, preserve contradictions, and prepare Japanese human reports under a read-only Policy.",
@@ -2011,7 +2075,7 @@
       "capability_id": "O001",
       "skill_name": "cs-conductor-runtime",
       "display_name": "CONDUCTOR deterministic runtime",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "stage": "orchestration",
       "family": "graph_orchestration",
       "description": "Deterministic Runtime owning compact Control, five-state Nodes, signed Executor packets, CPU budgets, attempts, crash recovery, bounded working sets, Interpretation gates, and Round finalization.",

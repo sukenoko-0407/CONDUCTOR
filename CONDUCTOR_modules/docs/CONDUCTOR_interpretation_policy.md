@@ -20,6 +20,15 @@ Interpretationは作業記録ではなく、Operatorが生成した固定結果�
 - 小さくても構造凝集性が高いClusterは、人間の構造解釈へ接続しやすいため候補に残せる。
 - 重複Clusterは独立した再現ではない。membershipの重複と由来を確認する。
 
+## MMPの扱い
+
+- A014のGlobal／Cluster-localはCONDUCTORの解析scopeであり、MMP内部のExact CoreやEnvironmentとは別概念として記載する。
+- 同じPairのradius 0～5は入れ子のContextであり、独立した再現として数えない。
+- 同一化合物Pairに複数Exact Coreがある場合、MMP instanceはすべて保持するが、Pair-weighted統計では一Pairへ畳み込み、`mmp_instance_count`と`pair_count`を区別する。
+- Pair数が多くても独立Exact Coreが少ない傾向はportableな置換効果として過大評価しない。
+- Global対Localの主張には両scopeのResultを引用し、LocalでPairがない／差がない結果もNegative Resultとして残す。
+- MMP Reference Cardは候補索引であり結論ではない。Insightへ採用する場合だけ、リンクされた全情報CSVまたは個別HTMLで原数値と反証Pairを確認する。
+
 ## 出力単位
 
 永続entityは`Insight`だけである。観察、解釈、支持result、比較result、反証・不一致result、限界を一体で記録する。注目度は`pinned`、`active`、`watch`、`background`で可変とし、`pinned`への変更は人間だけが行う。

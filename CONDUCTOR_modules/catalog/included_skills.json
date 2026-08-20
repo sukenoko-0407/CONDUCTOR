@@ -45,6 +45,7 @@
     "cs-analysis-cluster-enrichment",
     "cs-analysis-cluster-overlap",
     "cs-analysis-cluster-structural-diversity",
+    "cs-analysis-matched-molecular-pairs",
     "cs-analysis-interpret-results",
     "cs-conductor-runtime",
     "cs-conductor-run-audit",

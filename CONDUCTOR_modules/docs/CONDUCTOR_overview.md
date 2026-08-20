@@ -1,6 +1,6 @@
 # CONDUCTOR overview
 
-CONDUCTOR 0.1.3は、SARデータを一つの説明へ早急に収束させず、複数の分子表現、Cluster、Operatorを横断してGlobalとLocalの変化を探すClaude Code向け解析基盤です。
+CONDUCTOR 0.1.4は、SARデータを一つの説明へ早急に収束させず、複数の分子表現、Cluster、Operatorを横断してGlobalとLocalの変化を探すClaude Code向け解析基盤です。
 
 ## 解析の流れ
 
@@ -11,6 +11,8 @@ CONDUCTOR 0.1.3は、SARデータを一つの説明へ早急に収束させず�
 5. 人間がレポートを読み、次Roundを開始するか、同じRoundの追加作業を明示する。
 
 基本計算と初期探索は広さを優先します。追加探索は未探索領域の偏りを抑え、深掘りはGlobal対Local、同一Clusterの別Description、Sibling Cluster、別Operatorを比較します。
+
+0.1.4ではMatched Molecular Pair解析（A014）を追加しました。入力全体からExact Core、置換、Environment radiusを保持したGlobal MMP Databaseを一度だけ構築し、全Clusterを軽量Screeningした後、代表的なCluster viewだけを詳細比較します。全PairはCSV／Parquet／SQLiteへ保存し、後続Roundで別の視点から再照会できます。
 
 ## 制御上の特徴
 

@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 
-VERSION = "0.1.3"
-PROTOCOL_VERSION = "0.1.3"
+VERSION = "0.1.4"
+PROTOCOL_VERSION = "0.1.4"
 CONTROL_SCHEMA = "3.0.0"
 MAX_CONTROL_BYTES = 32 * 1024
 MAX_WORKING_SET_BYTES = 64 * 1024
@@ -40,6 +40,14 @@ RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
 DIRECT_STRUCTURE_CLUSTERING = {"C001", "C002", "C003", "C004"}
 DIRECT_STRUCTURE_ANALYSIS = {"A006", "A009", "A013"}
 EXCLUSIVE_CPU_CAPABILITIES = {"D019", "D020"}
+MMP_PAYLOAD_NAMES = {
+    "mmp_database.sqlite", "mmpdb_native.sqlite", "mmp_pair_detail.csv", "mmp_pair_detail.parquet",
+    "pair_summary.csv", "transform_summary.csv", "core_summary.csv", "transform_core_summary.csv",
+    "context_summary.csv", "coverage_summary.csv", "compound_coverage.csv",
+    "mmp_reference_cards.jsonl", "mmp_reference_cards.csv", "mmp_local_screening.csv",
+    "mmp_local_detail_pairs.csv", "mmp_global_vs_local.csv", "mmp_query_result.json",
+    "mmp_result.json",
+}
 ROUND_STATES = {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"}
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
 
@@ -154,6 +162,12 @@ def _execution_capacity(control: dict[str, Any]) -> int:
     return min(int(control["run"]["parallel_limit"]), _available_cpu_cores(control))
 
 
+def _requires_exclusive_cpu(node: dict[str, Any]) -> bool:
+    return node["capability_id"] in EXCLUSIVE_CPU_CAPABILITIES or (
+        node["capability_id"] == "A014" and node.get("parameters", {}).get("role") == "global-build"
+    )
+
+
 def _select_execution_nodes(
     requested: list[str],
     runnable: dict[str, dict[str, Any]],
@@ -163,7 +177,7 @@ def _select_execution_nodes(
     selected: list[str] = []
     for node_id in requested:
         node = runnable[node_id]
-        if node["capability_id"] in EXCLUSIVE_CPU_CAPABILITIES:
+        if _requires_exclusive_cpu(node):
             if not selected:
                 return [node_id]
             break
@@ -174,7 +188,7 @@ def _select_execution_nodes(
 
 
 def _node_cpu_allocation(control: dict[str, Any], node: dict[str, Any]) -> int:
-    if node["capability_id"] in EXCLUSIVE_CPU_CAPABILITIES:
+    if _requires_exclusive_cpu(node):
         return _available_cpu_cores(control)
     return 1
 
@@ -972,6 +986,7 @@ def _materialize_analysis_specs(
     specs: list[dict[str, Any]],
     wave: str,
     wave_limit: int | None = None,
+    batch_limit: int | None = None,
 ) -> tuple[list[str], int]:
     """Materialize a bounded, deterministic slice without storing deferred candidates as Nodes."""
     round_id = control["active_round_id"]
@@ -985,7 +1000,7 @@ def _materialize_analysis_specs(
             for node in snapshot["nodes"]
         )
         remaining_budget = min(remaining_budget, max(0, wave_limit - wave_count))
-    activation_limit = min(batch_size, remaining_budget)
+    activation_limit = min(batch_size if batch_limit is None else max(0, batch_limit), remaining_budget)
     planned: list[str] = []
     deferred = 0
     by_signature = {node["signature"]: node for node in snapshot["nodes"]}
@@ -1284,7 +1299,7 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         total_minutes = contract["budgets"]["walltime_minutes"]
         reserve = min(90, max(5, total_minutes // 5), max(1, total_minutes - 1))
         deadline = started + timedelta(minutes=contract["budgets"]["walltime_minutes"])
-        snapshot["rounds"][round_id] = {"state": "ACTIVE", "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": False, "latest_audit": None, "current_interpretation_node": None, "no_progress_returns": 0}
+        snapshot["rounds"][round_id] = {"state": "ACTIVE", "runtime_version": VERSION, "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": False, "latest_audit": None, "current_interpretation_node": None, "no_progress_returns": 0}
         maximum_analysis_nodes, batch_size = _analysis_planning_limits()
         snapshot["plans"][round_id] = {
             "basic_compute": False,
@@ -1517,6 +1532,12 @@ def _analysis_inputs(capability: dict[str, Any], descriptions: list[dict[str, An
     return []
 
 
+def _mmp_enabled_for_active_round(control: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+    """Do not inject A014 into a Round authorized by an older Runtime."""
+    round_id = control.get("active_round_id")
+    return bool(round_id and (snapshot.get("rounds", {}).get(round_id) or {}).get("runtime_version") == "0.1.4")
+
+
 def _usable_clusterings(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return _succeeded(snapshot, "clustering")
 
@@ -1529,6 +1550,8 @@ def _plan_initial_global(control: dict[str, Any], snapshot: dict[str, Any]) -> l
     by_desc = {node["capability_id"]: node for node in _succeeded(snapshot, "description")}
     specs: list[dict[str, Any]] = []
     for capability_id in p["initial_exploration"]["global_operator_capabilities"]:
+        if capability_id == "A014" and not _mmp_enabled_for_active_round(control, snapshot):
+            continue
         capability = caps[capability_id]
         if capability_id == "A005":
             panel = p["modeling"]["fixed_description_panel"]
@@ -1546,7 +1569,7 @@ def _plan_initial_global(control: dict[str, Any], snapshot: dict[str, Any]) -> l
                 "capability_id": capability_id,
                 "input_nodes": input_nodes,
                 "scope": {"mode": "global"},
-                "parameters": {},
+                "parameters": {"role": "global-build"} if capability_id == "A014" else {},
             })
     global_limit = _initial_global_analysis_limit()
     planned, deferred = _materialize_analysis_specs(
@@ -1643,7 +1666,44 @@ def _plan_initial_local(root: Path, control: dict[str, Any], snapshot: dict[str,
                 "scope": {"mode": "multi_scope", "clustering_node": clustering["node_id"]},
                 "parameters": {"role": "cluster-survey", "min_local_samples": p["modeling"]["minimum_local_samples"]},
             })
-    planned, deferred = _materialize_analysis_specs(snapshot, control, specs, "initial_local")
+    mmp_planned: list[str] = []
+    mmp_specs: list[dict[str, Any]] = []
+    mmp_profile = p.get("matched_molecular_pairs") or {}
+    if _mmp_enabled_for_active_round(control, snapshot) and mmp_profile:
+        global_mmp = next((
+            node for node in _succeeded(snapshot, "analysis", [mmp_profile.get("capability_id", "A014")])
+            if node.get("parameters", {}).get("role") == mmp_profile.get("global_role", "global-build")
+        ), None)
+        if global_mmp and clusterings:
+            screen_inputs = [global_mmp["node_id"], *[node["node_id"] for node in clusterings]]
+            screen_scope = {"mode": "multi_scope"}
+            screen_parameters = {"role": mmp_profile.get("screen_role", "local-screen")}
+            screen_signature = _signature("A014", screen_inputs, screen_scope, screen_parameters)
+            screen_node = next((node for node in snapshot["nodes"] if node.get("signature") == screen_signature), None)
+            maximum, _planning_batch = _analysis_planning_limits()
+            if screen_node is None and _round_analysis_work_count(snapshot, control["active_round_id"]) < maximum:
+                screen_node, created = _add_node(
+                    snapshot, control, "A014", screen_inputs, "initial_local", screen_scope, screen_parameters,
+                )
+                if created:
+                    mmp_planned.append(screen_node["node_id"])
+            representative_ids = set(mmp_profile.get("representative_clustering_capabilities") or [])
+            per_clustering = int(mmp_profile.get("representative_clusters_per_clustering", 1))
+            if screen_node is not None:
+                for clustering in [node for node in clusterings if node["capability_id"] in representative_ids]:
+                    for cluster_id in _representative_cluster_ids(root, clustering, per_clustering):
+                        mmp_specs.append({
+                            "capability_id": "A014",
+                            "input_nodes": [global_mmp["node_id"], screen_node["node_id"], clustering["node_id"]],
+                            "scope": {"mode": "single_cluster", "cluster_ids": [cluster_id]},
+                            "parameters": {"role": mmp_profile.get("detail_role", "local-detail"), "target_cluster": cluster_id},
+                        })
+    _maximum, planning_batch = _analysis_planning_limits()
+    planned, deferred = _materialize_analysis_specs(
+        snapshot, control, mmp_specs + specs, "initial_local",
+        batch_limit=max(0, planning_batch - len(mmp_planned)),
+    )
+    planned = mmp_planned + planned
     plan = snapshot["plans"][control["active_round_id"]]
     maximum, _batch_size = _analysis_planning_limits()
     budget_exhausted = _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum
@@ -1859,9 +1919,77 @@ def _validate_attempt_scratch(scratch: Path, recovery_allowed: bool) -> None:
     raise FileExistsError(f"Unexpected pre-existing Attempt scratch: {scratch}")
 
 
+def _mmp_skill_command(
+    root: Path,
+    control: dict[str, Any],
+    snapshot: dict[str, Any],
+    node: dict[str, Any],
+    attempt_id: str,
+    scratch: Path,
+    launcher: Path,
+) -> list[str]:
+    role = str(node.get("parameters", {}).get("role") or "global-build")
+    if role not in {"global-build", "local-screen", "local-detail"}:
+        raise ValueError(f"Unsupported A014 role: {role}")
+    argv = [
+        RUNTIME_PYTHON_TOKEN, str(launcher), role,
+        "--conductor", "--project", control["run"]["project"],
+        "--run-id", control["run"]["run_id"], "--round-id", node["assigned_round"],
+        "--node-id", node["node_id"], "--attempt-id", attempt_id,
+        "--output-dir", str(_skill_output_dir(scratch)),
+    ]
+    lookup = _node_lookup(snapshot)
+    inputs = [lookup[item] for item in node["input_nodes"]]
+    for input_node in inputs:
+        argv += ["--source-node-id", input_node["node_id"]]
+    if role == "global-build":
+        argv += [
+            "--input", control["run"]["input"], "--id-column", control["run"]["id_column"],
+            "--smiles-column", _run_smiles_column(control), "--endpoint-column", control["run"]["endpoint"],
+            "--higher-is-better", "true" if control["run"]["higher_is_better"] else "false",
+            "--available-cpu-cores", str(_available_cpu_cores(control)),
+        ]
+        allowed = {
+            "num_cuts": "--num-cuts", "cut_smarts": "--cut-smarts",
+            "min_core_heavy_atoms": "--min-core-heavy-atoms",
+            "extended_core_fraction": "--extended-core-fraction",
+            "primary_core_fraction": "--primary-core-fraction",
+            "min_radius": "--min-radius", "max_radius": "--max-radius",
+            "fragment_jobs": "--fragment-jobs",
+        }
+        for key, option in allowed.items():
+            if key in node.get("parameters", {}):
+                argv += [option, str(node["parameters"][key])]
+        return argv
+    global_mmp = next((
+        item for item in inputs
+        if item["capability_id"] == "A014" and item.get("parameters", {}).get("role") == "global-build"
+    ), None)
+    if not global_mmp:
+        raise ValueError(f"A014 {role} requires a succeeded global-build Node")
+    database = Path(global_mmp["output_ref"]) / "mmp_database.sqlite"
+    membership = root / "runtime" / "cluster_membership.csv"
+    argv += ["--mmp-database", str(database), "--cluster-membership", str(membership)]
+    clusterings = [item for item in inputs if item["kind"] == "clustering"]
+    if role == "local-screen":
+        argv += ["--cluster-registry", str(root / "runtime" / "cluster_registry.jsonl")]
+        for clustering in clusterings:
+            argv += ["--clustering-node-id", clustering["node_id"]]
+    else:
+        cluster_id = str(node.get("parameters", {}).get("target_cluster") or "")
+        if not cluster_id:
+            raise ValueError("A014 local-detail requires target_cluster")
+        argv += ["--cluster-id", cluster_id]
+        if clusterings:
+            argv += ["--clustering-node-id", clusterings[0]["node_id"]]
+    return argv
+
+
 def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt_id: str, scratch: Path) -> list[str]:
     capability = catalog()[node["capability_id"]]
     launcher = project_root() / ".claude" / "skills" / node["skill_name"] / "scripts" / "launch.py"
+    if node["capability_id"] == "A014":
+        return _mmp_skill_command(root, control, snapshot, node, attempt_id, scratch, launcher)
     # The signed execution contract must not depend on which Pixi environment
     # happened to prepare the packet. Resolve this token only after the packet
     # has been validated by the executing Runtime process.
@@ -2050,6 +2178,50 @@ def _copy_artifact(source: Path, destination: Path, expected_hash: str | None = 
     shutil.copy2(source, destination)
 
 
+def _promote_mmp_payloads(
+    skill_output: Path,
+    temporary: Path,
+    manifest: dict[str, Any],
+    artifacts: dict[str, dict[str, Any]],
+) -> dict[str, str]:
+    payload_map = manifest.get("payloads") or {}
+    if not isinstance(payload_map, dict) or any(not str(key).strip() for key in payload_map):
+        raise ValueError("A014 manifest payloads must be a non-empty logical-name mapping")
+    declared = set(payload_map.values())
+    if not declared or not declared <= MMP_PAYLOAD_NAMES:
+        raise ValueError(f"A014 manifest declares unsupported payloads: {sorted(declared - MMP_PAYLOAD_NAMES)}")
+    if len(declared) != len(payload_map):
+        raise ValueError("A014 manifest declares the same payload basename more than once")
+    promoted: dict[str, str] = {}
+    by_path = {item["path"]: item for item in artifacts.values()}
+    for logical_name, name in sorted(payload_map.items()):
+        if Path(name).name != name:
+            raise ValueError(f"A014 payload must use a stable basename: {name}")
+        event_artifact = by_path.get(name)
+        if not event_artifact:
+            raise ValueError(f"A014 execution event does not declare payload: {name}")
+        _copy_artifact(
+            _skill_artifact_path(skill_output, name), temporary / name,
+            event_artifact.get("sha256"),
+        )
+        promoted[str(logical_name)] = name
+    if "mmp_pair_detail.csv" in declared:
+        import pandas as pd
+        import sqlite3
+
+        required = {"mmp_database.sqlite", "mmp_pair_detail.parquet"}
+        if not required <= declared:
+            raise ValueError("A014 Global payload is missing stable SQLite or Parquet")
+        csv_rows = len(pd.read_csv(temporary / "mmp_pair_detail.csv"))
+        parquet_rows = len(pd.read_parquet(temporary / "mmp_pair_detail.parquet"))
+        from contextlib import closing
+        with closing(sqlite3.connect(temporary / "mmp_database.sqlite")) as connection:
+            database_rows = int(connection.execute("SELECT COUNT(*) FROM mmp_pairs").fetchone()[0])
+        if len({csv_rows, parquet_rows, database_rows}) != 1:
+            raise ValueError(f"A014 payload row-count mismatch: CSV={csv_rows}, Parquet={parquet_rows}, DB={database_rows}")
+    return promoted
+
+
 def _skill_artifact_path(skill_output: Path, declared_path: str) -> Path:
     relative = Path(declared_path)
     if relative.is_absolute() or ".." in relative.parts:
@@ -2079,6 +2251,9 @@ def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any]
     source_membership = pd.to_numeric(membership["membership_value"], errors="coerce").fillna(0)
     mapping: dict[str, str] = {}
     registry_rows: list[dict[str, Any]] = []
+    lookup = _node_lookup(snapshot)
+    source_description_nodes = [item for item in node["input_nodes"] if lookup[item]["kind"] == "description"]
+    source_description_capabilities = [lookup[item]["capability_id"] for item in source_description_nodes]
     for row in registry:
         count = int(row.get("compound_count", 0))
         local = str(row.get("local_cluster_id") or row.get("cluster_id"))
@@ -2091,7 +2266,7 @@ def _promote_clusters(root: Path, snapshot: dict[str, Any], node: dict[str, Any]
         cluster_id = f"C{snapshot['counters']['cluster']:06d}"
         mapping[local] = cluster_id
         canonical_membership = Path(node["output_ref"]) / "membership.csv"
-        registry_rows.append({"cluster_id": cluster_id, "local_cluster_id": local, "source_node_id": node["node_id"], "clustering_capability_id": node["capability_id"], "cluster_label": row.get("cluster_label") or local, "compound_count": count, "membership_path": str(canonical_membership.relative_to(root)), "status": "active", "created_at": utc_now()})
+        registry_rows.append({"cluster_id": cluster_id, "local_cluster_id": local, "source_node_id": node["node_id"], "clustering_capability_id": node["capability_id"], "source_description_node_ids": source_description_nodes, "source_description_capability_ids": source_description_capabilities, "cluster_label": row.get("cluster_label") or local, "compound_count": count, "membership_path": str(canonical_membership.relative_to(root)), "status": "active", "created_at": utc_now()})
     membership["cluster_id"] = membership["cluster_id"].astype(str).map(mapping).fillna("")
     membership["membership_value"] = pd.to_numeric(membership["membership_value"], errors="coerce").fillna(0)
     membership.loc[membership["cluster_id"].eq(""), "membership_value"] = 0
@@ -2180,8 +2355,15 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         node["result_quality"] = {"validation_passed": True, "eligible_for_downstream": result["selection_status"] == "selected" and result["cluster_count"] > 0, "quality_flags": result["quality_flags"] or (["no_usable_clusters"] if result["cluster_count"] == 0 else [])}
     elif node["kind"] == "analysis":
         primary = artifacts["operator_result"]
-        primary_name = "analysis" + Path(primary["path"]).suffix.lower()
-        _copy_artifact(_skill_artifact_path(skill_output, primary["path"]), temporary / primary_name, primary["sha256"])
+        mmp_payloads: dict[str, str] = {}
+        if node["capability_id"] == "A014":
+            mmp_payloads = _promote_mmp_payloads(skill_output, temporary, manifest, artifacts)
+            primary_name = str(manifest.get("output") or "")
+            if primary_name not in mmp_payloads.values() or primary_name != primary["path"]:
+                raise ValueError("A014 primary output is not a declared promoted payload")
+        else:
+            primary_name = "analysis" + Path(primary["path"]).suffix.lower()
+            _copy_artifact(_skill_artifact_path(skill_output, primary["path"]), temporary / primary_name, primary["sha256"])
         summary = read_json(_skill_artifact_path(skill_output, artifacts["operator_summary"]["path"]))
         validate(summary, "operator_summary.schema.json")
         subject = _analysis_subject(root, control, snapshot, node, int(summary.get("sample_count", 0)))
@@ -2193,7 +2375,13 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         atomic_bytes(temporary / report_name, _operator_report_html(control, node, subject, summary, detail_name, snapshot).encode("utf-8"))
         result_ref = f"{node['node_id']}@{attempt['attempt_id']}"
         final_relative = final.relative_to(root)
-        card = {"schema_version": "1.0.0", "result_ref": result_ref, "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": summary.get("metric"), "headline": str(summary.get("headline") or ""), "key_metrics": summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": [], "limitations": summary.get("limitations") or [], "artifact_links": {"result": (final_relative / primary_name).as_posix(), "report": (final_relative / report_name).as_posix(), "detail": (final_relative / detail_name).as_posix() if detail_name else None}, "attention": "watch", "created_at": utc_now()}
+        artifact_links = {"result": (final_relative / primary_name).as_posix(), "report": (final_relative / report_name).as_posix(), "detail": (final_relative / detail_name).as_posix() if detail_name else None}
+        if "mmp_database" in mmp_payloads:
+            artifact_links["mmp_database"] = (final_relative / mmp_payloads["mmp_database"]).as_posix()
+        if "mmp_reference_cards" in mmp_payloads:
+            artifact_links["mmp_reference_cards"] = (final_relative / mmp_payloads["mmp_reference_cards"]).as_posix()
+        card_quality_flags = ["negative_result"] if (summary.get("key_metrics") or {}).get("negative_result") is True else []
+        card = {"schema_version": "1.0.0", "result_ref": result_ref, "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": summary.get("metric"), "headline": str(summary.get("headline") or ""), "key_metrics": summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": card_quality_flags, "limitations": summary.get("limitations") or [], "artifact_links": artifact_links, "attention": "watch", "created_at": utc_now()}
         validate(card, "result_card.schema.json")
         write_json(temporary / "result_card.json", card)
         result_card_files = ["result_card.json"]
@@ -2216,7 +2404,9 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
                 write_json(temporary / card_file, local_card)
                 result_card_files.append(card_file)
                 result_cards.append(local_card)
-        result = {"document_type": "analysis_result", "schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "analysis_subject": subject, "primary_payload": primary_name, "report": report_name, "result_cards": result_card_files, "payloads": {"detail_report": detail_name} if detail_name else {}, "created_at": utc_now()}
+        result_payloads = {"detail_report": detail_name} if detail_name else {}
+        result_payloads.update(mmp_payloads)
+        result = {"document_type": "analysis_result", "schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "analysis_subject": subject, "primary_payload": primary_name, "report": report_name, "result_cards": result_card_files, "payloads": result_payloads, "created_at": utc_now()}
         validate(result, "analysis_result.schema.json")
         write_json(temporary / "result.json", result)
         for name in ("global_oof_predictions.csv", "cluster_model_comparison.csv", "projection.png"):
@@ -3311,7 +3501,7 @@ def _action_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.3 deterministic Runtime Controller")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.4 deterministic Runtime Controller")
     commands = parser.add_subparsers(dest="command", required=True)
 
     item = commands.add_parser("init")

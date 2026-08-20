@@ -9,7 +9,7 @@
     "capability_id": {"type": "string", "pattern": "^[DCAIO][0-9]{3}$"},
     "skill_name": {"type": "string", "pattern": "^[a-z0-9-]{1,63}$"},
     "display_name": {"type": "string", "minLength": 1},
-    "version": {"const": "0.1.3"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
     "stage": {"enum": ["description", "clustering", "analysis", "interpretation", "orchestration"]},
     "family": {"type": "string", "minLength": 1},
     "clustering_kind": {"enum": ["direct_structure", "description_vector", "categorical", "meta"]},

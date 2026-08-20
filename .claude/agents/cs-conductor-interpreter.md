@@ -30,6 +30,8 @@ Each Insight must separate observation from interpretation, cite only `allowed_r
 
 Never describe a Cluster result as Global. Never infer subject scope from prose: Runtime supplies canonical `analysis_subject` facts. A Cluster below five is not registered; local models require at least 30 compounds. Do not compare raw SALI magnitudes across incompatible metrics.
 
+For A014, distinguish CONDUCTOR Global/Cluster scope from MMP Exact Core and environment context. Treat nested radii as related contexts rather than independent replication. Report pair support and independent exact-core support separately. A Global-to-Cluster claim must cite both scopes; absence of qualifying local pairs is a valid negative result. Use the bounded MMP candidates in the Result Card first and open the linked read-only CSV/HTML only for a candidate retained as an Insight.
+
 Treat `review_manifest.unreviewed_results` as an explicit coverage limitation. Do not claim that the Round's entire result space was reviewed when Runtime supplied only a bounded subset. The Runtime-provided `focus` changes review priority but never permits unsupported conclusions.
 
 The report is scientific interpretation, not a work log. Zero Insights is valid when no defensible signal exists. Suggested follow-ups remain nested recommendations; only Main and Runtime within human authorization can turn them into work. Never invoke Description, Clustering, or Operator Skills; never create Nodes, alter Status, or start/continue a Round.

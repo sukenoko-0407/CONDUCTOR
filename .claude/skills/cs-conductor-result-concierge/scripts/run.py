@@ -101,8 +101,8 @@ def validate_run_root(value: str) -> tuple[Path, Path, Path, dict[str, Any], dic
     if not control_path.is_file() or not snapshot_path.is_file():
         raise FileNotFoundError("conductor_control.json or runtime/dag_snapshot.json is missing")
     control, snapshot = load_json(control_path), load_json(snapshot_path)
-    if control.get("conductor_version") != "0.1.3" or not isinstance(snapshot.get("nodes"), list):
-        raise ValueError("The supplied directory is not a CONDUCTOR 0.1.3 Run Root")
+    if control.get("conductor_version") not in {"0.1.3", "0.1.4"} or not isinstance(snapshot.get("nodes"), list):
+        raise ValueError("The supplied directory is not a supported CONDUCTOR 0.1.3/0.1.4 Run Root")
     errors = frozen_state_errors(control, snapshot)
     if errors:
         raise RuntimeError("Run is not frozen; concierge request refused: " + "; ".join(errors))

@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.3 design spec
+# CONDUCTOR 0.1.4 design spec
 
 ## 権限境界
 
@@ -31,6 +31,8 @@ Execution packet、failure packet、Attempt scratch、compact responseは新し�
 Node IDはRun全体で`N######`です。状態は`pending / running / succeeded / failed / cancelled`だけです。再試行は同じNodeの新Attemptであり、status語を増やしません。技術的失敗には最大3 Attemptの有限budgetを設けます。`not applicable`や利用不能partitionは成功resultのquality field、実行しない判断はcancel reasonとして保持します。
 
 Description、Clustering、Operatorの科学計算kernelと一般利用CLIは維持します。CONDUCTORではRuntimeが入力、metric、scope、Cluster、parameter、seed、出力schema、artifact hashを検証してから正本へatomic promotionします。
+
+A014は追加的なOperatorです。Global DB構築、全Cluster screening、単一Cluster detailを明示Roleで分離し、通常OperatorのDescription × Clustering直積へ混ぜません。Global DBは一度だけ生成し、後続Roleはread-onlyで参照します。複数payloadはRuntimeがCSV／Parquet／SQLiteの整合を検証して一括commitします。
 
 SkillがAttempt scratchへ出すArtifact ManifestとExecution Eventは、Runtime adapterだけが読む内部実行契約です。DAGの下流接続には`document_type`付きCanonical Resultだけを使います。Vector Clustering、PCA、UMAPへ渡せるDescription metadataは`description_result/1.0.0`の一種類であり、旧Manifest、Version違い、payload不一致、Catalogと異なるsemantics／Metricはfail closedとします。
 

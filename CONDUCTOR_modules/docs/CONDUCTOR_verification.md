@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.3 verification
+# CONDUCTOR 0.1.4 verification
 
 ## Package
 
@@ -11,7 +11,7 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py catalog --check
 
 ## Runtime
 
-`CONDUCTOR_modules/tests/test_runtime_013.py`は0.1.3固有の境界を、既存Runtime回帰testは基本状態管理を検証します。
+`CONDUCTOR_modules/tests/test_runtime_013.py`は維持したMain Agent制御境界を、`test_runtime_014.py`はA014 Round guard、Role別command、CPU排他を検証します。
 
 - 人間authorizeなしにRoundを開始できない。
 - live leaseとone-use Action tokenが二重Writerを防ぐ。
@@ -34,13 +34,15 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py catalog --check
 
 既存のDescription、Clustering、Operatorテストにより一般利用CLIと計算結果を確認します。Vector Clusteringは手法別auto calibration、endpoint非依存、minimum Cluster size、negative partition保持を確認します。
 
+`test_mmp_014.py`はmmpdbによるGlobal end-to-end、CSV／Parquet／SQLiteのPair行一致、radius contextとPair supportの分離、全Cluster screening、Local detail、Global DBのbyte-level不変性を確認します。
+
 ## Human report
 
 Interpretation HTMLは日本語、固定section、低彩度配色、print CSS、scope fact panel、evidence link、coverage、未確認範囲を持つことを確認します。scope、Cluster ID、sample count、Operator、Result別sample数はResult Cardから再計算して照合し、artifact linkはFull Auditで存在確認します。Operator reportとState reportの表示は導入先smoke testでも目視確認します。
 
 配布前にWindows開発環境の自動testに加え、Linux共有filesystem上で小規模RunをDescriptionからInterpretation／Full Auditまで通すsmoke testを行います。
 
-## 0.1.3実装時の確認結果
+## 0.1.3実装時の履歴
 
 - Windows開発環境: `35 tests OK`、`1 skipped`
 - skip対象: Leiden（共通開発環境に`igraph`／`leidenalg`がないため。Skill専用Pixi環境が正本）
@@ -50,3 +52,16 @@ Interpretation HTMLは日本語、固定section、低彩度配色、print CSS、
 - Python compile、全JSON Schema parse、`git diff --check`: PASS
 
 Linux共有filesystem上での一Round end-to-end smokeは、配布先での受入試験として残します。
+
+## 0.1.4確認項目
+
+- Windows開発環境: `73 passed`、`1 skipped`、`5 subtests passed`
+- skip対象: Leiden（共通開発環境に`igraph`／`leidenalg`がないため。Skill専用Pixi環境が正本）
+- Package layoutと48件のhuman allowlist Catalog
+- 0.1.3 Runtime回帰25件
+- A014 Global／Screen／Detailの一般・CONDUCTOR mode
+- Stable SQLite、全情報CSV、Parquetの行数とID整合
+- 0.1.3 Control／Artifact受理と、旧Active RoundへのA014非注入
+- Interpretation／PolicyのMMP scope、Exact Core、Environment区別
+
+Linux共有filesystemでの最大想定2,000化合物MMP性能smokeと、一Roundを通した目視HTML確認は配布先での受入試験として残します。

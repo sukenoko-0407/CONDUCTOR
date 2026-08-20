@@ -1,0 +1,20 @@
+[workspace]
+name = "cs-analysis-matched-molecular-pairs"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[dependencies]
+jsonschema = ">=4.21"
+numpy = ">=1.26"
+pandas = ">=2.2"
+pyarrow = ">=15"
+python = ">=3.12,<3.13"
+rdkit = ">=2023.9"
+scipy = ">=1.12"
+
+[pypi-dependencies]
+mmpdb = "==3.1.4"
+
+[tasks]
+run = "python ../scripts/run.py"
+smoke = "python ../scripts/run.py --help"

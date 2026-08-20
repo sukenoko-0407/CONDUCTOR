@@ -1,6 +1,6 @@
 # CONDUCTOR 解析依頼プロンプト
 
-対象Version: `0.1.3`
+対象Version: `0.1.4`
 
 `cs-conductor-orchestrator`は、人間が指定した一つの操作だけをMain Agentに実行させる。Round受理と次Round開始は、意図しない自動開始を避けるため別々に指示することを推奨する。
 

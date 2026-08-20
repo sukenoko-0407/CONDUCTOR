@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.3 output contract
+# CONDUCTOR 0.1.4 output contract
 
 ```text
 <run_root>/
@@ -27,6 +27,26 @@
 ├── state/<timestamp>/
 └── concierge/REQ######/
 ```
+
+A014 `global-build`のAnalysis directoryには、通常の正本に加えて次の複数payloadをatomicに昇格します。
+
+```text
+analysis/N######/
+├── mmp_database.sqlite          # CONDUCTOR安定query schema、後続Nodeはread-only
+├── mmpdb_native.sqlite          # mmpdb由来の再現用DB
+├── mmp_pair_detail.csv          # Spotfire用の非圧縮全情報表
+├── mmp_pair_detail.parquet
+├── pair_summary.csv
+├── transform_summary.csv
+├── core_summary.csv
+├── transform_core_summary.csv
+├── context_summary.csv
+├── coverage_summary.csv
+├── compound_coverage.csv
+└── mmp_reference_cards.{jsonl,csv}
+```
+
+`local-screen`は`mmp_local_screening.csv`、`local-detail`は`mmp_local_detail_pairs.csv`と`mmp_global_vs_local.csv`を保存します。結果ゼロは失敗ではなく、`mmp_result.json`の`negative_result=true`を持つ成功Artifactです。RuntimeはGlobal CSV／Parquet／SQLiteの行数一致を確認してから一括昇格し、一部だけをcommitしません。
 
 Description、Clustering、Operator Skillの既存計算CLIは一般利用のため維持します。CONDUCTORではそれらの詳細manifestやwarningをRuntime scratchで検証し、Run Rootへは上記の最小正本だけを昇格します。
 

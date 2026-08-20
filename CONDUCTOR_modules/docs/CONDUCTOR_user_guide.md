@@ -4,7 +4,7 @@
 
 Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、Wall Timeを示してRound 1を開始します。Available CPU Coresを省略した場合は8です。Mainは契約案を人間依頼と照合した場合だけauthorizeします。
 
-parallel limitは同時に実行するNode数、Available CPU Coresは科学計算へ割り当てるCPU総数です。D019（GFN2-xTB）はRuntimeにより単独実行され、原則として1化合物4コア、`floor(Available CPU Cores / 4)`化合物並列になります。
+parallel limitは同時に実行するNode数、Available CPU Coresは科学計算へ割り当てるCPU総数です。D019（GFN2-xTB）はRuntimeにより単独実行され、原則として1化合物4コア、`floor(Available CPU Cores / 4)`化合物並列になります。D020（ChemBERTa）とA014 Global MMPもSkill内部並列を使用するため、他Nodeと同じExecution packetへ混在させません。
 
 高コスト基本計算は最初に一括承認できます。MCSは基本計算であり個別承認不要です。Wall Timeは上限であって消費目標ではありませんが、実行可能で有用な作業が残る限りOrchestratorは早期終了しません。
 
@@ -13,6 +13,12 @@ parallel limitは同時に実行するNode数、Available CPU Coresは科学計�
 endpointの単位変換やpActivity化はRun開始前に人間側で行います。`endpoint_transform`は実施済み変換の記録用metadataであり、Runtimeが値を変換する指定ではありません。
 
 RuntimeはRun初期化時にSMILES列を確定し、全Description、Murcko、MCS、BRICS、RECAP、および構造を直接読むPairwise structure similarity、Activity cliff、Cluster structural diversityへ同じ列名を明示的に渡します。`smiles`、`canonical_smiles`等や、名前に`smiles`を含む列を一意に推定できます。候補が複数ある場合は、新規Run依頼でSMILES列名を明示してください。
+
+## MMP解析
+
+A014は初期Globalで入力CSVから一度だけGlobal MMP Databaseを構築します。mmpdbによる1～3 cut、Exact Core heavy atom下限、Environment radius 0～5を使い、salt removalや追加の分子標準化は行いません。全情報は`mmp_pair_detail.csv`でSpotfireへ渡せます。
+
+Global構築後は、同じDatabaseを変更せずに全Cluster screeningと選択Clusterの詳細比較を行います。Exact CoreやEnvironmentはMMP内部の構造Keyであり、CONDUCTORのGlobal／Cluster-local scopeとは別概念です。別Roundで気になるClusterを深掘りする場合もGlobal MMP列挙を再実行しません。
 
 ## Schema Versionの見方
 

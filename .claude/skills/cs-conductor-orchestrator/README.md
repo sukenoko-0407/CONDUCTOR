@@ -24,7 +24,7 @@ parallel_limit: 8
 available_cpu_cores: 8
 ```
 
-`parallel_limit`は同時Node数、`available_cpu_cores`はRunへ割り当てられたCPU総数です。後者を省略すると8です。D019（xTB）は単独Executor packetとなり、原則4コア/化合物で化合物並列数が自動計算されます。
+`parallel_limit`は同時Node数、`available_cpu_cores`はRunへ割り当てられたCPU総数です。後者を省略すると8です。D019（xTB）、D020（ChemBERTa）、A014 Global MMPは単独Executor packetとなり、Skill内部並列と他Nodeを競合させません。
 
 1 RoundのAnalysis Nodeは最大200件で、Runtimeが最大50件ずつNode化します。初期Globalは最大100件で区切り、Local解析用の容量を確保します。Wall Timeを長くしてもこの件数は増えず、残候補は次の人間承認Roundへ送られます。Description／Clusteringの基本計算は別枠です。
 
@@ -44,3 +44,4 @@ Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を�
 | 1.0.1 | 新規Runの曖昧なSMILES列を人間指定としてRuntimeへ渡す手順を追加 |
 | 1.1.0 | Available CPU CoresとxTB単独・内部並列実行の手順を追加 |
 | 1.2.0 | Analysisを1 Round最大200件、最大50件ずつ計画する制御を追加 |
+| 1.3.0 | A014をGlobal 1件、全Cluster screening 1件、代表Local detailへ限定して制御する手順を追加 |

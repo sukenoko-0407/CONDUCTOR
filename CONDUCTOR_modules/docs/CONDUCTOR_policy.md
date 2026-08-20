@@ -13,6 +13,8 @@
 
 初手は「狭く浅く」にしません。一定の計算コストを許容してヒントを取りこぼさないことを優先します。MCSは初手から実行します。
 
+MMP（A014）は初期Globalで一度だけ網羅的Databaseを構築し、以後はread-onlyで再利用します。全Clusterは一つの軽量Screening Nodeで確認し、初期詳細解析は構造・Fingerprint・連続2D・graph・その他の代表Clustering viewへ限定します。MMPを通常Operatorの全直積へ展開してNodeを爆発させません。
+
 一方、単一RoundのInterpretation密度を維持するため、新たに処理するAnalysis Nodeは最大200件とします。RuntimeはOperator、Description、Clustering、scopeの偏りを抑えながら最大50件ずつNode化し、初期Globalを最大100件で区切ってLocal解析用の容量を残します。未選択候補はNodeとして保存せず、次の人間承認Roundで成功済み計算を除外して再構成します。長いWall Timeは実行余裕であり、Node上限を増やす指定ではありません。Description／Clusteringの基本計算はこのAnalysis上限とは別枠です。
 
 ## Clusterとmetric

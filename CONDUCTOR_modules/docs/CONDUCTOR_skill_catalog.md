@@ -3,7 +3,7 @@
 > この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
 
 Profile: `comprehensive-multiround-beta`
-Generated: `2026-08-19T14:24:42.899063+00:00`
+Generated: `2026-08-20T14:40:58.092017+00:00`
 
 ## Description
 
@@ -62,6 +62,7 @@ Generated: `2026-08-19T14:24:42.899063+00:00`
 | A011 | `cs-analysis-cluster-enrichment` | Cluster activity enrichment | - | cluster_profile | - | endpoint_csv, clustering | - | - | low | stable | False |
 | A012 | `cs-analysis-cluster-overlap` | Cluster overlap | - | cluster_quality | - | endpoint_csv, clustering | - | - | low | stable | False |
 | A013 | `cs-analysis-cluster-structural-diversity` | Cluster structural diversity | - | cluster_quality | - | endpoint_csv, clustering | - | - | medium | stable | False |
+| A014 | `cs-analysis-matched-molecular-pairs` | Matched molecular pair analysis | - | matched_molecular_pairs | - | endpoint_csv, smiles, optional_cluster_membership, optional_global_mmp_database | - | - | high | stable | False |
 
 ## Interpretation
 

@@ -35,7 +35,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Output contract
 
 - 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
-- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.3 Runtimeだけが確定する。
+- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.4 Runtimeだけが確定する。
 
 `<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
@@ -68,3 +68,4 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --context path/to/context.json --
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
 - Description、Clustering、Operatorを実行しない。追加計算が必要なら`recommended_followups`として提案する。
+- A014ではExact Core、Environment radius、CONDUCTOR Clusterを混同せず、radius行を独立supportとして数えない。

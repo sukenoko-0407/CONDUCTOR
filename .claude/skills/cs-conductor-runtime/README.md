@@ -4,7 +4,7 @@
 
 CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名付きExecutor packet、実行attempt、事故復旧、Interpretation終端条件を決定論的に管理します。
 
-CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはD019 xTBを単独実行し、原則4コア/化合物の化合物並列を設定します。
+CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはD019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。
 
 Analysisは1 Round最大200 Node、計画登録は最大50 Nodeずつです。初期Globalは最大100 Nodeで区切ってLocal解析用の容量を残します。未登録候補はDAGへ保存せず、次の人間承認Roundで決定論的に再構成します。基本Description／Clusteringはこの上限の対象外です。
 
@@ -36,3 +36,4 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-r
 | 1.1.2 | 記録済みSMILES列をA006・A009・A013へも明示的に引き渡す処理を追加 |
 | 1.2.0 | Available CPU Cores、CPU上限、xTB/ChemBERTa単独packetを追加 |
 | 1.3.0 | Round Analysis上限200件と50件単位の遅延Node化を追加 |
+| 1.4.0 | A014 Global DB／全Cluster screening／代表Local detailの計画と複数Artifact原子的昇格を追加 |

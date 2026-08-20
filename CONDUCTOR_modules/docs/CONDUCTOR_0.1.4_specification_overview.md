@@ -240,7 +240,7 @@ Endpoint効果の大きさだけで一つの総合ランキングを作らない
 
 統計は次を併記する。
 
-- Pair-weighted効果とCore-weighted効果
+- MMP instance数、一意な化合物Pair数、独立化合物数を分離したPair-weighted効果とCore-weighted効果
 - median、IQR、MAD、方向一致率
 - Compound数、Pair数、独立Exact Core数
 - leave-one-core-out安定性
@@ -263,7 +263,7 @@ within-cluster MMPは、Pairの両化合物が同じClusterへ所属する場合
 
 `mmp_local_screening.csv`は全登録Clusterを一行ずつ保持し、少なくとも次を含む。
 
-- Clustering Node、Cluster ID、由来Description family、input kind
+- Clustering Node／Capability、Cluster ID、由来Description Node／Capability、input kind
 - Cluster sizeとGlobal比率
 - within-cluster MMP Pair数、独立Core数、Transform数
 - Global対Localの効果差、方向反転候補数
