@@ -13,6 +13,8 @@
 
 ## 実装・監査
 
+- [CONDUCTOR_0.1.4_specification_overview.md](CONDUCTOR_0.1.4_specification_overview.md): 次期0.1.4のMMP Database／Global・Local統合仕様
+- [CONDUCTOR_0.1.4_implementation_plan.md](CONDUCTOR_0.1.4_implementation_plan.md): 0.1.3互換性を含む0.1.4実装計画
 - [CONDUCTOR_design_spec.md](CONDUCTOR_design_spec.md): Main Orchestrator、Executor、Interpreter、Runtime、Control、Event Ledger、詳細DAG snapshot
 - [CONDUCTOR_version_history_0.1.0_to_0.1.3.md](CONDUCTOR_version_history_0.1.0_to_0.1.3.md): beta系列0.1.0–0.1.3の仕様変更履歴
 - [CONDUCTOR_0.1.3_main_orchestrator_overview.md](CONDUCTOR_0.1.3_main_orchestrator_overview.md): 0.1.3制御系の設計根拠
