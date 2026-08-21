@@ -67,12 +67,30 @@ class Runtime014(unittest.TestCase):
             command = RUNTIME._mmp_skill_command(root, control, {"nodes": []}, node, "ATT0001", root / "scratch", ROOT / ".claude" / "skills" / "cs-analysis-matched-molecular-pairs" / "scripts" / "launch.py")
             self.assertEqual("global-build", command[2])
             self.assertLess(command.index("global-build"), command.index("--conductor"))
-            self.assertEqual("12", command[command.index("--available-cpu-cores") + 1])
+            self.assertEqual("8", command[command.index("--available-cpu-cores") + 1])
             self.assertEqual("smiles", command[command.index("--smiles-column") + 1])
+            self.assertEqual(8, RUNTIME._node_cpu_allocation(control, node))
+            self.assertEqual(1, RUNTIME._native_thread_limit(control, node))
 
     def test_global_mmp_is_exclusive_but_queries_are_lightweight(self) -> None:
         self.assertTrue(RUNTIME._requires_exclusive_cpu({"capability_id": "A014", "parameters": {"role": "global-build"}}))
         self.assertFalse(RUNTIME._requires_exclusive_cpu({"capability_id": "A014", "parameters": {"role": "local-screen"}}))
+
+    def test_global_mmp_fragment_jobs_are_capped_at_eight(self) -> None:
+        scripts = ROOT / ".claude" / "skills" / "cs-analysis-matched-molecular-pairs" / "scripts"
+        spec = importlib.util.spec_from_file_location("mmp_fragment_jobs_test", scripts / "run.py")
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        sys.path.insert(0, str(scripts))
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.path.pop(0)
+        self.assertEqual(8, module.fragment_job_count(64, None))
+        self.assertEqual(4, module.fragment_job_count(4, None))
+        self.assertEqual(3, module.fragment_job_count(64, 3))
+        with self.assertRaisesRegex(ValueError, "min\\(8"):
+            module.fragment_job_count(64, 9)
 
     def test_local_screen_command_passes_canonical_cluster_registry(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -107,7 +107,7 @@ Main Agent = Orchestrator
          `-- Interpretation and Round closure gates
 ```
 
-Runtime内部の科学Skill processは`parallel_limit`まで並列実行できるが、同じRunに対するExecutor Subagentは一時点で一つだけとする。さらに`available_cpu_cores`（未指定時8）をCPU総予算として独立管理し、実効同時Node数と内部thread数を予算以下に保つ。C002 MCSは最大8個の単一thread worker、D019 xTBは原則4コア/化合物で内部並列化し、いずれも単独packetとする。複数ExecutorによるState競合を避け、並列性はRuntimeのprocess管理へ集約する。
+Runtime内部の科学Skill processは`parallel_limit`まで並列実行できるが、同じRunに対するExecutor Subagentは一時点で一つだけとする。さらに`available_cpu_cores`（未指定時8）をCPU総予算として独立管理し、実効同時Node数と内部thread数を予算以下に保つ。C002 MCSとD016 Mordred 3Dは最大8個の単一thread worker、D019 xTBは原則4コア/化合物、A014 Global MMPのfragmentは最大8 jobで内部並列化し、いずれも単独packetとする。複数ExecutorによるState競合を避け、並列性はRuntimeのprocess管理へ集約する。
 
 Runtimeは一つのRoundへ割り当てるAnalysis Nodeを最大200件に制限し、初期Global／Local候補を最大50件ずつ層化してNode化する。初期Globalは最大100件で区切り、Local解析用に少なくとも100件分の容量を残す。未Node化候補を巨大なqueueとしてDAGへ保存せず、次の人間承認Roundで成功済みsignatureを除外して再構成する。長いWall Timeはprocessを完了させる余裕であり、計画件数を増やす指定ではない。Description／Clusteringの基本計算はこのAnalysis上限の対象外とする。
 

@@ -3,7 +3,7 @@
 > この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
 
 Profile: `comprehensive-multiround-beta`
-Generated: `2026-08-20T14:40:58.092017+00:00`
+Generated: `2026-08-21T11:19:09.567905+00:00`
 
 ## Description
 

@@ -57,6 +57,13 @@ C002は同一の小規模入力とseedを旧逐次実装、新並列実装で実
 - C002と別Nodeが同時実行されない。
 - RunのCPU予算が8以上なら最大8 Worker、8未満なら割当数以下となる。
 - 各MCS Workerのnative thread上限が1であり、Node全体が最大8 CPUを超えない。
+
+### D016 Mordred 3D CPU・出力互換確認
+
+- 同一入力・`num_confs`・`random_seed`について、1 Worker実行と最大8 Worker実行の主CSVを比較する。
+- 行順、feature列、値、row-level errorが一致することを確認する。
+- RuntimeがD016を単独packetとし、Worker数がAvailable CPU Coresと8の小さい方を超えないことを確認する。
+- 各Workerのnative thread上限が1であることを確認する。
 - 2,000化合物でも部分構造検索の`maxResults`上限によるmembership欠落がない。
 
 ## Human report
@@ -83,6 +90,7 @@ Linux共有filesystem上での一Round end-to-end smokeは、配布先での受�
 - Package layoutと48件のhuman allowlist Catalog
 - 0.1.3 Runtime回帰25件
 - A014 Global／Screen／Detailの一般・CONDUCTOR mode
+- A014 Globalのfragment jobが最大8かつAvailable CPU Cores以下で、全Pair・全Summary・Database・HTMLの出力項目が省略されないこと
 - Stable SQLite、全情報CSV、Parquetの行数とID整合
 - 0.1.3 Control／Artifact受理と、旧Active RoundへのA014非注入
 - Interpretation／PolicyのMMP scope、Exact Core、Environment区別

@@ -6,7 +6,7 @@
   "profile_hash": "789ceb0f4e10f0ee011d6219412e47753c6fa9cef6640ebd8ce02ce659d4cc53",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-20T14:40:58.092017+00:00",
+  "generated_at": "2026-08-21T11:19:09.567905+00:00",
   "capabilities": [
     {
       "schema_version": "2.0.0",
@@ -1910,7 +1910,7 @@
       "capability_id": "D016",
       "skill_name": "cs-compute-description-mordred-3d",
       "display_name": "Mordred 3D descriptors",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "stage": "description",
       "family": "3d_shape",
       "description": "Use when Claude Code needs to run Mordred 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -1937,6 +1937,11 @@
       },
       "implementation": {
         "algorithm": "mordred_3d"
+      },
+      "default_parameters": {
+        "num_confs": 20,
+        "random_seed": 61453,
+        "compound_workers": 8
       },
       "value_semantics": "dense_continuous",
       "natural_metric": "euclidean",

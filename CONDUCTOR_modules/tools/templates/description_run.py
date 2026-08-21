@@ -20,6 +20,8 @@ import pandas as pd
 SKILL_DIR = Path(__file__).resolve().parents[1]
 CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
 COMMON_COLUMNS = ["compound_id", "input_smiles", "mol_parse_ok", "description_error"]
+MORDRED_3D_MAX_WORKERS = 8
+_MORDRED_CALCULATORS: dict[bool, Any] = {}
 
 
 def utc_now() -> str:
@@ -141,6 +143,9 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument("--compound-workers", type=int, default=1, help="Number of compounds evaluated concurrently.")
         parser.add_argument("--cores-per-compound", type=int, default=4, help="CPU threads reserved for each concurrent xTB calculation.")
         parser.add_argument("--available-cpu-cores", type=int, help="Total CPU budget for this xTB node. Required in CONDUCTOR mode unless supplied by the Runtime environment.")
+    if algorithm == "mordred_3d":
+        parser.add_argument("--compound-workers", type=int, help="Number of molecules evaluated concurrently; maximum 8.")
+        parser.add_argument("--available-cpu-cores", type=int, help="CPU budget available to this process. Defaults to the Runtime budget or at most 8 local CPUs.")
     args = parser.parse_args()
     if args.conductor:
         missing = [name for name in ("project", "run_id", "round_id", "node_id", "attempt_id") if not getattr(args, name)]
@@ -157,6 +162,19 @@ def parse_args() -> argparse.Namespace:
                 parser.error("CONDUCTOR_AVAILABLE_CPU_CORES must be an integer")
         elif args.conductor:
             parser.error("--conductor xTB execution requires --available-cpu-cores or CONDUCTOR_AVAILABLE_CPU_CORES")
+    if algorithm == "mordred_3d":
+        inherited_budget = os.environ.get("CONDUCTOR_NODE_CPU_CORES") or os.environ.get("CONDUCTOR_AVAILABLE_CPU_CORES")
+        if args.available_cpu_cores is None:
+            if inherited_budget:
+                try:
+                    args.available_cpu_cores = int(inherited_budget)
+                except ValueError:
+                    parser.error("CONDUCTOR_NODE_CPU_CORES and CONDUCTOR_AVAILABLE_CPU_CORES must be integers")
+            else:
+                local_capacity = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 1)
+                args.available_cpu_cores = min(MORDRED_3D_MAX_WORKERS, local_capacity)
+        if args.compound_workers is None:
+            args.compound_workers = min(MORDRED_3D_MAX_WORKERS, int(args.available_cpu_cores))
     for name in ("n_bits", "num_confs", "svd_dim", "batch_size", "max_length", "cpu_threads", "compound_workers", "cores_per_compound", "available_cpu_cores"):
         if hasattr(args, name) and getattr(args, name) is not None and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
@@ -164,6 +182,11 @@ def parse_args() -> argparse.Namespace:
         requested = int(args.compound_workers) * int(args.cores_per_compound)
         if requested > int(args.available_cpu_cores):
             parser.error("--compound-workers * --cores-per-compound must not exceed --available-cpu-cores")
+    if algorithm == "mordred_3d":
+        if int(args.compound_workers) > MORDRED_3D_MAX_WORKERS:
+            parser.error(f"--compound-workers must not exceed {MORDRED_3D_MAX_WORKERS}")
+        if int(args.compound_workers) > int(args.available_cpu_cores):
+            parser.error("--compound-workers must not exceed --available-cpu-cores")
     if hasattr(args, "radius") and args.radius < 0:
         parser.error("--radius must be >= 0")
     return args
@@ -360,7 +383,10 @@ def compute_one(mol: Any, args: argparse.Namespace) -> dict[str, Any]:
     raise ValueError(f"Unsupported row-wise description algorithm: {algorithm}")
 
 
-def mordred_values(mol: Any, ignore_3d: bool) -> dict[str, Any]:
+def _mordred_calculator(ignore_3d: bool) -> Any:
+    cached = _MORDRED_CALCULATORS.get(ignore_3d)
+    if cached is not None:
+        return cached
     try:
         from mordred import Calculator, descriptors
     except ImportError:
@@ -369,6 +395,12 @@ def mordred_values(mol: Any, ignore_3d: bool) -> dict[str, Any]:
         except ImportError as exc:
             raise RuntimeError("mordred or mordredcommunity is required") from exc
     calculator = Calculator(descriptors, ignore_3D=ignore_3d)
+    _MORDRED_CALCULATORS[ignore_3d] = calculator
+    return calculator
+
+
+def mordred_values(mol: Any, ignore_3d: bool) -> dict[str, Any]:
+    calculator = _mordred_calculator(ignore_3d)
     result = calculator(mol)
     values: dict[str, Any] = {}
     casefold_counts: dict[str, int] = {}
@@ -383,6 +415,119 @@ def mordred_values(mol: Any, ignore_3d: bool) -> dict[str, Any]:
         except Exception:
             values[output_name] = np.nan
     return values
+
+
+def _mordred_thread_environment() -> dict[str, str]:
+    return {
+        "OMP_NUM_THREADS": "1",
+        "OMP_THREAD_LIMIT": "1",
+        "OMP_MAX_ACTIVE_LEVELS": "1",
+        "OMP_DYNAMIC": "FALSE",
+        "OPENBLAS_NUM_THREADS": "1",
+        "BLIS_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "MKL_DYNAMIC": "FALSE",
+    }
+
+
+def _initialize_mordred_worker() -> None:
+    os.environ.update(_mordred_thread_environment())
+
+
+def _mordred_cpu_plan(valid_molecule_count: int, args: argparse.Namespace) -> dict[str, int]:
+    declared = int(args.available_cpu_cores)
+    requested = int(args.compound_workers)
+    if requested > MORDRED_3D_MAX_WORKERS:
+        raise ValueError(f"Mordred 3D worker count must not exceed {MORDRED_3D_MAX_WORKERS}")
+    if requested > declared:
+        raise ValueError(f"Mordred 3D CPU budget exceeded: {requested} workers > {declared} available cores")
+    if hasattr(os, "sched_getaffinity"):
+        allowed = len(os.sched_getaffinity(0))
+        if declared > allowed:
+            raise RuntimeError(
+                f"Declared available CPU cores ({declared}) exceed the Linux scheduler/cpuset allowance ({allowed})"
+            )
+    workers = min(requested, valid_molecule_count) if valid_molecule_count else 0
+    return {
+        "workers": workers,
+        "maximum_cpu_cores": workers,
+        "declared_available_cpu_cores": declared,
+    }
+
+
+def _mordred_3d_worker(
+    index: int,
+    smiles: str,
+    settings: dict[str, int],
+) -> tuple[int, dict[str, Any] | None, str | None, str | None, int]:
+    _initialize_mordred_worker()
+    try:
+        from rdkit import Chem
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError("RDKit could not parse input SMILES")
+        worker_args = argparse.Namespace(**settings)
+        values = compute_one(mol, worker_args)
+        return index, values, None, None, os.getpid()
+    except Exception as exc:
+        return index, None, str(exc), traceback.format_exc(), os.getpid()
+
+
+def compute_mordred_3d_parallel(
+    rows: list[dict[str, Any]],
+    mols: list[Any],
+    args: argparse.Namespace,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    valid_indices = [index for index, mol in enumerate(mols) if mol is not None]
+    plan = _mordred_cpu_plan(len(valid_indices), args)
+    workers = plan["workers"]
+    settings = {"num_confs": int(args.num_confs), "random_seed": int(args.random_seed)}
+    outcomes: dict[int, tuple[dict[str, Any] | None, str | None, str | None, int]] = {}
+    _initialize_mordred_worker()
+    if workers == 1:
+        for index in valid_indices:
+            _, values, message, trace, pid = _mordred_3d_worker(index, rows[index]["input_smiles"], settings)
+            outcomes[index] = (values, message, trace, pid)
+    elif workers > 1:
+        context = multiprocessing.get_context("spawn")
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=context,
+            initializer=_initialize_mordred_worker,
+        ) as executor:
+            futures = {
+                executor.submit(_mordred_3d_worker, index, rows[index]["input_smiles"], settings): index
+                for index in valid_indices
+            }
+            for future in as_completed(futures):
+                index, values, message, trace, pid = future.result()
+                outcomes[index] = (values, message, trace, pid)
+    errors: list[dict[str, Any]] = []
+    worker_pids: set[int] = set()
+    for index in valid_indices:
+        values, message, trace, pid = outcomes[index]
+        worker_pids.add(pid)
+        if values is not None:
+            rows[index].update(values)
+        else:
+            rows[index]["description_error"] = message or "Mordred 3D calculation failed"
+            errors.append({
+                "compound_id": rows[index]["compound_id"],
+                "error_type": "description_error",
+                "message": message,
+                "traceback": trace,
+            })
+    metadata = {
+        "compound_workers": workers,
+        "native_threads_per_worker": 1,
+        "maximum_cpu_cores": plan["maximum_cpu_cores"],
+        "declared_available_cpu_cores": plan["declared_available_cpu_cores"],
+        "worker_pids": sorted(worker_pids),
+        "thread_environment": _mordred_thread_environment(),
+    }
+    return rows, errors, metadata
 
 
 def _result_array(result: Any, *names: str) -> np.ndarray | None:
@@ -773,7 +918,11 @@ def run() -> int:
         if args.reduction == "svd":
             value_semantics, natural_metric = "dense_embedding", "cosine"
             metadata.update({"value_semantics": value_semantics, "natural_metric": natural_metric})
-    if algorithm == "tblite_xtb":
+    if algorithm == "mordred_3d":
+        rows, mordred_errors, resource_metadata = compute_mordred_3d_parallel(rows, mols, args)
+        errors.extend(mordred_errors)
+        metadata.update(resource_metadata)
+    elif algorithm == "tblite_xtb":
         rows, xtb_errors, resource_metadata = compute_xtb_parallel(rows, mols, args)
         errors.extend(xtb_errors)
         metadata.update(resource_metadata)

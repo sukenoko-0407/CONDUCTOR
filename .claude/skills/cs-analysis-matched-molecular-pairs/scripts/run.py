@@ -45,6 +45,14 @@ def parse_bool(value: str) -> bool:
     raise argparse.ArgumentTypeError("Expected true or false")
 
 
+def fragment_job_count(available_cpu_cores: int, requested_jobs: int | None) -> int:
+    maximum = min(8, int(available_cpu_cores))
+    jobs = int(requested_jobs) if requested_jobs is not None else maximum
+    if jobs < 1 or jobs > maximum:
+        raise ValueError("--fragment-jobs must be between 1 and min(8, --available-cpu-cores)")
+    return jobs
+
+
 def value_hash(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -190,9 +198,7 @@ def global_build(args: argparse.Namespace, outdir: Path) -> dict[str, Any]:
     valid, coverage, warnings = load_input(input_path, args.id_column, args.smiles_column, args.endpoint_column, args.max_compounds)
     if not (0 < args.extended_core_fraction <= args.primary_core_fraction <= 1):
         raise ValueError("Core fractions must satisfy 0 < extended <= primary <= 1")
-    jobs = args.fragment_jobs if args.fragment_jobs is not None else args.available_cpu_cores
-    if jobs < 1 or jobs > args.available_cpu_cores:
-        raise ValueError("--fragment-jobs must be between 1 and --available-cpu-cores")
+    jobs = fragment_job_count(args.available_cpu_cores, args.fragment_jobs)
     _, native_work = build_native_database(
         valid, outdir / "_work", jobs=jobs, num_cuts=args.num_cuts,
         min_core_heavy_atoms=args.min_core_heavy_atoms,

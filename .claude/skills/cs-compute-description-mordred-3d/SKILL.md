@@ -24,7 +24,7 @@ CSVまたは1件以上のSMILESからMordred 3D descriptorsを計算する。
 
 ## Algorithm-specific options
 
-`--num-confs`と`--random-seed`でconformer探索を制御する。高コストのため人間承認後に実行する。
+`--num-confs`と`--random-seed`でconformer探索を制御する。化合物単位のprocess並列を使い、`--compound-workers`は最大8かつ`--available-cpu-cores`以下に制限する。各workerは1 CPU threadでconformer生成からMordred計算までを完結し、出力行は入力順へ戻す。高コストのため人間承認後に実行する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -57,7 +57,7 @@ Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証さ�
 CONDUCTOR利用が明示されていない場合はこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id general-001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id general-001 --available-cpu-cores 8 --compound-workers 8
 ```
 
 ## CONDUCTOR mode command
@@ -65,7 +65,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id ge
 明示的なCONDUCTOR利用で、project、run、nodeが確定している場合だけこちらを使う。
 
 ```bash
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001 --available-cpu-cores 8 --compound-workers 8
 ```
 
 ## Boundaries

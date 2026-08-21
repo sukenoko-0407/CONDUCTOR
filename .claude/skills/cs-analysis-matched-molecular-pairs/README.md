@@ -23,6 +23,7 @@ python scripts/launch.py local-detail --mmp-database results/mmp_database.sqlite
 ```
 
 CONDUCTORからはRuntimeが`--conductor`、Role、Node情報、入力Artifactを指定します。一般利用では`--conductor`を付けません。
+Global構築のfragment並列数は最大8で、Available CPU Coresを超えません。全Pair、Summary、Database、Reportの生成内容は並列数によって省略しません。
 
 ## 制約事項
 

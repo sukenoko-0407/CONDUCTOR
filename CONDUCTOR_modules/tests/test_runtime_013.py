@@ -494,6 +494,80 @@ class Runtime013Tests(unittest.TestCase):
             self.assertEqual(4, module._mcs_worker_count(1000))
         self.assertEqual(0, module._mcs_worker_count(0))
 
+    def test_mordred_3d_is_exclusive_and_bounded_to_eight_single_thread_workers(self) -> None:
+        capabilities = RUNTIME.catalog()
+        control = {
+            "run": {
+                "project": "test", "run_id": "run-013", "input": "input.csv",
+                "smiles_column": "smiles", "parallel_limit": 8, "available_cpu_cores": 64,
+            }
+        }
+        regular = {
+            "node_id": "N000001", "capability_id": "D001", "skill_name": capabilities["D001"]["skill_name"],
+            "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
+        }
+        mordred = {
+            "node_id": "N000016", "capability_id": "D016", "skill_name": capabilities["D016"]["skill_name"],
+            "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
+        }
+        runnable = {node["node_id"]: node for node in (regular, mordred)}
+        self.assertEqual([mordred["node_id"]], RUNTIME._select_execution_nodes([mordred["node_id"], regular["node_id"]], runnable, control))
+        self.assertEqual(8, RUNTIME._node_cpu_allocation(control, mordred))
+        self.assertEqual(1, RUNTIME._native_thread_limit(control, mordred))
+        command = RUNTIME._skill_command(
+            ROOT, control, {"nodes": [mordred]}, mordred, "ATT0001", ROOT / "scratch" / "D016",
+        )
+        self.assertEqual("8", command[command.index("--compound-workers") + 1])
+        self.assertEqual("8", command[command.index("--available-cpu-cores") + 1])
+
+    def test_mordred_3d_parallel_dispatch_preserves_input_order_and_cpu_metadata(self) -> None:
+        runner = ROOT / ".claude" / "skills" / "cs-compute-description-mordred-3d" / "scripts" / "run.py"
+        spec = importlib.util.spec_from_file_location("mordred_3d_parallel_dispatch_test", runner)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+
+        class ImmediateFuture:
+            def __init__(self, value: object) -> None:
+                self.value = value
+
+            def result(self) -> object:
+                return self.value
+
+        class ImmediateExecutor:
+            def __init__(self, max_workers: int, **_kwargs: object) -> None:
+                self.max_workers = max_workers
+
+            def __enter__(self) -> "ImmediateExecutor":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+            def submit(self, function: object, *arguments: object) -> ImmediateFuture:
+                return ImmediateFuture(function(*arguments))
+
+        rows = [
+            {"compound_id": "C1", "input_smiles": "CCO", "description_error": ""},
+            {"compound_id": "C2", "input_smiles": "CCN", "description_error": ""},
+        ]
+        arguments = argparse.Namespace(compound_workers=2, available_cpu_cores=8, num_confs=1, random_seed=61453)
+        fake_worker = lambda index, _smiles, _settings: (
+            index, {"mordred__test": float(index)}, None, None, index + 10,
+        )
+        with mock.patch.object(module.os, "sched_getaffinity", return_value=set(range(64)), create=True), mock.patch.object(
+            module, "_mordred_3d_worker", side_effect=fake_worker
+        ), mock.patch.object(
+            module, "ProcessPoolExecutor", ImmediateExecutor
+        ), mock.patch.object(module, "as_completed", side_effect=lambda futures: reversed(list(futures))):
+            calculated, errors, resources = module.compute_mordred_3d_parallel(rows, [object(), object()], arguments)
+        self.assertEqual([], errors)
+        self.assertEqual([0.0, 1.0], [row["mordred__test"] for row in calculated])
+        self.assertEqual(2, resources["compound_workers"])
+        self.assertEqual(1, resources["native_threads_per_worker"])
+        self.assertEqual(2, resources["maximum_cpu_cores"])
+        self.assertEqual(8, resources["declared_available_cpu_cores"])
+
     def test_xtb_compound_parallel_dispatch_preserves_rows_and_cpu_metadata(self) -> None:
         runner = ROOT / ".claude" / "skills" / "cs-compute-description-tblite-xtb" / "scripts" / "run.py"
         spec = importlib.util.spec_from_file_location("xtb_parallel_dispatch_test", runner)

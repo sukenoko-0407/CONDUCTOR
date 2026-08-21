@@ -34,13 +34,15 @@ DEFAULT_EXECUTION_TIMEOUT_MINUTES = 360
 DEFAULT_AVAILABLE_CPU_CORES = 8
 XTB_CORES_PER_COMPOUND = 4
 MCS_MAX_WORKERS = 8
+MORDRED_3D_MAX_WORKERS = 8
+MMP_MAX_FRAGMENT_JOBS = 8
 EXECUTION_LEASE_GRACE_MINUTES = 10
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
 RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
 DIRECT_STRUCTURE_CLUSTERING = {"C001", "C002", "C003", "C004"}
 DIRECT_STRUCTURE_ANALYSIS = {"A006", "A009", "A013"}
-EXCLUSIVE_CPU_CAPABILITIES = {"C002", "D019", "D020"}
+EXCLUSIVE_CPU_CAPABILITIES = {"C002", "D016", "D019", "D020"}
 MMP_PAYLOAD_NAMES = {
     "mmp_database.sqlite", "mmpdb_native.sqlite", "mmp_pair_detail.csv", "mmp_pair_detail.parquet",
     "pair_summary.csv", "transform_summary.csv", "core_summary.csv", "transform_core_summary.csv",
@@ -191,6 +193,10 @@ def _select_execution_nodes(
 def _node_cpu_allocation(control: dict[str, Any], node: dict[str, Any]) -> int:
     if node["capability_id"] == "C002":
         return min(MCS_MAX_WORKERS, _available_cpu_cores(control))
+    if node["capability_id"] == "D016":
+        return min(MORDRED_3D_MAX_WORKERS, _available_cpu_cores(control))
+    if node["capability_id"] == "A014" and node.get("parameters", {}).get("role") == "global-build":
+        return min(MMP_MAX_FRAGMENT_JOBS, _available_cpu_cores(control))
     if _requires_exclusive_cpu(node):
         return _available_cpu_cores(control)
     return 1
@@ -198,7 +204,9 @@ def _node_cpu_allocation(control: dict[str, Any], node: dict[str, Any]) -> int:
 
 def _native_thread_limit(control: dict[str, Any], node: dict[str, Any]) -> int:
     """Limit the initial native thread pools without changing the Node CPU budget."""
-    if node["capability_id"] == "C002":
+    if node["capability_id"] in {"C002", "D016"}:
+        return 1
+    if node["capability_id"] == "A014" and node.get("parameters", {}).get("role") == "global-build":
         return 1
     if node["capability_id"] == "D019":
         return min(XTB_CORES_PER_COMPOUND, _available_cpu_cores(control))
@@ -1960,7 +1968,7 @@ def _mmp_skill_command(
             "--input", control["run"]["input"], "--id-column", control["run"]["id_column"],
             "--smiles-column", _run_smiles_column(control), "--endpoint-column", control["run"]["endpoint"],
             "--higher-is-better", "true" if control["run"]["higher_is_better"] else "false",
-            "--available-cpu-cores", str(_available_cpu_cores(control)),
+            "--available-cpu-cores", str(_node_cpu_allocation(control, node)),
         ]
         allowed = {
             "num_cuts": "--num-cuts", "cut_smarts": "--cut-smarts",
@@ -2011,7 +2019,14 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     inputs = [lookup[item] for item in node["input_nodes"]]
     if node["kind"] == "description":
         argv += ["--input", control["run"]["input"], "--smiles-column", _run_smiles_column(control)]
-        if node["capability_id"] == "D019":
+        if node["capability_id"] == "D016":
+            available = _node_cpu_allocation(control, node)
+            workers = min(MORDRED_3D_MAX_WORKERS, available)
+            argv += [
+                "--compound-workers", str(workers),
+                "--available-cpu-cores", str(available),
+            ]
+        elif node["capability_id"] == "D019":
             available = _available_cpu_cores(control)
             cores_per_compound = min(XTB_CORES_PER_COMPOUND, available)
             compound_workers = max(1, available // cores_per_compound)

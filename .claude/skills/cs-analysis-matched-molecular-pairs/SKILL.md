@@ -31,6 +31,8 @@ python scripts/launch.py local-detail --mmp-database mmp_database.sqlite --clust
 
 For CONDUCTOR, append `--conductor --project ... --run-id ... --round-id RND0001 --node-id N000001 --attempt-id ATT0001` and the source node IDs supplied by Runtime.
 
+`global-build` uses at most 8 fragment jobs and never exceeds `--available-cpu-cores`. This limit changes only resource use; preserve every MMP detail row, summary table, database table, and report.
+
 ## Scientific invariants
 
 - Preserve exact core, transform direction, environment radii 0–5, and compound-pair identity.

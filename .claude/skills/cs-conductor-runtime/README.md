@@ -4,7 +4,7 @@
 
 CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名付きExecutor packet、実行attempt、事故復旧、Interpretation終端条件を決定論的に管理します。
 
-CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはC002 MCS、D019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。C002は最大8個の単一thread workerを使います。
+CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはC002 MCS、D016 Mordred 3D、D019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。C002とD016は最大8個、A014 fragmentも最大8個の単一thread workerを使います。
 
 Analysisは1 Round最大200 Node、計画登録は最大50 Nodeずつです。初期Globalは最大100 Nodeで区切ってLocal解析用の容量を残します。未登録候補はDAGへ保存せず、次の人間承認Roundで決定論的に再構成します。基本Description／Clusteringはこの上限の対象外です。
 

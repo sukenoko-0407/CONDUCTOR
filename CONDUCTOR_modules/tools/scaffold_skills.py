@@ -73,6 +73,7 @@ CAPABILITY_DEFAULTS: dict[str, dict[str, Any]] = {
     "D004": {"default_parameters": {"n_bits": 2048}},
     "D007": {"default_parameters": {"n_bits": 2048}},
     "D013": {"default_parameters": {"num_confs": 20, "random_seed": 61453}},
+    "D016": {"version": "0.1.4", "default_parameters": {"num_confs": 20, "random_seed": 61453, "compound_workers": 8}},
     "C001": {"default_parameters": {"min_cluster_size": 5}},
     "C002": {"default_parameters": {"min_cluster_size": 5, "max_pairs": 1000, "max_core_clusters": 300, "random_seed": 61453}},
     "C003": {"default_parameters": {"min_cluster_size": 5}},
@@ -129,6 +130,8 @@ def apply_capability_defaults(capability: dict[str, Any]) -> None:
     profile = CAPABILITY_DEFAULTS.get(capability["capability_id"])
     if not profile:
         return
+    if profile.get("version"):
+        capability["version"] = profile["version"]
     defaults = dict(capability.get("default_parameters") or {})
     defaults.update(profile.get("default_parameters") or {})
     if defaults:
@@ -340,7 +343,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             "usr_usrcat": "`--num-confs`と`--random-seed`でconformer探索を制御する。",
             "shape": "`--num-confs`と`--random-seed`でconformer探索を制御する。",
             "mordred_2d": "Mordred 2D descriptor集合を固定仕様で計算する。algorithm固有optionはない。",
-            "mordred_3d": "`--num-confs`と`--random-seed`でconformer探索を制御する。高コストのため人間承認後に実行する。",
+            "mordred_3d": "`--num-confs`と`--random-seed`でconformer探索を制御する。化合物単位のprocess並列を使い、`--compound-workers`は最大8かつ`--available-cpu-cores`以下に制限する。高コストのため人間承認後に実行する。",
             "gobbi_pharm2d": "folded fingerprintは`--reduction none --n-bits N`、dataset単位の低次元表現は`--reduction svd --svd-dim N`を使う。SVDはvalid moleculeが2件以上必要で、`--random-seed`を記録する。",
             "chemberta_embedding": "`--model-dir`、環境変数、Skill-local設定の順でChemBERTa-100M-MLM weightを解決する。CPU batch推論と非special-token mean poolingに固定し、外部modelを自動downloadしない。",
             "tblite_xtb": "`--num-confs`、`--random-seed`、必要に応じて`--charge`と`--uhf`を指定する。非常に高コストのため人間承認後に実行する。",
