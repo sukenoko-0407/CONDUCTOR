@@ -36,6 +36,29 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py catalog --check
 
 `test_mmp_014.py`はmmpdbによるGlobal end-to-end、CSV／Parquet／SQLiteのPair行一致、radius contextとPair supportの分離、全Cluster screening、Local detail、Global DBのbyte-level不変性を確認します。
 
+### D019 Linux CPU受入確認
+
+D019はLinuxのSkill専用Pixi環境で小規模入力を使い、`available_cpu_cores=4`と`8`をそれぞれ確認します。
+
+- 4 CPUでは1 worker × 4 CPU、8 CPUでは2 workers × 4 CPUとなる。
+- D019と別Nodeが同時実行されない。
+- `description_manifest.json`の`maximum_cpu_cores`が宣言予算以下である。
+- 各`worker_observations[].affinity_cpu_count`が4以下で、worker間の`affinity_cpu_ids`が重複しない。
+- `OMP_THREAD_LIMIT=4`、`OMP_MAX_ACTIVE_LEVELS=1`、`OPENBLAS_NUM_THREADS=1`が記録される。
+- `top`の瞬間使用率ではなく、worker affinityとNode全体のCPU集合を合格基準とする。
+- Scheduler/cpusetの許可数より大きいCPU予算は、xTB計算開始前に明示的なerrorとなる。
+
+### C002 Linux CPU・出力互換確認
+
+C002は同一の小規模入力とseedを旧逐次実装、新並列実装で実行して比較します。
+
+- `cluster_membership.csv`、`cluster_summary.csv`、`clustering_diagnostics.csv`の列、行、値が一致する。
+- MCS pair抽出とCluster順位が同一seedで再現する。
+- C002と別Nodeが同時実行されない。
+- RunのCPU予算が8以上なら最大8 Worker、8未満なら割当数以下となる。
+- 各MCS Workerのnative thread上限が1であり、Node全体が最大8 CPUを超えない。
+- 2,000化合物でも部分構造検索の`maxResults`上限によるmembership欠落がない。
+
 ## Human report
 
 Interpretation HTMLは日本語、固定section、低彩度配色、print CSS、scope fact panel、evidence link、coverage、未確認範囲を持つことを確認します。scope、Cluster ID、sample count、Operator、Result別sample数はResult Cardから再計算して照合し、artifact linkはFull Auditで存在確認します。Operator reportとState reportの表示は導入先smoke testでも目視確認します。

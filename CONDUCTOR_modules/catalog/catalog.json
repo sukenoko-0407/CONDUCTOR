@@ -779,7 +779,7 @@
       "capability_id": "C002",
       "skill_name": "cs-compute-clustering-structure-mcs",
       "display_name": "MCS clustering",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "stage": "clustering",
       "family": "direct_structure",
       "description": "Cluster compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR axis, without generating a hidden descriptor vector or requiring per-run human approval.",
@@ -1949,7 +1949,7 @@
       "capability_id": "D019",
       "skill_name": "cs-compute-description-tblite-xtb",
       "display_name": "GFN2-xTB quantum descriptors",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "stage": "description",
       "family": "quantum",
       "description": "Use when Claude Code needs to run GFN2-xTB quantum descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -1977,7 +1977,9 @@
       "implementation": {
         "algorithm": "tblite_xtb",
         "parallelization": "compound_processes_with_threaded_xtb",
-        "default_cores_per_compound": 4
+        "default_cores_per_compound": 4,
+        "linux_process_start_method": "spawn",
+        "linux_cpu_affinity": "disjoint_per_worker"
       },
       "value_semantics": "dense_continuous",
       "natural_metric": "euclidean",

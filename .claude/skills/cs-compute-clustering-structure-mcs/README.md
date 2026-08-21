@@ -35,6 +35,7 @@ python .claude/skills/cs-compute-clustering-structure-mcs/scripts/launch.py --in
 - 一般利用・CONDUCTOR利用ともcompound IDとSMILESを含むCSVを必須入力とし、CLIへのSMILES直接指定は受け付けない。
 - invalid SMILESは未割当として保持する。分子標準化は行わない。
 - `--max-pairs`は1～1000に制限し、`--max-core-clusters`の既定値は300とする。
+- MCS pair探索は利用可能CPU内で最大8 Worker、各Worker 1 threadで実行する。CONDUCTOR RuntimeではC002を他Nodeと同時実行しない。
 
 ## 変更履歴
 

@@ -24,7 +24,7 @@ compound IDとSMILESを持つCSVを`--input`へ必ず指定する。inlineの`--
 
 ## Algorithm-specific options
 
-`--min-cluster-size`（既定・下限5）、`--max-pairs`（既定・上限1000）、`--max-core-clusters`（既定300）で探索量を制限する。pair上限を適用する場合は`--random-seed`に基づく一様ランダム非復元抽出を行う。C002は構造Clusteringの中心的な初手であり、runごとの事前承認なしで実行する。
+`--min-cluster-size`（既定・下限5）、`--max-pairs`（既定・上限1000）、`--max-core-clusters`（既定300）で探索量を制限する。pair上限を適用する場合は`--random-seed`に基づく一様ランダム非復元抽出を行う。MCS pair探索は割当CPU数の範囲で最大8個の単一thread workerを使い、同一SMARTSを重複排除してから全化合物への部分構造照合を最大8 threadで行う。C002は構造Clusteringの中心的な初手であり、runごとの事前承認なしで実行する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -77,3 +77,4 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
 - このcapabilityはCatalogで`approval_policy=preauthorized_initial`とされた必須初手であり、`high` costでもrunごとの人間承認を待たない。人間指定の並列上限とStateの実行制御には従う。
+- CONDUCTOR RuntimeではC002を単独Nodeとして実行し、最大8 CPUを他Nodeと競合させない。一般利用でも利用可能CPUを超えず、最大8 Workerとする。

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import multiprocessing
 import os
 import sys
 import traceback
@@ -139,6 +140,7 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument("--uhf", type=int)
         parser.add_argument("--compound-workers", type=int, default=1, help="Number of compounds evaluated concurrently.")
         parser.add_argument("--cores-per-compound", type=int, default=4, help="CPU threads reserved for each concurrent xTB calculation.")
+        parser.add_argument("--available-cpu-cores", type=int, help="Total CPU budget for this xTB node. Required in CONDUCTOR mode unless supplied by the Runtime environment.")
     args = parser.parse_args()
     if args.conductor:
         missing = [name for name in ("project", "run_id", "round_id", "node_id", "attempt_id") if not getattr(args, name)]
@@ -146,9 +148,22 @@ def parse_args() -> argparse.Namespace:
             parser.error("--conductor requires --project, --run-id, --round-id, --node-id, and --attempt-id")
     elif args.project or args.round_id or args.node_id or args.attempt_id:
         parser.error("--project, --round-id, --node-id, and --attempt-id are valid only with --conductor")
-    for name in ("n_bits", "num_confs", "svd_dim", "batch_size", "max_length", "cpu_threads", "compound_workers", "cores_per_compound"):
-        if hasattr(args, name) and getattr(args, name) < 1:
+    if algorithm == "tblite_xtb" and args.available_cpu_cores is None:
+        inherited_budget = os.environ.get("CONDUCTOR_AVAILABLE_CPU_CORES")
+        if inherited_budget:
+            try:
+                args.available_cpu_cores = int(inherited_budget)
+            except ValueError:
+                parser.error("CONDUCTOR_AVAILABLE_CPU_CORES must be an integer")
+        elif args.conductor:
+            parser.error("--conductor xTB execution requires --available-cpu-cores or CONDUCTOR_AVAILABLE_CPU_CORES")
+    for name in ("n_bits", "num_confs", "svd_dim", "batch_size", "max_length", "cpu_threads", "compound_workers", "cores_per_compound", "available_cpu_cores"):
+        if hasattr(args, name) and getattr(args, name) is not None and getattr(args, name) < 1:
             parser.error(f"--{name.replace('_', '-')} must be >= 1")
+    if algorithm == "tblite_xtb" and args.available_cpu_cores is not None:
+        requested = int(args.compound_workers) * int(args.cores_per_compound)
+        if requested > int(args.available_cpu_cores):
+            parser.error("--compound-workers * --cores-per-compound must not exceed --available-cpu-cores")
     if hasattr(args, "radius") and args.radius < 0:
         parser.error("--radius must be >= 0")
     return args
@@ -453,17 +468,90 @@ def tblite_values(prepared: Any, args: argparse.Namespace) -> dict[str, Any]:
     return values
 
 
-def _configure_xtb_threads(cores_per_compound: int) -> None:
+def _xtb_thread_environment(cores_per_compound: int) -> dict[str, str]:
     value = str(int(cores_per_compound))
-    for name in (
-        "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
-        "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS",
-    ):
-        os.environ[name] = value
-    os.environ["OMP_DYNAMIC"] = "FALSE"
+    return {
+        "OMP_NUM_THREADS": f"{value},1",
+        "OMP_THREAD_LIMIT": value,
+        "OMP_MAX_ACTIVE_LEVELS": "1",
+        "OMP_DYNAMIC": "FALSE",
+        "OMP_NESTED": "FALSE",
+        "OPENBLAS_NUM_THREADS": "1",
+        "BLIS_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": value,
+        "MKL_DYNAMIC": "FALSE",
+    }
 
 
-def _xtb_worker(index: int, smiles: str, settings: dict[str, Any]) -> tuple[int, dict[str, Any] | None, str | None, str | None]:
+def _configure_xtb_threads(cores_per_compound: int) -> None:
+    os.environ.update(_xtb_thread_environment(cores_per_compound))
+
+
+def _linux_allowed_cpu_ids() -> list[int] | None:
+    if not sys.platform.startswith("linux") or not hasattr(os, "sched_getaffinity"):
+        return None
+    return sorted(int(value) for value in os.sched_getaffinity(0))
+
+
+def _xtb_cpu_plan(valid_molecule_count: int, args: argparse.Namespace) -> dict[str, Any]:
+    cores_per_compound = int(args.cores_per_compound)
+    workers = min(int(args.compound_workers), valid_molecule_count) if valid_molecule_count else 0
+    declared = int(args.available_cpu_cores) if args.available_cpu_cores is not None else max(1, workers) * cores_per_compound
+    requested = workers * cores_per_compound
+    if requested > declared:
+        raise ValueError(
+            f"xTB CPU budget exceeded: {workers} workers x {cores_per_compound} cores > {declared} available cores"
+        )
+    allowed = _linux_allowed_cpu_ids()
+    if allowed is not None and len(allowed) < declared:
+        raise RuntimeError(
+            f"Declared available CPU cores ({declared}) exceed the Linux scheduler/cpuset allowance ({len(allowed)})"
+        )
+    selected = (allowed[:declared] if allowed is not None else [])
+    affinity_groups = [
+        selected[position * cores_per_compound : (position + 1) * cores_per_compound]
+        for position in range(workers)
+    ] if allowed is not None else []
+    if affinity_groups and any(len(group) != cores_per_compound for group in affinity_groups):
+        raise RuntimeError("Could not allocate a complete, disjoint Linux CPU affinity group to every xTB worker")
+    return {
+        "workers": workers,
+        "cores_per_compound": cores_per_compound,
+        "declared_available_cpu_cores": declared,
+        "maximum_cpu_cores": requested,
+        "linux_allowed_cpu_ids": allowed,
+        "selected_cpu_ids": selected,
+        "affinity_groups": affinity_groups,
+    }
+
+
+def _initialize_xtb_worker(
+    cores_per_compound: int,
+    affinity_queue: Any | None,
+) -> None:
+    """Initialize native thread pools and assign one disjoint Linux CPU group."""
+    _configure_xtb_threads(cores_per_compound)
+    if affinity_queue is not None:
+        cpu_ids = list(affinity_queue.get())
+        try:
+            os.sched_setaffinity(0, cpu_ids)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to apply xTB worker CPU affinity {cpu_ids}: {exc}") from exc
+
+
+def _xtb_worker_diagnostics() -> dict[str, Any]:
+    affinity = _linux_allowed_cpu_ids()
+    policy = _xtb_thread_environment(int(os.environ.get("OMP_THREAD_LIMIT", "1")))
+    return {
+        "pid": os.getpid(),
+        "affinity_cpu_ids": affinity,
+        "affinity_cpu_count": len(affinity) if affinity is not None else None,
+        "thread_environment": {name: os.environ.get(name) for name in policy},
+    }
+
+
+def _xtb_worker(index: int, smiles: str, settings: dict[str, Any]) -> tuple[int, dict[str, Any] | None, str | None, str | None, dict[str, Any]]:
     """Compute one molecule in an isolated process and return a serializable result."""
     _configure_xtb_threads(int(settings["cores_per_compound"]))
     try:
@@ -473,9 +561,9 @@ def _xtb_worker(index: int, smiles: str, settings: dict[str, Any]) -> tuple[int,
         if mol is None:
             raise ValueError("RDKit could not parse input SMILES")
         worker_args = argparse.Namespace(**settings)
-        return index, compute_one(mol, worker_args), None, None
+        return index, compute_one(mol, worker_args), None, None, _xtb_worker_diagnostics()
     except Exception as exc:
-        return index, None, str(exc), traceback.format_exc()
+        return index, None, str(exc), traceback.format_exc(), _xtb_worker_diagnostics()
 
 
 def compute_xtb_parallel(
@@ -484,7 +572,8 @@ def compute_xtb_parallel(
     args: argparse.Namespace,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     valid_indices = [index for index, mol in enumerate(mols) if mol is not None]
-    workers = min(int(args.compound_workers), max(1, len(valid_indices)))
+    cpu_plan = _xtb_cpu_plan(len(valid_indices), args)
+    workers = int(cpu_plan["workers"])
     settings = {
         "num_confs": int(args.num_confs),
         "random_seed": int(args.random_seed),
@@ -493,35 +582,66 @@ def compute_xtb_parallel(
         "cores_per_compound": int(args.cores_per_compound),
     }
     errors: list[dict[str, Any]] = []
+    worker_observations: dict[str, dict[str, Any]] = {}
     _configure_xtb_threads(settings["cores_per_compound"])
-    if workers == 1:
+    if workers == 0:
+        outcomes = []
+    elif workers == 1:
+        if cpu_plan["affinity_groups"]:
+            try:
+                os.sched_setaffinity(0, cpu_plan["affinity_groups"][0])
+            except Exception as exc:
+                raise RuntimeError(f"Failed to apply xTB CPU affinity: {exc}") from exc
         outcomes = (
             _xtb_worker(index, rows[index]["input_smiles"], settings)
             for index in valid_indices
         )
-        for index, values, message, trace in outcomes:
+        for index, values, message, trace, observation in outcomes:
+            worker_observations[str(observation["pid"])] = observation
             if values is not None:
                 rows[index].update(values)
             else:
                 rows[index]["description_error"] = message or "xTB calculation failed"
                 errors.append({"compound_id": rows[index]["compound_id"], "error_type": "description_error", "message": message, "traceback": trace})
     else:
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(_xtb_worker, index, rows[index]["input_smiles"], settings): index
-                for index in valid_indices
-            }
-            for future in as_completed(futures):
-                index, values, message, trace = future.result()
-                if values is not None:
-                    rows[index].update(values)
-                else:
-                    rows[index]["description_error"] = message or "xTB calculation failed"
-                    errors.append({"compound_id": rows[index]["compound_id"], "error_type": "description_error", "message": message, "traceback": trace})
+        context = multiprocessing.get_context("spawn")
+        affinity_queue = context.Queue() if cpu_plan["affinity_groups"] else None
+        if affinity_queue is not None:
+            for group in cpu_plan["affinity_groups"]:
+                affinity_queue.put(tuple(group))
+        try:
+            with ProcessPoolExecutor(
+                max_workers=workers,
+                mp_context=context,
+                initializer=_initialize_xtb_worker,
+                initargs=(settings["cores_per_compound"], affinity_queue),
+            ) as executor:
+                futures = {
+                    executor.submit(_xtb_worker, index, rows[index]["input_smiles"], settings): index
+                    for index in valid_indices
+                }
+                for future in as_completed(futures):
+                    index, values, message, trace, observation = future.result()
+                    worker_observations[str(observation["pid"])] = observation
+                    if values is not None:
+                        rows[index].update(values)
+                    else:
+                        rows[index]["description_error"] = message or "xTB calculation failed"
+                        errors.append({"compound_id": rows[index]["compound_id"], "error_type": "description_error", "message": message, "traceback": trace})
+        finally:
+            if affinity_queue is not None:
+                affinity_queue.close()
+                affinity_queue.join_thread()
     resource_metadata = {
         "compound_workers": workers,
         "cores_per_compound": settings["cores_per_compound"],
-        "maximum_cpu_cores": workers * settings["cores_per_compound"],
+        "maximum_cpu_cores": cpu_plan["maximum_cpu_cores"],
+        "declared_available_cpu_cores": cpu_plan["declared_available_cpu_cores"],
+        "linux_allowed_cpu_count": len(cpu_plan["linux_allowed_cpu_ids"]) if cpu_plan["linux_allowed_cpu_ids"] is not None else None,
+        "cpu_affinity_enforced": bool(cpu_plan["affinity_groups"]),
+        "selected_cpu_ids": cpu_plan["selected_cpu_ids"],
+        "thread_environment": _xtb_thread_environment(settings["cores_per_compound"]),
+        "worker_observations": sorted(worker_observations.values(), key=lambda item: int(item["pid"])),
     }
     return rows, errors, resource_metadata
 

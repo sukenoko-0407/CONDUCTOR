@@ -4,7 +4,7 @@
 
 Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、Wall Timeを示してRound 1を開始します。Available CPU Coresを省略した場合は8です。Mainは契約案を人間依頼と照合した場合だけauthorizeします。
 
-parallel limitは同時に実行するNode数、Available CPU Coresは科学計算へ割り当てるCPU総数です。D019（GFN2-xTB）はRuntimeにより単独実行され、原則として1化合物4コア、`floor(Available CPU Cores / 4)`化合物並列になります。D020（ChemBERTa）とA014 Global MMPもSkill内部並列を使用するため、他Nodeと同じExecution packetへ混在させません。
+parallel limitは同時に実行するNode数、Available CPU Coresは科学計算へ割り当てるCPU総数です。C002（MCS）は最大8個の単一thread worker、D019（GFN2-xTB）は原則として1化合物4コア、`floor(Available CPU Cores / 4)`化合物並列で、いずれもRuntimeにより単独実行されます。D020（ChemBERTa）とA014 Global MMPもSkill内部並列を使用するため、他Nodeと同じExecution packetへ混在させません。
 
 高コスト基本計算は最初に一括承認できます。MCSは基本計算であり個別承認不要です。Wall Timeは上限であって消費目標ではありませんが、実行可能で有用な作業が残る限りOrchestratorは早期終了しません。
 

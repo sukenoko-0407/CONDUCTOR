@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import random
 import sys
 from collections import Counter, defaultdict
@@ -17,6 +18,66 @@ import pandas as pd
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
+MCS_MAX_WORKERS = 8
+MCS_PAIR_TIMEOUT_SECONDS = 2
+MCS_NATIVE_THREAD_VARIABLES = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "BLIS_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "NUMBA_NUM_THREADS",
+    "RAYON_NUM_THREADS",
+)
+
+
+def _mcs_worker_count(task_count: int) -> int:
+    """Use at most eight single-threaded MCS workers within the assigned CPU budget."""
+    if task_count < 1:
+        return 0
+    available: int | None = None
+    for name in ("CONDUCTOR_NODE_CPU_CORES", "CONDUCTOR_AVAILABLE_CPU_CORES"):
+        raw = os.environ.get(name)
+        if raw:
+            try:
+                parsed = int(raw)
+            except ValueError:
+                continue
+            if parsed > 0:
+                available = parsed
+                break
+    if available is None and hasattr(os, "sched_getaffinity"):
+        try:
+            available = len(os.sched_getaffinity(0))
+        except OSError:
+            available = None
+    if available is None:
+        available = os.cpu_count() or 1
+    return max(1, min(MCS_MAX_WORKERS, available, task_count))
+
+
+def _limit_mcs_worker_native_threads() -> None:
+    """Prevent a process worker from starting nested native thread pools."""
+    for name in MCS_NATIVE_THREAD_VARIABLES:
+        os.environ[name] = "1"
+
+
+def _mcs_pair_search(task: tuple[int, int, bytes, bytes]) -> tuple[int, int, str, bool]:
+    """Evaluate one independent molecule pair in a process-safe representation."""
+    from rdkit import Chem
+    from rdkit.Chem import rdFMCS
+
+    left, right, mol_a_binary, mol_b_binary = task
+    mol_a = Chem.Mol(mol_a_binary)
+    mol_b = Chem.Mol(mol_b_binary)
+    result = rdFMCS.FindMCS(
+        [mol_a, mol_b],
+        timeout=MCS_PAIR_TIMEOUT_SECONDS,
+        ringMatchesRingOnly=True,
+        completeRingsOnly=True,
+    )
+    return left, right, str(result.smartsString or ""), bool(result.canceled)
 
 
 def utc_now() -> str:
@@ -287,8 +348,10 @@ def rule_clusters(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace,
             add_cluster(clusters, fragment, members, args.min_cluster_size)
         return clusters, {"definition": algorithm.replace("structure_", "") + " fragments"}
     if algorithm == "structure_mcs":
+        from concurrent.futures import ProcessPoolExecutor
         from itertools import combinations
-        from rdkit.Chem import rdFMCS
+        from rdkit.Chem import rdSubstructLibrary
+
         valid = [(str(cid), mol) for cid, mol in zip(base["compound_id"], mols) if mol is not None]
         candidates: dict[str, set[str]] = {}
         pair_population = len(valid) * (len(valid) - 1) // 2
@@ -303,16 +366,60 @@ def rule_clusters(base: pd.DataFrame, mols: list[Any], args: argparse.Namespace,
                 selected.add((left, right) if left < right else (right, left))
             selected_pairs = sorted(selected)
             sampling = "uniform_random_without_replacement"
-        for left, right in selected_pairs:
-            _, mol_a = valid[left]
-            _, mol_b = valid[right]
-            result = rdFMCS.FindMCS([mol_a, mol_b], timeout=2, ringMatchesRingOnly=True, completeRingsOnly=True)
-            if result.canceled or not result.smartsString:
+
+        molecule_binaries = [mol.ToBinary() for _, mol in valid]
+        pair_tasks = [
+            (left, right, molecule_binaries[left], molecule_binaries[right])
+            for left, right in selected_pairs
+        ]
+        worker_count = _mcs_worker_count(len(pair_tasks))
+        _limit_mcs_worker_native_threads()
+        if worker_count > 1:
+            with ProcessPoolExecutor(max_workers=worker_count) as executor:
+                pair_results = list(executor.map(_mcs_pair_search, pair_tasks, chunksize=1))
+        else:
+            pair_results = [_mcs_pair_search(task) for task in pair_tasks]
+
+        # Retry only canceled parallel calls after the pool has closed. This avoids
+        # losing a core solely because of transient CPU contention while retaining
+        # the same timeout and MCS chemistry settings as the legacy implementation.
+        successful_smarts: set[str] = set()
+        canceled_tasks: list[tuple[int, int, bytes, bytes]] = []
+        for task, (_left, _right, smarts, canceled) in zip(pair_tasks, pair_results):
+            if canceled:
+                canceled_tasks.append(task)
+            elif smarts:
+                successful_smarts.add(smarts)
+        if worker_count > 1:
+            for task in canceled_tasks:
+                _left, _right, smarts, canceled = _mcs_pair_search(task)
+                if not canceled and smarts:
+                    successful_smarts.add(smarts)
+
+        # Deduplicate pair-derived SMARTS before scanning the full dataset. The
+        # indexed library preserves exact substructure matching while allowing
+        # RDKit to use the same bounded CPU allocation for each membership query.
+        library = rdSubstructLibrary.SubstructLibrary(
+            rdSubstructLibrary.CachedMolHolder(),
+            rdSubstructLibrary.PatternHolder(),
+        )
+        for _, mol in valid:
+            library.AddMol(mol)
+        for smarts in sorted(successful_smarts):
+            query = Chem.MolFromSmarts(smarts)
+            if query is None:
                 continue
-            query = Chem.MolFromSmarts(result.smartsString)
-            members = {cid for cid, mol in valid if query is not None and mol.HasSubstructMatch(query)}
+            matched_indices = library.GetMatches(
+                query,
+                recursionPossible=True,
+                useChirality=False,
+                useQueryQueryMatches=False,
+                numThreads=max(1, worker_count),
+                maxResults=len(valid),
+            )
+            members = {valid[int(index)][0] for index in matched_indices}
             if len(members) >= args.min_cluster_size:
-                candidates[result.smartsString] = members
+                candidates[smarts] = members
         ranked = sorted(candidates.items(), key=lambda item: (-len(item[1]), item[0]))[: args.max_core_clusters]
         for smarts, members in ranked:
             clusters[smarts] = members

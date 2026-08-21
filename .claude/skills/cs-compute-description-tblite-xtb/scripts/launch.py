@@ -59,6 +59,49 @@ def prepare_runtime_environment(skill_dir: Path) -> dict[str, str]:
     return runtime_env
 
 
+def option_value(arguments: list[str], option: str, default: int) -> int:
+    """Read a positive integer CLI option before importing the scientific stack."""
+    try:
+        position = arguments.index(option)
+    except ValueError:
+        return default
+    if position + 1 >= len(arguments):
+        return default
+    try:
+        value = int(arguments[position + 1])
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def configure_xtb_process_environment(
+    runtime_env: dict[str, str], arguments: list[str], capability: dict[str, object]
+) -> None:
+    """Set native thread limits before NumPy, BLAS, or tblite is imported."""
+    implementation = capability.get("implementation", {})
+    if not isinstance(implementation, dict) or implementation.get("algorithm") != "tblite_xtb":
+        return
+    default_threads = int(implementation.get("default_cores_per_compound", 4))
+    threads = option_value(arguments, "--cores-per-compound", default_threads)
+    runtime_env.update(
+        {
+            # xTB/tblite uses OpenMP. The second value limits nested teams.
+            "OMP_NUM_THREADS": f"{threads},1",
+            "OMP_THREAD_LIMIT": str(threads),
+            "OMP_MAX_ACTIVE_LEVELS": "1",
+            "OMP_DYNAMIC": "FALSE",
+            "OMP_NESTED": "FALSE",
+            # Avoid an independent BLAS pool inside each OpenMP worker.
+            "OPENBLAS_NUM_THREADS": "1",
+            "BLIS_NUM_THREADS": "1",
+            "NUMEXPR_NUM_THREADS": "1",
+            # MKL normally shares the OpenMP runtime used by xTB.
+            "MKL_NUM_THREADS": str(threads),
+            "MKL_DYNAMIC": "FALSE",
+        }
+    )
+
+
 skill_dir = Path(__file__).resolve().parents[1]
 arguments = sys.argv[1:]
 runner = skill_dir / "scripts" / "run.py"
@@ -78,6 +121,7 @@ if not pixi:
     raise SystemExit(127)
 runtime_env = prepare_runtime_environment(skill_dir)
 capability = json.loads((skill_dir / "capability.json").read_text(encoding="utf-8"))
+configure_xtb_process_environment(runtime_env, arguments, capability)
 if capability.get("implementation", {}).get("algorithm") == "chemberta_embedding":
     runtime_env["CUDA_VISIBLE_DEVICES"] = ""
 print(f"INFO: Using Pixi executable: {pixi}", file=sys.stderr)

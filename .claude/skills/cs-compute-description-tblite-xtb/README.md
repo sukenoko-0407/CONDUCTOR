@@ -17,21 +17,23 @@ CSVまたは1件以上のSMILESからGFN2-xTB quantum descriptorsを計算し、
 一般利用（主成果物のみ）:
 
 ```bash
-python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --input compounds.csv --compound-workers 2 --cores-per-compound 4
+python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --input compounds.csv --compound-workers 2 --cores-per-compound 4 --available-cpu-cores 8
 ```
 
 
 CONDUCTORのState nodeとして利用する場合:
 
 ```bash
-python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
+python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001 --compound-workers 2 --cores-per-compound 4 --available-cpu-cores 8
 ```
 
 ## 制約事項
 
 - 入力分子の標準化は行わない。重複IDはerror、invalid SMILESは行を保持して警告対象とする。
 - 入力SMILESからconformerを生成するため、結果と計算時間は3D生成条件の影響を受ける。
-- `--compound-workers`化合物を並列化し、各計算へ`--cores-per-compound` CPU threadsを割り当てる。両者の積を利用可能CPU数以下にする。
+- `--compound-workers`で化合物をprocess並列化し、各計算へ`--cores-per-compound` OpenMP threadsを割り当てる。`--available-cpu-cores`を総予算とし、両者の積が総予算を超える指定は計算前に停止する。
+- Linuxではworkerを`spawn`で起動し、Scheduler/cpusetで許可されたCPUをworkerごとに重複しない集合へ分割してaffinityを設定する。NumPy・tbliteのimport前にOpenMP上限を設定し、独立したOpenBLAS並列は1 threadに抑える。
+- 4コア割当は使用率を常時400%にする指定ではなく、1 workerが使用できるCPUの上限である。直列区間では使用率が下がる。
 - CONDUCTORではD019を単独実行し、RuntimeがAvailable CPU Coresから原則4コア/化合物で並列数を決める。OrchestratorのNode並列数とは独立している。
 - 高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。
 
@@ -41,3 +43,4 @@ python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --inpu
 |---|---|
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
 | 1.1.0 | 化合物単位の並列計算と、1化合物あたりのCPU割当を追加。 |
+| 1.2.0 | Linuxのspawn、worker別CPU affinity、起動前thread制御、CPU予算監査を追加。 |

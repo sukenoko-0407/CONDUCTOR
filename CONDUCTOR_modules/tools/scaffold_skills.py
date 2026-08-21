@@ -374,7 +374,7 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             inputs = "long形式の`cluster_id,compound_id,membership_value`、または行がcompound、列がCluster IDのBoolean wide形式membership CSVを使う。long形式と複数shardでは同一compound IDの反復を許可する。"
         clustering_options = {
             "structure_murcko": "`--min-cluster-size`未満のscaffold Clusterを登録しない。",
-            "structure_mcs": "`--min-cluster-size`（既定・下限5）、`--max-pairs`（既定・上限1000）、`--max-core-clusters`（既定300）で探索量を制限する。pair上限を適用する場合は`--random-seed`に基づく一様ランダム非復元抽出を行う。C002は構造Clusteringの中心的な初手であり、runごとの事前承認なしで実行する。",
+            "structure_mcs": "`--min-cluster-size`（既定・下限5）、`--max-pairs`（既定・上限1000）、`--max-core-clusters`（既定300）で探索量を制限する。pair上限を適用する場合は`--random-seed`に基づく一様ランダム非復元抽出を行う。MCS pair探索は割当CPU数の範囲で最大8個の単一thread workerを使い、同一SMARTSを重複排除してから全化合物への部分構造照合を最大8 threadで行う。C002は構造Clusteringの中心的な初手であり、runごとの事前承認なしで実行する。",
             "structure_brics": "`--min-cluster-size`未満のfragment Clusterを登録しない。",
             "structure_recap": "`--min-cluster-size`未満のfragment Clusterを登録しない。",
             "categorical": "`--columns`を必須とし、`--min-cluster-size`未満のClusterを登録しない。",
@@ -394,6 +394,8 @@ def skill_md(capability: dict[str, Any], kind: str) -> str:
             option_guidance = f"`--min-cluster-size`未満のClusterを登録しない。{source_options}{method_options}"
         else:
             option_guidance = clustering_options[algorithm]
+        if algorithm == "structure_mcs":
+            boundary_extra += "- CONDUCTOR RuntimeではC002を単独Nodeとして実行し、最大8 CPUを他Nodeと競合させない。一般利用でも利用可能CPUを超えず、最大8 Workerとする。\n"
         general_args = base_args
         conductor_args = base_args
         if algorithm.startswith("vector_"):
@@ -623,6 +625,7 @@ def readme_md(capability: dict[str, Any], kind: str) -> str:
             constraints.append("invalid SMILESは未割当として保持する。分子標準化は行わない。")
         if algorithm == "structure_mcs":
             constraints.append("`--max-pairs`は1～1000に制限し、`--max-core-clusters`の既定値は300とする。")
+            constraints.append("MCS pair探索は利用可能CPU内で最大8 Worker、各Worker 1 threadで実行する。CONDUCTOR RuntimeではC002を他Nodeと同時実行しない。")
         if algorithm.startswith("vector_"):
             constraints.append("raw SMILESは入力にできず、Descriptionを内部生成しない。MetricはDescription表現に固定し、`--parameter-mode auto`ではactivityを使わず手法固有の距離・近傍parameterを決定する。")
             constraints.append("CONDUCTORではCanonical Description Result 1.0.0だけを受け付け、Skill内部Artifact Manifestは下流入力にしない。一般利用でResultがない場合はvalue semanticsとMetricを明示する。")

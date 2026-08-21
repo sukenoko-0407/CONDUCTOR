@@ -448,7 +448,51 @@ class Runtime013Tests(unittest.TestCase):
         )
         self.assertEqual("4", command[command.index("--cores-per-compound") + 1])
         self.assertEqual("2", command[command.index("--compound-workers") + 1])
+        self.assertEqual("10", command[command.index("--available-cpu-cores") + 1])
         self.assertEqual(10, RUNTIME._node_cpu_allocation(control, xtb))
+        self.assertEqual(4, RUNTIME._native_thread_limit(control, xtb))
+
+    def test_mcs_is_exclusive_and_bounded_to_eight_single_thread_workers(self) -> None:
+        capabilities = RUNTIME.catalog()
+        control = {
+            "run": {
+                "project": "test", "run_id": "run-013", "input": "input.csv",
+                "smiles_column": "smiles", "parallel_limit": 8, "available_cpu_cores": 64,
+            }
+        }
+        regular = {
+            "node_id": "N000001", "capability_id": "D001", "skill_name": capabilities["D001"]["skill_name"],
+            "assigned_round": "RND0001", "kind": "description", "input_nodes": [], "parameters": {},
+        }
+        mcs = {
+            "node_id": "N000102", "capability_id": "C002", "skill_name": capabilities["C002"]["skill_name"],
+            "assigned_round": "RND0001", "kind": "clustering", "input_nodes": [], "parameters": {},
+        }
+        runnable = {node["node_id"]: node for node in (regular, mcs)}
+        self.assertEqual([mcs["node_id"]], RUNTIME._select_execution_nodes([mcs["node_id"], regular["node_id"]], runnable, control))
+        self.assertEqual(8, RUNTIME._node_cpu_allocation(control, mcs))
+        self.assertEqual(1, RUNTIME._native_thread_limit(control, mcs))
+        control["run"]["available_cpu_cores"] = 4
+        self.assertEqual(4, RUNTIME._node_cpu_allocation(control, mcs))
+
+    def test_mcs_skill_worker_count_obeys_node_budget_and_task_count(self) -> None:
+        runner = ROOT / ".claude" / "skills" / "cs-compute-clustering-structure-mcs" / "scripts" / "run.py"
+        spec = importlib.util.spec_from_file_location("mcs_parallel_dispatch_test", runner)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        with mock.patch.dict(
+            os.environ,
+            {"CONDUCTOR_NODE_CPU_CORES": "64", "CONDUCTOR_AVAILABLE_CPU_CORES": "64"},
+        ):
+            self.assertEqual(8, module._mcs_worker_count(1000))
+            self.assertEqual(3, module._mcs_worker_count(3))
+        with mock.patch.dict(
+            os.environ,
+            {"CONDUCTOR_NODE_CPU_CORES": "4", "CONDUCTOR_AVAILABLE_CPU_CORES": "64"},
+        ):
+            self.assertEqual(4, module._mcs_worker_count(1000))
+        self.assertEqual(0, module._mcs_worker_count(0))
 
     def test_xtb_compound_parallel_dispatch_preserves_rows_and_cpu_metadata(self) -> None:
         runner = ROOT / ".claude" / "skills" / "cs-compute-description-tblite-xtb" / "scripts" / "run.py"
@@ -464,9 +508,13 @@ class Runtime013Tests(unittest.TestCase):
             def result(self) -> object:
                 return self.value
 
+        executor_options: dict[str, object] = {}
+
         class ImmediateExecutor:
-            def __init__(self, max_workers: int) -> None:
+            def __init__(self, max_workers: int, **kwargs: object) -> None:
                 self.max_workers = max_workers
+                self.kwargs = kwargs
+                executor_options.update(kwargs)
 
             def __enter__(self) -> "ImmediateExecutor":
                 return self
@@ -483,10 +531,15 @@ class Runtime013Tests(unittest.TestCase):
         ]
         arguments = argparse.Namespace(
             compound_workers=2, cores_per_compound=4, num_confs=1,
-            random_seed=61453, charge=None, uhf=None,
+            random_seed=61453, charge=None, uhf=None, available_cpu_cores=8,
         )
-        fake_worker = lambda index, _smiles, _settings: (index, {"xtb__test": float(index)}, None, None)
-        with mock.patch.object(module, "_xtb_worker", side_effect=fake_worker), mock.patch.object(
+        fake_worker = lambda index, _smiles, _settings: (
+            index, {"xtb__test": float(index)}, None, None,
+            {"pid": index + 1, "affinity_cpu_ids": None, "affinity_cpu_count": None, "thread_environment": {}},
+        )
+        with mock.patch.object(module, "_linux_allowed_cpu_ids", return_value=None), mock.patch.object(
+            module, "_xtb_worker", side_effect=fake_worker
+        ), mock.patch.object(
             module, "ProcessPoolExecutor", ImmediateExecutor
         ), mock.patch.object(module, "as_completed", side_effect=lambda futures: list(futures)), mock.patch.dict(
             os.environ, {}, clear=False
@@ -494,10 +547,31 @@ class Runtime013Tests(unittest.TestCase):
             calculated, errors, resources = module.compute_xtb_parallel(rows, [object(), object()], arguments)
         self.assertEqual([], errors)
         self.assertEqual([0.0, 1.0], [row["xtb__test"] for row in calculated])
-        self.assertEqual(
-            {"compound_workers": 2, "cores_per_compound": 4, "maximum_cpu_cores": 8},
-            resources,
-        )
+        self.assertEqual(2, resources["compound_workers"])
+        self.assertEqual(4, resources["cores_per_compound"])
+        self.assertEqual(8, resources["maximum_cpu_cores"])
+        self.assertEqual(8, resources["declared_available_cpu_cores"])
+        self.assertFalse(resources["cpu_affinity_enforced"])
+        self.assertEqual("4,1", resources["thread_environment"]["OMP_NUM_THREADS"])
+        self.assertEqual("1", resources["thread_environment"]["OPENBLAS_NUM_THREADS"])
+        self.assertEqual("spawn", executor_options["mp_context"].get_start_method())
+        self.assertIs(module._initialize_xtb_worker, executor_options["initializer"])
+
+    def test_xtb_cpu_plan_uses_disjoint_linux_affinity_groups(self) -> None:
+        runner = ROOT / ".claude" / "skills" / "cs-compute-description-tblite-xtb" / "scripts" / "run.py"
+        spec = importlib.util.spec_from_file_location("xtb_cpu_plan_test", runner)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
+        arguments = argparse.Namespace(compound_workers=2, cores_per_compound=4, available_cpu_cores=10)
+        with mock.patch.object(module, "_linux_allowed_cpu_ids", return_value=list(range(12))):
+            plan = module._xtb_cpu_plan(20, arguments)
+        self.assertEqual([[0, 1, 2, 3], [4, 5, 6, 7]], plan["affinity_groups"])
+        self.assertEqual(list(range(10)), plan["selected_cpu_ids"])
+        self.assertEqual(8, plan["maximum_cpu_cores"])
+        with mock.patch.object(module, "_linux_allowed_cpu_ids", return_value=list(range(8))):
+            with self.assertRaisesRegex(RuntimeError, "cpuset allowance"):
+                module._xtb_cpu_plan(20, arguments)
 
     def test_projection_cluster_overlay_uses_clustering_node_id_not_unsupported_representation_option(self) -> None:
         capabilities = RUNTIME.catalog()
@@ -668,6 +742,27 @@ class Runtime013Tests(unittest.TestCase):
             process = json.loads((scratch / "process.json").read_text(encoding="utf-8"))
             self.assertEqual(RUNTIME.value_hash(logical), process["command_hash"])
             self.assertEqual(sys.executable, process["runtime_python"])
+
+    def test_runtime_separates_node_cpu_budget_from_native_thread_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary) / "ATT0001"
+            log = scratch / "run.log"
+            script = (
+                "import json,os; print(json.dumps({"
+                "'node':os.environ['CONDUCTOR_NODE_CPU_CORES'],"
+                "'available':os.environ['CONDUCTOR_AVAILABLE_CPU_CORES'],"
+                "'native':os.environ['CONDUCTOR_NATIVE_THREAD_LIMIT'],"
+                "'omp':os.environ['OMP_NUM_THREADS']}))"
+            )
+            outcome = RUNTIME._run_one(
+                [sys.executable, "-c", script], log, scratch / "process.json", 30,
+                "contract-hash", cpu_cores=8, available_cpu_cores=8, native_thread_limit=4,
+            )
+            self.assertEqual(0, outcome["returncode"])
+            self.assertEqual(
+                {"node": "8", "available": "8", "native": "4", "omp": "4"},
+                json.loads(log.read_text(encoding="utf-8")),
+            )
 
     def test_only_empty_or_recovery_scratch_can_be_reused(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

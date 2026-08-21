@@ -33,13 +33,14 @@ DEFAULT_LEASE_MINUTES = 360
 DEFAULT_EXECUTION_TIMEOUT_MINUTES = 360
 DEFAULT_AVAILABLE_CPU_CORES = 8
 XTB_CORES_PER_COMPOUND = 4
+MCS_MAX_WORKERS = 8
 EXECUTION_LEASE_GRACE_MINUTES = 10
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
 RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
 DIRECT_STRUCTURE_CLUSTERING = {"C001", "C002", "C003", "C004"}
 DIRECT_STRUCTURE_ANALYSIS = {"A006", "A009", "A013"}
-EXCLUSIVE_CPU_CAPABILITIES = {"D019", "D020"}
+EXCLUSIVE_CPU_CAPABILITIES = {"C002", "D019", "D020"}
 MMP_PAYLOAD_NAMES = {
     "mmp_database.sqlite", "mmpdb_native.sqlite", "mmp_pair_detail.csv", "mmp_pair_detail.parquet",
     "pair_summary.csv", "transform_summary.csv", "core_summary.csv", "transform_core_summary.csv",
@@ -188,9 +189,20 @@ def _select_execution_nodes(
 
 
 def _node_cpu_allocation(control: dict[str, Any], node: dict[str, Any]) -> int:
+    if node["capability_id"] == "C002":
+        return min(MCS_MAX_WORKERS, _available_cpu_cores(control))
     if _requires_exclusive_cpu(node):
         return _available_cpu_cores(control)
     return 1
+
+
+def _native_thread_limit(control: dict[str, Any], node: dict[str, Any]) -> int:
+    """Limit the initial native thread pools without changing the Node CPU budget."""
+    if node["capability_id"] == "C002":
+        return 1
+    if node["capability_id"] == "D019":
+        return min(XTB_CORES_PER_COMPOUND, _available_cpu_cores(control))
+    return _node_cpu_allocation(control, node)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -623,6 +635,7 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
                     "CONDUCTOR_ATTEMPT_TMP": str(scratch / "tmp"),
                     "CONDUCTOR_AVAILABLE_CPU_CORES": str(_available_cpu_cores(control)),
                     "CONDUCTOR_NODE_CPU_CORES": str(_node_cpu_allocation(control, node)),
+                    "CONDUCTOR_NATIVE_THREAD_LIMIT": str(_native_thread_limit(control, node)),
                 },
                 "expected_output_ref": node["output_ref"],
                 "validation": ["execution_event_identity", "artifact_sha256", "stage_schema", "analysis_subject", "scientific_invariants"],
@@ -2005,6 +2018,7 @@ def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
             argv += [
                 "--cores-per-compound", str(cores_per_compound),
                 "--compound-workers", str(compound_workers),
+                "--available-cpu-cores", str(available),
             ]
         elif node["capability_id"] == "D020":
             argv += ["--cpu-threads", str(_available_cpu_cores(control))]
@@ -2442,6 +2456,7 @@ def _run_one(
     contract_command_hash: str,
     cpu_cores: int = 1,
     available_cpu_cores: int | None = None,
+    native_thread_limit: int | None = None,
 ) -> dict[str, Any]:
     started = utc_now()
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2458,12 +2473,14 @@ def _run_one(
         process_env["CONDUCTOR_ATTEMPT_TMP"] = str(attempt_tmp.resolve())
         process_env["CONDUCTOR_NODE_CPU_CORES"] = str(cpu_cores)
         process_env["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores or cpu_cores)
+        thread_limit = native_thread_limit or cpu_cores
+        process_env["CONDUCTOR_NATIVE_THREAD_LIMIT"] = str(thread_limit)
         for name in (
             "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
             "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS",
             "NUMBA_NUM_THREADS", "RAYON_NUM_THREADS",
         ):
-            process_env[name] = str(cpu_cores)
+            process_env[name] = str(thread_limit)
         process = subprocess.Popen(command, cwd=project_root(), env=process_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         write_json(process_path, {"pid": process.pid, "started_at": started, **process_identity})
         output, _unused = process.communicate(timeout=timeout_seconds)
@@ -2721,6 +2738,7 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
                 value_hash(attempt["command_argv"]),
                 _node_cpu_allocation(control, node),
                 _available_cpu_cores(control),
+                _native_thread_limit(control, node),
             ): (node, attempt, scratch)
             for node, attempt, scratch, command in selected
         }
