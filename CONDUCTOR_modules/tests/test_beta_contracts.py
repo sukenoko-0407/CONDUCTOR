@@ -14,8 +14,8 @@ SKILLS=ROOT/".claude"/"skills"
 
 class BetaContracts(unittest.TestCase):
     def test_catalog_and_ids(self)->None:
-        self.assertEqual("0.1.4",(MODULES/"VERSION").read_text(encoding="utf-8").strip())
-        catalog=json.loads((MODULES/"catalog"/"catalog.json").read_text(encoding="utf-8"));self.assertEqual("0.1.4",catalog["conductor_version"])
+        self.assertEqual("0.1.5",(MODULES/"VERSION").read_text(encoding="utf-8").strip())
+        catalog=json.loads((MODULES/"catalog"/"catalog.json").read_text(encoding="utf-8"));self.assertEqual("0.1.5",catalog["conductor_version"])
         by_id={item["capability_id"]:item for item in catalog["capabilities"]}
         self.assertEqual([f"D{i:03d}" for i in range(1,17)]+["D019","D020"],sorted(k for k in by_id if k.startswith("D")))
         self.assertEqual([f"C{i:03d}" for i in range(1,13)],sorted(k for k in by_id if k.startswith("C")))

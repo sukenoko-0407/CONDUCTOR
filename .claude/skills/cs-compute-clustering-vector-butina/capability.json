@@ -3,7 +3,7 @@
   "capability_id": "C005",
   "skill_name": "cs-compute-clustering-vector-butina",
   "display_name": "Vector Butina clustering",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "stage": "clustering",
   "family": "description_vector",
   "description": "Apply Vector Butina clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -43,5 +43,13 @@
     "min_cluster_size": 5,
     "metric": "auto",
     "parameter_mode": "auto"
+  },
+  "conductor_request": {
+    "schema_version": "1.0.0",
+    "adapter": "vector_clustering",
+    "required_input_roles": [
+      "description"
+    ],
+    "unknown_parameters": "reject_by_skill_cli"
   }
 }

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from conductor_request_adapter import request_to_cli
 
 
 def runtime_environment(skill_dir: Path) -> dict[str, str]:
@@ -40,6 +45,39 @@ def runtime_environment(skill_dir: Path) -> dict[str, str]:
     return env
 
 
+def environment_fingerprint(manifest: Path, lockfile: Path) -> str | None:
+    if not lockfile.is_file():
+        return None
+    digest = hashlib.sha256()
+    digest.update(manifest.read_bytes())
+    digest.update(b"\0")
+    digest.update(lockfile.read_bytes())
+    digest.update(b"\0")
+    digest.update(sys.platform.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def recover_stale_mutex(mutex: Path) -> bool:
+    try:
+        owner = json.loads((mutex / "owner.json").read_text(encoding="utf-8"))
+        created = datetime.fromisoformat(str(owner["created_at"]))
+        same_host = owner.get("host") == socket.gethostname()
+        try:
+            os.kill(int(owner.get("pid", -1)), 0)
+            alive = True
+        except OSError:
+            alive = False
+        stale = (same_host and not alive) or datetime.now(timezone.utc) - created > timedelta(hours=2)
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        try:
+            stale = time.time() - mutex.stat().st_mtime > 2 * 60 * 60
+        except OSError:
+            return False
+    if stale:
+        shutil.rmtree(mutex, ignore_errors=True)
+    return stale
+
+
 def main() -> int:
     skill_dir = Path(__file__).resolve().parents[1]
     manifest = (skill_dir / "env" / "pixi.toml").resolve()
@@ -52,17 +90,25 @@ def main() -> int:
     lockfile = manifest.with_name("pixi.lock")
     ready = manifest.parent / ".environment-ready"
     mutex = manifest.parent / ".bootstrap.lock"
-    expected = hashlib.sha256(lockfile.read_bytes()).hexdigest() if lockfile.is_file() else "missing"
-    if not (ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected):
+    environment = manifest.parent / ".pixi" / "envs" / "default"
+    expected = environment_fingerprint(manifest, lockfile)
+    if not (environment.is_dir() and expected and ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected):
         acquired = False
         for _ in range(600):
             try:
                 mutex.mkdir()
+                (mutex / "owner.json").write_text(
+                    json.dumps({"pid": os.getpid(), "host": socket.gethostname(), "created_at": datetime.now(timezone.utc).isoformat()}),
+                    encoding="utf-8",
+                )
                 acquired = True
                 break
             except FileExistsError:
-                if ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected:
+                expected = environment_fingerprint(manifest, lockfile)
+                if environment.is_dir() and expected and ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected:
                     break
+                if recover_stale_mutex(mutex):
+                    continue
                 time.sleep(1)
         if acquired:
             try:
@@ -72,14 +118,26 @@ def main() -> int:
                 result = subprocess.run(command, env=env)
                 if result.returncode:
                     return result.returncode
-                expected = hashlib.sha256(lockfile.read_bytes()).hexdigest()
+                expected = environment_fingerprint(manifest, lockfile)
+                if not expected:
+                    raise RuntimeError(f"pixi did not create a lockfile: {lockfile}")
                 ready.write_text(expected + "\n", encoding="utf-8")
             finally:
-                mutex.rmdir()
-        elif not (ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected):
+                shutil.rmtree(mutex, ignore_errors=True)
+        elif not (environment.is_dir() and expected and ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected):
             print("ERROR: timed out waiting for Skill environment bootstrap", file=sys.stderr)
             return 75
     arguments = sys.argv[1:]
+    capability = json.loads((skill_dir / "capability.json").read_text(encoding="utf-8"))
+    if arguments[:1] == ["--conductor-request"]:
+        if len(arguments) != 2:
+            print("ERROR: --conductor-request accepts exactly one JSON path", file=sys.stderr)
+            return 2
+        try:
+            arguments = request_to_cli(arguments[1], capability)
+        except Exception as exc:
+            print(f"ERROR: invalid CONDUCTOR Execution Request: {exc}", file=sys.stderr)
+            return 2
     runner = skill_dir / "scripts" / "run.py"
     if arguments and arguments[0] == "render":
         runner = skill_dir / "scripts" / "render.py"

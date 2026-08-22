@@ -6,7 +6,7 @@ CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名�
 
 CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはC002 MCS、D016 Mordred 3D、D019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。C002とD016は最大8個、A014 fragmentも最大8個の単一thread workerを使います。
 
-Analysisは1 Round最大200 Node、計画登録は最大50 Nodeずつです。初期Globalは最大100 Nodeで区切ってLocal解析用の容量を残します。未登録候補はDAGへ保存せず、次の人間承認Roundで決定論的に再構成します。基本Description／Clusteringはこの上限の対象外です。
+Analysisは1 Round最大100 Nodeです。探索は`exploration`へ一本化し、成功済みsignatureを除外した候補からGlobalを優先して一度に計画します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの上限の対象外です。
 
 ## 想定利用シーン
 
@@ -14,7 +14,7 @@ Analysisは1 Round最大200 Node、計画登録は最大50 Nodeずつです。�
 
 ## 環境構築
 
-launcherがSkill内Pixi環境を再利用または自動構築し、cacheも`env/`内へ置きます。Runtime Controllerが必要とするJSON Schema、Pandas、Parquet依存関係はこの環境へ集約されています。
+launcherがSkill内Pixi環境を再利用または自動構築し、cacheも`env/`内へ置きます。Runtime Controllerが必要とするJSON SchemaとPandas等の依存関係はこの環境へ集約されています。
 
 ## 利用例
 
@@ -24,7 +24,9 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-r
 
 ## 制約事項
 
-人間の代わりにRoundを開始・受理しません。Runtime JSON/JSONLの直接編集、複数Writer、Action token再利用、InterpretationなしのRound終了は許可しません。新規RunではSMILES列を一意に確定し、Description、構造ベースClustering、構造を直接読むOperatorへ明示的に引き渡します。候補が複数の場合は`init --smiles-column <column>`が必要です。旧Runだけは、同じ列を`resume-round --smiles-column <column>`で補えます。
+人間の代わりにRoundを開始・受理しません。Runtime JSON/JSONLの直接編集、複数Writer、InterpretationなしのRound終了は許可しません。新規RunではSMILES列を一意に確定し、共通Execution Requestを介してDescription、構造ベースClustering、構造を直接読むOperatorへ引き渡します。候補が複数の場合は`init --smiles-column <column>`が必要です。
+
+RequestはSkill起動直前に入力・上流成果物のSHA-256を再照合します。自動retryはtimeout等の一時障害だけを最大3 Attemptとし、argument、column、path、schema等の決定論的失敗は`FAILED_NODE_REPAIR_REQUIRED`として人間へ返します。再開は同じNode IDで行います。
 
 ## 変更履歴
 
@@ -37,3 +39,5 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-r
 | 1.2.0 | Available CPU Cores、CPU上限、xTB/ChemBERTa単独packetを追加 |
 | 1.3.0 | Round Analysis上限200件と50件単位の遅延Node化を追加 |
 | 1.4.0 | A014 Global DB／全Cluster screening／代表Local detailの計画と複数Artifact原子的昇格を追加 |
+| 2.0.0 | 共通Execution Request、lease-only制御、最大100件のGlobal優先explorationへ簡素化 |
+| 2.0.1 | Request内容再照合、Failed Node分類、同一Node repair retry、artifact link正規化を追加 |

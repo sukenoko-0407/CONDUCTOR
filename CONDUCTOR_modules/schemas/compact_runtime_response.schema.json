@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/compact_runtime_response.schema.json",
-  "title": "CONDUCTOR 0.1.4 Main Agent compact Runtime response",
+  "title": "CONDUCTOR 0.1.5 Main Agent compact Runtime response",
   "type": "object",
   "required": ["protocol_version", "control_revision", "run_id", "round_id", "round_state", "required_action", "counts", "closure", "working_set", "resources"],
   "properties": {
-    "protocol_version": {"const": "0.1.4"},
+    "protocol_version": {"const": "0.1.5"},
     "control_revision": {"type": "integer", "minimum": 0},
     "run_id": {"type": "string", "minLength": 1},
     "round_id": {"type": ["string", "null"], "pattern": "^RND[0-9]{4}$"},
@@ -15,7 +15,6 @@
     "closure": {"type": "object"},
     "working_set": {"type": ["string", "null"]},
     "resources": {"type": "object", "required": ["parallel_limit", "available_cpu_cores"], "properties": {"parallel_limit": {"type": "integer", "minimum": 1}, "available_cpu_cores": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
-    "action_token": {"type": "string"},
     "detail_pointer": {"type": "string"}
   }
 }

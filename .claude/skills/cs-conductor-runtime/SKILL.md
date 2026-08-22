@@ -1,52 +1,60 @@
 ---
 name: cs-conductor-runtime
-description: Deterministic CONDUCTOR 0.1.4 Runtime for Node IDs, five-state DAG records, signed Executor packets, crash recovery, bounded working sets, Interpretation gates, and audit. Main Orchestrator uses it only inside an authorized Round.
+description: Deterministic CONDUCTOR 0.1.5 Runtime for compact Control, five-state DAG Nodes, common Execution Requests, signed packets, bounded exploration, Interpretation gates, and audit.
 allowed-tools: Read, Bash
 ---
 
 # CONDUCTOR Runtime
 
-Runtime owns mechanical state management. The Orchestrator must not edit `conductor_control.json`, `runtime/dag_snapshot.json`, or the Event Ledger.
+Runtimeは機械的な状態管理の唯一のWriterである。Orchestrator、Executor、Interpreterは`conductor_control.json`、`runtime/dag_snapshot.json`、Event Ledgerを直接編集しない。
 
 ```bash
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state <command> --run-root /path/to/run ...
 ```
 
-The small `conductor_control.json` is the operational source of truth. Detailed Nodes are in the Runtime-owned DAG snapshot; the append-only Event Ledger and transaction journal keep it synchronized and auditable. Node status is only `pending`, `running`, `succeeded`, `failed`, or `cancelled`.
+小さい`conductor_control.json`を運用上の正本とし、詳細NodeはDAG snapshot、監査履歴はappend-only Ledgerへ保持する。Node statusは`pending`、`running`、`succeeded`、`failed`、`cancelled`の5種類だけである。
 
-`init --available-cpu-cores N`でRunのCPU総予算を記録する。省略時は8。`prepare-round --available-cpu-cores N`を明示したRoundでは、承認時にRunの現行予算を更新する。`parallel_limit`は同時Node数であり、CPU総予算とは別に管理する。C002 MCSとD016 Mordred 3Dは最大8個の単一thread workerを使う単独Execution packetとする。D019も単独packetとし、原則4コア/化合物で`compound_workers × cores_per_compound <= available_cpu_cores`を保証する。D020とA014 `global-build`も単独packetとし、A014のfragment jobは最大8個の単一thread processに制限する。その他の同時Nodeは1 CPU threadずつに制限する。
+## 固定制御ループ
 
-`init`は入力CSVのSMILES列を一意に解決してControlへ記録する。列名が曖昧な場合は`--smiles-column`を必須とし、全Description、C001～C004、ならびに構造を直接読むA006・A009・A013へ記録済み列名を明示的に渡す。旧Runに記録がない場合は保存済み`runtime/input.csv`から同じ規則で解決し、それも不可能なら人間指定の`resume-round --smiles-column`で一度だけ補う。既存値は変更できない。
-
-## Orchestrator loop
-
-Use the command named by `required_action.code`. Mutating calls require `--lease-token` and the latest one-use `--action-token`. The returned Action token replaces the previous token.
+mutationはMain Agentだけがlive lease tokenを付けて実行する。one-use Action tokenは使用しない。各応答の`required_action.code`に対応するcommandは次の通り。
 
 - `PLAN_BASIC` → `plan-basic`
-- `PLAN_INITIAL_GLOBAL` → `plan-initial-global`
-- `PLAN_INITIAL_LOCAL` → `plan-initial-local`
-- `EXECUTE_RUNNABLE_BATCH` → Main runs `prepare-execution-packet`; `cs-conductor-executor` runs `execute-packet`
+- `PLAN_EXPLORATION` → `plan-exploration`
+- `EXECUTE_RUNNABLE_BATCH` → Mainが`prepare-execution-packet`、Executorが`execute-packet`
 - `WAIT_OR_RECONCILE_RUNNING` → `reconcile-running`
 - `RETRY_FAILED_NODE` → `retry-node --node-id <required_action.node_id>`
-- `SCIENTIFIC_DECISION` → inspect `runtime/working_set.json`, then `scientific-decision`
+- `FAILED_NODE_REPAIR_REQUIRED` → 自動再試行せず停止。人間が実装／入力契約を修正した後だけ、同じNodeを`retry-node`
+- `SCIENTIFIC_DECISION` → `runtime/working_set.json`を読み`scientific-decision`
 - `ENTER_FINALIZING` → `enter-finalizing`
 - `PLAN_INTERPRETATION` → `prepare-interpretation`
-- `WRITE_INTERPRETATION` → Interpreter draft, `commit-interpretation`
+- `WRITE_INTERPRETATION` → Interpreter draft後に`commit-interpretation`
 - `RUN_FULL_AUDIT` → `audit --mode full --register`
 - `COMPLETE_FINALIZING` → `complete-finalizing`
 
-`HUMAN_APPROVAL_REQUIRED`, `HUMAN_REVIEW_REQUIRED`, `INTERPRETATION_BLOCKED`, and `AWAIT_HUMAN_ROUND` are stop-and-return conditions. Do not substitute a scientific command. If a live lease still exists at a human stop, consume the current token with `release-lease --reason <reason>` before returning. A scientific Node gets a finite same-Node retry budget; retries never allocate a replacement Node ID.
+Human stop codeでは処理を止める。Runtimeは新Roundを開始せず、Interpretation JSON／Markdown／HTMLとFull Auditが合格するまでRoundをhandoffしない。回復可能な一時障害の自動再試行は同一Nodeで最大3 Attemptとし、修正後の人間承認retryも新しいNode IDを発番しない。
 
-Runtime refuses Round finalization until the formal Interpretation JSON, Markdown, HTML, quality report, and Full Audit all pass. It never starts a new Round. The manually activated Main Orchestrator performs only human-authorized Round control.
+## 科学Skill実行
 
-Mutation responses use the bounded `0.1.4` compact protocol. Full Control, DAG, Ledger, raw logs, and full Audit are returned only by explicit read-only queries or file pointers. Executor packets are signed, action-scoped, short-lived, and single-use through Control revision and Action-token binding; the Executor never receives the Main lease token. Packet command hashes use an environment-neutral Runtime Python token, which this Runtime resolves to its own `sys.executable` only after packet validation.
+RuntimeはCapability metadataから共通`execution_request.json`を一度生成し、全Skillを次の固定形で呼ぶ。
 
-Interpretation input is a balanced, bounded set of Result Cards. Runtime records omitted cards as unreviewed instead of asking the Interpreter to load an unbounded history.
+```text
+<CONDUCTOR_RUNTIME_PYTHON> <skill>/scripts/launch.py --conductor-request <attempt>/execution_request.json
+```
 
-Runtime limits the Analysis workload assigned to one Round to 200 Nodes and materializes deterministic, stratified slices of at most 50 Nodes. Initial Global materialization stops at 100 Nodes so capacity remains for Cluster-local Analysis. Deferred candidates are not DAG Nodes. Repeated `PLAN_INITIAL_GLOBAL` or `PLAN_INITIAL_LOCAL` actions therefore mean that the next bounded slice is ready to be registered, not that planning failed. A longer Wall Time never increases this limit. At the limit, Runtime proceeds through Interpretation and Audit; only a later human-authorized Round may reconstruct the remaining candidates. Basic Description and Clustering Nodes are outside this Analysis limit.
+Requestはidentity、入力Artifact、列、endpoint、scope、parameter、CPU資源、出力先を持つ。Skill内adapterだけが既存科学kernelのCLIへ変換する。RuntimeとExecutorはSkill別CLIを再構築しない。Request、command、packetはhashと署名で固定し、実行直前に入力Artifactと上流`result.json`のSHA-256も再照合する。Executorはpacketを一回だけ実行し、失敗時の即席command修正は行わない。
 
-A014 is additive: one Global database Node, one all-Cluster screening Node, and bounded representative Local-detail Nodes. A014 payload promotion is atomic and verifies the stable SQLite, full CSV, and Parquet row counts. Existing 0.1.3 active Rounds are not retroactively given A014; a Round newly authorized by 0.1.4 may schedule it.
+Runtime管理fileはAttempt scratch直下、Skill出力は未作成の`skill_output/`へ分離する。cacheと一時fileはSkill `env/`またはRun `runtime/scratch/`の中だけに置く。
 
-All execution scratch and caches stay under the Skill `env/` or Run `runtime/scratch/`; scratch is not a scientific artifact. Scientific Skills keep their general-use interfaces, while Runtime validates and promotes only canonical minimal outputs.
+## 資源管理
 
-For read-only navigation use `query`; for an abnormal Node use human-only `cs-conductor-node-review`. Do not repair JSON manually.
+`init --available-cpu-cores N`でCPU総予算を記録し、省略時は8。`parallel_limit`は同時Node数でありCPU総予算とは別である。C002 MCS、D016 Mordred 3D、D019 xTB、D020 ChemBERTa、A014 Global MMPは単独packetにする。各Skillの内部並列もAvailable CPU Coresを超えない。
+
+入力CSVのSMILES列は`init`で一意に解決し、Requestの`columns.smiles`へ常に記録する。Description、structure Clustering、構造を読むOperatorへ同じ値を渡す。
+
+## 探索とInterpretation
+
+Operator探索は`exploration`一種類、最大100 Analysis Node／Roundである。Runtimeは成功済signatureを除外し、履歴上少ないCapability、scope、入力familyを優先しながらseed付きで選ぶ。Failed Nodeは成功履歴として数えず、再選択時も同じNode IDを再利用する。Globalを優先し、概ね`Global, Global, Local`の比率にする。全候補queueはStateへ保存せず、次Roundで再構成する。Description／Clusteringの基本計算はこの上限外である。
+
+Interpretation入力はbounded Result Card集合である。未レビュー結果はcoverage limitationとして記録し、全履歴をInterpreterへ読ませない。A014は正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。
+
+異常Nodeの人間操作は`cs-conductor-node-review`、read-only確認は`query`を使う。JSONを手修正しない。

@@ -35,7 +35,9 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Output contract
 
 - 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
-- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.4 Runtimeだけが確定する。
+- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.5 Runtimeだけが確定する。
+
+構造化JSONには検証用`key_metrics`を保持するが、人間向けMarkdown／HTMLには全展開しない。数値詳細は参照Operator report、元Artifact、またはConciergeで確認する。
 
 `<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 

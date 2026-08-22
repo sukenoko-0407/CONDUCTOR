@@ -22,14 +22,15 @@ python scripts/launch.py global-build --input compounds.csv --id-column compound
 python scripts/launch.py local-detail --mmp-database results/mmp_database.sqlite --cluster-membership Cpd_Cluster_matrix.csv --cluster-id C000123
 ```
 
-CONDUCTORからはRuntimeが`--conductor`、Role、Node情報、入力Artifactを指定します。一般利用では`--conductor`を付けません。
+CONDUCTORからはRuntimeが共通`execution_request.json`を渡し、Skill内adapterがRole、Node情報、入力Artifactを既存CLIへ変換します。一般利用では従来どおりRole subcommandを直接指定し、`--conductor`を付けません。
 Global構築のfragment並列数は最大8で、Available CPU Coresを超えません。全Pair、Summary、Database、Reportの生成内容は並列数によって省略しません。
 
 ## 制約事項
 
 - 分子標準化は行いません。
 - 重複化合物IDはエラーです。invalid SMILESはCoverageへ記録します。
-- Exact Coreが6 heavy atoms未満、または分子に占める割合が0.40未満のPairは集計対象外です。
+- 標準範囲は1～2 cuts、Environment radius 0～2です。3 cutsまたはradius 3～5は明示的な拡張探索だけで使用します。
+- Exact Coreが8 heavy atoms未満、両分子の0.50未満、または可変部が10 heavy atomsを超えるPairは標準集計対象外です。
 - MMPが見つからないこと自体は失敗ではなく、Negative Resultとして記録します。
 
 ## 変更履歴
@@ -37,3 +38,4 @@ Global構築のfragment並列数は最大8で、Available CPU Coresを超えま�
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | 初版。Global DB、全Cluster Screening、Cluster詳細比較に対応 |
+| 2.0.0 | 標準探索範囲を実務的に限定し、正規化SQLiteと全詳細CSVへ保存を簡素化 |

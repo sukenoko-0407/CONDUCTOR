@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
 import json
+import socket
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from conductor_request_adapter import request_to_cli
 
 
 def prepare_runtime_environment(skill_dir: Path) -> dict[str, str]:
@@ -94,8 +100,102 @@ def configure_xtb_process_environment(
     )
 
 
+def ensure_environment(pixi: str, manifest: Path, runtime_env: dict[str, str]) -> None:
+    """Build one shared Skill environment exactly once, even under concurrent launch."""
+    env_dir = manifest.parent
+    lockfile = manifest.with_name("pixi.lock")
+    ready = env_dir / ".environment-ready"
+    mutex = env_dir / ".bootstrap.lock"
+    environment = env_dir / ".pixi" / "envs" / "default"
+
+    def environment_fingerprint() -> str | None:
+        if not lockfile.is_file():
+            return None
+        digest = hashlib.sha256()
+        digest.update(manifest.read_bytes())
+        digest.update(b"\0")
+        digest.update(lockfile.read_bytes())
+        digest.update(b"\0")
+        digest.update(sys.platform.encode("utf-8"))
+        return digest.hexdigest()
+
+    def process_alive(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def recover_stale_mutex() -> bool:
+        owner_path = mutex / "owner.json"
+        try:
+            owner = json.loads(owner_path.read_text(encoding="utf-8"))
+            created = datetime.fromisoformat(str(owner["created_at"]))
+            same_host = owner.get("host") == socket.gethostname()
+            stale = (same_host and not process_alive(int(owner.get("pid", -1)))) or (
+                datetime.now(timezone.utc) - created > timedelta(hours=2)
+            )
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            try:
+                age = time.time() - mutex.stat().st_mtime
+            except OSError:
+                return False
+            stale = age > 2 * 60 * 60
+        if stale:
+            shutil.rmtree(mutex, ignore_errors=True)
+        return stale
+
+    expected = environment_fingerprint()
+    if environment.is_dir() and expected and ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected:
+        return
+    acquired = False
+    for _ in range(600):
+        try:
+            mutex.mkdir()
+            (mutex / "owner.json").write_text(
+                json.dumps({"pid": os.getpid(), "host": socket.gethostname(), "created_at": datetime.now(timezone.utc).isoformat()}),
+                encoding="utf-8",
+            )
+            acquired = True
+            break
+        except FileExistsError:
+            expected = environment_fingerprint()
+            if environment.is_dir() and expected and ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected:
+                return
+            if recover_stale_mutex():
+                continue
+            time.sleep(1)
+    if not acquired:
+        raise TimeoutError(f"Timed out waiting for Skill environment bootstrap: {mutex}")
+    try:
+        install = [pixi, "install", "--manifest-path", str(manifest)]
+        if lockfile.is_file():
+            install.append("--locked")
+        installed = subprocess.run(install, env=runtime_env)
+        if installed.returncode != 0:
+            raise SystemExit(installed.returncode)
+        expected = environment_fingerprint()
+        if not expected:
+            raise RuntimeError(f"pixi did not create a lockfile: {lockfile}")
+        ready.write_text(expected + "\n", encoding="utf-8")
+    finally:
+        shutil.rmtree(mutex, ignore_errors=True)
+
+
 skill_dir = Path(__file__).resolve().parents[1]
 arguments = sys.argv[1:]
+capability = json.loads((skill_dir / "capability.json").read_text(encoding="utf-8"))
+if arguments[:1] == ["--conductor-request"]:
+    if len(arguments) != 2:
+        print("ERROR: --conductor-request accepts exactly one JSON path", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        arguments = request_to_cli(arguments[1], capability)
+    except Exception as exc:
+        print(f"ERROR: invalid CONDUCTOR Execution Request: {exc}", file=sys.stderr)
+        raise SystemExit(2)
 runner = skill_dir / "scripts" / "run.py"
 if arguments and arguments[0] == "render" and (skill_dir / "scripts" / "render.py").is_file():
     runner = skill_dir / "scripts" / "render.py"
@@ -112,9 +212,9 @@ if not pixi:
     )
     raise SystemExit(127)
 runtime_env = prepare_runtime_environment(skill_dir)
-capability = json.loads((skill_dir / "capability.json").read_text(encoding="utf-8"))
 configure_xtb_process_environment(runtime_env, arguments, capability)
 print(f"INFO: Using Pixi executable: {pixi}", file=sys.stderr)
 print(f"INFO: Skill-local cache root: {skill_dir / 'env' / 'cache'}", file=sys.stderr)
-command = [pixi, "run", "--manifest-path", str(manifest), "python", str(runner), *arguments]
+ensure_environment(pixi, manifest, runtime_env)
+command = [pixi, "run", "--manifest-path", str(manifest), "--locked", "python", str(runner), *arguments]
 raise SystemExit(subprocess.call(command, env=runtime_env))

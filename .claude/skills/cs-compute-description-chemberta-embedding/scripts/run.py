@@ -601,7 +601,7 @@ def run() -> int:
         warnings.append(f"{len(errors)} row-level errors were recorded")
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     manifest = {
-        "schema_version": "2.0.0", "conductor_version": "0.1.3", "artifact_stage": "description", "run_id": run_id,
+        "schema_version": "2.0.0", "conductor_version": "0.1.5", "artifact_stage": "description", "run_id": run_id,
         "node_id": args.node_id, "attempt_id": args.attempt_id,
         "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"],
         "representation_id": CAPABILITY["representation_id"], "input": args.input or "inline_smiles", "input_hash": input_hash,

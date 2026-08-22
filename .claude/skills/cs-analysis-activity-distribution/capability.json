@@ -3,7 +3,7 @@
   "capability_id": "A001",
   "skill_name": "cs-analysis-activity-distribution",
   "display_name": "Activity distribution",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "stage": "analysis",
   "family": "property_profile",
   "description": "Use when Claude Code needs to run Activity distribution from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -38,5 +38,13 @@
   "scope_support": [
     "global",
     "within-cluster"
-  ]
+  ],
+  "conductor_request": {
+    "schema_version": "1.0.0",
+    "adapter": "standard_operator",
+    "required_input_roles": [
+      "dataset"
+    ],
+    "unknown_parameters": "reject_by_skill_cli"
+  }
 }

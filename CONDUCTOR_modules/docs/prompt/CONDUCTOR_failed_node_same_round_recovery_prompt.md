@@ -1,6 +1,6 @@
 # Failed Nodeを同一Roundで修復・再実行するプロンプト
 
-対象Version: `0.1.4`
+対象Version: `0.1.5`
 
 科学Nodeの技術的失敗を調査・修正し、Roundを閉じずに同じNode IDの新しいAttemptとして再実行するためのプロンプト例です。`<...>`を実際の値へ置き換えて使用してください。
 
@@ -77,17 +77,19 @@ SMILES列名（旧Runでmetadataがなく自動推定できない場合のみ）
 代替Nodeを作成せず、failed Nodeをcancelledまたはskippedへ変更しないでください。
 新しいRoundを開始しないでください。
 
-Runtimeのrequired_actionがRETRY_FAILED_NODEでないため優先再実行できない場合は、
-他の科学NodeやExecution packetを実行せず、そのrequired_actionと対象Nodeの状態を報告して停止してください。
+Runtimeのrequired_actionがRETRY_FAILED_NODEであれば、一時障害として同じNodeを再試行してください。
+Runtimeのrequired_actionがFAILED_NODE_REPAIR_REQUIREDで、上記の人間承認済み修正が完了していれば、
+同じNodeをrepair retryしてください。どちらでもない場合は、他の科学NodeやExecution packetを実行せず、
+そのrequired_actionと対象Nodeの状態を報告して停止してください。
 State、DAG、Event Ledgerを直接編集して回避しないでください。
 ```
 
 ## 現行Runtimeの注意点
 
-`0.1.4`のRuntimeは、実行可能な`pending` Nodeを、有限再試行が可能な`failed` Nodeより先に選びます。そのため他のNodeがすでにrunnableの場合、プロンプトだけでfailed Nodeを割り込ませて再実行することはできません。上記プロンプトは、この場合に別解析へ進まず安全に停止させるためのものです。
+`0.1.5`のRuntimeは、実行可能な`pending` Nodeを、有限再試行が可能な`failed` Nodeより先に選びます。そのため他のNodeがすでにrunnableの場合、プロンプトだけでfailed Nodeを割り込ませて再実行することはできません。上記プロンプトは、この場合に別解析へ進まず安全に停止させるためのものです。再試行packetも共通`execution_request.json`を使い、Executorが引数を修正することはありません。一時障害は`RETRY_FAILED_NODE`、決定論的な契約不良または自動retry上限到達は`FAILED_NODE_REPAIR_REQUIRED`で区別されます。
 
 - 他のNodeを先に実行してよい場合は、優先停止条件を外して同じRoundを通常再開します。
 - failed Nodeを必ず先に再実行する場合は、Runtimeのaction優先順位または人間承認の保守操作を先に改修します。
-- 再試行上限へ達したNodeは現行の通常`retry-node`では再開できません。Stateを直接編集せず、保守操作の追加または新しい科学Nodeとして扱う設計判断が必要です。
+- 再試行上限へ達したNodeは自動再試行しません。人間が原因修正を承認した場合だけ、`FAILED_NODE_REPAIR_REQUIRED`から同じNode IDへrepair retryします。Stateを直接編集しません。
 
 科学Nodeの正式Statusは`pending / running / succeeded / failed / cancelled`です。`skipped`をNodeの代替Statusとして設定しません。失敗Nodeに依存する下流Nodeは、その依存関係が満たされるまでrunnableになりません。

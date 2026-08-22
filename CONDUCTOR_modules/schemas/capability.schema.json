@@ -28,6 +28,17 @@
     "approval_policy": {"enum": ["standard", "preauthorized_initial"]},
     "default_variant": {"type": "string", "minLength": 1},
     "default_parameters": {"type": "object"},
+    "conductor_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "adapter", "required_input_roles", "unknown_parameters"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "adapter": {"enum": ["description", "structure_clustering", "categorical_clustering", "vector_clustering", "meta_clustering", "standard_operator", "projection_operator", "multidescription_operator", "mmp_operator"]},
+        "required_input_roles": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+        "unknown_parameters": {"const": "reject_by_skill_cli"}
+      }
+    },
     "scope_support": {"type": "array", "items": {"enum": ["global", "within-cluster", "between-clusters", "projection-fit", "cluster-overlay", "global-model", "cluster-survey"]}, "minItems": 1, "uniqueItems": true},
     "value_semantics": {"type": "string"},
     "natural_metric": {"type": ["string", "null"]},

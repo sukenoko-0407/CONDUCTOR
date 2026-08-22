@@ -50,7 +50,7 @@ def validate_draft(context: dict[str, Any], draft: dict[str, Any]) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate an ID-free CONDUCTOR 0.1.3 Interpretation draft.")
+    parser = argparse.ArgumentParser(description="Validate an ID-free CONDUCTOR 0.1.5 Interpretation draft.")
     parser.add_argument("--context", required=True)
     parser.add_argument("--draft", required=True)
     parser.add_argument("--output-dir", required=True)

@@ -2,13 +2,15 @@
 
 ## Counting unit
 
-One stored MMP instance is a canonical compound pair × directed transform × exact constant core. Statistical `pair_count` is the number of unique compound pairs after collapsing multiple Exact Core instances for the same pair; `mmp_instance_count` retains the uncollapsed database row count. Exact Core diversity is reported separately. Environment radii 0–5 describe nested contexts and must not inflate either count.
+One stored MMP instance is a canonical compound pair × directed transform × exact constant core. Statistical `pair_count` is the number of unique compound pairs after collapsing multiple Exact Core instances for the same pair; `mmp_instance_count` retains the uncollapsed database row count. Exact Core diversity is reported separately. Standard environment radii 0–2 describe nested contexts and must not inflate either count. Radii 3–5 are explicit extended-search options.
 
-## Core classes
+## Standard core eligibility
 
-- `primary`: core heavy-atom fraction is at least 0.50 in both molecules.
-- `extended`: fraction is at least 0.40 in both molecules but at least one side is below 0.50.
-- Core heavy atoms must be at least 6 in every class.
+- Constant core heavy atoms are at least 8.
+- Constant core fraction is at least 0.50 in both molecules.
+- Variable part heavy atoms are at most 10.
+
+The standard evidence store has one eligibility policy rather than Primary/Extended classes. A deliberately wider search must be a separately parameterized Node.
 
 ## Direction
 

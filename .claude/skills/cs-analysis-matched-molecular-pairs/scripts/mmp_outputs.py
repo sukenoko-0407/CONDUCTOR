@@ -36,7 +36,23 @@ def _clean(value: Any) -> Any:
 def load_database(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
     uri = f"file:{path.resolve().as_posix()}?mode=ro"
     with closing(sqlite3.connect(uri, uri=True)) as connection:
-        details = pd.read_sql_query("SELECT * FROM mmp_pairs", connection)
+        details = pd.read_sql_query("""
+            SELECT p.mmp_id,
+                   cf.compound_id AS compound_id_from, ct.compound_id AS compound_id_to,
+                   cf.smiles AS smiles_from, ct.smiles AS smiles_to,
+                   cf.endpoint AS endpoint_from, ct.endpoint AS endpoint_to,
+                   p.endpoint_delta, p.favorable_delta,
+                   t.transform_id, t.variable_from, t.variable_to, t.transform_smirks, t.cut_count,
+                   c.core_id, c.exact_core_smiles, c.core_heavy_atoms, c.core_molecular_weight,
+                   p.core_fraction_from, p.core_fraction_to, p.native_rule_id,
+                   p.endpoint_missing, p.quality_flags
+              FROM mmp_pairs p
+              JOIN compounds cf ON cf.compound_key = p.compound_from_key
+              JOIN compounds ct ON ct.compound_key = p.compound_to_key
+              JOIN transforms t ON t.transform_key = p.transform_key
+              JOIN cores c ON c.core_key = p.core_key
+             ORDER BY p.pair_key
+        """, connection)
         rows = connection.execute("SELECT key, value_json FROM metadata").fetchall()
     return details, {key: json.loads(value) for key, value in rows}
 
@@ -102,7 +118,7 @@ def screen_clusters(database: Path, membership: Path, registry: Path | None = No
         right = details["compound_id_to"].isin(members) if len(details) else pd.Series(dtype=bool)
         within = details[left & right] if len(details) else details
         boundary = details[left ^ right] if len(details) else details
-        primary = within[within["core_class"].eq("primary")] if len(within) and "core_class" in within else within
+        primary = within
         effects = (
             primary.assign(_effect=pd.to_numeric(primary["favorable_delta"], errors="coerce"))
             .groupby(["compound_id_from", "compound_id_to"], dropna=False)["_effect"].median().dropna()
@@ -118,9 +134,8 @@ def screen_clusters(database: Path, membership: Path, registry: Path | None = No
             "cluster_size": len(members), "global_fraction": len(members) / global_count,
             "within_mmp_instance_count": len(within),
             "within_pair_count": unique_pair_count(within),
-            "primary_mmp_instance_count": len(primary),
-            "primary_within_pair_count": unique_pair_count(primary),
-            "extended_only_mmp_instance_count": len(within) - len(primary),
+            "eligible_mmp_instance_count": len(primary),
+            "eligible_within_pair_count": unique_pair_count(primary),
             "boundary_pair_count": unique_pair_count(boundary),
             "independent_transform_count": int(primary["transform_id"].nunique()) if len(primary) else 0,
             "independent_core_count": int(primary["core_id"].nunique()) if len(primary) else 0,
@@ -142,8 +157,8 @@ def detail_cluster(database: Path, membership: Path, cluster_id: str) -> tuple[p
         raise ValueError(f"Unknown Cluster ID: {cluster_id}")
     members = set(matrix.loc[matrix[cluster_id], id_column])
     within = details[details["compound_id_from"].isin(members) & details["compound_id_to"].isin(members)].copy()
-    global_primary = details[details["core_class"].eq("primary")].copy() if len(details) else details
-    local_primary = within[within["core_class"].eq("primary")].copy() if len(within) else within
+    global_primary = details.copy()
+    local_primary = within.copy()
     global_summary = robust_summary(global_primary, ["transform_id", "transform_smirks"]).add_prefix("global_") if len(global_primary) else pd.DataFrame()
     local_summary = robust_summary(local_primary, ["transform_id", "transform_smirks"]).add_prefix("local_") if len(local_primary) else pd.DataFrame()
     if len(global_summary) and len(local_summary):
@@ -357,8 +372,8 @@ def render_report(
     limitations_html = "".join(f"<li>{html.escape(item)}</li>" for item in limitations) or "<li>追加の制約事項なし</li>"
     core_policy_text = (
         f"heavy atoms ≥ {core_policy.get('min_heavy_atoms', '—')}; "
-        f"Extended ≥ {core_policy.get('extended_fraction', '—')}; "
-        f"Primary ≥ {core_policy.get('primary_fraction', '—')}"
+        f"both-molecule fraction ≥ {core_policy.get('min_fraction_both_compounds', '—')}; "
+        f"variable heavy atoms ≤ {core_policy.get('max_variable_heavy_atoms', '—')}"
     )
     return f"""<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>MMP解析レポート</title>
 <style>

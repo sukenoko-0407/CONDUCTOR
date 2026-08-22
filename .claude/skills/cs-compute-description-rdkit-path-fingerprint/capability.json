@@ -3,7 +3,7 @@
   "capability_id": "D007",
   "skill_name": "cs-compute-description-rdkit-path-fingerprint",
   "display_name": "RDKit path fingerprint",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "stage": "description",
   "family": "2d_fingerprint",
   "description": "Use when Claude Code needs to run RDKit path fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -38,5 +38,13 @@
   ],
   "default_parameters": {
     "n_bits": 2048
+  },
+  "conductor_request": {
+    "schema_version": "1.0.0",
+    "adapter": "description",
+    "required_input_roles": [
+      "dataset"
+    ],
+    "unknown_parameters": "reject_by_skill_cli"
   }
 }

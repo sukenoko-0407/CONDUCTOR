@@ -34,7 +34,7 @@ class Runtime012Tests(unittest.TestCase):
         self.command("init", "--input", str(source), "--endpoint", "pIC50", "--higher-is-better", "--project", "test", "--parallel-limit", "2", "--run-id", "run-1", "--output-dir", str(run_root))
         return run_root
 
-    def test_round_requires_human_authorization_and_action_token_is_one_use(self) -> None:
+    def test_round_requires_human_authorization_and_uses_one_live_lease(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_root = self.initialized(Path(temporary))
             control = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
@@ -45,11 +45,12 @@ class Runtime012Tests(unittest.TestCase):
             control_key = (run_root / "runtime" / "control_authority.key").read_text(encoding="utf-8").strip()
             self.command("authorize-round", "--run-root", str(run_root), "--control-key", control_key, "--request-file", prepared["request_file"], "--authorization-token", prepared["authorization_token"])
             resumed = json.loads(self.command("resume-round", "--run-root", str(run_root), "--control-key", control_key, "--owner-id", "test-session").stdout)
-            lease, action = resumed["lease_token"], resumed["action_token"]
-            planned = json.loads(self.command("plan-basic", "--run-root", str(run_root), "--lease-token", lease, "--action-token", action).stdout)
-            self.assertNotEqual(action, planned["action_token"])
-            reused = self.command("heartbeat", "--run-root", str(run_root), "--lease-token", lease, "--action-token", action, ok=False)
-            self.assertIn("Action token", reused.stderr)
+            lease = resumed["lease_token"]
+            self.assertNotIn("action_token", resumed)
+            planned = json.loads(self.command("plan-basic", "--run-root", str(run_root), "--lease-token", lease).stdout)
+            self.assertNotIn("action_token", planned)
+            heartbeat = self.command("heartbeat", "--run-root", str(run_root), "--lease-token", lease)
+            self.assertEqual(0, heartbeat.returncode)
             snapshot = json.loads((run_root / "runtime" / "dag_snapshot.json").read_text(encoding="utf-8"))
             self.assertEqual(snapshot["nodes"][0]["node_id"], "N000001")
             self.assertTrue({node["status"] for node in snapshot["nodes"]} <= RUNTIME.NODE_STATES)
@@ -120,7 +121,7 @@ class Runtime012Tests(unittest.TestCase):
         self.assertEqual({card["analysis_subject"]["scope_mode"] for card in selected_cards}, {"global", "single_cluster"})
 
     def test_reconcile_running_is_a_public_runtime_command(self) -> None:
-        parsed = RUNTIME.build_parser().parse_args(["reconcile-running", "--run-root", "run", "--lease-token", "lease", "--action-token", "action"])
+        parsed = RUNTIME.build_parser().parse_args(["reconcile-running", "--run-root", "run", "--lease-token", "lease"])
         self.assertIs(parsed.func, RUNTIME.cmd_reconcile_running)
 
     def test_succeeded_node_reuse_is_explicit_in_new_round(self) -> None:

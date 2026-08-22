@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,6 @@ from jsonschema import Draft202012Validator
 
 from mmp_engine import (
     build_native_database,
-    copy_native_database,
     extract_pairs,
     load_input,
     sha256_file,
@@ -110,13 +110,14 @@ def parse_args() -> argparse.Namespace:
     global_parser.add_argument("--max-compounds", type=int, default=2000)
     global_parser.add_argument("--available-cpu-cores", type=int, default=8)
     global_parser.add_argument("--fragment-jobs", type=int)
-    global_parser.add_argument("--num-cuts", type=int, choices=[1, 2, 3], default=3)
+    global_parser.add_argument("--num-cuts", type=int, choices=[1, 2, 3], default=2)
+    global_parser.add_argument("--extended-search", action="store_true", help="Explicitly allow 3 cuts or radius 3-5.")
     global_parser.add_argument("--cut-smarts", default="default")
-    global_parser.add_argument("--min-core-heavy-atoms", type=int, default=6)
-    global_parser.add_argument("--extended-core-fraction", "--extended-min-core-fraction", dest="extended_core_fraction", type=float, default=.40)
-    global_parser.add_argument("--primary-core-fraction", "--primary-min-core-fraction", dest="primary_core_fraction", type=float, default=.50)
+    global_parser.add_argument("--min-core-heavy-atoms", type=int, default=8)
+    global_parser.add_argument("--min-core-fraction", type=float, default=.50)
+    global_parser.add_argument("--max-variable-heavy-atoms", type=int, default=10)
     global_parser.add_argument("--min-radius", type=int, default=0)
-    global_parser.add_argument("--max-radius", type=int, default=5)
+    global_parser.add_argument("--max-radius", type=int, default=2)
 
     screen = subparsers.add_parser("local-screen", help="Screen all Clusters using an existing Global database")
     add_common(screen)
@@ -156,7 +157,7 @@ def prepare_output(path: Path, overwrite: bool) -> None:
         raise FileExistsError(f"Output directory is not empty; use --overwrite: {path}")
     if overwrite:
         allowlist = {
-            "mmp_database.sqlite", "mmpdb_native.sqlite", "mmp_pair_detail.csv", "mmp_pair_detail.parquet",
+            "mmp_database.sqlite", "mmp_pair_detail.csv", "mmp_storage_profile.json",
             "pair_summary.csv", "transform_summary.csv", "core_summary.csv", "transform_core_summary.csv",
             "context_summary.csv", "coverage_summary.csv", "compound_coverage.csv", "mmp_reference_cards.jsonl",
             "mmp_reference_cards.csv", "mmp_local_screening.csv", "mmp_local_detail_pairs.csv",
@@ -180,7 +181,6 @@ def export_frame(frame: pd.DataFrame, path: Path, parquet: Path | None = None) -
 def payload_mapping(names: list[str]) -> dict[str, str]:
     preferred = {
         "mmp_pair_detail.csv": "mmp_pair_detail",
-        "mmp_pair_detail.parquet": "mmp_pair_detail_parquet",
         "mmp_reference_cards.jsonl": "mmp_reference_cards",
         "mmp_reference_cards.csv": "mmp_reference_cards_csv",
     }
@@ -196,28 +196,35 @@ def payload_mapping(names: list[str]) -> dict[str, str]:
 def global_build(args: argparse.Namespace, outdir: Path) -> dict[str, Any]:
     input_path = Path(args.input).resolve()
     valid, coverage, warnings = load_input(input_path, args.id_column, args.smiles_column, args.endpoint_column, args.max_compounds)
-    if not (0 < args.extended_core_fraction <= args.primary_core_fraction <= 1):
-        raise ValueError("Core fractions must satisfy 0 < extended <= primary <= 1")
+    if not (0 < args.min_core_fraction <= 1):
+        raise ValueError("--min-core-fraction must satisfy 0 < value <= 1")
+    if args.min_core_heavy_atoms < 1 or args.max_variable_heavy_atoms < 1:
+        raise ValueError("Core and variable heavy-atom limits must be positive")
+    if not (0 <= args.min_radius <= args.max_radius <= 5):
+        raise ValueError("Environment radius must satisfy 0 <= min <= max <= 5")
+    if not args.extended_search and (args.num_cuts > 2 or args.max_radius > 2):
+        raise ValueError("3 cuts or radius 3-5 require explicit --extended-search")
     jobs = fragment_job_count(args.available_cpu_cores, args.fragment_jobs)
     _, native_work = build_native_database(
         valid, outdir / "_work", jobs=jobs, num_cuts=args.num_cuts,
         min_core_heavy_atoms=args.min_core_heavy_atoms,
-        extended_core_fraction=args.extended_core_fraction,
+        extended_core_fraction=args.min_core_fraction,
         min_radius=args.min_radius, max_radius=args.max_radius, cut_smarts=args.cut_smarts,
+        max_variable_heavy_atoms=args.max_variable_heavy_atoms,
     )
     endpoint_map = dict(zip(valid["compound_id"], valid["endpoint"]))
-    details, contexts = extract_pairs(
+    details, contexts, filter_stats = extract_pairs(
         native_work, endpoint_map, higher_is_better=args.higher_is_better,
         min_core_heavy_atoms=args.min_core_heavy_atoms,
-        extended_core_fraction=args.extended_core_fraction,
-        primary_core_fraction=args.primary_core_fraction,
+        min_core_fraction=args.min_core_fraction,
     )
     parameter_record = {
         "num_cuts": args.num_cuts, "cut_smarts": args.cut_smarts,
         "min_core_heavy_atoms": args.min_core_heavy_atoms,
-        "extended_core_fraction": args.extended_core_fraction,
-        "primary_core_fraction": args.primary_core_fraction,
+        "min_core_fraction": args.min_core_fraction,
+        "max_variable_heavy_atoms": args.max_variable_heavy_atoms,
         "min_radius": args.min_radius, "max_radius": args.max_radius,
+        "extended_search": args.extended_search,
     }
     if len(details):
         details["_compound_pair_key"] = details["compound_id_from"].astype(str) + "\x1f" + details["compound_id_to"].astype(str)
@@ -239,34 +246,28 @@ def global_build(args: argparse.Namespace, outdir: Path) -> dict[str, Any]:
     details["input_sha256"] = sha256_file(input_path)
     details["parameter_hash"] = value_hash(parameter_record)
     details["engine_version"] = "mmpdb-3.1.4"
-    primary_details = details[details["core_class"].eq("primary")].copy() if len(details) else details
-    primary_contexts = contexts[contexts["mmp_id"].isin(set(primary_details["mmp_id"]))].copy() if len(contexts) else contexts
-    all_summaries = summary_tables(details, contexts, coverage)
-    summaries = summary_tables(primary_details, primary_contexts, coverage)
-    summaries["pair_summary"] = all_summaries["pair_summary"]
-    summaries["coverage_summary"] = all_summaries["coverage_summary"]
+    summaries = summary_tables(details, contexts, coverage)
     metadata = {
         "schema_version": "1.0.0", "engine": "mmpdb", "engine_version": "3.1.4",
         "input_path": str(input_path), "input_sha256": sha256_file(input_path),
         "id_column": args.id_column, "smiles_column": args.smiles_column,
         "endpoint_column": args.endpoint_column, "higher_is_better": args.higher_is_better,
-        "core_policy": {"min_heavy_atoms": args.min_core_heavy_atoms, "extended_fraction": args.extended_core_fraction, "primary_fraction": args.primary_core_fraction},
-        "fragment_policy": {"num_cuts": args.num_cuts, "cut_smarts": args.cut_smarts, "salt_remover": "<none>", "smallest_transformation_only": False, "symmetric": False},
+        "core_policy": {"min_heavy_atoms": args.min_core_heavy_atoms, "min_fraction_both_compounds": args.min_core_fraction, "max_variable_heavy_atoms": args.max_variable_heavy_atoms},
+        "fragment_policy": {"num_cuts": args.num_cuts, "cut_smarts": args.cut_smarts, "salt_remover": "<none>", "smallest_transformation_only": False, "symmetric": False, "extended_search": args.extended_search},
         "parameter_hash": value_hash(parameter_record),
         "environment_radius": [args.min_radius, args.max_radius],
         "input_count": int(len(coverage)), "endpoint_available_count": int(coverage["endpoint_available"].sum()),
-        "primary_mmp_count": int(len(primary_details)), "extended_mmp_count": int(len(details) - len(primary_details)),
+        "mmp_count": int(len(details)), "filter_stats": filter_stats,
         "created_at": utc_now(),
     }
-    export_frame(details, outdir / "mmp_pair_detail.csv", outdir / "mmp_pair_detail.parquet")
+    export_frame(details, outdir / "mmp_pair_detail.csv")
     coverage.to_csv(outdir / "compound_coverage.csv", index=False)
     for name, frame in summaries.items():
         frame.to_csv(outdir / f"{name}.csv", index=False)
     stable_database = outdir / "mmp_database.sqlite"
-    write_stable_database(stable_database, details, contexts, coverage, summaries, metadata)
-    copy_native_database(native_work, outdir / "mmpdb_native.sqlite")
+    write_stable_database(stable_database, details, contexts, coverage, metadata)
     cards = make_reference_cards(
-        primary_details, summaries["transform_summary"], summaries["transform_core_summary"], scope="global",
+        details, summaries["transform_summary"], summaries["transform_core_summary"], scope="global",
         core_summary=summaries["core_summary"], context_summary=summaries["context_summary"],
     )
     for card in cards:
@@ -278,11 +279,23 @@ def global_build(args: argparse.Namespace, outdir: Path) -> dict[str, Any]:
         "exact cores": int(details["core_id"].nunique()) if len(details) else 0,
     }
     artifacts = [
-        "mmp_database.sqlite", "mmpdb_native.sqlite", "mmp_pair_detail.csv", "mmp_pair_detail.parquet",
+        "mmp_database.sqlite", "mmp_pair_detail.csv",
         "pair_summary.csv", "transform_summary.csv", "core_summary.csv", "transform_core_summary.csv",
         "context_summary.csv", "coverage_summary.csv", "compound_coverage.csv",
         "mmp_reference_cards.jsonl", "mmp_reference_cards.csv",
     ]
+    storage_profile = {
+        "schema_version": "1.0.0",
+        "database_bytes": stable_database.stat().st_size,
+        "detail_csv_bytes": (outdir / "mmp_pair_detail.csv").stat().st_size,
+        "native_work_database_bytes": native_work.stat().st_size,
+        "native_work_database_retained": False,
+        "table_rows": {"compounds": int(len(coverage)), "mmp_pairs": int(len(details)), "mmp_contexts": int(len(contexts)), "transforms": int(details["transform_id"].nunique()) if len(details) else 0, "cores": int(details["core_id"].nunique()) if len(details) else 0},
+        "filter_stats": filter_stats,
+        "created_at": utc_now(),
+    }
+    write_json(outdir / "mmp_storage_profile.json", storage_profile)
+    artifacts.append("mmp_storage_profile.json")
     report = render_report(
         role=args.role, scope_label="Global", endpoint=args.endpoint_column,
         higher_is_better=args.higher_is_better, core_policy=metadata["core_policy"], counts=counts, cards=cards,
@@ -290,7 +303,7 @@ def global_build(args: argparse.Namespace, outdir: Path) -> dict[str, Any]:
         artifact_names=artifacts, limitations=warnings + ["分子標準化・塩除去は実施していません。", "Environment radiusの行は独立したPair supportではありません。"],
     )
     (outdir / "operator_report.html").write_text(report, encoding="utf-8")
-    negative_result = not bool(primary_details["favorable_delta"].notna().any()) if len(primary_details) else True
+    negative_result = not bool(details["favorable_delta"].notna().any()) if len(details) else True
     return {
         "input": str(input_path), "input_hash": sha256_file(input_path), "endpoint": args.endpoint_column,
         "higher_is_better": args.higher_is_better, "scope": "global", "cluster_id": None,
@@ -347,11 +360,11 @@ def local_detail(args: argparse.Namespace, outdir: Path) -> dict[str, Any]:
     details, comparison, metadata = detail_cluster(database, membership, args.cluster_id)
     details.to_csv(outdir / "mmp_local_detail_pairs.csv", index=False)
     comparison.to_csv(outdir / "mmp_global_vs_local.csv", index=False)
-    primary_details = details[details["core_class"].eq("primary")].copy() if len(details) else details
-    local_summaries = summary_tables(primary_details, pd.DataFrame(), pd.DataFrame({"valid_smiles": [], "endpoint_available": []})) if len(primary_details) else {}
+    eligible_details = details.copy()
+    local_summaries = summary_tables(eligible_details, pd.DataFrame(), pd.DataFrame({"valid_smiles": [], "endpoint_available": []})) if len(eligible_details) else {}
     transforms = local_summaries.get("transform_summary", pd.DataFrame())
     transform_core = local_summaries.get("transform_core_summary", pd.DataFrame())
-    cards = make_reference_cards(primary_details, transforms, transform_core, scope=f"cluster:{args.cluster_id}")
+    cards = make_reference_cards(eligible_details, transforms, transform_core, scope=f"cluster:{args.cluster_id}")
     cards = (comparison_cards(comparison, details, f"cluster:{args.cluster_id}") + cards)[:100]
     for card in cards:
         validate_json(card, "mmp_reference_card.schema.json")
@@ -364,7 +377,7 @@ def local_detail(args: argparse.Namespace, outdir: Path) -> dict[str, Any]:
         tables=[("Local MMP pairs", details), ("Global vs Local", comparison)], artifact_names=artifacts,
         limitations=["LocalはCluster membershipによるGlobal DBのread-only絞り込みです。", "該当Pairがない場合も有効なNegative Resultです。"],
     ), encoding="utf-8")
-    negative_result = not bool(primary_details["favorable_delta"].notna().any()) if len(primary_details) else True
+    negative_result = not bool(eligible_details["favorable_delta"].notna().any()) if len(eligible_details) else True
     query = {"schema_version": "1.0.0", "role": args.role, "query_spec_hash": value_hash([database_hash(database), sha256_file(membership), args.cluster_id]), "database_sha256": database_hash(database), "negative_result": negative_result, "rows": len(details), "created_at": utc_now()}
     validate_json(query, "mmp_query_result.schema.json")
     write_json(outdir / "mmp_query_result.json", query)
@@ -405,7 +418,7 @@ def conductor_contract(args: argparse.Namespace, outdir: Path, result: dict[str,
     write_json(outdir / "operator_summary.json", operator_summary)
     all_artifacts = list(dict.fromkeys(result["artifacts"] + ["operator_report.html", "operator_summary.json", "mmp_result.json"]))
     manifest = {
-        "schema_version": "2.0.0", "conductor_version": "0.1.4", "artifact_stage": "analysis",
+        "schema_version": "2.0.0", "conductor_version": "0.1.5", "artifact_stage": "analysis",
         "run_id": args.run_id, "node_id": args.node_id, "attempt_id": args.attempt_id,
         "capability_id": "A014", "operator_id": "A014", "skill_name": CAPABILITY["skill_name"],
         "skill_version": CAPABILITY["version"], "input": result["input"], "input_hash": result["input_hash"],
@@ -457,6 +470,10 @@ def run() -> int:
     if args.conductor:
         result["artifacts"] = list(dict.fromkeys(result["artifacts"] + ["mmp_result.json"]))
         conductor_contract(args, outdir, result, started_at)
+    if args.role == "global-build":
+        # Keep expensive native intermediates until every canonical artifact,
+        # report, and CONDUCTOR contract has been written successfully.
+        shutil.rmtree(outdir / "_work", ignore_errors=True)
     print(outdir / result["primary"])
     return 0
 

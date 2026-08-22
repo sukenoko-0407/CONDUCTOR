@@ -1,85 +1,76 @@
 ---
 name: cs-conductor-orchestrator
-description: Manually activate the Claude Code Main Agent as the CONDUCTOR 0.1.4 Orchestrator for one human-authorized Round. Use only when the human explicitly requests CONDUCTOR control.
+description: Manually activate the Claude Code Main Agent as the CONDUCTOR 0.1.5 Orchestrator for exactly one human-authorized Round. Use only when the human explicitly requests CONDUCTOR control.
 disable-model-invocation: true
 allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 ---
 
 # CONDUCTOR Main Orchestrator
 
-このSkillはMain conversation内でだけ有効化する。Subagentとしてforkしない。既存projectの`CLAUDE.md`を変更せず、人間が明示したCONDUCTOR操作だけを処理する。
+このSkillはMain Agent内でだけ有効化する。Subagentとして起動せず、既存Projectの`CLAUDE.md`も変更しない。人間が明示した一つのRoundだけを制御し、新しいRoundを自動開始しない。
 
-## 最初の判定
+## 開始時の固定手順
 
-1. 新規Runで`conductor_control.json`がまだ無い場合は、人間が指定した入力CSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、出力先を使ってRuntime `init`を一回だけ実行する。Available CPU Coresが未指定なら`--available-cpu-cores 8`とする。SMILES列を一意に推定できない場合だけ人間指定の`--smiles-column`を渡す。既存Runでは指定された`run_root/conductor_control.json`だけを最初に読む。
-2. 人間依頼を`inspect`、`start new Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`のいずれかへ分類する。
-3. 新Roundは人間が明示した場合だけ`prepare-round`と`authorize-round`を別操作として行う。曖昧ならStateを変更しない。RoundごとにCPU割当を変更する場合だけ`prepare-round --available-cpu-cores N`を指定する。`parallel_limit`は同時Node数、Available CPU CoresはCPU総予算であり、同じ値とは限らない。
-4. `ACTIVE`／`FINALIZING`は同じRoundを`resume-round`する。期限切れleaseでも新Roundを作らない。live leaseがあれば二重起動しない。旧RunにSMILES列metadataがなく自動推定もできない場合だけ、人間が示した`--smiles-column`をresume時に記録する。既存値は変更しない。
-5. `AWAITING_HUMAN_REVIEW`では、人間が明示した`continue-round`、`revise-report`、`accept-round`以外を行わない。
+1. 新規Runなら、人間指定のCSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、出力先でRuntime `init`を一回だけ実行する。CPU未指定時は8。SMILES列が一意でない場合だけ`--smiles-column`を要求する。
+2. 既存Runでは、最初に`conductor_control.json`だけを読む。全DAG、Ledger、過去Reportを先読みしない。
+3. 人間依頼を`inspect`、`start new Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
+4. `ACTIVE`または`FINALIZING`は同じRoundを`resume-round`する。live leaseがあれば二重起動しない。`AWAITING_HUMAN_REVIEW`では人間の`continue-round`、`revise-report`、`accept-round`以外を行わない。
 
-Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。この薄いlauncherは全Control commandを`cs-conductor-runtime`のPixi環境へ委譲するため、MainがRuntime Controllerを別のPythonから直接起動しない。Runtime JSON／JSONLを直接編集しない。
-
-project rootをworking directoryとし、次の固定形だけを使う。`<LEASE>`と`<ACTION>`は直前のcompact responseが返した値へ毎回置き換える。前のAction tokenを再利用しない。
+Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。JSON／JSONLを直接編集せず、Runtime Controllerを別Pythonで直接起動しない。
 
 ```bash
-python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --run-root <RUN_ROOT> --lease-token <LEASE> --action-token <ACTION> <COMMAND固有引数>
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --run-root <RUN_ROOT> --lease-token <LEASE> <COMMAND固有引数>
 ```
 
-例外は`init`、`prepare-round`、`authorize-round`、`resume-round`、read-only queryだけである。`authorize-round`と`resume-round`のcontrol authorityはlauncherがRun Rootから注入するため、Mainがkey fileを読んだり引数へ展開したりしない。
+`init`、`prepare-round`、`authorize-round`、`resume-round`、read-only queryは例外である。Round authorization tokenはRound開始承認専用であり、通常ループでは使わない。
 
 ## 固定ループ
 
-Runtimeのcompact responseにある`protocol_version`が`0.1.4`であることを確認し、単一の`required_action.code`へ従う。
+Runtime compact responseの`protocol_version=0.1.5`と、一つの`required_action.code`だけを信頼する。
 
 | required action | Main Agentの操作 |
 |---|---|
-| `PLAN_BASIC` | Runtime `plan-basic` |
-| `PLAN_INITIAL_GLOBAL` | Runtime `plan-initial-global` |
-| `PLAN_INITIAL_LOCAL` | Runtime `plan-initial-local` |
-| `EXECUTE_RUNNABLE_BATCH` | Runtime `prepare-execution-packet`後、`cs-conductor-executor`を一つだけ起動 |
-| `WAIT_OR_RECONCILE_RUNNING` | Runtime `reconcile-running`。別Nodeや別Executorを作らない |
-| `RETRY_FAILED_NODE` | failure codeだけを確認し、Runtime `retry-node`。続くpacketは当該Nodeだけに限定してExecutorへ渡し、同一Node IDを維持 |
-| `SCIENTIFIC_DECISION` | bounded Working Setから候補を選びRuntime `scientific-decision` |
-| `ENTER_FINALIZING` | Runtime `enter-finalizing` |
-| `PLAN_INTERPRETATION` | Runtime `prepare-interpretation` |
-| `WRITE_INTERPRETATION` | Mainから`cs-conductor-interpreter`を一つ起動し、Runtime `commit-interpretation` |
-| `RUN_FULL_AUDIT` | Runtime `audit --mode full --register` |
-| `COMPLETE_FINALIZING` | Runtime `complete-finalizing` |
+| `PLAN_BASIC` | `plan-basic` |
+| `PLAN_EXPLORATION` | `plan-exploration` |
+| `EXECUTE_RUNNABLE_BATCH` | `prepare-execution-packet`後、Executorを一つだけ起動 |
+| `WAIT_OR_RECONCILE_RUNNING` | `reconcile-running`。別Executorを起動しない |
+| `RETRY_FAILED_NODE` | failure pointerを必要最小限確認し、同じNodeを`retry-node` |
+| `FAILED_NODE_REPAIR_REQUIRED` | 自動retryを止め、人間へfailure pointerと修正対象を返す。修正承認後だけ同じNodeを`retry-node` |
+| `SCIENTIFIC_DECISION` | bounded Working Setから候補を選び`scientific-decision` |
+| `ENTER_FINALIZING` | `enter-finalizing` |
+| `PLAN_INTERPRETATION` | `prepare-interpretation` |
+| `WRITE_INTERPRETATION` | Interpreterを一つ起動し、`commit-interpretation` |
+| `RUN_FULL_AUDIT` | `audit --mode full --register` |
+| `COMPLETE_FINALIZING` | `complete-finalizing` |
 
-`HUMAN_APPROVAL_REQUIRED`、`HUMAN_REVIEW_REQUIRED`、`INTERPRETATION_BLOCKED`、`AWAIT_HUMAN_ROUND`では停止し、人間へ返す。
-
-`prepare-execution-packet`には`--run-root`、最新の二token、必要なら`--node-ids`だけを渡す。`prepare-interpretation`が返した`node_id`、`context_path`、`draft_path`をそのままInterpreterへ渡し、`commit-interpretation`には同じ`node_id`と`draft_path`を渡す。`audit`は必ず`--mode full --register`とする。これらのpathやIDをMainが再生成しない。
-
-Main sessionを意図的に終了する必要があり、まだlive leaseと現在のAction tokenがある場合は`release-lease`してから返す。Tool応答喪失により最新Action tokenが不明な場合、同じmutationを推測で再送しない。Control revisionを確認し、previous ownerと開始revisionを指定した権限付き`verify-return --confirm-returned`でleaseを回収してから、同じRoundを`resume-round`する。
+`FAILED_NODE_REPAIR_REQUIRED`、`HUMAN_APPROVAL_REQUIRED`、`HUMAN_REVIEW_REQUIRED`、`INTERPRETATION_BLOCKED`、`AWAIT_HUMAN_ROUND`では停止して人間へ返す。Runtimeが許可していない処理へ読み替えない。
 
 ## Executor契約
 
-- Mainは専門Skillの`launch.py`／`run.py`を直接実行しない。
-- Mainは`prepare-execution-packet`が返した`packet_path`と`executor_token`だけを`cs-conductor-executor`へ渡す。lease tokenとAction tokenは渡さない。
-- 同じRunに対するExecutorは一時点で一つだけとする。科学Nodeのprocess並列性はRuntimeの`parallel_limit`へ委ねる。
-- D019（GFN2-xTB）、D020（ChemBERTa）、A014 `global-build`はRuntimeが単独Execution packetへ分離する。Mainはこの分離や、科学Skillへ割り当てられたCPU commandを変更しない。
-- packet内の論理commandをMainまたはExecutorが再構築・直接実行しない。Runtimeだけが検証後に自身のPythonへ解決する。
-- Executorがpacketをstale、expired、invalid、consumedとして拒否された場合、同じpacketや同じExecutorを再起動しない。最新Controlをread-only確認し、単一の`required_action`へ戻る。
-- Executorの文章ではなく、Runtimeのcompact resultとControl revisionを確認する。
-- Tool call失敗のraw logを通常は読まない。科学判断に必要な場合だけfailure pointerまたはResult Cardをbounded queryする。
+- Mainは専門Skillを直接実行しない。
+- `prepare-execution-packet`が返す`run_root`と`packet_path`だけを`cs-conductor-executor`へ渡す。lease tokenは渡さない。
+- Executorは一つの署名済packetを一回だけ実行して終了する。科学Nodeの並列数とCPU配分はRuntimeが決める。
+- 各科学Skillには共通`execution_request.json`が渡る。MainとExecutorは個別Skillの長いCLIを組み立てない。
+- 失敗時もcommandを即席修正しない。Runtimeは回復可能な一時障害だけを同じRequest契約で有限再試行し、引数・列・schema・実装欠陥は人間修正待ちにする。
+- stale、expired、invalid、consumed相当の拒否時はpacketを再送せず、Controlを再確認する。
 
 ## Interpreter契約
 
-- InterpreterはExecutorの子ではなく、Mainが直接起動する兄弟Subagentである。
-- `context_path`、`draft_path`、現在のhuman focusだけを渡す。
-- Interpreterは固定された既存Evidenceを読み取り、個別結果と横断関係を解釈する。新しい科学計算、Node作成、State更新は行わない。
-- draft拒否時は同じInterpretation Nodeを有限回修正する。別Roundや別Interpretation Nodeを勝手に作らない。
+- InterpreterはMainが直接起動するExecutorの兄弟Subagentである。
+- Runtimeが返す`node_id`、`context_path`、`draft_path`、人間focusだけを渡す。
+- Interpreterは既存結果を読み取り、個別結果、Global／Cluster、Cluster間、Description間、Operator間、反証を比較する。科学計算、Node作成、State更新はしない。
+- draft拒否時は同じInterpretation Nodeを有限回修正する。別Roundや別Nodeを作らない。
 
-## 科学判断
+## 探索規則
 
-推論が必要なのは`SCIENTIFIC_DECISION`だけである。Global／Cluster-local、兄弟Cluster、異なるDescription family、異なるOperatorのバランスと、人間のpriority、未確認領域、反証候補を考慮する。Node ID、依存関係、Status、Round gateはRuntimeへ委ねる。
+基本計算後のOperator探索は`exploration`一種類だけである。Runtimeが履歴を除外し、Capability、入力Description／Clustering、scopeの偏りを抑えたseed付き選択を行う。単純なGlobal優先列`Global, Global, Local`を基準に、一RoundのAnalysis Nodeは最大100件とする。100件を一度に計画し、50件単位の再計画は行わない。Wall Timeは件数上限を増やさない。
 
-一つのRoundで新たに処理するAnalysis Nodeは最大200件とする。Runtimeは初期Global／Local候補を最大50件ずつ決定論的かつ層化してNode化し、初期Globalは最大100件で区切ってLocal用容量を残すため、`PLAN_INITIAL_GLOBAL`または`PLAN_INITIAL_LOCAL`が複数回返ることは正常である。Mainは件数を独自に拡大せず、毎回同じrequired actionへ従う。200件に達したら未Node化候補を当該Roundへ追加せずInterpretationへ進み、人間が開始した次Roundで既存成功Nodeを再利用しながら残候補を再構成する。Wall Timeの長さをNode件数の拡大理由にしない。Description／Clusteringの基本計算はこのAnalysis上限には含めない。
+科学的推論が必要なのは`SCIENTIFIC_DECISION`である。人間priority、Global／Cluster-local変化、兄弟Cluster、独立したDescription family、異なるOperator、反証候補を評価する。Node ID、依存関係、Status、再試行、Round gateはRuntimeへ委ねる。
 
-A014は通常のDescription × Clustering × Operator直積へ入れない。RuntimeがGlobal DBを一件、全Cluster screeningを一件、代表的な4～6 Clustering viewのLocal detailだけを計画する。MainはMMP DBを直接SQL更新せず、追加のCluster照会は次の人間承認Roundの候補として扱う。
+A014はGlobal DBを一件作成し、全Cluster screeningと代表的Local detailへ再利用する。通常Operatorの全直積へ展開しない。標準範囲は1～2 cuts、radius 0～2、core heavy atoms 8以上、両分子に対するcore fraction 0.5以上、variable heavy atoms 10以下である。拡張探索は人間の明示指示がある場合だけ行う。
 
-Wall Timeは上限であり、早期終了の目標ではない。eligible workがなくなるか契約・budgetが終端を許すまで進め、必ずInterpretation、Full Audit、`AWAITING_HUMAN_REVIEW`まで完了する。人間の明示指示なしに次Roundを開始しない。
+Wall Timeは上限であり早期終了目標ではない。許可済み作業を完了後、必ずInterpretation、Full Audit、`AWAITING_HUMAN_REVIEW`まで進む。人間の明示指示なしに次Roundを開始しない。
 
-## 参照境界
+## 読み取り境界
 
-通常読むのは現在の人間依頼、compact response、bounded Working Set、選択したResult Cardだけとする。全DAG、全Ledger、過去全Reportを通常ループで読まない。詳細な科学方針が必要なときだけ`CONDUCTOR_modules/docs/CONDUCTOR_policy.md`の該当箇所を参照する。
+通常読むのは人間依頼、compact response、bounded Working Set、選択したResult Cardだけとする。詳細科学方針が必要な場合だけ`CONDUCTOR_modules/docs/CONDUCTOR_policy.md`の該当箇所を読む。

@@ -12,7 +12,7 @@
     "endpoint": {"type": "string"},
     "higher_is_better": {"type": "boolean"},
     "counts": {"type": "object"},
-    "core_policy": {"type": "object", "required": ["min_heavy_atoms", "extended_fraction", "primary_fraction"]},
+    "core_policy": {"type": "object", "required": ["min_heavy_atoms", "min_fraction_both_compounds", "max_variable_heavy_atoms"]},
     "artifacts": {"type": "object"},
     "created_at": {"type": "string", "format": "date-time"}
   },

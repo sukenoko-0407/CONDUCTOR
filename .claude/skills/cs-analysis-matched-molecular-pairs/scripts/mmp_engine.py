@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -22,7 +21,7 @@ DETAIL_COLUMNS = [
     "endpoint_from", "endpoint_to", "endpoint_delta", "favorable_delta",
     "transform_id", "variable_from", "variable_to", "transform_smirks",
     "core_id", "exact_core_smiles", "core_heavy_atoms", "core_fraction_from",
-    "core_fraction_to", "core_molecular_weight", "core_class", "eligibility_tier",
+    "core_fraction_to", "core_molecular_weight",
     "cut_count", "attachment_mapping", "native_rule_id", "endpoint_missing", "quality_flags",
     "environment_radius_0", "environment_radius_1", "environment_radius_2",
     "environment_radius_3", "environment_radius_4", "environment_radius_5",
@@ -127,6 +126,7 @@ def build_native_database(
     min_radius: int,
     max_radius: int,
     cut_smarts: str,
+    max_variable_heavy_atoms: int,
 ) -> tuple[Path, Path]:
     work_dir.mkdir(parents=True, exist_ok=True)
     smiles_file = work_dir / "input.smi"
@@ -155,13 +155,14 @@ def build_native_database(
     index_marker = work_dir / "index.complete.json"
     index_spec = {
         "fragment_sha256": sha256_file(fragment_db), "extended_core_fraction": extended_core_fraction,
-        "min_radius": min_radius, "max_radius": max_radius, "output_format": "mmpdb",
+        "min_radius": min_radius, "max_radius": max_radius, "max_variable_heavy_atoms": max_variable_heavy_atoms,
+        "output_format": "mmpdb",
     }
     if not (native_db.is_file() and index_marker.is_file() and json.loads(index_marker.read_text(encoding="utf-8")) == index_spec):
         native_db.unlink(missing_ok=True)
         _run([
             sys.executable, "-m", "mmpdblib", "index", str(fragment_db),
-            "--max-variable-heavies", "none", "--max-variable-ratio", str(1.0 - extended_core_fraction),
+            "--max-variable-heavies", str(max_variable_heavy_atoms), "--max-variable-ratio", str(1.0 - extended_core_fraction),
             "--min-radius", str(min_radius), "--max-radius", str(max_radius),
             "--out", "mmpdb", "--output", str(native_db),
         ], work_dir)
@@ -175,9 +176,8 @@ def extract_pairs(
     *,
     higher_is_better: bool,
     min_core_heavy_atoms: int,
-    extended_core_fraction: float,
-    primary_core_fraction: float,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    min_core_fraction: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     query = """
     SELECT p.id AS native_pair_id, re.radius, ef.smarts AS environment_smarts,
            ef.pseudosmiles AS environment_pseudosmiles, ef.parent_smarts,
@@ -198,50 +198,37 @@ def extract_pairs(
       JOIN compound c2 ON c2.id = p.compound2_id
      ORDER BY c1.public_id, c2.public_id, r.id, cs.smiles, re.radius
     """
-    with closing(sqlite3.connect(native_db)) as connection:
-        native = pd.read_sql_query(query, connection)
-    identity_columns = ["compound_id_from", "compound_id_to", "variable_from", "variable_to", "exact_core_smiles"]
-    grouped: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
-    context_rows: list[dict[str, Any]] = []
-    for row in native.itertuples(index=False):
-        key = (
-            str(row.compound_id_from), str(row.compound_id_to), str(row.variable_from),
-            str(row.variable_to), str(row.exact_core_smiles),
-        )
-        record = grouped.setdefault(key, {
-            "compound_id_from": str(row.compound_id_from), "compound_id_to": str(row.compound_id_to),
-            "smiles_from": str(row.smiles_from), "smiles_to": str(row.smiles_to),
-            "variable_from": str(row.variable_from), "variable_to": str(row.variable_to),
-            "exact_core_smiles": str(row.exact_core_smiles), "native_rule_id": int(row.native_rule_id),
-            "heavies_from": int(row.heavies_from), "heavies_to": int(row.heavies_to),
-        })
-        radius = int(row.radius)
-        context_id = stable_id("CTX", key, radius, str(row.environment_smarts))
-        record[f"environment_radius_{radius}"] = context_id
-        record[f"environment_smarts_radius_{radius}"] = str(row.environment_smarts)
-        record[f"environment_pseudosmiles_radius_{radius}"] = str(row.environment_pseudosmiles)
-        context_rows.append({
-            "context_id": context_id, "compound_id_from": key[0], "compound_id_to": key[1],
-            "variable_from": key[2], "variable_to": key[3], "exact_core_smiles": key[4],
-            "native_rule_id": int(row.native_rule_id), "radius": radius,
-            "environment_smarts": str(row.environment_smarts),
-            "environment_pseudosmiles": str(row.environment_pseudosmiles),
-            "parent_smarts": str(row.parent_smarts),
-        })
     records: list[dict[str, Any]] = []
-    for key, record in grouped.items():
+    context_rows: list[dict[str, Any]] = []
+    native_context_rows = 0
+    candidate_pair_core_records = 0
+    excluded_small_core = 0
+    excluded_core_fraction = 0
+    current_key: tuple[str, str, str, str, str] | None = None
+    current_record: dict[str, Any] | None = None
+    current_contexts: dict[str, dict[str, Any]] = {}
+
+    def flush_current() -> None:
+        nonlocal candidate_pair_core_records, excluded_small_core, excluded_core_fraction
+        if current_key is None or current_record is None:
+            return
+        candidate_pair_core_records += 1
+        record = dict(current_record)
         core_heavies = heavy_atoms(record["exact_core_smiles"])
         fraction_from = core_heavies / max(1, record.pop("heavies_from"))
         fraction_to = core_heavies / max(1, record.pop("heavies_to"))
-        if core_heavies < min_core_heavy_atoms or min(fraction_from, fraction_to) < extended_core_fraction:
-            continue
-        core_class = "primary" if min(fraction_from, fraction_to) >= primary_core_fraction else "extended"
+        if core_heavies < min_core_heavy_atoms:
+            excluded_small_core += 1
+            return
+        if min(fraction_from, fraction_to) < min_core_fraction:
+            excluded_core_fraction += 1
+            return
         endpoint_from = endpoints.get(record["compound_id_from"], math.nan)
         endpoint_to = endpoints.get(record["compound_id_to"], math.nan)
         delta = endpoint_to - endpoint_from if math.isfinite(endpoint_from) and math.isfinite(endpoint_to) else math.nan
         transform_id = stable_id("TRF", record["variable_from"], record["variable_to"])
         core_id = stable_id("CORE", record["exact_core_smiles"])
-        mmp_id = stable_id("MMP", *key)
+        mmp_id = stable_id("MMP", *current_key)
         core_molecule = Chem.MolFromSmiles(record["exact_core_smiles"])
         attachment_labels = sorted({atom.GetAtomMapNum() for atom in core_molecule.GetAtoms() if atom.GetAtomicNum() == 0}) if core_molecule else []
         endpoint_missing = not math.isfinite(delta)
@@ -252,13 +239,55 @@ def extract_pairs(
             "core_id": core_id, "core_heavy_atoms": core_heavies,
             "core_fraction_from": fraction_from, "core_fraction_to": fraction_to,
             "core_molecular_weight": float(Descriptors.MolWt(core_molecule)) if core_molecule else math.nan,
-            "core_class": core_class, "eligibility_tier": core_class,
             "cut_count": max(1, record["variable_from"].count("[*:")),
             "attachment_mapping": json.dumps(attachment_labels, separators=(",", ":")),
             "endpoint_missing": endpoint_missing,
             "quality_flags": "missing_endpoint" if endpoint_missing else "",
         })
         records.append(record)
+        for context in current_contexts.values():
+            context_rows.append({**context, "mmp_id": mmp_id})
+
+    with closing(sqlite3.connect(native_db)) as connection:
+        connection.row_factory = sqlite3.Row
+        cursor = connection.execute(query)
+        while True:
+            batch = cursor.fetchmany(10_000)
+            if not batch:
+                break
+            for row in batch:
+                native_context_rows += 1
+                key = (
+                    str(row["compound_id_from"]), str(row["compound_id_to"]), str(row["variable_from"]),
+                    str(row["variable_to"]), str(row["exact_core_smiles"]),
+                )
+                if key != current_key:
+                    flush_current()
+                    current_key = key
+                    current_record = {
+                        "compound_id_from": key[0], "compound_id_to": key[1],
+                        "smiles_from": str(row["smiles_from"]), "smiles_to": str(row["smiles_to"]),
+                        "variable_from": key[2], "variable_to": key[3],
+                        "exact_core_smiles": key[4], "native_rule_id": int(row["native_rule_id"]),
+                        "heavies_from": int(row["heavies_from"]), "heavies_to": int(row["heavies_to"]),
+                    }
+                    current_contexts = {}
+                radius = int(row["radius"])
+                context_id = stable_id("CTX", key, radius, str(row["environment_smarts"]))
+                assert current_record is not None
+                current_record[f"environment_radius_{radius}"] = context_id
+                current_record[f"environment_smarts_radius_{radius}"] = str(row["environment_smarts"])
+                current_record[f"environment_pseudosmiles_radius_{radius}"] = str(row["environment_pseudosmiles"])
+                current_contexts.setdefault(context_id, {
+                    "context_id": context_id, "compound_id_from": key[0], "compound_id_to": key[1],
+                    "variable_from": key[2], "variable_to": key[3], "exact_core_smiles": key[4],
+                    "native_rule_id": int(row["native_rule_id"]), "radius": radius,
+                    "environment_smarts": str(row["environment_smarts"]),
+                    "environment_pseudosmiles": str(row["environment_pseudosmiles"]),
+                    "parent_smarts": str(row["parent_smarts"]),
+                })
+        flush_current()
+
     details = pd.DataFrame(records)
     if details.empty:
         details = pd.DataFrame(columns=DETAIL_COLUMNS)
@@ -267,15 +296,22 @@ def extract_pairs(
             if column not in details:
                 details[column] = ""
         details = details[DETAIL_COLUMNS].sort_values("mmp_id").reset_index(drop=True)
-    contexts = pd.DataFrame(context_rows, columns=[column for column in CONTEXT_COLUMNS if column != "mmp_id"])
-    if len(contexts) and len(details):
-        identity = details[identity_columns + ["mmp_id"]].drop_duplicates(identity_columns)
-        contexts = contexts.merge(identity, on=identity_columns, how="inner", validate="many_to_one")
+    contexts = pd.DataFrame(context_rows, columns=CONTEXT_COLUMNS)
+    if len(contexts):
         contexts = contexts.drop_duplicates("context_id").sort_values(["mmp_id", "radius", "context_id"]).reset_index(drop=True)
     if "mmp_id" not in contexts:
         contexts["mmp_id"] = pd.Series(dtype="object")
     contexts = contexts[CONTEXT_COLUMNS]
-    return details, contexts
+    filter_stats = {
+        "native_context_rows": native_context_rows,
+        "candidate_pair_core_records": candidate_pair_core_records,
+        "excluded_core_heavy_atoms": excluded_small_core,
+        "excluded_core_fraction": excluded_core_fraction,
+        "retained_mmp_records": int(len(details)),
+        "retained_by_cut_count": {str(key): int(value) for key, value in details.get("cut_count", pd.Series(dtype=int)).value_counts().sort_index().items()},
+        "context_rows_by_radius": {str(key): int(value) for key, value in contexts.get("radius", pd.Series(dtype=int)).value_counts().sort_index().items()},
+    }
+    return details, contexts, filter_stats
 
 
 def robust_summary(frame: pd.DataFrame, group_columns: list[str]) -> pd.DataFrame:
@@ -330,20 +366,18 @@ def robust_summary(frame: pd.DataFrame, group_columns: list[str]) -> pd.DataFram
 
 def summary_tables(details: pd.DataFrame, contexts: pd.DataFrame, coverage: pd.DataFrame) -> dict[str, pd.DataFrame]:
     transforms = robust_summary(details, ["transform_id", "variable_from", "variable_to", "transform_smirks"])
-    cores = robust_summary(details, ["core_id", "exact_core_smiles", "core_class"])
+    cores = robust_summary(details, ["core_id", "exact_core_smiles"])
     transform_core = robust_summary(details, ["transform_id", "core_id", "transform_smirks", "exact_core_smiles"])
     pairs = robust_summary(details, ["compound_id_from", "compound_id_to"])
     if len(pairs):
         pair_index = details.groupby(["compound_id_from", "compound_id_to"], dropna=False).agg(
             transform_count=("transform_id", "nunique"), exact_core_count=("core_id", "nunique"),
-            primary_mmp_count=("core_class", lambda values: int((values == "primary").sum())),
-            extended_mmp_count=("core_class", lambda values: int((values == "extended").sum())),
             endpoint_delta=("endpoint_delta", "first"),
             mmp_ids=("mmp_id", lambda values: "|".join(sorted(set(map(str, values))))),
         ).reset_index()
         pairs = pairs.merge(pair_index, on=["compound_id_from", "compound_id_to"], how="left")
     else:
-        for column in ("transform_count", "exact_core_count", "primary_mmp_count", "extended_mmp_count", "endpoint_delta", "mmp_ids"):
+        for column in ("transform_count", "exact_core_count", "endpoint_delta", "mmp_ids"):
             pairs[column] = pd.Series(dtype="object")
     if len(contexts) and len(details):
         context_effects = contexts.merge(details[["mmp_id", "transform_id", "core_id", "favorable_delta"]], on="mmp_id", how="left")
@@ -370,32 +404,49 @@ def write_stable_database(
     details: pd.DataFrame,
     contexts: pd.DataFrame,
     coverage: pd.DataFrame,
-    summaries: dict[str, pd.DataFrame],
     metadata: dict[str, Any],
 ) -> None:
     path.unlink(missing_ok=True)
     with closing(sqlite3.connect(path)) as connection:
         connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value_json TEXT NOT NULL)")
         connection.executemany("INSERT INTO metadata(key, value_json) VALUES (?, ?)", [(key, json.dumps(value, ensure_ascii=False)) for key, value in metadata.items()])
-        coverage.to_sql("compounds", connection, index=False)
+        compounds = coverage[["compound_id", "smiles", "endpoint", "valid_smiles", "heavy_atoms", "endpoint_available", "exclusion_reason"]].copy()
+        compounds.insert(0, "compound_key", range(1, len(compounds) + 1))
+        compounds.to_sql("compounds", connection, index=False)
         transform_columns = ["transform_id", "variable_from", "variable_to", "transform_smirks", "cut_count"]
         core_columns = ["core_id", "exact_core_smiles", "core_heavy_atoms", "core_molecular_weight"]
-        details[transform_columns].drop_duplicates("transform_id").to_sql("transforms", connection, index=False)
-        details[core_columns].drop_duplicates("core_id").to_sql("cores", connection, index=False)
-        details.to_sql("mmp_pairs", connection, index=False)
-        contexts.to_sql("mmp_contexts", connection, index=False)
-        for name, frame in summaries.items():
-            frame.to_sql(name, connection, index=False)
-        if "mmp_id" in details:
-            connection.execute("CREATE UNIQUE INDEX idx_mmp_pairs_id ON mmp_pairs(mmp_id)")
-            connection.execute("CREATE INDEX idx_mmp_pairs_compounds ON mmp_pairs(compound_id_from, compound_id_to)")
-            connection.execute("CREATE INDEX idx_mmp_pairs_transform ON mmp_pairs(transform_id)")
-            connection.execute("CREATE INDEX idx_mmp_pairs_core ON mmp_pairs(core_id)")
-        if "mmp_id" in contexts:
-            connection.execute("CREATE INDEX idx_mmp_contexts_mmp ON mmp_contexts(mmp_id)")
+        transforms = details[transform_columns].drop_duplicates("transform_id").reset_index(drop=True)
+        transforms.insert(0, "transform_key", range(1, len(transforms) + 1))
+        cores = details[core_columns].drop_duplicates("core_id").reset_index(drop=True)
+        cores.insert(0, "core_key", range(1, len(cores) + 1))
+        transforms.to_sql("transforms", connection, index=False)
+        cores.to_sql("cores", connection, index=False)
+        compound_keys = dict(zip(compounds["compound_id"], compounds["compound_key"]))
+        transform_keys = dict(zip(transforms["transform_id"], transforms["transform_key"]))
+        core_keys = dict(zip(cores["core_id"], cores["core_key"]))
+        fact_columns = [
+            "mmp_id", "endpoint_delta", "favorable_delta", "core_fraction_from", "core_fraction_to",
+            "native_rule_id", "endpoint_missing", "quality_flags",
+        ]
+        pairs = details[fact_columns].copy()
+        pairs.insert(0, "pair_key", range(1, len(pairs) + 1))
+        pairs["compound_from_key"] = details["compound_id_from"].map(compound_keys)
+        pairs["compound_to_key"] = details["compound_id_to"].map(compound_keys)
+        pairs["transform_key"] = details["transform_id"].map(transform_keys)
+        pairs["core_key"] = details["core_id"].map(core_keys)
+        pairs.to_sql("mmp_pairs", connection, index=False)
+        pair_keys = dict(zip(pairs["mmp_id"], pairs["pair_key"]))
+        compact_contexts = contexts[["context_id", "mmp_id", "radius", "environment_smarts", "environment_pseudosmiles", "parent_smarts"]].copy()
+        compact_contexts.insert(0, "context_key", range(1, len(compact_contexts) + 1))
+        compact_contexts["pair_key"] = compact_contexts["mmp_id"].map(pair_keys)
+        compact_contexts.drop(columns=["mmp_id"]).to_sql("mmp_contexts", connection, index=False)
+        connection.execute("CREATE UNIQUE INDEX idx_compounds_id ON compounds(compound_id)")
+        connection.execute("CREATE UNIQUE INDEX idx_transforms_id ON transforms(transform_id)")
+        connection.execute("CREATE UNIQUE INDEX idx_cores_id ON cores(core_id)")
+        connection.execute("CREATE UNIQUE INDEX idx_mmp_pairs_id ON mmp_pairs(mmp_id)")
+        connection.execute("CREATE INDEX idx_mmp_pairs_compounds ON mmp_pairs(compound_from_key, compound_to_key)")
+        connection.execute("CREATE INDEX idx_mmp_pairs_transform ON mmp_pairs(transform_key)")
+        connection.execute("CREATE INDEX idx_mmp_pairs_core ON mmp_pairs(core_key)")
+        connection.execute("CREATE INDEX idx_mmp_contexts_pair ON mmp_contexts(pair_key)")
+        connection.execute("ANALYZE")
         connection.commit()
-
-
-def copy_native_database(native_db: Path, destination: Path) -> None:
-    destination.unlink(missing_ok=True)
-    shutil.copy2(native_db, destination)

@@ -33,25 +33,29 @@ class MatchedMolecularPairs014(unittest.TestCase):
     def command(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(RUNNER), *arguments], cwd=ROOT, text=True, capture_output=True, check=True)
 
-    def test_global_database_csv_parquet_and_context_counting_are_consistent(self) -> None:
+    def test_global_database_csv_and_normalized_storage_are_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "global"
             self.command(
                 "global-build", "--input", str(FIXTURE), "--id-column", "compound_id",
                 "--smiles-column", "smiles", "--endpoint-column", "pIC50",
                 "--higher-is-better", "true", "--min-core-heavy-atoms", "1",
-                "--extended-min-core-fraction", "0.1", "--primary-min-core-fraction", "0.2",
+                "--min-core-fraction", "0.1",
                 "--available-cpu-cores", "2", "--output-dir", str(output),
             )
             csv = pd.read_csv(output / "mmp_pair_detail.csv")
-            parquet = pd.read_parquet(output / "mmp_pair_detail.parquet")
             with closing(sqlite3.connect(output / "mmp_database.sqlite")) as connection:
                 database_count = connection.execute("SELECT COUNT(*) FROM mmp_pairs").fetchone()[0]
                 context_count = connection.execute("SELECT COUNT(*) FROM mmp_contexts").fetchone()[0]
+                pair_columns = {row[1] for row in connection.execute("PRAGMA table_info(mmp_pairs)")}
             self.assertGreater(len(csv), 0)
-            self.assertEqual(len(csv), len(parquet))
             self.assertEqual(len(csv), database_count)
             self.assertGreaterEqual(context_count, len(csv))
+            self.assertFalse({"smiles_from", "smiles_to", "variable_from", "exact_core_smiles"} & pair_columns)
+            self.assertTrue((output / "mmp_storage_profile.json").is_file())
+            self.assertFalse((output / "mmpdb_native.sqlite").exists())
+            self.assertFalse((output / "_work").exists())
+            self.assertFalse((output / "mmp_pair_detail.parquet").exists())
             self.assertEqual(len(csv), csv["mmp_id"].nunique())
             self.assertTrue({"exact_core_smiles", "transform_smirks", "favorable_delta", "environment_radius_0"} <= set(csv.columns))
             result = json.loads((output / "mmp_result.json").read_text(encoding="utf-8"))
@@ -76,7 +80,7 @@ class MatchedMolecularPairs014(unittest.TestCase):
                 "global-build", "--input", str(reversed_input), "--id-column", "compound_id",
                 "--smiles-column", "smiles", "--endpoint-column", "pIC50",
                 "--higher-is-better", "true", "--min-core-heavy-atoms", "1",
-                "--extended-min-core-fraction", "0.1", "--primary-min-core-fraction", "0.2",
+                "--min-core-fraction", "0.1",
                 "--available-cpu-cores", "2", "--output-dir", str(reversed_output),
             )
             reversed_csv = pd.read_csv(reversed_output / "mmp_pair_detail.csv")
@@ -95,7 +99,7 @@ class MatchedMolecularPairs014(unittest.TestCase):
                 "global-build", "--input", str(FIXTURE), "--id-column", "compound_id",
                 "--smiles-column", "smiles", "--endpoint-column", "pIC50",
                 "--higher-is-better", "true", "--min-core-heavy-atoms", "1",
-                "--extended-core-fraction", "0.1", "--primary-core-fraction", "0.2",
+                "--min-core-fraction", "0.1",
                 "--available-cpu-cores", "2", "--output-dir", str(global_output),
             )
             database = global_output / "mmp_database.sqlite"
@@ -115,7 +119,7 @@ class MatchedMolecularPairs014(unittest.TestCase):
             self.assertEqual("N000222", first["clustering_node_id"])
             self.assertEqual("C002", first["clustering_capability_id"])
             self.assertEqual("structure", first["clustering_input_kind"])
-            self.assertLessEqual(first["primary_within_pair_count"], first["within_pair_count"])
+            self.assertLessEqual(first["eligible_within_pair_count"], first["within_pair_count"])
             self.assertGreater(first["global_fraction"], 0)
             detail_output = root / "detail"
             self.command("local-detail", "--mmp-database", str(database), "--cluster-membership", str(MEMBERSHIP), "--cluster-id", "C000001", "--output-dir", str(detail_output))
@@ -126,8 +130,14 @@ class MatchedMolecularPairs014(unittest.TestCase):
 
     def test_capability_and_schemas_validate(self) -> None:
         capability = json.loads((SKILL / "capability.json").read_text(encoding="utf-8"))
-        self.assertEqual(("A014", "0.1.4"), (capability["capability_id"], capability["version"]))
+        self.assertEqual(("A014", "0.1.5"), (capability["capability_id"], capability["version"]))
+        self.assertEqual(2, capability["default_parameters"]["num_cuts"])
+        self.assertEqual(2, capability["default_parameters"]["max_radius"])
+        self.assertEqual(10, capability["default_parameters"]["max_variable_heavy_atoms"])
         self.assertEqual(["global-build", "local-screen", "local-detail"], capability["roles"])
+        engine = (SKILL / "scripts" / "mmp_engine.py").read_text(encoding="utf-8")
+        self.assertNotIn("pd.read_sql_query(query", engine)
+        self.assertIn("cursor.fetchmany(10_000)", engine)
         for path in (SKILL / "schemas").glob("*.json"):
             json.loads(path.read_text(encoding="utf-8"))
 
@@ -143,6 +153,17 @@ class MatchedMolecularPairs014(unittest.TestCase):
             self.assertTrue(result["negative_result"])
             self.assertEqual(0, len(pd.read_csv(output / "mmp_pair_detail.csv")))
             self.assertIn("Negative Result", (output / "operator_report.html").read_text(encoding="utf-8"))
+
+    def test_extended_search_requires_explicit_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "extended"
+            completed = subprocess.run([
+                sys.executable, str(RUNNER), "global-build", "--input", str(FIXTURE),
+                "--id-column", "compound_id", "--smiles-column", "smiles", "--endpoint-column", "pIC50",
+                "--higher-is-better", "true", "--num-cuts", "3", "--output-dir", str(output),
+            ], cwd=ROOT, text=True, capture_output=True)
+            self.assertNotEqual(0, completed.returncode)
+            self.assertIn("--extended-search", completed.stderr)
 
 
 if __name__ == "__main__":

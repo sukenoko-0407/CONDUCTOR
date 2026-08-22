@@ -75,7 +75,7 @@ def main() -> int:
         )
     if obsolete_present:
         raise FileExistsError(
-            "Obsolete pre-0.1.3 CONDUCTOR control components remain. Verify and remove them before installation:\n"
+            "Obsolete CONDUCTOR control components remain. Verify and remove them before installation:\n"
             + "\n".join(str(path) for path in obsolete_present)
         )
 

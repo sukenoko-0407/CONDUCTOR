@@ -44,6 +44,8 @@ Insightを無理に作る必要はない。明確な変化、矛盾、例外が�
 5. 人間向けに「どの解析の、どのscopeで、何がどう変わったか」を日本語で具体的に記す。
 
 正式Reportの品質ゲートは文章量だけでなく、参照Result Cardから再計算したscope mode、Cluster ID集合、sample count、Operator、Result別sample数との完全一致を検査する。Cluster-local結果をGlobalと記載したReport、根拠ResultのないGlobal比較、日本語の説明本文を欠くReportはcommitしない。
+
+人間向け`interpretation.md`／`interpretation.html`には、Insightごとの`key_metrics`を全展開しない。主要数値は検証可能性のため構造化`interpretation.json`に保持し、詳細確認は個別Operator report、元Artifact、またはConciergeを利用する。人間向けReportは観察・解釈・scope・由来・参照Resultの理解を優先する。
 6. 次の解析候補は必要最小限とし、同一signatureの再実行を要求しない。
 
 ## 境界

@@ -1,6 +1,6 @@
 # CONDUCTOR session引継ぎテンプレート
 
-対象Version: `0.1.4`
+対象Version: `0.1.5`
 
 長いState、過去のInterpretation、独自の引継ぎMarkdownを貼り付ける必要はない。Run Rootと人間が意図する操作を新しいMain sessionへ渡す。
 
@@ -17,7 +17,7 @@ Run Root: <absolute path>
 
 ActiveまたはFINALIZINGのRoundがある場合は、同じRoundを再開し、別Roundを作らないでください。live leaseがある場合は二重実行せず報告してください。新Roundは、人間が明示的に「新Round開始」を指定し、Active Roundがなく、直前RoundがCLOSEDであることを確認した場合だけprepare／authorizeしてください。
 
-Main Agent自身がOrchestratorです。科学計算はRuntimeが生成した署名付きpacketだけをExecutorへ渡し、Interpretation contextはInterpreterへ渡してください。lease tokenとAction tokenをSubagentへ渡さず、Mainから専門Skillを直接実行しないでください。
+Main Agent自身がOrchestratorです。科学計算はRuntimeが生成した署名付きpacketだけをExecutorへ渡し、Interpretation contextはInterpreterへ渡してください。lease tokenをSubagentへ渡さず、Mainから専門Skillを直接実行しないでください。
 
 通常は全DAG、全Event Ledger、過去全Reportを読まないでください。追加情報が必要な場合だけRuntimeのbounded queryからResult Cardまたはfailure summaryを取得してください。Tool応答を失ったmutationは推測で再送せず、Control revisionとverify-returnで照合してください。
 

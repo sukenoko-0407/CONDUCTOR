@@ -1,6 +1,6 @@
 [project]
 name = "conductor-workspace"
-version = "0.1.3"
+version = "0.1.5"
 description = "Development and acceptance-test environment for the CONDUCTOR multi-Round analysis architecture"
 requires-python = ">=3.12,<3.13"
 dependencies = [

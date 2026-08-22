@@ -1,6 +1,6 @@
 # CONDUCTOR 解析依頼プロンプト
 
-対象Version: `0.1.4`
+対象Version: `0.1.5`
 
 `cs-conductor-orchestrator`は、人間が指定した一つの操作だけをMain Agentに実行させる。Round受理と次Round開始は、意図しない自動開始を避けるため別々に指示することを推奨する。
 
@@ -22,12 +22,12 @@ Wall Time: <minutes>
 高コスト基本計算一括承認: <yes/no>
 
 Roundの目的・重視点（任意）:
-<人間の観点。未指定なら標準の基本計算と初期探索を実施>
+<人間の観点。未指定なら標準の基本計算とGlobal優先explorationを実施>
 
 既存のconductor_control.jsonがないことを確認した場合だけ初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、科学計算は署名付きexecution packetごとにExecutorを一つだけ起動してください。
 
-基本計算、初期探索、Interpretation、Full Auditまで同じRND0001で進め、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動的に受理したり、RND0002を開始したりしないでください。
-標準のAnalysis上限（1 Round最大200 Node、最大50 Nodeずつ計画、初期Global最大100 Node）を変更せず、長いWall Timeを理由に一括計画を拡大しないでください。
+基本計算、最大100 Analysis Nodeのexploration、Interpretation、Full Auditまで同じRND0001で進め、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動的に受理したり、RND0002を開始したりしないでください。
+探索は成功済みsignatureを除外し、Globalを優先してDescription／Clustering／Operatorの履歴偏りを抑える0.1.5標準Plannerへ任せてください。長いWall Timeを理由に上限を拡大しないでください。
 ```
 
 ## 状態確認のみ
@@ -116,7 +116,7 @@ Available CPU Cores: <number; 変更しない場合は省略可>
 Wall Time: <minutes>
 
 Roundの目的:
-<追加探索、深掘り対象、人間が求める成果物>
+<探索、深掘り対象、人間が求める成果物>
 
 人間の見解・優先事項（任意）:
 - INS######: <支持、疑問、代替解釈、反証希望>

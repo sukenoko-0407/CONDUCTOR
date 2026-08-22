@@ -1,6 +1,6 @@
 # Interpretation日本語版作成プロンプト
 
-対象Version: `0.1.4`
+対象Version: `0.1.5`
 
 現行CONDUCTORの標準Interpretationは日本語で生成される。このプロンプトは、例外的に英語で作成された既存Reportから、日本語HTMLを追加作成するときだけ使用する。CONDUCTOR Stateや既存Reportは変更しない。
 

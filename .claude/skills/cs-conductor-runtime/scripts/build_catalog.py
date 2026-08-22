@@ -115,9 +115,8 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
     referenced = set()
     for key in ["description_capabilities", "direct_structure_clustering", "vector_clustering_capabilities", "vector_clustering_representations", "conditional_clustering", "high_cost_bundle"]:
         referenced.update(profile["basic_compute"].get(key) or [])
-    for key in ["description_master_panel", "global_operator_capabilities", "local_operator_capabilities"]:
-        referenced.update(profile["initial_exploration"][key])
-    referenced.update(profile["additional_exploration"]["operator_capabilities"])
+    for key in ["description_panel", "global_operator_capabilities", "local_operator_capabilities"]:
+        referenced.update(profile["exploration"][key])
     referenced.update(profile["modeling"]["fixed_description_panel"])
     if profile.get("matched_molecular_pairs"):
         referenced.add(profile["matched_molecular_pairs"]["capability_id"])

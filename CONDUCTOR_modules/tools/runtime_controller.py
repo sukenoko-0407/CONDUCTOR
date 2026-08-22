@@ -8,6 +8,7 @@ import importlib.util
 import json
 import os
 import secrets
+import signal
 import shutil
 import socket
 import subprocess
@@ -21,14 +22,14 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 
-VERSION = "0.1.4"
-PROTOCOL_VERSION = "0.1.4"
+VERSION = "0.1.5"
+PROTOCOL_VERSION = "0.1.5"
 CONTROL_SCHEMA = "3.0.0"
 MAX_CONTROL_BYTES = 32 * 1024
 MAX_WORKING_SET_BYTES = 64 * 1024
 MAX_CANDIDATES = 20
 MAX_COMPACT_RESPONSE_BYTES = 16 * 1024
-EXECUTION_PACKET_TTL_MINUTES = 15
+EXECUTION_PACKET_TTL_MINUTES = 360
 DEFAULT_LEASE_MINUTES = 360
 DEFAULT_EXECUTION_TIMEOUT_MINUTES = 360
 DEFAULT_AVAILABLE_CPU_CORES = 8
@@ -44,7 +45,7 @@ DIRECT_STRUCTURE_CLUSTERING = {"C001", "C002", "C003", "C004"}
 DIRECT_STRUCTURE_ANALYSIS = {"A006", "A009", "A013"}
 EXCLUSIVE_CPU_CAPABILITIES = {"C002", "D016", "D019", "D020"}
 MMP_PAYLOAD_NAMES = {
-    "mmp_database.sqlite", "mmpdb_native.sqlite", "mmp_pair_detail.csv", "mmp_pair_detail.parquet",
+    "mmp_database.sqlite", "mmp_pair_detail.csv", "mmp_storage_profile.json",
     "pair_summary.csv", "transform_summary.csv", "core_summary.csv", "transform_core_summary.csv",
     "context_summary.csv", "coverage_summary.csv", "compound_coverage.csv",
     "mmp_reference_cards.jsonl", "mmp_reference_cards.csv", "mmp_local_screening.csv",
@@ -111,7 +112,6 @@ def file_hash(path: Path) -> str:
 def _compact_response(
     control: dict[str, Any],
     *,
-    action_token: str | None = None,
     detail_pointer: str | None = None,
     **payload: Any,
 ) -> dict[str, Any]:
@@ -135,8 +135,6 @@ def _compact_response(
             "available_cpu_cores": _available_cpu_cores(control),
         },
     }
-    if action_token is not None:
-        response["action_token"] = action_token
     if detail_pointer is not None:
         response["detail_pointer"] = detail_pointer
     response.update(clean(payload))
@@ -334,6 +332,30 @@ def resolve_root(value: str | Path) -> Path:
     return path
 
 
+def _run_relative_artifact(root: Path, path: Path, *, require_file: bool = False) -> str:
+    """Return one canonical Run-root-relative artifact path."""
+    resolved_root = root.resolve()
+    resolved = path.resolve()
+    try:
+        relative = resolved.relative_to(resolved_root)
+    except ValueError as exc:
+        raise PermissionError(f"Artifact escapes the Run Root: {resolved}") from exc
+    if require_file and not resolved.is_file():
+        raise FileNotFoundError(f"Result Card artifact does not exist: {resolved}")
+    return relative.as_posix()
+
+
+def _validate_result_card_links(root: Path, card: dict[str, Any]) -> None:
+    for name, value in (card.get("artifact_links") or {}).items():
+        if value is None:
+            continue
+        if Path(str(value)).is_absolute():
+            raise PermissionError(f"Result Card link must be Run-root-relative ({name}): {value}")
+        canonical = _run_relative_artifact(root, root / str(value), require_file=True)
+        if canonical != Path(str(value)).as_posix():
+            raise PermissionError(f"Result Card link is not canonical ({name}): {value}")
+
+
 def control_path(root: Path) -> Path:
     return root / "conductor_control.json"
 
@@ -485,16 +507,7 @@ def _recover_transaction(root: Path) -> list[str]:
     return [event["event_id"]]
 
 
-def _rotate_action_token(control: dict[str, Any]) -> str | None:
-    if not control["lease"].get("owner_id"):
-        control["lease"]["action_token_hash"] = None
-        return None
-    token = secrets.token_hex(32)
-    control["lease"]["action_token_hash"] = value_hash(token)
-    return token
-
-
-def _commit(root: Path, control: dict[str, Any], snapshot: dict[str, Any], event_type: str, payload: dict[str, Any], *, round_id: str | None = None, node_id: str | None = None, rotate_token: bool = True) -> str | None:
+def _commit(root: Path, control: dict[str, Any], snapshot: dict[str, Any], event_type: str, payload: dict[str, Any], *, round_id: str | None = None, node_id: str | None = None) -> None:
     _validate_snapshot(snapshot)
     next_revision = int(control["revision"]) + 1
     next_sequence = int(control["last_event_sequence"]) + 1
@@ -505,7 +518,6 @@ def _commit(root: Path, control: dict[str, Any], snapshot: dict[str, Any], event
     control["updated_at"] = utc_now()
     snapshot["control_revision"] = next_revision
     snapshot["last_event_sequence"] = next_sequence
-    action_token = _rotate_action_token(control) if rotate_token else None
     _refresh_control(root, control, snapshot)
     validate(control, "conductor_control.schema.json")
     if len(canonical_bytes(control)) > MAX_CONTROL_BYTES:
@@ -517,7 +529,7 @@ def _commit(root: Path, control: dict[str, Any], snapshot: dict[str, Any], event
     write_json(snapshot_path(root), snapshot)
     write_json(control_path(root), control)
     pending.unlink()
-    return action_token
+    return None
 
 
 def _node_lookup(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -541,13 +553,11 @@ def _require_control_authority(root: Path, key: str) -> None:
         raise PermissionError("Human-authorized Main control authority is required")
 
 
-def _require_action(control: dict[str, Any], lease_token: str, action_token: str, allowed_actions: set[str] | None = None) -> None:
+def _require_action(control: dict[str, Any], lease_token: str, allowed_actions: set[str] | None = None) -> None:
     if not _lease_live(control):
         raise PermissionError("No live Orchestrator lease")
     if not secrets.compare_digest(str(control["lease"].get("token_hash")), value_hash(lease_token)):
         raise PermissionError("Invalid Orchestrator lease token")
-    if not secrets.compare_digest(str(control["lease"].get("action_token_hash")), value_hash(action_token)):
-        raise PermissionError("Stale or invalid one-time Action token")
     if allowed_actions and control["required_action"]["code"] not in allowed_actions:
         raise PermissionError(f"Action is not allowed while required_action={control['required_action']['code']}")
 
@@ -562,7 +572,6 @@ def _validate_execution_packet(
     root: Path,
     control: dict[str, Any],
     packet_path: Path,
-    executor_token: str,
 ) -> dict[str, Any]:
     packet_path = packet_path.resolve()
     packet_root = (root / "runtime" / "scratch" / "packets").resolve()
@@ -572,8 +581,6 @@ def _validate_execution_packet(
     validate(packet, "execution_packet.schema.json")
     if not hmac.compare_digest(packet["signature"], _packet_signature(root, packet)):
         raise PermissionError("Execution packet signature is invalid")
-    if not secrets.compare_digest(packet["executor_token_hash"], value_hash(executor_token)):
-        raise PermissionError("Execution packet token is invalid")
     if packet["run_id"] != control["run"]["run_id"] or packet["round_id"] != control.get("active_round_id"):
         raise PermissionError("Execution packet belongs to another Run or Round")
     if int(packet["control_revision"]) != int(control["revision"]):
@@ -582,8 +589,6 @@ def _validate_execution_packet(
         raise PermissionError("Execution packet action no longer matches Runtime Control")
     if not secrets.compare_digest(packet["lease_token_hash"], str(control["lease"].get("token_hash"))):
         raise PermissionError("Execution packet lease is stale")
-    if not secrets.compare_digest(packet["action_token_hash"], str(control["lease"].get("action_token_hash"))):
-        raise PermissionError("Execution packet Action token is stale or already consumed")
     if not _lease_live(control):
         raise PermissionError("Execution packet has no live Main Agent lease")
     expires = parse_time(packet.get("expires_at"))
@@ -592,13 +597,11 @@ def _validate_execution_packet(
     return packet
 
 
-def _require_executor_followup(control: dict[str, Any], packet: dict[str, Any], action_token: str) -> None:
+def _require_executor_followup(control: dict[str, Any], packet: dict[str, Any]) -> None:
     if not _lease_live(control):
         raise PermissionError("Main Agent lease expired while Executor was active")
     if not secrets.compare_digest(packet["lease_token_hash"], str(control["lease"].get("token_hash"))):
         raise PermissionError("Main Agent lease changed while Executor was active")
-    if not secrets.compare_digest(str(control["lease"].get("action_token_hash")), value_hash(action_token)):
-        raise PermissionError("Executor follow-up token is stale")
     if control["required_action"]["code"] != "WAIT_OR_RECONCILE_RUNNING":
         raise PermissionError("Runtime is not waiting for the claimed Executor batch")
 
@@ -608,7 +611,7 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"EXECUTE_RUNNABLE_BATCH"})
+        _require_action(control, args.lease_token, {"EXECUTE_RUNNABLE_BATCH"})
         runnable = {node["node_id"]: node for node in _runnable(control, snapshot)}
         requested = [item for item in (args.node_ids or "").split(",") if item] or list(runnable)
         if not requested:
@@ -616,7 +619,6 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
         if set(requested) - set(runnable):
             raise ValueError(f"Requested Nodes are not currently runnable: {sorted(set(requested) - set(runnable))}")
         requested = _select_execution_nodes(requested, runnable, control)
-        executor_token = secrets.token_hex(32)
         packet_id = f"PKT{timestamp()}_{secrets.token_hex(4)}"
         packet_dir = root / "runtime" / "scratch" / "packets" / packet_id
         packet_dir.mkdir(parents=True, exist_ok=False)
@@ -627,13 +629,15 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
             scratch = root / "runtime" / "scratch" / node["assigned_round"] / node_id / attempt_id
             skill_output = _skill_output_dir(scratch)
             command = _skill_command(root, control, snapshot, node, attempt_id, scratch)
-            prior_failure = next((attempt.get("failure_packet") for attempt in reversed(node.get("attempts") or []) if attempt.get("failure_packet")), None)
+            request_path = scratch / "execution_request.json"
             execution_contracts.append({
                 "node_id": node_id,
                 "capability_id": node["capability_id"],
                 "attempt_id": attempt_id,
                 "node_signature": node["signature"],
                 "input_nodes": node["input_nodes"],
+                "request_path": str(request_path.resolve()),
+                "request_hash": value_hash(read_json(request_path)),
                 "command_argv": command,
                 "command_hash": value_hash(command),
                 "working_directory": str(project_root()),
@@ -647,7 +651,6 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
                 },
                 "expected_output_ref": node["output_ref"],
                 "validation": ["execution_event_identity", "artifact_sha256", "stage_schema", "analysis_subject", "scientific_invariants"],
-                "prior_failure_pointer": prior_failure,
             })
         packet = {
             "schema_version": "1.0.0",
@@ -658,14 +661,11 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
             "control_revision": control["revision"],
             "required_action": control["required_action"]["code"],
             "lease_token_hash": control["lease"]["token_hash"],
-            "action_token_hash": control["lease"]["action_token_hash"],
-            "executor_token_hash": value_hash(executor_token),
             "node_ids": requested,
             "capability_ids": [runnable[node_id]["capability_id"] for node_id in requested],
             "execution_contracts": execution_contracts,
             "timeout_minutes": args.timeout_minutes,
             "clean_scratch": bool(args.clean_scratch),
-            "recovery_budget": {"maximum_attempts_per_node": MAX_EXECUTION_ATTEMPTS, "temporary_files_root": "<scratch>/recovery", "scientific_parameter_changes_allowed": False},
             "created_at": utc_now(),
             "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=EXECUTION_PACKET_TTL_MINUTES)).isoformat(),
         }
@@ -676,7 +676,6 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
     _print_compact(
         control,
         packet_path=str(packet_path),
-        executor_token=executor_token,
         packet_id=packet_id,
         node_ids=requested,
         executor_agent="cs-conductor-executor",
@@ -714,7 +713,7 @@ def _runnable(control: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[st
             for item in node["input_nodes"]
         ):
             values.append(node)
-    wave_order = {"basic_compute": 0, "initial_global": 1, "initial_local": 2, "additional_exploration": 3, "deep_dive": 4, "human_directed": 5, "round_commit": 6}
+    wave_order = {"basic_compute": 0, "exploration": 1, "deep_dive": 2, "human_directed": 3, "round_commit": 4}
     return sorted(values, key=lambda node: (wave_order[node["wave"]], node["node_id"]))[:capacity]
 
 
@@ -774,14 +773,29 @@ def _deliverable_status(root: Path, control: dict[str, Any], snapshot: dict[str,
             evidence = [relative] if satisfied else []
         elif kind == "capability_coverage":
             required_ids = set(parameters.get("capability_ids") or [])
+            required_scopes = set(parameters.get("scope_modes") or [])
             succeeded_ids = {
                 node["capability_id"]
                 for node in nodes
                 if node["status"] == "succeeded"
                 and (node.get("result_quality") or {}).get("eligible_for_downstream", True)
+                and (not required_scopes or node.get("scope", {}).get("mode") in required_scopes)
             }
             satisfied = required_ids <= succeeded_ids
             evidence = sorted(required_ids & succeeded_ids)
+        elif kind == "planned_node_coverage":
+            plan_key = str(parameters.get("plan_key") or "")
+            plan = snapshot.get("plans", {}).get(control["active_round_id"], {})
+            required_nodes = list(plan.get(f"{plan_key}_node_ids") or [])
+            lookup = _node_lookup(snapshot)
+            completed_nodes = [
+                node_id for node_id in required_nodes
+                if node_id in lookup
+                and lookup[node_id]["status"] == "succeeded"
+                and (lookup[node_id].get("result_quality") or {}).get("eligible_for_downstream", True)
+            ]
+            satisfied = bool(required_nodes) and len(completed_nodes) == len(required_nodes)
+            evidence = completed_nodes
         elif kind == "comparison_completed":
             required_scopes = set(parameters.get("scope_modes") or [])
             cards = read_jsonl(root / "runtime" / "result_index.jsonl")
@@ -807,6 +821,23 @@ def _has_high_cost_waiting(root: Path, control: dict[str, Any], snapshot: dict[s
         return False
     high = set(profile()["basic_compute"].get("high_cost_bundle", []))
     return any(node["status"] == "pending" and node["capability_id"] in high and node.get("assigned_round") == control["active_round_id"] for node in snapshot["nodes"])
+
+
+def _latest_failure_packet(root: Path, node: dict[str, Any]) -> dict[str, Any] | None:
+    for attempt in reversed(node.get("attempts") or []):
+        relative = attempt.get("failure_packet")
+        if not relative:
+            continue
+        path = root / str(relative)
+        if not path.is_file():
+            return None
+        try:
+            packet = read_json(path)
+            validate(packet, "failure_packet.schema.json")
+            return packet
+        except Exception:
+            return None
+    return None
 
 
 def _finalize_allowed(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> tuple[bool, str]:
@@ -862,11 +893,14 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
     runnable = _runnable(control, snapshot)
     if runnable:
         return {"code": "EXECUTE_RUNNABLE_BATCH", "reason": "Validated Nodes are ready.", "node_ids": [node["node_id"] for node in runnable]}
-    retryable = [
+    failed_nodes = [
         node for node in snapshot["nodes"]
-        if node["status"] == "failed"
-        and node.get("assigned_round") == round_id
-        and len(node.get("attempts") or []) < MAX_EXECUTION_ATTEMPTS
+        if node["status"] == "failed" and node.get("assigned_round") == round_id
+    ]
+    retryable = [
+        node for node in failed_nodes
+        if len(node.get("attempts") or []) < MAX_EXECUTION_ATTEMPTS
+        and bool((_latest_failure_packet(root, node) or {}).get("recoverable"))
     ]
     if retryable:
         retryable.sort(key=lambda node: node["node_id"])
@@ -875,22 +909,28 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
             "reason": "A failed scientific Node has a bounded same-Node retry available. Retry never creates a replacement Node.",
             "node_id": retryable[0]["node_id"],
         }
+    if failed_nodes:
+        failed_nodes.sort(key=lambda node: node["node_id"])
+        blocked = failed_nodes[0]
+        packet = _latest_failure_packet(root, blocked) or {}
+        return {
+            "code": "FAILED_NODE_REPAIR_REQUIRED",
+            "reason": "A deterministic failure or exhausted retry requires human repair before same-Node retry or Round finalization.",
+            "node_id": blocked["node_id"],
+            "classification": packet.get("classification", "unknown_failure"),
+            "failure_pointer": next((item.get("failure_packet") for item in reversed(blocked.get("attempts") or []) if item.get("failure_packet")), None),
+        }
     if _has_high_cost_waiting(root, control, snapshot):
         return {"code": "HUMAN_APPROVAL_REQUIRED", "reason": "The one-time high-cost Description bundle needs explicit human approval."}
-    if not plans.get("initial_global"):
-        return {"code": "PLAN_INITIAL_GLOBAL", "reason": "Initial Global exploration has not been planned."}
+    if not plans.get("exploration"):
+        return {"code": "PLAN_EXPLORATION", "reason": "Plan one bounded Global-first exploration set for this Round."}
     runnable = _runnable(control, snapshot)
     if runnable:
-        return {"code": "EXECUTE_RUNNABLE_BATCH", "reason": "Initial Global Nodes are ready.", "node_ids": [node["node_id"] for node in runnable]}
-    if not plans.get("initial_local"):
-        return {"code": "PLAN_INITIAL_LOCAL", "reason": "Representative Cluster-local exploration has not been planned."}
-    runnable = _runnable(control, snapshot)
-    if runnable:
-        return {"code": "EXECUTE_RUNNABLE_BATCH", "reason": "Initial Local Nodes are ready.", "node_ids": [node["node_id"] for node in runnable]}
+        return {"code": "EXECUTE_RUNNABLE_BATCH", "reason": "Exploration Nodes are ready.", "node_ids": [node["node_id"] for node in runnable]}
     allowed, reason = _finalize_allowed(root, control, snapshot)
     if allowed:
         return {"code": "ENTER_FINALIZING", "reason": reason}
-    return {"code": "SCIENTIFIC_DECISION", "reason": "Select a balanced additional exploration or evidence-led deep dive from the bounded Working Set."}
+    return {"code": "SCIENTIFIC_DECISION", "reason": "Select an evidence-led follow-up from the bounded Working Set, or finalize this Round."}
 
 
 def _refresh_control(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> None:
@@ -900,8 +940,6 @@ def _refresh_control(root: Path, control: dict[str, Any], snapshot: dict[str, An
     counts.update({
         "round_analysis_nodes": _round_analysis_work_count(snapshot, control.get("active_round_id")),
         "round_analysis_node_limit": maximum_analysis_nodes,
-        "analysis_materialization_batch_size": batch_size,
-        "initial_global_analysis_node_limit": _initial_global_analysis_limit(),
     })
     control["counts"] = dict(sorted(counts.items()))
     deliverables = _deliverable_status(root, control, snapshot) if control.get("active_round_id") else []
@@ -929,19 +967,11 @@ def _signature(capability_id: str, input_nodes: list[str], scope: dict[str, Any]
 
 def _analysis_planning_limits() -> tuple[int, int]:
     settings = profile().get("runtime_planning") or {}
-    maximum = int(settings.get("max_new_analysis_nodes_per_round", 200))
-    batch_size = int(settings.get("analysis_materialization_batch_size", 50))
-    if maximum < 1 or batch_size < 1 or batch_size > maximum:
+    maximum = int(settings.get("max_new_analysis_nodes_per_round", 100))
+    batch_size = maximum
+    if maximum != 100:
         raise ValueError("Invalid Runtime analysis planning limits")
     return maximum, batch_size
-
-
-def _initial_global_analysis_limit() -> int:
-    maximum, _batch_size = _analysis_planning_limits()
-    value = int((profile().get("runtime_planning") or {}).get("initial_global_analysis_node_limit", 100))
-    if value < 1 or value > maximum:
-        raise ValueError("Invalid initial Global Analysis Node limit")
-    return value
 
 
 def _round_analysis_work_count(snapshot: dict[str, Any], round_id: str | None) -> int:
@@ -1008,6 +1038,7 @@ def _materialize_analysis_specs(
     wave: str,
     wave_limit: int | None = None,
     batch_limit: int | None = None,
+    preserve_order: bool = False,
 ) -> tuple[list[str], int]:
     """Materialize a bounded, deterministic slice without storing deferred candidates as Nodes."""
     round_id = control["active_round_id"]
@@ -1025,7 +1056,8 @@ def _materialize_analysis_specs(
     planned: list[str] = []
     deferred = 0
     by_signature = {node["signature"]: node for node in snapshot["nodes"]}
-    for spec in _balanced_analysis_specs(snapshot, specs, wave):
+    ordered_specs = specs if preserve_order else _balanced_analysis_specs(snapshot, specs, wave)
+    for spec in ordered_specs:
         existing = by_signature.get(spec["signature"])
         if existing and existing["status"] == "succeeded" and (existing.get("result_quality") or {}).get("eligible_for_downstream", True):
             continue
@@ -1074,8 +1106,20 @@ def _add_node(snapshot: dict[str, Any], control: dict[str, Any], capability_id: 
                 node["assigned_round"] = control["active_round_id"]
                 if node["status"] == "failed":
                     node["status"] = "pending"
+                    node["finished_at"] = None
                 return node, False
             if node.get("assigned_round") == control["active_round_id"]:
+                return node, False
+            if node["status"] == "failed":
+                node["assigned_round"] = control["active_round_id"]
+                node["status"] = "pending"
+                node["finished_at"] = None
+                return node, False
+            if node["status"] == "cancelled":
+                if wave == "human_directed":
+                    node["assigned_round"] = control["active_round_id"]
+                    node["status"] = "pending"
+                    node["finished_at"] = None
                 return node, False
     snapshot["counters"]["node"] += 1
     node_id = f"N{snapshot['counters']['node']:06d}"
@@ -1090,6 +1134,7 @@ def _add_node(snapshot: dict[str, Any], control: dict[str, Any], capability_id: 
         "signature": signature,
         "status": "pending",
         "wave": wave,
+        "selection_reason": "balanced_random" if wave == "exploration" else ("human" if wave == "human_directed" else "deterministic_plan"),
         "created_in_round": control["active_round_id"],
         "assigned_round": control["active_round_id"],
         "attempts": [],
@@ -1221,7 +1266,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "round_state": "NO_ACTIVE_ROUND",
         "next_round_number": 1,
         "required_action": {"code": "AWAIT_HUMAN_ROUND", "reason": "A human-authorized Round is required."},
-        "lease": {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None},
+        "lease": {"owner_id": None, "token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None},
         "counts": {},
         "closure": {"contract_satisfied": False, "interpretation_ready": False, "audit_ready": False, "outcome": "undetermined"},
         "pointers": {"round_contract": None, "working_set": "runtime/working_set.json", "dag_snapshot": "runtime/dag_snapshot.json", "event_ledger": "runtime/event_ledger.jsonl", "result_index": "runtime/result_index.jsonl"},
@@ -1232,7 +1277,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     }
     snapshot = {"schema_version": "1.0.0", "control_revision": 0, "last_event_sequence": 0, "counters": {"node": 0, "cluster": 0, "insight": 0}, "nodes": [], "plans": {}, "rounds": {}, "decisions": []}
     with writer_lock(root):
-        _commit(root, control, snapshot, "run_initialized", {"run": control["run"]}, rotate_token=False)
+        _commit(root, control, snapshot, "run_initialized", {"run": control["run"]})
     _print_compact(control, run_root=str(root), control_path=str(control_path(root)), next_action="Invoke /cs-conductor-orchestrator and explicitly authorize RND0001.")
     return 0
 
@@ -1242,13 +1287,8 @@ def _default_deliverables(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if first_comprehensive:
         p = profile()
-        capabilities = (
-            list(p["basic_compute"]["description_capabilities"])
-            + list(p["basic_compute"]["direct_structure_clustering"])
-            + list(p["basic_compute"]["vector_clustering_capabilities"])
-        )
-        items.append({"deliverable_id": "DELIV_BASIC", "type": "capability_coverage", "description": "基本計算を可能な範囲で完了する。", "parameters": {"capability_ids": capabilities}, "human_acceptance_required": False})
-        items.append({"deliverable_id": "DELIV_GLOBAL", "type": "capability_coverage", "description": "初期Global Operatorを網羅する。", "parameters": {"capability_ids": p["initial_exploration"]["global_operator_capabilities"]}, "human_acceptance_required": False})
+        items.append({"deliverable_id": "DELIV_BASIC", "type": "planned_node_coverage", "description": "計画された基本計算Nodeを可能な範囲で完了する。", "parameters": {"plan_key": "basic_compute"}, "human_acceptance_required": False})
+        items.append({"deliverable_id": "DELIV_GLOBAL", "type": "capability_coverage", "description": "Global Operatorを優先的に探索する。", "parameters": {"capability_ids": p["exploration"]["global_operator_capabilities"], "scope_modes": ["global"]}, "human_acceptance_required": False})
     items.append({"deliverable_id": "DELIV_INTERPRETATION", "type": "interpretation_completed", "description": "当該RoundのInterpretationを生成する。", "parameters": {}, "human_acceptance_required": False})
     return items
 
@@ -1324,14 +1364,10 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         maximum_analysis_nodes, batch_size = _analysis_planning_limits()
         snapshot["plans"][round_id] = {
             "basic_compute": False,
-            "initial_global": False,
-            "initial_local": False,
-            "additional_nodes_planned": 0,
+            "exploration": False,
+            "exploration_nodes_planned": 0,
             "analysis_node_limit": maximum_analysis_nodes,
-            "analysis_materialization_batch_size": batch_size,
-            "initial_global_analysis_node_limit": _initial_global_analysis_limit(),
-            "initial_global_deferred": 0,
-            "initial_local_deferred": 0,
+            "scope_sequence": ["global", "global", "local"],
         }
         control.update({"active_round_id": round_id, "round_state": "ACTIVE", "next_round_number": control["next_round_number"] + 1, "blocker": None})
         control["run"]["parallel_limit"] = contract["budgets"]["parallel_limit"]
@@ -1341,7 +1377,7 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         request["used"] = True
         request["used_at"] = utc_now()
         write_json(request_path, request)
-        _commit(root, control, snapshot, "round_authorized", {"contract": contract}, round_id=round_id, rotate_token=False)
+        _commit(root, control, snapshot, "round_authorized", {"contract": contract}, round_id=round_id)
     _print_compact(control, next_step="Acquire the Main Agent Orchestrator lease with resume-round.")
     return 0
 
@@ -1371,10 +1407,10 @@ def cmd_resume_round(args: argparse.Namespace) -> int:
             control["run"]["smiles_column"] = resolved
         lease_token = secrets.token_hex(32)
         now = datetime.now(timezone.utc)
-        control["lease"].update({"owner_id": args.owner_id, "token_hash": value_hash(lease_token), "action_token_hash": None, "expires_at": (now + timedelta(minutes=max(5, args.lease_minutes))).isoformat(), "heartbeat_at": now.isoformat(), "process_id": args.process_id})
-        action_token = _commit(root, control, snapshot, "orchestrator_lease_acquired", {"owner_id": args.owner_id, "recovered_transactions": recovered, "smiles_column": control["run"].get("smiles_column")}, round_id=control["active_round_id"])
+        control["lease"].update({"owner_id": args.owner_id, "token_hash": value_hash(lease_token), "expires_at": (now + timedelta(minutes=max(5, args.lease_minutes))).isoformat(), "heartbeat_at": now.isoformat(), "process_id": args.process_id})
+        _commit(root, control, snapshot, "orchestrator_lease_acquired", {"owner_id": args.owner_id, "recovered_transactions": recovered, "smiles_column": control["run"].get("smiles_column")}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=action_token, lease_acquired=True, lease_token=lease_token, recovered_transactions=recovered)
+    _print_compact(control, lease_acquired=True, lease_token=lease_token, recovered_transactions=recovered)
     return 0
 
 
@@ -1383,10 +1419,10 @@ def cmd_release_lease(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token)
+        _require_action(control, args.lease_token)
         owner = control["lease"]["owner_id"]
-        control["lease"] = {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
-        _commit(root, control, snapshot, "orchestrator_lease_released", {"owner_id": owner, "reason": args.reason}, round_id=control.get("active_round_id"), rotate_token=False)
+        control["lease"] = {"owner_id": None, "token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
+        _commit(root, control, snapshot, "orchestrator_lease_released", {"owner_id": owner, "reason": args.reason}, round_id=control.get("active_round_id"))
     _print_compact(control, lease_released=True, released_owner=owner)
     return 0
 
@@ -1410,7 +1446,7 @@ def cmd_continue_round(args: argparse.Namespace) -> int:
         record.setdefault("human_continuations", []).append({"reason": args.reason, "at": utc_now()})
         control.update({"round_state": "ACTIVE", "blocker": None})
         control["closure"] = {"contract_satisfied": False, "interpretation_ready": False, "audit_ready": False, "outcome": "undetermined"}
-        _commit(root, control, snapshot, "round_continued_by_human", {"reason": args.reason, "additional_walltime_minutes": minutes}, round_id=round_id, rotate_token=False)
+        _commit(root, control, snapshot, "round_continued_by_human", {"reason": args.reason, "additional_walltime_minutes": minutes}, round_id=round_id)
     _print_compact(control, continued_round_id=round_id, additional_walltime_minutes=minutes)
     return 0
 
@@ -1428,7 +1464,7 @@ def cmd_revise_report(args: argparse.Namespace) -> int:
         record = snapshot["rounds"][round_id]
         record.update({"state": "FINALIZING", "latest_audit": None, "report_revision_reason": args.reason, "interpretation_revision_required": True, "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1, "human_interpretation_retry_authorized": blocked_finalizing})
         control.update({"round_state": "FINALIZING", "blocker": None})
-        _commit(root, control, snapshot, "report_revision_requested", {"reason": args.reason}, round_id=round_id, rotate_token=False)
+        _commit(root, control, snapshot, "report_revision_requested", {"reason": args.reason}, round_id=round_id)
     _print_compact(control, report_revision_requested=True, round_id=round_id)
     return 0
 
@@ -1455,8 +1491,8 @@ def cmd_accept_round(args: argparse.Namespace) -> int:
         record["state"] = "CLOSED"
         record["accepted_at"] = utc_now()
         control.update({"active_round_id": None, "round_state": "CLOSED", "blocker": None})
-        control["lease"] = {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
-        _commit(root, control, snapshot, "round_accepted_by_human", {"note": args.note}, round_id=round_id, rotate_token=False)
+        control["lease"] = {"owner_id": None, "token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
+        _commit(root, control, snapshot, "round_accepted_by_human", {"note": args.note}, round_id=round_id)
     _print_compact(control, accepted_round_id=round_id)
     return 0
 
@@ -1478,14 +1514,14 @@ def cmd_verify_return(args: argparse.Namespace) -> int:
                 record = snapshot["rounds"][control["active_round_id"]]
                 progressed = int(control["revision"]) > int(args.start_revision)
                 record["no_progress_returns"] = 0 if progressed else int(record.get("no_progress_returns", 0)) + 1
-                control["lease"] = {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
-                _commit(root, control, snapshot, "returned_orchestrator_lease_reclaimed", {"owner_id": args.owner_id, "start_revision": args.start_revision, "progressed": progressed, "no_progress_returns": record["no_progress_returns"]}, round_id=control["active_round_id"], rotate_token=False)
+                control["lease"] = {"owner_id": None, "token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
+                _commit(root, control, snapshot, "returned_orchestrator_lease_reclaimed", {"owner_id": args.owner_id, "start_revision": args.start_revision, "progressed": progressed, "no_progress_returns": record["no_progress_returns"]}, round_id=control["active_round_id"])
                 reclaimed = True
         sequence, checksum = _verify_ledger(root)
         lease = control["lease"]
         no_progress = int(snapshot.get("rounds", {}).get(str(control.get("active_round_id")), {}).get("no_progress_returns", 0)) if control.get("active_round_id") else 0
         resumable = bool(control.get("active_round_id") and control["round_state"] in {"ACTIVE", "FINALIZING"} and not _lease_live(control))
-        human_stop = control["required_action"]["code"] in {"HUMAN_APPROVAL_REQUIRED", "HUMAN_REVIEW_REQUIRED", "INTERPRETATION_BLOCKED", "AWAIT_HUMAN_ROUND"}
+        human_stop = control["required_action"]["code"] in {"FAILED_NODE_REPAIR_REQUIRED", "HUMAN_APPROVAL_REQUIRED", "HUMAN_REVIEW_REQUIRED", "INTERPRETATION_BLOCKED", "AWAIT_HUMAN_ROUND"}
         response = {"ledger_ok": sequence == control["last_event_sequence"] and checksum == control["last_event_checksum"], "lease_live": _lease_live(control), "lease_reclaimed": reclaimed, "recovered_transactions": recovered, "same_round_resume_allowed": resumable, "automatic_same_round_resume_recommended": bool(resumable and not human_stop and no_progress < 2), "no_progress_returns": no_progress, "new_round_allowed": not control.get("active_round_id")}
     _print_compact(control, **response)
     return 0
@@ -1515,14 +1551,17 @@ def _all_nodes_by_capability(snapshot: dict[str, Any], capability_ids: Iterable[
 def _plan_basic(control: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
     p = profile()["basic_compute"]
     planned: list[str] = []
+    required: list[str] = []
     description_nodes: dict[str, dict[str, Any]] = {}
     for capability_id in p["description_capabilities"]:
         node, created = _add_node(snapshot, control, capability_id, [], "basic_compute", {"mode": "not_applicable"}, {})
         description_nodes[capability_id] = node
+        required.append(node["node_id"])
         if created:
             planned.append(node["node_id"])
     for capability_id in p["direct_structure_clustering"]:
         node, created = _add_node(snapshot, control, capability_id, [], "basic_compute", {"mode": "not_applicable"}, {"min_cluster_size": 5})
+        required.append(node["node_id"])
         if created:
             planned.append(node["node_id"])
     for capability_id in p["vector_clustering_capabilities"]:
@@ -1532,9 +1571,12 @@ def _plan_basic(control: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
                 continue
             parameters = {"input_representation": representation, "parameter_mode": "auto", "min_cluster_size": 5}
             node, created = _add_node(snapshot, control, capability_id, [source["node_id"]], "basic_compute", {"mode": "not_applicable"}, parameters)
+            required.append(node["node_id"])
             if created:
                 planned.append(node["node_id"])
-    snapshot["plans"][control["active_round_id"]]["basic_compute"] = True
+    plan = snapshot["plans"][control["active_round_id"]]
+    plan["basic_compute"] = True
+    plan["basic_compute_node_ids"] = list(dict.fromkeys(required))
     return planned
 
 
@@ -1554,69 +1596,13 @@ def _analysis_inputs(capability: dict[str, Any], descriptions: list[dict[str, An
 
 
 def _mmp_enabled_for_active_round(control: dict[str, Any], snapshot: dict[str, Any]) -> bool:
-    """Do not inject A014 into a Round authorized by an older Runtime."""
+    """A014 is available only to a Round created by this Runtime version."""
     round_id = control.get("active_round_id")
-    return bool(round_id and (snapshot.get("rounds", {}).get(round_id) or {}).get("runtime_version") == "0.1.4")
+    return bool(round_id and (snapshot.get("rounds", {}).get(round_id) or {}).get("runtime_version") == VERSION)
 
 
 def _usable_clusterings(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return _succeeded(snapshot, "clustering")
-
-
-def _plan_initial_global(control: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
-    p = profile()
-    caps = catalog()
-    descriptions = _succeeded(snapshot, "description", p["initial_exploration"]["description_master_panel"])
-    clusterings = _usable_clusterings(snapshot)
-    by_desc = {node["capability_id"]: node for node in _succeeded(snapshot, "description")}
-    specs: list[dict[str, Any]] = []
-    for capability_id in p["initial_exploration"]["global_operator_capabilities"]:
-        if capability_id == "A014" and not _mmp_enabled_for_active_round(control, snapshot):
-            continue
-        capability = caps[capability_id]
-        if capability_id == "A005":
-            panel = p["modeling"]["fixed_description_panel"]
-            if all(item in by_desc for item in panel):
-                specs.append({
-                    "capability_id": capability_id,
-                    "input_nodes": [by_desc[item]["node_id"] for item in panel],
-                    "scope": {"mode": "global"},
-                    "parameters": {"role": "global-model"},
-                })
-            continue
-        inputs = _analysis_inputs(capability, descriptions, clusterings, "global")
-        for input_nodes in inputs:
-            specs.append({
-                "capability_id": capability_id,
-                "input_nodes": input_nodes,
-                "scope": {"mode": "global"},
-                "parameters": {"role": "global-build"} if capability_id == "A014" else {},
-            })
-    global_limit = _initial_global_analysis_limit()
-    planned, deferred = _materialize_analysis_specs(
-        snapshot,
-        control,
-        specs,
-        "initial_global",
-        wave_limit=global_limit,
-    )
-    plan = snapshot["plans"][control["active_round_id"]]
-    maximum, _batch_size = _analysis_planning_limits()
-    budget_exhausted = _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum
-    global_limit_exhausted = sum(
-        node["kind"] == "analysis"
-        and node.get("wave") == "initial_global"
-        and (node.get("created_in_round") == control["active_round_id"] or node.get("assigned_round") == control["active_round_id"])
-        for node in snapshot["nodes"]
-    ) >= global_limit
-    plan.update({
-        "initial_global": deferred == 0 or global_limit_exhausted or budget_exhausted,
-        "initial_global_deferred": deferred,
-    })
-    if budget_exhausted and deferred:
-        plan.update({"initial_local": True, "initial_local_deferred": None})
-        snapshot["rounds"][control["active_round_id"]]["finish_reason"] = "analysis_node_budget_exhausted"
-    return planned
 
 
 def _cluster_rows(root: Path, source_node: str | None = None) -> list[dict[str, Any]]:
@@ -1646,94 +1632,183 @@ def _representative_cluster_ids(root: Path, clustering_node: dict[str, Any], lim
     return selected
 
 
-def _plan_initial_local(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
-    p = profile()
+def _exploration_global_specs(control: dict[str, Any], snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    settings = profile()["exploration"]
     caps = catalog()
-    descriptions = _succeeded(snapshot, "description", p["initial_exploration"]["description_master_panel"])
-    by_desc = {node["capability_id"]: node for node in _succeeded(snapshot, "description")}
+    descriptions = _succeeded(snapshot, "description", settings["description_panel"])
     clusterings = _usable_clusterings(snapshot)
-    limit = int(p["initial_exploration"]["representative_clusters_per_clustering"])
+    by_description = {node["capability_id"]: node for node in _succeeded(snapshot, "description")}
+    specs: list[dict[str, Any]] = []
+    for capability_id in settings["global_operator_capabilities"]:
+        capability = caps[capability_id]
+        if capability_id == "A005":
+            panel = profile()["modeling"]["fixed_description_panel"]
+            if all(item in by_description for item in panel):
+                specs.append({"capability_id": capability_id, "input_nodes": [by_description[item]["node_id"] for item in panel], "scope": {"mode": "global"}, "parameters": {"role": "global-model"}})
+            continue
+        for input_nodes in _analysis_inputs(capability, descriptions, clusterings, "global"):
+            specs.append({
+                "capability_id": capability_id,
+                "input_nodes": input_nodes,
+                "scope": {"mode": "global"},
+                "parameters": {"role": "global-build"} if capability_id == "A014" else {},
+            })
+    return specs
+
+
+def _global_comparator(global_nodes: list[dict[str, Any]], capability_id: str, local_inputs: list[str]) -> dict[str, Any] | None:
+    local_set = set(local_inputs)
+    compatible = [
+        node for node in global_nodes
+        if node["capability_id"] == capability_id
+        and node.get("scope", {}).get("mode") == "global"
+        and set(node["input_nodes"]).issubset(local_set)
+    ]
+    return max(compatible, key=lambda node: (len(node["input_nodes"]), node["node_id"]), default=None)
+
+
+def _exploration_local_specs(root: Path, control: dict[str, Any], snapshot: dict[str, Any], global_nodes: list[dict[str, Any]], mmp_screen_node: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    settings = profile()["exploration"]
+    caps = catalog()
+    descriptions = _succeeded(snapshot, "description", settings["description_panel"])
+    by_description = {node["capability_id"]: node for node in _succeeded(snapshot, "description")}
+    clusterings = _usable_clusterings(snapshot)
+    limit = int(settings["representative_clusters_per_clustering"])
     specs: list[dict[str, Any]] = []
     for clustering in clusterings:
         cluster_ids = _representative_cluster_ids(root, clustering, limit)
         for cluster_id in cluster_ids:
-            local_scope = {"mode": "single_cluster", "cluster_ids": [cluster_id]}
-            for capability_id in p["initial_exploration"]["local_operator_capabilities"]:
+            scope = {"mode": "single_cluster", "cluster_ids": [cluster_id]}
+            for capability_id in settings["local_operator_capabilities"]:
+                if capability_id in {"A003", "A004", "A005", "A014"}:
+                    continue
                 capability = caps[capability_id]
-                for input_nodes in _analysis_inputs(capability, descriptions, [clustering], "local"):
+                for base_inputs in _analysis_inputs(capability, descriptions, [clustering], "local"):
+                    comparator = _global_comparator(global_nodes, capability_id, base_inputs)
+                    if not comparator:
+                        continue
                     specs.append({
                         "capability_id": capability_id,
-                        "input_nodes": input_nodes,
-                        "scope": local_scope,
+                        "input_nodes": list(dict.fromkeys([*base_inputs, comparator["node_id"]])),
+                        "scope": scope,
                         "parameters": {"target_cluster": cluster_id},
                     })
-            for projection_id in p["initial_exploration"].get("projection_overlay_capabilities", []):
-                for description in descriptions:
-                    global_projection = next((node for node in _succeeded(snapshot, "analysis", [projection_id]) if node["input_nodes"] == [description["node_id"]] and node["scope"].get("mode") == "global"), None)
-                    if global_projection:
-                        specs.append({
-                            "capability_id": projection_id,
-                            "input_nodes": [global_projection["node_id"], clustering["node_id"]],
-                            "scope": local_scope,
-                            "parameters": {"role": "cluster-overlay", "target_cluster": cluster_id},
-                        })
-        global_model = next((node for node in _succeeded(snapshot, "analysis", ["A005"]) if node["parameters"].get("role") == "global-model"), None)
-        panel = p["modeling"]["fixed_description_panel"]
-        if global_model and all(item in by_desc for item in panel):
-            inputs = [by_desc[item]["node_id"] for item in panel] + [clustering["node_id"], global_model["node_id"]]
+            for projection_id in ("A003", "A004"):
+                for global_projection in [node for node in global_nodes if node["capability_id"] == projection_id]:
+                    specs.append({
+                        "capability_id": projection_id,
+                        "input_nodes": [global_projection["node_id"], clustering["node_id"]],
+                        "scope": scope,
+                        "parameters": {"role": "cluster-overlay", "target_cluster": cluster_id},
+                    })
+        global_model = next((node for node in global_nodes if node["capability_id"] == "A005" and node.get("parameters", {}).get("role") == "global-model"), None)
+        panel = profile()["modeling"]["fixed_description_panel"]
+        if global_model and all(item in by_description for item in panel):
             specs.append({
                 "capability_id": "A005",
-                "input_nodes": inputs,
+                "input_nodes": [*[by_description[item]["node_id"] for item in panel], clustering["node_id"], global_model["node_id"]],
                 "scope": {"mode": "multi_scope", "clustering_node": clustering["node_id"]},
-                "parameters": {"role": "cluster-survey", "min_local_samples": p["modeling"]["minimum_local_samples"]},
+                "parameters": {"role": "cluster-survey", "min_local_samples": profile()["modeling"]["minimum_local_samples"]},
             })
-    mmp_planned: list[str] = []
-    mmp_specs: list[dict[str, Any]] = []
-    mmp_profile = p.get("matched_molecular_pairs") or {}
-    if _mmp_enabled_for_active_round(control, snapshot) and mmp_profile:
-        global_mmp = next((
-            node for node in _succeeded(snapshot, "analysis", [mmp_profile.get("capability_id", "A014")])
-            if node.get("parameters", {}).get("role") == mmp_profile.get("global_role", "global-build")
-        ), None)
-        if global_mmp and clusterings:
-            screen_inputs = [global_mmp["node_id"], *[node["node_id"] for node in clusterings]]
-            screen_scope = {"mode": "multi_scope"}
-            screen_parameters = {"role": mmp_profile.get("screen_role", "local-screen")}
-            screen_signature = _signature("A014", screen_inputs, screen_scope, screen_parameters)
-            screen_node = next((node for node in snapshot["nodes"] if node.get("signature") == screen_signature), None)
-            maximum, _planning_batch = _analysis_planning_limits()
-            if screen_node is None and _round_analysis_work_count(snapshot, control["active_round_id"]) < maximum:
-                screen_node, created = _add_node(
-                    snapshot, control, "A014", screen_inputs, "initial_local", screen_scope, screen_parameters,
+    mmp_profile = profile().get("matched_molecular_pairs") or {}
+    global_mmp = next((node for node in global_nodes if node["capability_id"] == "A014" and node.get("parameters", {}).get("role") == "global-build"), None)
+    if global_mmp and clusterings and mmp_screen_node:
+        representative = set(mmp_profile.get("representative_clustering_capabilities") or [])
+        per_clustering = int(mmp_profile.get("representative_clusters_per_clustering", 1))
+        for clustering in [node for node in clusterings if node["capability_id"] in representative]:
+            for cluster_id in _representative_cluster_ids(root, clustering, per_clustering):
+                specs.append({
+                    "capability_id": "A014",
+                    "input_nodes": [global_mmp["node_id"], mmp_screen_node["node_id"], clustering["node_id"]],
+                    "scope": {"mode": "single_cluster", "cluster_ids": [cluster_id]},
+                    "parameters": {"role": mmp_profile.get("detail_role", "local-detail"), "target_cluster": cluster_id},
+                })
+    return specs
+
+
+def _history_balanced_specs(snapshot: dict[str, Any], specs: list[dict[str, Any]], seed: int) -> list[dict[str, Any]]:
+    lookup = _node_lookup(snapshot)
+    history = [
+        node for node in snapshot["nodes"]
+        if node["kind"] == "analysis"
+        and node["status"] == "succeeded"
+        and (node.get("result_quality") or {}).get("eligible_for_downstream", True)
+    ]
+    capability_counts = Counter(node["capability_id"] for node in history)
+    scope_counts = Counter("local" if node.get("scope", {}).get("mode") != "global" else "global" for node in history)
+    input_counts: Counter[str] = Counter()
+    for node in history:
+        input_counts.update(lookup[item]["capability_id"] for item in node["input_nodes"] if item in lookup and lookup[item]["kind"] in {"description", "clustering"})
+    unique: dict[str, dict[str, Any]] = {}
+    for spec in specs:
+        signature = _signature(spec["capability_id"], spec["input_nodes"], spec["scope"], spec["parameters"])
+        blocked = any(
+            node["signature"] == signature
+            and (
+                node["status"] in {"pending", "running", "cancelled"}
+                or (
+                    node["status"] == "succeeded"
+                    and (node.get("result_quality") or {}).get("eligible_for_downstream", True)
                 )
-                if created:
-                    mmp_planned.append(screen_node["node_id"])
-            representative_ids = set(mmp_profile.get("representative_clustering_capabilities") or [])
-            per_clustering = int(mmp_profile.get("representative_clusters_per_clustering", 1))
-            if screen_node is not None:
-                for clustering in [node for node in clusterings if node["capability_id"] in representative_ids]:
-                    for cluster_id in _representative_cluster_ids(root, clustering, per_clustering):
-                        mmp_specs.append({
-                            "capability_id": "A014",
-                            "input_nodes": [global_mmp["node_id"], screen_node["node_id"], clustering["node_id"]],
-                            "scope": {"mode": "single_cluster", "cluster_ids": [cluster_id]},
-                            "parameters": {"role": mmp_profile.get("detail_role", "local-detail"), "target_cluster": cluster_id},
-                        })
-    _maximum, planning_batch = _analysis_planning_limits()
-    planned, deferred = _materialize_analysis_specs(
-        snapshot, control, mmp_specs + specs, "initial_local",
-        batch_limit=max(0, planning_batch - len(mmp_planned)),
-    )
-    planned = mmp_planned + planned
-    plan = snapshot["plans"][control["active_round_id"]]
+            )
+            for node in snapshot["nodes"]
+        )
+        if not blocked:
+            unique.setdefault(signature, {**spec, "signature": signature})
+    def score(spec: dict[str, Any]) -> tuple[Any, ...]:
+        source_ids = [lookup[item]["capability_id"] for item in spec["input_nodes"] if item in lookup and lookup[item]["kind"] in {"description", "clustering"}]
+        scope = "local" if spec["scope"].get("mode") != "global" else "global"
+        return (
+            capability_counts[spec["capability_id"]],
+            scope_counts[scope],
+            sum(input_counts[item] for item in source_ids),
+            value_hash([seed, spec["signature"]]),
+        )
+    return sorted(unique.values(), key=score)
+
+
+def _plan_exploration(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
     maximum, _batch_size = _analysis_planning_limits()
-    budget_exhausted = _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum
+    contract = _active_contract(root, control)
+    requested = int((contract or {}).get("budgets", {}).get("max_additional_nodes", maximum))
+    budget = min(maximum, max(0, requested))
+    settings = profile()["exploration"]
+    global_slots = min(budget, (2 * budget + 2) // 3)
+    global_specs = _history_balanced_specs(snapshot, _exploration_global_specs(control, snapshot), int(settings["random_seed"]))
+    planned_global, _deferred_global = _materialize_analysis_specs(
+        snapshot, control, global_specs, "exploration", batch_limit=global_slots, preserve_order=True,
+    )
+    lookup = _node_lookup(snapshot)
+    global_nodes = [lookup[node_id] for node_id in planned_global]
+    global_nodes.extend(node for node in _succeeded(snapshot, "analysis") if node.get("scope", {}).get("mode") == "global")
+    remaining = max(0, budget - len(planned_global))
+    screen_planned: list[str] = []
+    mmp_screen_node: dict[str, Any] | None = None
+    global_mmp = next((node for node in global_nodes if node["capability_id"] == "A014" and node.get("parameters", {}).get("role") == "global-build"), None)
+    clusterings = _usable_clusterings(snapshot)
+    if global_mmp and clusterings and remaining:
+        mmp_profile = profile().get("matched_molecular_pairs") or {}
+        mmp_screen_node, created = _add_node(
+            snapshot, control, "A014", [global_mmp["node_id"], *[node["node_id"] for node in clusterings]],
+            "exploration", {"mode": "multi_scope"}, {"role": mmp_profile.get("screen_role", "local-screen")},
+        )
+        if created or (mmp_screen_node.get("assigned_round") == control["active_round_id"] and mmp_screen_node.get("status") != "succeeded"):
+            screen_planned.append(mmp_screen_node["node_id"])
+            remaining -= 1
+    local_specs = _history_balanced_specs(snapshot, _exploration_local_specs(root, control, snapshot, global_nodes, mmp_screen_node), int(settings["random_seed"]) + 1)
+    planned_local, _deferred_local = _materialize_analysis_specs(
+        snapshot, control, local_specs, "exploration", batch_limit=remaining, preserve_order=True,
+    )
+    planned = list(dict.fromkeys([*planned_global, *screen_planned, *planned_local]))
+    plan = snapshot["plans"][control["active_round_id"]]
     plan.update({
-        "initial_local": deferred == 0 or budget_exhausted,
-        "initial_local_deferred": deferred,
+        "exploration": True,
+        "exploration_nodes_planned": len(planned),
+        "global_nodes_planned": len(planned_global),
+        "local_nodes_planned": len(screen_planned) + len(planned_local),
+        "selection_seed": int(settings["random_seed"]),
+        "scope_sequence": list(settings["scope_sequence"]),
     })
-    if budget_exhausted and deferred:
-        snapshot["rounds"][control["active_round_id"]]["finish_reason"] = "analysis_node_budget_exhausted"
     return planned
 
 
@@ -1744,14 +1819,18 @@ def _candidate_cells(root: Path, control: dict[str, Any], snapshot: dict[str, An
     maximum, _batch_size = _analysis_planning_limits()
     if _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum:
         return []
-    if contract and int(round_plan.get("additional_nodes_planned", 0)) >= int(contract["budgets"]["max_additional_nodes"]):
+    if contract and _round_analysis_work_count(snapshot, control["active_round_id"]) >= min(100, int(contract["budgets"]["max_additional_nodes"])):
         return []
     caps = catalog()
-    descriptions = _succeeded(snapshot, "description", p["initial_exploration"]["description_master_panel"])
+    descriptions = _succeeded(snapshot, "description", p["exploration"]["description_panel"])
     clusterings = _usable_clusterings(snapshot)
-    existing = {node["signature"] for node in snapshot["nodes"]}
+    existing = {
+        node["signature"] for node in snapshot["nodes"]
+        if node["status"] in {"pending", "running", "cancelled"}
+        or (node["status"] == "succeeded" and (node.get("result_quality") or {}).get("eligible_for_downstream", True))
+    }
     candidates: list[dict[str, Any]] = []
-    for capability_id in p["additional_exploration"]["operator_capabilities"]:
+    for capability_id in p["exploration"]["global_operator_capabilities"]:
         capability = caps[capability_id]
         for scope_mode in ("global", "local"):
             for input_nodes in _analysis_inputs(capability, descriptions, clusterings, scope_mode):
@@ -1807,11 +1886,11 @@ def _plan_mutation(args: argparse.Namespace, allowed: set[str], event_type: str,
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, allowed)
+        _require_action(control, args.lease_token, allowed)
         planned = planner(root, control, snapshot)
-        token = _commit(root, control, snapshot, event_type, {"planned_node_ids": planned}, round_id=control["active_round_id"])
+        _commit(root, control, snapshot, event_type, {"planned_node_ids": planned}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=token, planned_node_ids=planned[:100], planned_count=len(planned))
+    _print_compact(control, planned_node_ids=planned[:100], planned_count=len(planned))
     return 0
 
 
@@ -1819,12 +1898,8 @@ def cmd_plan_basic(args: argparse.Namespace) -> int:
     return _plan_mutation(args, {"PLAN_BASIC"}, "basic_compute_planned", lambda _root, control, snapshot: _plan_basic(control, snapshot))
 
 
-def cmd_plan_initial_global(args: argparse.Namespace) -> int:
-    return _plan_mutation(args, {"PLAN_INITIAL_GLOBAL"}, "initial_global_planned", lambda _root, control, snapshot: _plan_initial_global(control, snapshot))
-
-
-def cmd_plan_initial_local(args: argparse.Namespace) -> int:
-    return _plan_mutation(args, {"PLAN_INITIAL_LOCAL"}, "initial_local_planned", _plan_initial_local)
+def cmd_plan_exploration(args: argparse.Namespace) -> int:
+    return _plan_mutation(args, {"PLAN_EXPLORATION"}, "exploration_planned", _plan_exploration)
 
 
 def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
@@ -1832,7 +1907,7 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"SCIENTIFIC_DECISION"})
+        _require_action(control, args.lease_token, {"SCIENTIFIC_DECISION"})
         candidates = {item["candidate_id"]: item for item in _candidate_cells(root, control, snapshot)}
         selected_ids = [item for item in (args.candidate_ids or "").split(",") if item]
         maximum, _batch_size = _analysis_planning_limits()
@@ -1847,11 +1922,11 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
             if candidate_id not in candidates:
                 raise ValueError(f"Unknown or stale candidate: {candidate_id}")
             item = candidates[candidate_id]
-            node, created = _add_node(snapshot, control, item["capability_id"], item["input_nodes"], "additional_exploration", item["scope"], item["parameters"])
+            node, created = _add_node(snapshot, control, item["capability_id"], item["input_nodes"], "deep_dive", item["scope"], item["parameters"])
             if created:
+                node["selection_reason"] = "interpreter_followup"
                 planned.append(node["node_id"])
         record = snapshot["rounds"][control["active_round_id"]]
-        snapshot["plans"][control["active_round_id"]]["additional_nodes_planned"] += len(planned)
         if args.finish_reason:
             if args.finish_reason not in {"no_eligible_work", "contract_satisfied"}:
                 raise ValueError("Invalid finish reason")
@@ -1869,9 +1944,9 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
         if not planned and not args.finish_reason:
             raise ValueError("Select at least one candidate or supply a Runtime-verifiable finish reason")
         snapshot["decisions"].append({"round_id": control["active_round_id"], "candidate_ids": selected_ids, "planned_node_ids": planned, "rationale": args.rationale, "created_at": utc_now()})
-        token = _commit(root, control, snapshot, "scientific_decision_applied", {"candidate_ids": selected_ids, "planned_node_ids": planned, "rationale": args.rationale, "finish_reason": args.finish_reason}, round_id=control["active_round_id"])
+        _commit(root, control, snapshot, "scientific_decision_applied", {"candidate_ids": selected_ids, "planned_node_ids": planned, "rationale": args.rationale, "finish_reason": args.finish_reason}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=token, planned_node_ids=planned[:100], planned_count=len(planned))
+    _print_compact(control, planned_node_ids=planned[:100], planned_count=len(planned))
     return 0
 
 
@@ -1894,7 +1969,7 @@ def cmd_approve_high_cost(args: argparse.Namespace) -> int:
                 if node["status"] == "pending" and node["capability_id"] in high and node.get("assigned_round") == control["active_round_id"]:
                     node["status"] = "cancelled"
                     node["finished_at"] = utc_now()
-        _commit(root, control, snapshot, "high_cost_bundle_decided", {"approved": bool(args.approve), "rationale": args.rationale}, round_id=control["active_round_id"], rotate_token=False)
+        _commit(root, control, snapshot, "high_cost_bundle_decided", {"approved": bool(args.approve), "rationale": args.rationale}, round_id=control["active_round_id"])
     _print_compact(control, high_cost_bundle_approved=bool(args.approve))
     return 0
 
@@ -1929,168 +2004,164 @@ def _skill_output_dir(scratch: Path) -> Path:
     return scratch / "output"
 
 
-def _validate_attempt_scratch(scratch: Path, recovery_allowed: bool) -> None:
+def _validate_attempt_scratch(scratch: Path) -> None:
     if not scratch.exists():
         return
     entries = {path.name for path in scratch.iterdir()}
     if not entries:
         return
-    if recovery_allowed and entries == {"recovery"} and (scratch / "recovery").is_dir():
+    allowed = {"execution_request.json"}
+    if entries <= allowed:
         return
     raise FileExistsError(f"Unexpected pre-existing Attempt scratch: {scratch}")
 
 
-def _mmp_skill_command(
-    root: Path,
-    control: dict[str, Any],
-    snapshot: dict[str, Any],
-    node: dict[str, Any],
-    attempt_id: str,
-    scratch: Path,
-    launcher: Path,
-) -> list[str]:
-    role = str(node.get("parameters", {}).get("role") or "global-build")
-    if role not in {"global-build", "local-screen", "local-detail"}:
-        raise ValueError(f"Unsupported A014 role: {role}")
-    argv = [
-        RUNTIME_PYTHON_TOKEN, str(launcher), role,
-        "--conductor", "--project", control["run"]["project"],
-        "--run-id", control["run"]["run_id"], "--round-id", node["assigned_round"],
-        "--node-id", node["node_id"], "--attempt-id", attempt_id,
-        "--output-dir", str(_skill_output_dir(scratch)),
-    ]
+def _request_artifact(role: str, path: Path, artifact_type: str, node: dict[str, Any] | None = None, result_path: Path | None = None) -> dict[str, Any]:
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"Required Execution Request artifact is missing: {resolved}")
+    item: dict[str, Any] = {
+        "role": role,
+        "artifact_type": artifact_type,
+        "path": str(resolved),
+        "sha256": file_hash(resolved),
+    }
+    if node:
+        item.update({"source_node_id": node["node_id"], "source_capability_id": node["capability_id"]})
+    if result_path:
+        result_path = result_path.resolve()
+        item.update({"result_path": str(result_path), "result_sha256": file_hash(result_path)})
+    return item
+
+
+def _validate_execution_request_artifacts(root: Path, control: dict[str, Any], request: dict[str, Any]) -> None:
+    """Bind a signed Request to the bytes that will actually be consumed."""
+    resolved_root = root.resolve()
+    canonical_input = Path(control["run"]["input"]).resolve()
+
+    def verify(item: dict[str, Any], path_key: str, hash_key: str) -> None:
+        value = item.get(path_key)
+        expected_hash = item.get(hash_key)
+        if not value or not expected_hash:
+            raise PermissionError(f"Execution Request input lacks {path_key}/{hash_key}: {item.get('role')}")
+        path = Path(str(value)).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Execution Request input is missing: {path}")
+        if path != canonical_input:
+            try:
+                path.relative_to(resolved_root)
+            except ValueError as exc:
+                raise PermissionError(f"Execution Request input escapes the Run Root: {path}") from exc
+        actual_hash = file_hash(path)
+        if not hmac.compare_digest(actual_hash, str(expected_hash)):
+            raise PermissionError(
+                f"Execution Request artifact hash mismatch for {item.get('role')}:{path_key}: {path}"
+            )
+
+    for item in request.get("inputs") or []:
+        verify(item, "path", "sha256")
+        if item.get("result_path") is not None or item.get("result_sha256") is not None:
+            verify(item, "result_path", "result_sha256")
+
+
+def _request_resource_options(control: dict[str, Any], node: dict[str, Any], capability: dict[str, Any]) -> dict[str, Any]:
+    algorithm = str(capability.get("implementation", {}).get("algorithm", ""))
+    available = _node_cpu_allocation(control, node)
+    if algorithm == "mordred_3d":
+        return {"compound_workers": min(MORDRED_3D_MAX_WORKERS, available), "available_cpu_cores": available}
+    if algorithm == "tblite_xtb":
+        all_available = _available_cpu_cores(control)
+        cores = min(XTB_CORES_PER_COMPOUND, all_available)
+        return {"cores_per_compound": cores, "compound_workers": max(1, all_available // cores), "available_cpu_cores": all_available}
+    if algorithm == "chemberta_embedding":
+        return {"cpu_threads": _available_cpu_cores(control)}
+    return {}
+
+
+def _execution_request(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt_id: str, scratch: Path) -> dict[str, Any]:
+    capability = catalog()[node["capability_id"]]
+    request_contract = capability.get("conductor_request")
+    if not isinstance(request_contract, dict):
+        raise ValueError(f"Capability lacks conductor_request contract: {node['capability_id']}")
+    adapter = request_contract.get("adapter")
+    dataset = Path(control["run"]["input"])
+    inputs = [_request_artifact("dataset", dataset, "endpoint_csv")]
     lookup = _node_lookup(snapshot)
-    inputs = [lookup[item] for item in node["input_nodes"]]
-    for input_node in inputs:
-        argv += ["--source-node-id", input_node["node_id"]]
-    if role == "global-build":
-        argv += [
-            "--input", control["run"]["input"], "--id-column", control["run"]["id_column"],
-            "--smiles-column", _run_smiles_column(control), "--endpoint-column", control["run"]["endpoint"],
-            "--higher-is-better", "true" if control["run"]["higher_is_better"] else "false",
-            "--available-cpu-cores", str(_node_cpu_allocation(control, node)),
-        ]
-        allowed = {
-            "num_cuts": "--num-cuts", "cut_smarts": "--cut-smarts",
-            "min_core_heavy_atoms": "--min-core-heavy-atoms",
-            "extended_core_fraction": "--extended-core-fraction",
-            "primary_core_fraction": "--primary-core-fraction",
-            "min_radius": "--min-radius", "max_radius": "--max-radius",
-            "fragment_jobs": "--fragment-jobs",
-        }
-        for key, option in allowed.items():
-            if key in node.get("parameters", {}):
-                argv += [option, str(node["parameters"][key])]
-        return argv
-    global_mmp = next((
-        item for item in inputs
-        if item["capability_id"] == "A014" and item.get("parameters", {}).get("role") == "global-build"
-    ), None)
-    if not global_mmp:
-        raise ValueError(f"A014 {role} requires a succeeded global-build Node")
-    database = Path(global_mmp["output_ref"]) / "mmp_database.sqlite"
-    membership = root / "runtime" / "cluster_membership.csv"
-    argv += ["--mmp-database", str(database), "--cluster-membership", str(membership)]
-    clusterings = [item for item in inputs if item["kind"] == "clustering"]
-    if role == "local-screen":
-        argv += ["--cluster-registry", str(root / "runtime" / "cluster_registry.jsonl")]
-        for clustering in clusterings:
-            argv += ["--clustering-node-id", clustering["node_id"]]
-    else:
-        cluster_id = str(node.get("parameters", {}).get("target_cluster") or "")
-        if not cluster_id:
-            raise ValueError("A014 local-detail requires target_cluster")
-        argv += ["--cluster-id", cluster_id]
-        if clusterings:
-            argv += ["--clustering-node-id", clusterings[0]["node_id"]]
-    return argv
+    upstream = [lookup[item] for item in node["input_nodes"]]
+    for source in upstream:
+        if source["kind"] == "description":
+            inputs.append(_request_artifact("description", _primary_payload(source), "description_payload", source, _result_path(source)))
+        elif source["kind"] == "clustering":
+            inputs.append(_request_artifact("clustering", _primary_payload(source), "cluster_membership", source, _result_path(source)))
+        elif source["kind"] == "analysis":
+            role = "analysis"
+            payload = _primary_payload(source)
+            if adapter == "projection_operator":
+                role = "projection"
+            elif adapter == "multidescription_operator" and (Path(source["output_ref"]) / "global_oof_predictions.csv").is_file():
+                role = "global_model"
+                payload = Path(source["output_ref"]) / "global_oof_predictions.csv"
+            elif adapter == "mmp_operator" and (Path(source["output_ref"]) / "mmp_database.sqlite").is_file():
+                role = "mmp_database"
+                payload = Path(source["output_ref"]) / "mmp_database.sqlite"
+            inputs.append(_request_artifact(role, payload, f"{role}_payload", source, _result_path(source)))
+    if adapter == "meta_clustering":
+        inputs.append(_request_artifact("cluster_membership_matrix", root / "runtime" / "cluster_membership.csv", "cluster_membership_matrix"))
+    if adapter == "mmp_operator" and str(node.get("parameters", {}).get("role") or "global-build") != "global-build":
+        matrix = root / "runtime" / "cluster_membership.csv"
+        registry = root / "runtime" / "cluster_registry.jsonl"
+        inputs.append(_request_artifact("cluster_membership_matrix", matrix, "cluster_membership_matrix"))
+        if registry.is_file():
+            inputs.append(_request_artifact("cluster_registry", registry, "cluster_registry"))
+    defaults = capability.get("default_parameters", {})
+    parameters = {**(defaults if isinstance(defaults, dict) else {}), **node.get("parameters", {})}
+    subject = dict(node.get("scope") or {"mode": "global"})
+    subject.setdefault("mode", "global")
+    if parameters.get("target_cluster") and not subject.get("target_cluster_id"):
+        subject["target_cluster_id"] = parameters["target_cluster"]
+    if parameters.get("comparison_cluster") and not subject.get("comparison_cluster_id"):
+        subject["comparison_cluster_id"] = parameters["comparison_cluster"]
+    request = {
+        "schema_version": "1.0.0",
+        "identity": {
+            "project": control["run"]["project"], "run_id": control["run"]["run_id"],
+            "round_id": node["assigned_round"], "node_id": node["node_id"], "attempt_id": attempt_id,
+            "capability_id": node["capability_id"], "skill_name": node["skill_name"],
+        },
+        "inputs": inputs,
+        "columns": {"compound_id": control["run"]["id_column"], "smiles": _run_smiles_column(control), "endpoint": control["run"]["endpoint"]},
+        "endpoint": {"higher_is_better": bool(control["run"]["higher_is_better"])},
+        "subject": subject,
+        "parameters": parameters,
+        "resources": {
+            "available_cpu_cores": _available_cpu_cores(control),
+            "node_cpu_cores": _node_cpu_allocation(control, node),
+            "native_thread_limit": _native_thread_limit(control, node),
+            "skill_options": _request_resource_options(control, node, capability),
+        },
+        "output": {"directory": str(_skill_output_dir(scratch).resolve()), "overwrite": False},
+        "created_at": utc_now(),
+    }
+    validate(request, "execution_request.schema.json")
+    return request
 
 
 def _skill_command(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt_id: str, scratch: Path) -> list[str]:
-    capability = catalog()[node["capability_id"]]
     launcher = project_root() / ".claude" / "skills" / node["skill_name"] / "scripts" / "launch.py"
-    if node["capability_id"] == "A014":
-        return _mmp_skill_command(root, control, snapshot, node, attempt_id, scratch, launcher)
-    # The signed execution contract must not depend on which Pixi environment
-    # happened to prepare the packet. Resolve this token only after the packet
-    # has been validated by the executing Runtime process.
-    argv = [RUNTIME_PYTHON_TOKEN, str(launcher), "--conductor", "--project", control["run"]["project"], "--run-id", control["run"]["run_id"], "--round-id", node["assigned_round"], "--node-id", node["node_id"], "--attempt-id", attempt_id, "--output-dir", str(_skill_output_dir(scratch))]
-    lookup = _node_lookup(snapshot)
-    inputs = [lookup[item] for item in node["input_nodes"]]
-    if node["kind"] == "description":
-        argv += ["--input", control["run"]["input"], "--smiles-column", _run_smiles_column(control)]
-        if node["capability_id"] == "D016":
-            available = _node_cpu_allocation(control, node)
-            workers = min(MORDRED_3D_MAX_WORKERS, available)
-            argv += [
-                "--compound-workers", str(workers),
-                "--available-cpu-cores", str(available),
-            ]
-        elif node["capability_id"] == "D019":
-            available = _available_cpu_cores(control)
-            cores_per_compound = min(XTB_CORES_PER_COMPOUND, available)
-            compound_workers = max(1, available // cores_per_compound)
-            argv += [
-                "--cores-per-compound", str(cores_per_compound),
-                "--compound-workers", str(compound_workers),
-                "--available-cpu-cores", str(available),
-            ]
-        elif node["capability_id"] == "D020":
-            argv += ["--cpu-threads", str(_available_cpu_cores(control))]
-    elif node["kind"] == "clustering":
-        description = next((item for item in inputs if item["kind"] == "description"), None)
-        argv += ["--input", str(_primary_payload(description)) if description else control["run"]["input"]]
-        if description:
-            argv += ["--input-representation", description["capability_id"], "--description-result", str(_result_path(description))]
-        elif node["capability_id"] in DIRECT_STRUCTURE_CLUSTERING:
-            argv += ["--smiles-column", _run_smiles_column(control)]
-    elif node["kind"] == "analysis":
-        argv += ["--input", control["run"]["input"], "--property-column", control["run"]["endpoint"], "--higher-is-better" if control["run"]["higher_is_better"] else "--no-higher-is-better"]
-        if node["capability_id"] in DIRECT_STRUCTURE_ANALYSIS:
-            argv += ["--smiles-column", _run_smiles_column(control)]
-        descriptions = [item for item in inputs if item["kind"] == "description"]
-        clusterings = [item for item in inputs if item["kind"] == "clustering"]
-        projections = [item for item in inputs if item["kind"] == "analysis" and item["capability_id"] in {"A003", "A004"}]
-        if node["capability_id"] == "A005":
-            for description in descriptions:
-                argv += ["--description", f"{description['capability_id']}={_primary_payload(description)}", "--description-node-id", description["node_id"]]
-            global_model = next((item for item in inputs if item["kind"] == "analysis" and item["capability_id"] == "A005"), None)
-            if global_model:
-                oof = Path(global_model["output_ref"]) / "global_oof_predictions.csv"
-                argv += ["--global-oof", str(oof), "--global-model-node-id", global_model["node_id"]]
-        elif descriptions:
-            description = descriptions[0]
-            argv += ["--description", str(_primary_payload(description)), "--description-node-id", description["node_id"], "--evaluation-representation", description["capability_id"]]
-            argv += ["--description-result", str(_result_path(description))] if node["capability_id"] in {"A003", "A004"} else []
-        if clusterings:
-            clustering = clusterings[0]
-            argv += ["--membership", str(_primary_payload(clustering)), "--clustering-node-id", clustering["node_id"]]
-            if node["capability_id"] not in {"A003", "A004"}:
-                argv += ["--clustering-representation", clustering["capability_id"]]
-        if projections:
-            projection = projections[0]
-            argv += ["--projection", str(_primary_payload(projection)), "--projection-node-id", projection["node_id"]]
-    excluded = {
-        "input_representation", "min_cluster_size", "compound_workers",
-        "cores_per_compound", "cpu_threads", "available_cpu_cores",
-    }
-    mapping = {"target_cluster": "--target-cluster", "comparison_cluster": "--comparison-cluster"}
-    for key, value in node["parameters"].items():
-        if key in excluded or value is None:
-            continue
-        option = mapping.get(key, "--" + key.replace("_", "-"))
-        if isinstance(value, bool):
-            argv.append(option if value else "--no-" + option.removeprefix("--"))
-        elif isinstance(value, (str, int, float)):
-            argv += [option, str(value)]
-    if node["kind"] == "clustering" and "min_cluster_size" in node["parameters"]:
-        argv += ["--min-cluster-size", str(node["parameters"]["min_cluster_size"])]
-    if node["kind"] == "analysis" and node["capability_id"] not in {"A003", "A004", "A005"}:
-        mode = node["scope"].get("mode")
-        cli_mode = {"global": "global", "single_cluster": "within-cluster", "cluster_vs_cluster": "between-clusters"}.get(mode)
-        if cli_mode:
-            argv += ["--scope-mode", cli_mode]
-    return argv
+    request_path = scratch / "execution_request.json"
+    if request_path.is_file():
+        request = read_json(request_path)
+        validate(request, "execution_request.schema.json")
+        identity = request["identity"]
+        expected = (node["node_id"], attempt_id, node["capability_id"], node["skill_name"])
+        actual = (identity["node_id"], identity["attempt_id"], identity["capability_id"], identity["skill_name"])
+        if actual != expected:
+            raise PermissionError(f"Execution Request identity changed after preparation: {node['node_id']}")
+        _validate_execution_request_artifacts(root, control, request)
+    else:
+        request = _execution_request(root, control, snapshot, node, attempt_id, scratch)
+        write_json(request_path, request)
+    return [RUNTIME_PYTHON_TOKEN, str(launcher), "--conductor-request", str(request_path.resolve())]
 
 
 def _resolve_skill_command(command: list[str]) -> list[str]:
@@ -2238,16 +2309,17 @@ def _promote_mmp_payloads(
         import pandas as pd
         import sqlite3
 
-        required = {"mmp_database.sqlite", "mmp_pair_detail.parquet"}
+        required = {"mmp_database.sqlite", "mmp_storage_profile.json"}
         if not required <= declared:
-            raise ValueError("A014 Global payload is missing stable SQLite or Parquet")
+            raise ValueError("A014 Global payload is missing stable SQLite or storage profile")
         csv_rows = len(pd.read_csv(temporary / "mmp_pair_detail.csv"))
-        parquet_rows = len(pd.read_parquet(temporary / "mmp_pair_detail.parquet"))
         from contextlib import closing
         with closing(sqlite3.connect(temporary / "mmp_database.sqlite")) as connection:
             database_rows = int(connection.execute("SELECT COUNT(*) FROM mmp_pairs").fetchone()[0])
-        if len({csv_rows, parquet_rows, database_rows}) != 1:
-            raise ValueError(f"A014 payload row-count mismatch: CSV={csv_rows}, Parquet={parquet_rows}, DB={database_rows}")
+        storage = read_json(temporary / "mmp_storage_profile.json")
+        profile_rows = int((storage.get("table_rows") or {}).get("mmp_pairs", -1))
+        if len({csv_rows, database_rows, profile_rows}) != 1:
+            raise ValueError(f"A014 payload row-count mismatch: CSV={csv_rows}, DB={database_rows}, profile={profile_rows}")
     return promoted
 
 
@@ -2403,12 +2475,15 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         report_name = "report.html"
         atomic_bytes(temporary / report_name, _operator_report_html(control, node, subject, summary, detail_name, snapshot).encode("utf-8"))
         result_ref = f"{node['node_id']}@{attempt['attempt_id']}"
-        final_relative = final.relative_to(root)
-        artifact_links = {"result": (final_relative / primary_name).as_posix(), "report": (final_relative / report_name).as_posix(), "detail": (final_relative / detail_name).as_posix() if detail_name else None}
+        artifact_links = {
+            "result": _run_relative_artifact(root, final / primary_name),
+            "report": _run_relative_artifact(root, final / report_name),
+            "detail": _run_relative_artifact(root, final / detail_name) if detail_name else None,
+        }
         if "mmp_database" in mmp_payloads:
-            artifact_links["mmp_database"] = (final_relative / mmp_payloads["mmp_database"]).as_posix()
+            artifact_links["mmp_database"] = _run_relative_artifact(root, final / mmp_payloads["mmp_database"])
         if "mmp_reference_cards" in mmp_payloads:
-            artifact_links["mmp_reference_cards"] = (final_relative / mmp_payloads["mmp_reference_cards"]).as_posix()
+            artifact_links["mmp_reference_cards"] = _run_relative_artifact(root, final / mmp_payloads["mmp_reference_cards"])
         card_quality_flags = ["negative_result"] if (summary.get("key_metrics") or {}).get("negative_result") is True else []
         card = {"schema_version": "1.0.0", "result_ref": result_ref, "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": summary.get("metric"), "headline": str(summary.get("headline") or ""), "key_metrics": summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": card_quality_flags, "limitations": summary.get("limitations") or [], "artifact_links": artifact_links, "attention": "watch", "created_at": utc_now()}
         validate(card, "result_card.schema.json")
@@ -2427,7 +2502,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
                 source_payload = _skill_artifact_path(skill_output, local_summary["primary_artifact"]["path"])
                 local_relative = Path("clusters") / cluster_id / "model_comparison.csv"
                 _copy_artifact(source_payload, temporary / local_relative, local_summary["primary_artifact"].get("sha256"))
-                local_card = {"schema_version": "1.0.0", "result_ref": str(local_summary["result_ref"]), "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": local_subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": local_summary.get("metric"), "headline": str(local_summary.get("headline") or ""), "key_metrics": local_summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": [], "limitations": local_summary.get("limitations") or [], "artifact_links": {"result": (final_relative / local_relative).as_posix(), "report": (final_relative / report_name).as_posix(), "detail": (final_relative / detail_name).as_posix() if detail_name else None}, "attention": "watch", "created_at": utc_now()}
+                local_card = {"schema_version": "1.0.0", "result_ref": str(local_summary["result_ref"]), "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": local_subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": local_summary.get("metric"), "headline": str(local_summary.get("headline") or ""), "key_metrics": local_summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": [], "limitations": local_summary.get("limitations") or [], "artifact_links": {"result": _run_relative_artifact(root, final / local_relative), "report": _run_relative_artifact(root, final / report_name), "detail": _run_relative_artifact(root, final / detail_name) if detail_name else None}, "attention": "watch", "created_at": utc_now()}
                 validate(local_card, "result_card.schema.json")
                 card_file = f"result_card_{cluster_id}.json"
                 write_json(temporary / card_file, local_card)
@@ -2456,7 +2531,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         _rebuild_cluster_matrix(root)
     known_results = {row["result_ref"] for row in read_jsonl(root / "runtime" / "result_index.jsonl")}
     for card in result_cards:
-        card = {**card, "artifact_links": {key: (str((final / value).relative_to(root)) if value else None) for key, value in card["artifact_links"].items()}}
+        _validate_result_card_links(root, card)
         if card["result_ref"] not in known_results:
             append_jsonl_fsync(root / "runtime" / "result_index.jsonl", card)
             known_results.add(card["result_ref"])
@@ -2481,6 +2556,44 @@ def _run_one(
         "resolved_command_hash": value_hash(command),
         "runtime_python": command[0],
     }
+
+    def terminate_tree(target: subprocess.Popen[Any], grace_seconds: int = 10) -> None:
+        if target.poll() is not None:
+            return
+        if os.name == "posix":
+            try:
+                os.killpg(os.getpgid(target.pid), signal.SIGTERM)
+            except ProcessLookupError:
+                return
+        elif os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(target.pid), "/T"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+            )
+        else:
+            target.terminate()
+        try:
+            target.wait(timeout=grace_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        if os.name == "posix":
+            try:
+                os.killpg(os.getpgid(target.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                return
+        elif os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(target.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+            )
+        else:
+            target.kill()
+        try:
+            target.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            target.kill()
+
     try:
         attempt_tmp = process_path.parent / "tmp"
         attempt_tmp.mkdir(parents=True, exist_ok=True)
@@ -2496,36 +2609,34 @@ def _run_one(
             "NUMBA_NUM_THREADS", "RAYON_NUM_THREADS",
         ):
             process_env[name] = str(thread_limit)
-        process = subprocess.Popen(command, cwd=project_root(), env=process_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        write_json(process_path, {"pid": process.pid, "started_at": started, **process_identity})
-        output, _unused = process.communicate(timeout=timeout_seconds)
-        log_path.write_text(output or "", encoding="utf-8")
+        popen_options: dict[str, Any] = {}
+        if os.name == "posix":
+            popen_options["start_new_session"] = True
+        elif os.name == "nt":
+            popen_options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        with log_path.open("w", encoding="utf-8", errors="replace") as log_handle:
+            process = subprocess.Popen(
+                command, cwd=project_root(), env=process_env, text=True,
+                stdout=log_handle, stderr=subprocess.STDOUT, **popen_options,
+            )
+            write_json(process_path, {"pid": process.pid, "process_group_id": process.pid, "started_at": started, **process_identity})
+            process.wait(timeout=timeout_seconds)
         finished = utc_now()
-        write_json(process_path, {"pid": process.pid, "started_at": started, "finished_at": finished, "returncode": process.returncode, **process_identity})
+        write_json(process_path, {"pid": process.pid, "process_group_id": process.pid, "started_at": started, "finished_at": finished, "returncode": process.returncode, **process_identity})
         return {"returncode": process.returncode, "timed_out": False, "started_at": started, "finished_at": finished}
-    except subprocess.TimeoutExpired as exc:
-        process.terminate()
-        try:
-            output, _unused = process.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            output, _unused = process.communicate()
-        output = output or exc.stdout or ""
-        if isinstance(output, bytes):
-            output = output.decode("utf-8", errors="replace")
-        log_path.write_text(output + "\nTIMEOUT\n", encoding="utf-8")
+    except subprocess.TimeoutExpired:
+        if process is not None:
+            terminate_tree(process)
+        with log_path.open("a", encoding="utf-8") as log_handle:
+            log_handle.write("\nTIMEOUT\n")
         finished = utc_now()
-        write_json(process_path, {"pid": process.pid, "started_at": started, "finished_at": finished, "returncode": 124, "timed_out": True, **process_identity})
+        write_json(process_path, {"pid": process.pid if process else None, "process_group_id": process.pid if process else None, "started_at": started, "finished_at": finished, "returncode": 124, "timed_out": True, **process_identity})
         return {"returncode": 124, "timed_out": True, "started_at": started, "finished_at": finished}
     except Exception as exc:
         if process is not None and process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        log_path.write_text(f"PROCESS_START_OR_WAIT_FAILURE: {exc}\n", encoding="utf-8")
+            terminate_tree(process)
+        with log_path.open("a", encoding="utf-8") as log_handle:
+            log_handle.write(f"\nPROCESS_START_OR_WAIT_FAILURE: {exc}\n")
         finished = utc_now()
         previous = read_json(process_path) if process_path.is_file() else {"started_at": started, **process_identity}
         write_json(process_path, {**previous, "finished_at": finished, "returncode": 125, "runner_error": str(exc)})
@@ -2535,19 +2646,21 @@ def _run_one(
 def _classify_execution_failure(log_path: Path, outcome: dict[str, Any], error: Exception) -> tuple[str, bool]:
     text = ""
     if log_path.is_file():
-        text = log_path.read_text(encoding="utf-8", errors="replace")[-12000:].lower()
+        with log_path.open("rb") as handle:
+            handle.seek(max(0, log_path.stat().st_size - 12000))
+            text = handle.read(12000).decode("utf-8", errors="replace").lower()
     message = f"{error} {outcome.get('runner_error') or ''}".lower()
     combined = f"{message}\n{text}"
     if outcome.get("timed_out"):
         return "transient_process_failure", True
     if any(token in combined for token in ("unrecognized arguments", "unknown option", "no such option", "argument contract")):
-        return "argument_contract_mismatch", True
+        return "argument_contract_mismatch", False
     if any(token in combined for token in ("pixi", "environment", "conda", "uv cache")) and outcome.get("returncode") in {1, 125, 127}:
         return "environment_initialization_failure", True
     if any(token in combined for token in ("working directory", "no such file", "cannot find the path", "file not found")):
-        return "path_or_working_directory_mismatch", True
+        return "path_or_working_directory_mismatch", False
     if any(token in combined for token in ("missing column", "column not found", "required column", "csv")):
-        return "input_format_or_column_mismatch", True
+        return "input_format_or_column_mismatch", False
     if any(token in combined for token in ("schema", "identity or status mismatch", "missing or invalid skill artifact")):
         return "payload_validation_failure", False
     if outcome.get("returncode") in {125}:
@@ -2586,110 +2699,19 @@ def _write_failure_packet(
     return path
 
 
-def _command_options(command: list[str]) -> dict[str, str | bool]:
-    values: dict[str, str | bool] = {}
-    index = 2  # executable and Skill launcher are immutable
-    while index < len(command):
-        token = command[index]
-        if token.startswith("--"):
-            if index + 1 < len(command) and not command[index + 1].startswith("--"):
-                values[token] = command[index + 1]
-                index += 2
-            else:
-                values[token] = True
-                index += 1
-        else:
-            index += 1
-    return values
-
-
-def _load_recovery_override(
-    root: Path,
-    packet: dict[str, Any],
-    command_path_value: str | None,
-    manifest_path_value: str | None,
-) -> tuple[dict[str, list[str]], dict[str, dict[str, Any]]]:
-    if not command_path_value and not manifest_path_value:
-        return {}, {}
-    if not command_path_value or not manifest_path_value:
-        raise ValueError("Recovery command and recovery manifest must be supplied together")
-    if len(packet["execution_contracts"]) != 1:
-        raise ValueError("Adaptive recovery is limited to a one-Node execution packet")
-    contract = packet["execution_contracts"][0]
-    recovery_root = (Path(contract["scratch"]) / "recovery").resolve()
-    command_path = Path(command_path_value).resolve()
-    manifest_path = Path(manifest_path_value).resolve()
-    if recovery_root not in command_path.parents or recovery_root not in manifest_path.parents:
-        raise PermissionError("Recovery files must stay below the assigned Node Attempt recovery directory")
-    command_record = read_json(command_path)
-    manifest = read_json(manifest_path)
-    validate(manifest, "recovery_manifest.schema.json")
-    if command_record.get("node_id") != contract["node_id"] or not isinstance(command_record.get("command_argv"), list):
-        raise ValueError("Recovery command identity is invalid")
-    command = [str(item) for item in command_record["command_argv"]]
-    if manifest["node_id"] != contract["node_id"] or manifest["attempt_id"] != contract["attempt_id"] or manifest["node_signature"] != contract["node_signature"]:
-        raise ValueError("Recovery manifest does not match the signed execution contract")
-    if manifest["command_hash"] != value_hash(command):
-        raise ValueError("Recovery command hash does not match its manifest")
-    base = contract["command_argv"]
-    if len(command) < 2 or command[:2] != base[:2]:
-        raise PermissionError("Recovery cannot replace the Python executable or scientific Skill launcher")
-    protected = {
-        "--conductor", "--project", "--run-id", "--round-id", "--node-id", "--attempt-id",
-        "--endpoint", "--higher-is-better", "--no-higher-is-better", "--input-representation",
-        "--metric", "--cluster-id", "--scope", "--random-seed", "--seed", "--id-column", "--smiles-column",
-    }
-    before, after = _command_options(base), _command_options(command)
-    changed_protected = sorted(name for name in protected if before.get(name) != after.get(name))
-    if changed_protected:
-        raise PermissionError(f"Recovery changed protected scientific arguments: {changed_protected}")
-    path_options = {"--input", "--output-dir", "--model-dir", "--description-result", "--membership", "--metadata"}
-    changed_values = sorted(name for name in set(before) & set(after) if before[name] != after[name] and name not in path_options)
-    if changed_values:
-        raise PermissionError(f"Recovery changed existing parameter values: {changed_values}")
-    removed = {name: before[name] for name in set(before) - set(after) if name not in path_options}
-    added = {name: after[name] for name in set(after) - set(before) if name not in path_options}
-    unmatched_added = dict(added)
-    for old_name, old_value in removed.items():
-        match = next((new_name for new_name, new_value in unmatched_added.items() if new_value == old_value), None)
-        if match is None:
-            raise PermissionError(f"Recovery removed an option without a value-preserving alias: {old_name}")
-        unmatched_added.pop(match)
-    if unmatched_added:
-        raise PermissionError(f"Recovery added options that are not value-preserving aliases: {sorted(unmatched_added)}")
-    for relative, expected_hash in manifest["temporary_file_hashes"].items():
-        path = (recovery_root / relative).resolve()
-        if recovery_root not in path.parents or not path.is_file() or file_hash(path) != expected_hash:
-            raise ValueError(f"Recovery temporary file is missing or changed: {relative}")
-    prior_pointer = contract.get("prior_failure_pointer")
-    if not prior_pointer:
-        raise PermissionError("Adaptive recovery requires a prior classified failure")
-    prior = read_json(root / prior_pointer)
-    if not prior.get("recoverable") or prior.get("classification") != manifest["failure_classification"]:
-        raise PermissionError("Prior failure is not eligible for this recovery manifest")
-    return {contract["node_id"]: command}, {contract["node_id"]: manifest}
-
-
-def cmd_execute_batch(args: argparse.Namespace) -> int:
+def _execute_packet_batch(args: argparse.Namespace) -> int:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     root = resolve_root(args.run_root)
-    executor_packet: dict[str, Any] | None = None
-    command_overrides: dict[str, list[str]] = {}
-    recovery_manifests: dict[str, dict[str, Any]] = {}
-    packet_path = Path(args.packet).resolve() if getattr(args, "packet", None) else None
+    packet_path = Path(args.packet).resolve()
     selected: list[tuple[dict[str, Any], dict[str, Any], Path, list[str]]] = []
     prepared_commands: list[tuple[dict[str, Any], str, Path, list[str], list[str]]] = []
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        if packet_path:
-            executor_packet = _validate_execution_packet(root, control, packet_path, args.executor_token)
-            args.timeout_minutes = int(executor_packet["timeout_minutes"])
-            args.clean_scratch = bool(executor_packet["clean_scratch"])
-            command_overrides, recovery_manifests = _load_recovery_override(root, executor_packet, getattr(args, "recovery_command", None), getattr(args, "recovery_manifest", None))
-        else:
-            _require_action(control, args.lease_token, args.action_token, {"EXECUTE_RUNNABLE_BATCH"})
+        executor_packet = _validate_execution_packet(root, control, packet_path)
+        args.timeout_minutes = int(executor_packet["timeout_minutes"])
+        args.clean_scratch = bool(executor_packet["clean_scratch"])
         if args.timeout_minutes < 1:
             raise ValueError("Node timeout must be at least one minute")
         soft_stop = parse_time(snapshot["rounds"][control["active_round_id"]].get("soft_stop_at"))
@@ -2699,26 +2721,25 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
         remaining_seconds = max(1, int((soft_stop - now).total_seconds())) if soft_stop else args.timeout_minutes * 60
         execution_timeout_seconds = min(args.timeout_minutes * 60, remaining_seconds)
         runnable = {node["node_id"]: node for node in _runnable(control, snapshot)}
-        requested = list(executor_packet["node_ids"]) if executor_packet else ([item for item in (args.node_ids or "").split(",") if item] or list(runnable))
+        requested = list(executor_packet["node_ids"])
         if not requested:
             raise ValueError("No runnable Nodes")
         if set(requested) - set(runnable):
             raise ValueError(f"Requested Nodes are not currently runnable: {sorted(set(requested) - set(runnable))}")
         requested = _select_execution_nodes(requested, runnable, control)
-        contract_lookup = {item["node_id"]: item for item in executor_packet.get("execution_contracts", [])} if executor_packet else {}
+        contract_lookup = {item["node_id"]: item for item in executor_packet.get("execution_contracts", [])}
         for node_id in requested:
             node = runnable[node_id]
             attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
             scratch = root / "runtime" / "scratch" / node["assigned_round"] / node_id / attempt_id
             skill_output = _skill_output_dir(scratch)
             command = _skill_command(root, control, snapshot, node, attempt_id, scratch)
-            if executor_packet:
-                contract = contract_lookup.get(node_id)
-                if not contract or contract["attempt_id"] != attempt_id or Path(contract["scratch"]).resolve() != scratch.resolve() or Path(contract["skill_output"]).resolve() != skill_output.resolve() or contract["command_hash"] != value_hash(command):
-                    raise PermissionError(f"Execution contract changed after packet creation: {node_id}")
-            command = command_overrides.get(node_id, command)
+            contract = contract_lookup.get(node_id)
+            request_path = scratch / "execution_request.json"
+            if not contract or contract["attempt_id"] != attempt_id or Path(contract["scratch"]).resolve() != scratch.resolve() or Path(contract["skill_output"]).resolve() != skill_output.resolve() or contract["command_hash"] != value_hash(command) or Path(contract["request_path"]).resolve() != request_path.resolve() or contract["request_hash"] != value_hash(read_json(request_path)):
+                raise PermissionError(f"Execution contract changed after packet creation: {node_id}")
             resolved_command = _resolve_skill_command(command)
-            _validate_attempt_scratch(scratch, node_id in recovery_manifests)
+            _validate_attempt_scratch(scratch)
             if skill_output.exists():
                 raise FileExistsError(f"Skill output directory must be absent before execution: {skill_output}")
             prepared_commands.append((node, attempt_id, scratch, command, resolved_command))
@@ -2726,8 +2747,6 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
             if not scratch.exists():
                 scratch.mkdir(parents=True, exist_ok=False)
             attempt = {"attempt_id": attempt_id, "status": "running", "started_at": utc_now(), "finished_at": None, "command_argv": command, "scratch": str(scratch), "log": str((root / "runtime" / "logs" / f"{node['node_id']}_{attempt_id}.log").relative_to(root))}
-            if node["node_id"] in recovery_manifests:
-                attempt.update({"execution_mode": "adaptive_recovery", "recovery_manifest_hash": value_hash(recovery_manifests[node["node_id"]])})
             node["attempts"].append(attempt)
             node["current_attempt_id"] = attempt_id
             node["status"] = "running"
@@ -2740,7 +2759,7 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
                 minutes=EXECUTION_LEASE_GRACE_MINUTES,
             )
         ).isoformat()
-        interim_token = _commit(root, control, snapshot, "batch_started", {"nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": attempt["command_argv"]} for node, attempt, _scratch, _resolved_command in selected], "execution_timeout_seconds": execution_timeout_seconds}, round_id=control["active_round_id"])
+        _commit(root, control, snapshot, "batch_started", {"nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": attempt["command_argv"]} for node, attempt, _scratch, _resolved_command in selected], "execution_timeout_seconds": execution_timeout_seconds}, round_id=control["active_round_id"])
     outcomes: dict[str, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=len(selected)) as executor:
         futures = {
@@ -2765,10 +2784,7 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        if executor_packet:
-            _require_executor_followup(control, executor_packet, interim_token)
-        else:
-            _require_action(control, args.lease_token, interim_token, {"WAIT_OR_RECONCILE_RUNNING"})
+        _require_executor_followup(control, executor_packet)
         lookup = _node_lookup(snapshot)
         event_payload: list[dict[str, Any]] = []
         for node_id, outcome in outcomes.items():
@@ -2793,15 +2809,8 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
                 cards = _adapt_success(root, control, snapshot, node, attempt, skill_output, event)
                 node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": node.get("result_quality") or {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": []}})
                 attempt.update({"status": "succeeded", "finished_at": node["finished_at"]})
-                if node_id in recovery_manifests:
-                    recovery_dir = root / "runtime" / "recovery"
-                    recovery_dir.mkdir(parents=True, exist_ok=True)
-                    recovery_record = recovery_dir / f"{node_id}_{attempt['attempt_id']}.json"
-                    write_json(recovery_record, recovery_manifests[node_id])
-                    attempt["recovery_manifest"] = str(recovery_record.relative_to(root))
-                    node["result_quality"].setdefault("quality_flags", []).append("adaptive_recovery")
                 committed.append(node_id)
-                event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "succeeded", "execution_mode": attempt.get("execution_mode", "standard"), "recovery_manifest_hash": attempt.get("recovery_manifest_hash"), "result_refs": [card["result_ref"] for card in cards]})
+                event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "succeeded", "result_refs": [card["result_ref"] for card in cards]})
                 if args.clean_scratch:
                     shutil.rmtree(scratch, ignore_errors=True)
             except Exception as exc:
@@ -2815,31 +2824,26 @@ def cmd_execute_batch(args: argparse.Namespace) -> int:
         control["lease"]["expires_at"] = (
             datetime.now(timezone.utc) + timedelta(minutes=DEFAULT_LEASE_MINUTES)
         ).isoformat()
-        token = _commit(root, control, snapshot, "batch_reconciled", {"outcomes": event_payload}, round_id=control["active_round_id"])
+        _commit(root, control, snapshot, "batch_reconciled", {"outcomes": event_payload}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
     detail_dir = root / "runtime" / "logs"
     _print_compact(
         control,
-        action_token=token,
         detail_pointer=str(detail_dir.relative_to(root)),
-        action="EXECUTE_RUNNABLE_BATCH",
         succeeded_count=len(committed),
         failed_count=len(failed),
         affected_node_ids=(committed + failed)[:50],
-        packet_id=executor_packet.get("packet_id") if executor_packet else None,
+        packet_id=executor_packet.get("packet_id"),
     )
     return 1 if failed and not committed else 0
 
 
 def cmd_execute_packet(args: argparse.Namespace) -> int:
-    # Delegate to the same transactional implementation while withholding the
-    # Main Agent's lease and one-use Action token from the Executor.
-    args.lease_token = None
-    args.action_token = None
-    args.node_ids = None
+    # Delegate to the same transactional implementation.  Packet validation
+    # supplies the signed lease identity without exposing the lease token.
     args.timeout_minutes = DEFAULT_EXECUTION_TIMEOUT_MINUTES
     args.clean_scratch = True
-    return cmd_execute_batch(args)
+    return _execute_packet_batch(args)
 
 
 def _recover_promoted_output(root: Path, snapshot: dict[str, Any], node: dict[str, Any]) -> list[str]:
@@ -2864,7 +2868,7 @@ def _recover_promoted_output(root: Path, snapshot: dict[str, Any], node: dict[st
         for relative in result.get("result_cards") or []:
             card = read_json(final / relative)
             validate(card, "result_card.schema.json")
-            card = {**card, "artifact_links": {key: (str((final / value).relative_to(root)) if value and not Path(value).is_absolute() else value) for key, value in card["artifact_links"].items()}}
+            _validate_result_card_links(root, card)
             if card["result_ref"] not in known:
                 append_jsonl_fsync(root / "runtime" / "result_index.jsonl", card)
                 known.add(card["result_ref"])
@@ -2878,7 +2882,7 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"WAIT_OR_RECONCILE_RUNNING"})
+        _require_action(control, args.lease_token, {"WAIT_OR_RECONCILE_RUNNING"})
         for node in [item for item in snapshot["nodes"] if item["status"] == "running"]:
             attempt = next(item for item in node["attempts"] if item["attempt_id"] == node["current_attempt_id"])
             scratch = Path(attempt["scratch"])
@@ -2917,9 +2921,9 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
                 node.update({"status": "failed", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": {"validation_passed": False, "eligible_for_downstream": False, "quality_flags": ["interrupted_without_committable_result"]}})
                 attempt.update({"status": "failed", "finished_at": node["finished_at"], "error": str(exc), "recovered": True})
                 reconciled.append({"node_id": node["node_id"], "status": "failed", "error": str(exc)})
-        token = _commit(root, control, snapshot, "running_attempts_reconciled", {"outcomes": reconciled}, round_id=control["active_round_id"])
+        _commit(root, control, snapshot, "running_attempts_reconciled", {"outcomes": reconciled}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=token, action="WAIT_OR_RECONCILE_RUNNING", outcome_count=len(reconciled), outcomes=reconciled[:50])
+    _print_compact(control, outcome_count=len(reconciled), outcomes=reconciled[:50])
     return 0
 
 
@@ -2928,7 +2932,7 @@ def cmd_retry_node(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"RETRY_FAILED_NODE"})
+        _require_action(control, args.lease_token, {"RETRY_FAILED_NODE", "FAILED_NODE_REPAIR_REQUIRED"})
         if control["round_state"] != "ACTIVE":
             raise ValueError("A scientific Node can be retried only while the Round is ACTIVE")
         node = _node_lookup(snapshot).get(args.node_id)
@@ -2936,13 +2940,14 @@ def cmd_retry_node(args: argparse.Namespace) -> int:
             raise ValueError("Only a failed Node can be retried")
         if control["required_action"].get("node_id") != node["node_id"]:
             raise ValueError("Runtime selected a different failed Node for bounded retry")
-        if len(node.get("attempts") or []) >= MAX_EXECUTION_ATTEMPTS:
+        human_repair = control["required_action"]["code"] == "FAILED_NODE_REPAIR_REQUIRED"
+        if len(node.get("attempts") or []) >= MAX_EXECUTION_ATTEMPTS and not human_repair:
             raise ValueError("The bounded retry allowance for this Node is exhausted")
         node["status"] = "pending"
         node["finished_at"] = None
         node["assigned_round"] = control["active_round_id"]
-        token = _commit(root, control, snapshot, "node_retry_requested", {"reason": args.reason}, round_id=control["active_round_id"], node_id=node["node_id"])
-    _print_compact(control, action_token=token, action="RETRY_FAILED_NODE", node_id=node["node_id"])
+        _commit(root, control, snapshot, "node_retry_requested", {"reason": args.reason}, round_id=control["active_round_id"], node_id=node["node_id"])
+    _print_compact(control, node_id=node["node_id"])
     return 0
 
 
@@ -2951,12 +2956,12 @@ def cmd_heartbeat(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token)
+        _require_action(control, args.lease_token)
         now = datetime.now(timezone.utc)
         control["lease"]["heartbeat_at"] = now.isoformat()
         control["lease"]["expires_at"] = (now + timedelta(minutes=max(5, args.lease_minutes))).isoformat()
-        token = _commit(root, control, snapshot, "orchestrator_heartbeat", {}, round_id=control["active_round_id"])
-    _print_compact(control, action_token=token, heartbeat_at=control["lease"]["heartbeat_at"], lease_expires_at=control["lease"]["expires_at"])
+        _commit(root, control, snapshot, "orchestrator_heartbeat", {}, round_id=control["active_round_id"])
+    _print_compact(control, heartbeat_at=control["lease"]["heartbeat_at"], lease_expires_at=control["lease"]["expires_at"])
     return 0
 
 
@@ -3013,7 +3018,7 @@ def cmd_enter_finalizing(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"ENTER_FINALIZING"})
+        _require_action(control, args.lease_token, {"ENTER_FINALIZING"})
         allowed, reason = _finalize_allowed(root, control, snapshot)
         if not allowed:
             raise ValueError(f"Runtime refuses early finalization: {reason}")
@@ -3023,9 +3028,9 @@ def cmd_enter_finalizing(args: argparse.Namespace) -> int:
                 node["assigned_round"] = None
         snapshot["rounds"][round_id].update({"state": "FINALIZING", "finalizing_reason": reason, "finalizing_started_at": utc_now()})
         control["round_state"] = "FINALIZING"
-        token = _commit(root, control, snapshot, "round_entered_finalizing", {"reason": reason}, round_id=round_id)
+        _commit(root, control, snapshot, "round_entered_finalizing", {"reason": reason}, round_id=round_id)
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=token, action="ENTER_FINALIZING")
+    _print_compact(control)
     return 0
 
 
@@ -3034,7 +3039,7 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"PLAN_INTERPRETATION"})
+        _require_action(control, args.lease_token, {"PLAN_INTERPRETATION"})
         round_id = control["active_round_id"]
         cards = _current_round_cards(root, snapshot, round_id)
         rereview = set(args.rereview_result_ref or [])
@@ -3059,9 +3064,9 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         write_json(scratch / "context.json", context)
         write_json(scratch / "draft.json", draft)
         node["parameters"].update({"context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json"), "review_manifest": review})
-        token = _commit(root, control, snapshot, "interpretation_prepared", {"node": node, "context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json")}, round_id=round_id, node_id=node["node_id"])
+        _commit(root, control, snapshot, "interpretation_prepared", {"node": node, "context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json")}, round_id=round_id, node_id=node["node_id"])
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=token, node_id=node["node_id"], context_path=str(scratch / "context.json"), draft_path=str(scratch / "draft.json"), interpreter_agent="cs-conductor-interpreter")
+    _print_compact(control, node_id=node["node_id"], context_path=str(scratch / "context.json"), draft_path=str(scratch / "draft.json"), interpreter_agent="cs-conductor-interpreter")
     return 0
 
 
@@ -3140,7 +3145,7 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"WRITE_INTERPRETATION"})
+        _require_action(control, args.lease_token, {"WRITE_INTERPRETATION"})
         node = _node_lookup(snapshot).get(args.node_id)
         if not node or node["kind"] != "interpretation" or node["status"] not in {"pending", "failed"} or node.get("assigned_round") != control["active_round_id"]:
             raise ValueError("Interpretation Node is not commit-ready")
@@ -3177,9 +3182,9 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
             exhausted = len(node["attempts"]) >= attempt_limit
             if exhausted:
                 control["blocker"] = {"code": "INTERPRETATION_RETRY_EXHAUSTED", "node_id": node["node_id"], "attempts": len(node["attempts"]), "failure_pointer": str(failure_path.relative_to(root))}
-            token = _commit(root, control, snapshot, "interpretation_draft_rejected", {"node_id": node["node_id"], "attempt_id": attempt_id, "failure_pointer": str(failure_path.relative_to(root)), "retry_exhausted": exhausted}, round_id=control["active_round_id"], node_id=node["node_id"])
+            _commit(root, control, snapshot, "interpretation_draft_rejected", {"node_id": node["node_id"], "attempt_id": attempt_id, "failure_pointer": str(failure_path.relative_to(root)), "retry_exhausted": exhausted}, round_id=control["active_round_id"], node_id=node["node_id"])
             _write_working_set(root, control, snapshot)
-            _print_compact(control, action_token=token, node_id=node["node_id"], quality_status="fail", retry_exhausted=exhausted, failure_pointer=str(failure_path.relative_to(root)))
+            _print_compact(control, node_id=node["node_id"], quality_status="fail", retry_exhausted=exhausted, failure_pointer=str(failure_path.relative_to(root)))
             return 1
         snapshot["counters"]["insight"] = candidate_snapshot["counters"]["insight"]
         final = Path(node["output_ref"])
@@ -3205,9 +3210,9 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
         if (control.get("blocker") or {}).get("code") == "INTERPRETATION_RETRY_EXHAUSTED":
             control["blocker"] = None
         control["closure"]["outcome"] = outcome
-        token = _commit(root, control, snapshot, "interpretation_committed", {"node_id": node["node_id"], "insight_ids": [item["insight_id"] for item in insights], "report_hash": quality["report_hash"]}, round_id=control["active_round_id"], node_id=node["node_id"])
+        _commit(root, control, snapshot, "interpretation_committed", {"node_id": node["node_id"], "insight_ids": [item["insight_id"] for item in insights], "report_hash": quality["report_hash"]}, round_id=control["active_round_id"], node_id=node["node_id"])
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=token, interpretation_dir=str(final), insight_ids=[item["insight_id"] for item in insights], quality_status="pass")
+    _print_compact(control, interpretation_dir=str(final), insight_ids=[item["insight_id"] for item in insights], quality_status="pass")
     return 0
 
 
@@ -3269,11 +3274,18 @@ def _audit(root: Path, mode: str) -> dict[str, Any]:
         check("SCIENTIFIC_RESULTS_SCHEMA", not invalid, invalid)
         lookup = _node_lookup(snapshot)
         invalid_index = []
+        invalid_result_links = []
         for row in result_rows:
             source = lookup.get(row.get("node_id"))
             if not source or source["status"] != "succeeded" or source["kind"] != "analysis":
                 invalid_index.append({"result_ref": row.get("result_ref"), "node_id": row.get("node_id")})
+            try:
+                validate(row, "result_card.schema.json")
+                _validate_result_card_links(root, row)
+            except Exception as exc:
+                invalid_result_links.append({"result_ref": row.get("result_ref"), "error": str(exc)})
         check("RESULT_INDEX_SOURCES", not invalid_index, invalid_index)
+        check("RESULT_INDEX_LINKS", not invalid_result_links, invalid_result_links)
         invalid_clusters = []
         for row in registry_rows:
             source = lookup.get(row.get("source_node_id"))
@@ -3281,22 +3293,6 @@ def _audit(root: Path, mode: str) -> dict[str, Any]:
             if not source or source["status"] != "succeeded" or source["kind"] != "clustering" or not membership.is_file():
                 invalid_clusters.append({"cluster_id": row.get("cluster_id"), "source_node_id": row.get("source_node_id"), "membership_path": row.get("membership_path")})
         check("CLUSTER_REGISTRY_SOURCES", not invalid_clusters, invalid_clusters)
-        invalid_recoveries: list[str] = []
-        for node in snapshot["nodes"]:
-            for attempt in node.get("attempts") or []:
-                if attempt.get("execution_mode") != "adaptive_recovery":
-                    continue
-                pointer = attempt.get("recovery_manifest")
-                try:
-                    if not pointer:
-                        raise ValueError("missing recovery manifest pointer")
-                    manifest = read_json(root / pointer)
-                    validate(manifest, "recovery_manifest.schema.json")
-                    if manifest["node_id"] != node["node_id"] or manifest["attempt_id"] != attempt["attempt_id"] or value_hash(manifest) != attempt.get("recovery_manifest_hash"):
-                        raise ValueError("recovery manifest identity or hash mismatch")
-                except Exception as exc:
-                    invalid_recoveries.append(f"{node['node_id']}@{attempt.get('attempt_id')}: {exc}")
-        check("ADAPTIVE_RECOVERY_MANIFESTS", not invalid_recoveries, invalid_recoveries)
         if control.get("active_round_id") and control["round_state"] in {"FINALIZING", "AWAITING_HUMAN_REVIEW"}:
             fresh, interpretation_node = _interpretation_fresh(snapshot, control["active_round_id"])
             check("INTERPRETATION_FRESH", fresh, {"node_id": interpretation_node})
@@ -3309,9 +3305,10 @@ def _audit(root: Path, mode: str) -> dict[str, Any]:
                     check("INTERPRETATION_QUALITY", not issues, issues)
                     links_missing = []
                     for card in report["result_catalog"]:
-                        for link in card["artifact_links"].values():
-                            if link and not (root / link).is_file():
-                                links_missing.append(link)
+                        try:
+                            _validate_result_card_links(root, card)
+                        except Exception as exc:
+                            links_missing.append(str(exc))
                     check("INTERPRETATION_LINKS", not links_missing, links_missing)
                 except Exception as exc:
                     check("INTERPRETATION_SCHEMA", False, str(exc))
@@ -3340,16 +3337,16 @@ def cmd_audit(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"RUN_FULL_AUDIT"})
+        _require_action(control, args.lease_token, {"RUN_FULL_AUDIT"})
         if args.mode != "full":
             raise ValueError("Only a Full Audit can satisfy the Round gate")
         audit = _audit(root, args.mode)
         output = _write_audit(root, audit)
         interpretation = snapshot["rounds"][control["active_round_id"]].get("current_interpretation_node")
         snapshot["rounds"][control["active_round_id"]]["latest_audit"] = {"status": audit["status"], "path": str((output / "audit.json").relative_to(root)), "created_at": audit["created_at"], "after_interpretation_node": interpretation}
-        token = _commit(root, control, snapshot, "full_audit_registered", {"status": audit["status"], "path": str(output.relative_to(root)), "after_interpretation_node": interpretation}, round_id=control["active_round_id"])
+        _commit(root, control, snapshot, "full_audit_registered", {"status": audit["status"], "path": str(output.relative_to(root)), "after_interpretation_node": interpretation}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
-    _print_compact(control, action_token=token, output_dir=str(output), audit_status=audit["status"], error_count=audit["error_count"], warning_count=audit["warning_count"])
+    _print_compact(control, output_dir=str(output), audit_status=audit["status"], error_count=audit["error_count"], warning_count=audit["warning_count"])
     return 1 if audit["status"] == "fail" else 0
 
 
@@ -3358,7 +3355,7 @@ def cmd_complete_finalizing(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, args.action_token, {"COMPLETE_FINALIZING"})
+        _require_action(control, args.lease_token, {"COMPLETE_FINALIZING"})
         round_id = control["active_round_id"]
         fresh, interpretation_node = _interpretation_fresh(snapshot, round_id)
         audit = snapshot["rounds"][round_id].get("latest_audit")
@@ -3377,8 +3374,8 @@ def cmd_complete_finalizing(args: argparse.Namespace) -> int:
         control.update({"round_state": "AWAITING_HUMAN_REVIEW", "blocker": None})
         control["closure"] = {"contract_satisfied": completion == "complete", "interpretation_ready": True, "audit_ready": True, "outcome": completion}
         owner = control["lease"]["owner_id"]
-        control["lease"] = {"owner_id": None, "token_hash": None, "action_token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
-        _commit(root, control, snapshot, "round_handed_to_human", {"outcome": outcome, "released_owner": owner}, round_id=round_id, rotate_token=False)
+        control["lease"] = {"owner_id": None, "token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
+        _commit(root, control, snapshot, "round_handed_to_human", {"outcome": outcome, "released_owner": owner}, round_id=round_id)
         _write_working_set(root, control, snapshot)
     _print_compact(control, round_outcome=outcome, human_review_required=True)
     return 0
@@ -3443,7 +3440,7 @@ def cmd_node_cancel(args: argparse.Namespace) -> int:
         if downstream:
             raise ValueError(f"Active downstream Nodes prevent cancellation: {[item['node_id'] for item in downstream]}")
         node.update({"status": "cancelled", "assigned_round": None, "finished_at": utc_now(), "result_quality": {"validation_passed": False, "eligible_for_downstream": False, "quality_flags": ["human_cancelled"]}})
-        _commit(root, control, snapshot, "pending_node_cancelled_by_human", {"reason": args.reason}, round_id=control.get("active_round_id"), node_id=node["node_id"], rotate_token=False)
+        _commit(root, control, snapshot, "pending_node_cancelled_by_human", {"reason": args.reason}, round_id=control.get("active_round_id"), node_id=node["node_id"])
     return 0
 
 
@@ -3491,7 +3488,7 @@ def cmd_result_disable(args: argparse.Namespace) -> int:
                         control["round_state"] = "FINALIZING"
                         record["state"] = "FINALIZING"
                     interpretation_invalidated = True
-        _commit(root, control, snapshot, "result_disabled_by_human", {"reason": args.reason, "downstream_nodes": sorted(descendants), "cancelled_pending_nodes": cancelled, "interpretation_invalidated": interpretation_invalidated}, round_id=round_id, node_id=node["node_id"], rotate_token=False)
+        _commit(root, control, snapshot, "result_disabled_by_human", {"reason": args.reason, "downstream_nodes": sorted(descendants), "cancelled_pending_nodes": cancelled, "interpretation_invalidated": interpretation_invalidated}, round_id=round_id, node_id=node["node_id"])
     print(json.dumps({"node_id": args.node_id, "downstream_nodes": sorted(descendants), "cancelled_pending_nodes": cancelled, "interpretation_invalidated": interpretation_invalidated}, ensure_ascii=False, indent=2))
     return 0
 
@@ -3508,7 +3505,7 @@ def cmd_insight_attention(args: argparse.Namespace) -> int:
             raise ValueError("Unknown Insight")
         revised = {**current, "revision": int(current["revision"]) + 1, "attention": args.attention, "human_note": args.reason, "updated_at": utc_now()}
         append_jsonl_fsync(root / "runtime" / "insight_index.jsonl", revised)
-        _commit(root, control, snapshot, "insight_attention_changed_by_human", {"insight_id": args.insight_id, "attention": args.attention, "reason": args.reason}, round_id=control.get("active_round_id"), rotate_token=False)
+        _commit(root, control, snapshot, "insight_attention_changed_by_human", {"insight_id": args.insight_id, "attention": args.attention, "reason": args.reason}, round_id=control.get("active_round_id"))
     return 0
 
 
@@ -3522,7 +3519,7 @@ def cmd_request_checkpoint(args: argparse.Namespace) -> int:
             raise ValueError("A human checkpoint can be requested only during ACTIVE")
         snapshot["rounds"][control["active_round_id"]]["human_checkpoint_requested"] = True
         snapshot["rounds"][control["active_round_id"]]["checkpoint_reason"] = args.reason
-        _commit(root, control, snapshot, "human_checkpoint_requested", {"reason": args.reason}, round_id=control["active_round_id"], rotate_token=False)
+        _commit(root, control, snapshot, "human_checkpoint_requested", {"reason": args.reason}, round_id=control["active_round_id"])
     _print_compact(control, checkpoint_requested=True)
     return 0
 
@@ -3530,11 +3527,10 @@ def cmd_request_checkpoint(args: argparse.Namespace) -> int:
 def _action_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run-root", required=True)
     parser.add_argument("--lease-token", required=True)
-    parser.add_argument("--action-token", required=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.4 deterministic Runtime Controller")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.5 deterministic Runtime Controller")
     commands = parser.add_subparsers(dest="command", required=True)
 
     item = commands.add_parser("init")
@@ -3560,7 +3556,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--walltime-minutes", type=int, default=480)
     item.add_argument("--parallel-limit", type=int)
     item.add_argument("--available-cpu-cores", type=int)
-    item.add_argument("--max-additional-nodes", type=int, default=300)
+    item.add_argument("--max-additional-nodes", type=int, default=100)
     item.add_argument("--interpretation-iterations", type=int, default=3)
     item.add_argument("--approve-high-cost", action="store_true")
     item.add_argument("--required-deliverables-json")
@@ -3634,7 +3630,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--lease-minutes", type=int, default=DEFAULT_LEASE_MINUTES)
     item.set_defaults(func=cmd_heartbeat)
 
-    for name, function in (("plan-basic", cmd_plan_basic), ("plan-initial-global", cmd_plan_initial_global), ("plan-initial-local", cmd_plan_initial_local)):
+    for name, function in (("plan-basic", cmd_plan_basic), ("plan-exploration", cmd_plan_exploration)):
         item = commands.add_parser(name)
         _action_args(item)
         item.set_defaults(func=function)
@@ -3646,13 +3642,6 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--finish-reason", choices=["no_eligible_work", "contract_satisfied"])
     item.set_defaults(func=cmd_apply_scientific_decision)
 
-    item = commands.add_parser("execute-batch")
-    _action_args(item)
-    item.add_argument("--node-ids")
-    item.add_argument("--timeout-minutes", type=int, default=DEFAULT_EXECUTION_TIMEOUT_MINUTES)
-    item.add_argument("--clean-scratch", action=argparse.BooleanOptionalAction, default=True)
-    item.set_defaults(func=cmd_execute_batch)
-
     item = commands.add_parser("prepare-execution-packet")
     _action_args(item)
     item.add_argument("--node-ids")
@@ -3663,9 +3652,6 @@ def build_parser() -> argparse.ArgumentParser:
     item = commands.add_parser("execute-packet")
     item.add_argument("--run-root", required=True)
     item.add_argument("--packet", required=True)
-    item.add_argument("--executor-token", required=True)
-    item.add_argument("--recovery-command")
-    item.add_argument("--recovery-manifest")
     item.set_defaults(func=cmd_execute_packet)
 
     item = commands.add_parser("reconcile-running")
@@ -3700,7 +3686,6 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--mode", choices=["quick", "full"], default="quick")
     item.add_argument("--register", action="store_true")
     item.add_argument("--lease-token")
-    item.add_argument("--action-token")
     item.set_defaults(func=cmd_audit)
 
     item = commands.add_parser("complete-finalizing")

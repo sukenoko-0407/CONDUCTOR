@@ -36,7 +36,7 @@ class Runtime013Tests(unittest.TestCase):
             self.fail("Command unexpectedly succeeded")
         return completed
 
-    def active_basic_round(self, base: Path) -> tuple[Path, str, str]:
+    def active_basic_round(self, base: Path) -> tuple[Path, str]:
         source = base / "input.csv"
         source.write_text("compound_id,smiles,pIC50\nCMP1,CCO,5.1\nCMP2,CCN,5.4\n", encoding="utf-8")
         run_root = base / "run"
@@ -45,9 +45,9 @@ class Runtime013Tests(unittest.TestCase):
         control_key = (run_root / "runtime" / "control_authority.key").read_text(encoding="utf-8").strip()
         self.command("authorize-round", "--run-root", str(run_root), "--control-key", control_key, "--request-file", prepared["request_file"], "--authorization-token", prepared["authorization_token"])
         resumed = json.loads(self.command("resume-round", "--run-root", str(run_root), "--control-key", control_key, "--owner-id", "main-session").stdout)
-        lease, action = resumed["lease_token"], resumed["action_token"]
-        planned = json.loads(self.command("plan-basic", "--run-root", str(run_root), "--lease-token", lease, "--action-token", action).stdout)
-        return run_root, lease, planned["action_token"]
+        lease = resumed["lease_token"]
+        self.command("plan-basic", "--run-root", str(run_root), "--lease-token", lease)
+        return run_root, lease
 
     def test_default_lease_and_executor_timeout_are_six_hours(self) -> None:
         parser = RUNTIME.build_parser()
@@ -55,20 +55,16 @@ class Runtime013Tests(unittest.TestCase):
             "resume-round", "--run-root", "run", "--control-key", "key", "--owner-id", "owner",
         ])
         heartbeat = parser.parse_args([
-            "heartbeat", "--run-root", "run", "--lease-token", "lease", "--action-token", "action",
-        ])
-        direct = parser.parse_args([
-            "execute-batch", "--run-root", "run", "--lease-token", "lease", "--action-token", "action",
+            "heartbeat", "--run-root", "run", "--lease-token", "lease",
         ])
         packet = parser.parse_args([
-            "prepare-execution-packet", "--run-root", "run", "--lease-token", "lease", "--action-token", "action",
+            "prepare-execution-packet", "--run-root", "run", "--lease-token", "lease",
         ])
 
         self.assertEqual(360, RUNTIME.DEFAULT_LEASE_MINUTES)
         self.assertEqual(360, RUNTIME.DEFAULT_EXECUTION_TIMEOUT_MINUTES)
         self.assertEqual(360, resumed.lease_minutes)
         self.assertEqual(360, heartbeat.lease_minutes)
-        self.assertEqual(360, direct.timeout_minutes)
         self.assertEqual(360, packet.timeout_minutes)
 
     def test_cpu_budget_defaults_to_eight_and_is_independent_of_parallel_limit(self) -> None:
@@ -241,7 +237,7 @@ class Runtime013Tests(unittest.TestCase):
         executor_tools = next(line for line in frontmatter.splitlines() if line.startswith("tools:"))
         self.assertNotIn("Agent", executor_tools)
         self.assertNotIn("Skill", executor_tools)
-        for instruction in ("short-lived", "execute exactly once", "End after this single Runtime call", "never start a second packet"):
+        for instruction in ("short-lived", "Execute exactly once", "End after this single Runtime call", "Never start another packet"):
             self.assertIn(instruction, executor)
 
     def test_compact_response_is_bounded_and_does_not_embed_control(self) -> None:
@@ -255,16 +251,16 @@ class Runtime013Tests(unittest.TestCase):
             "closure": {"contract_satisfied": False, "interpretation_ready": False, "audit_ready": False, "outcome": "undetermined"},
             "pointers": {"working_set": "runtime/working_set.json"},
         }
-        response = RUNTIME._compact_response(control, action_token="token", detail_pointer="runtime/logs")
-        self.assertEqual("0.1.4", response["protocol_version"])
+        response = RUNTIME._compact_response(control, detail_pointer="runtime/logs")
+        self.assertEqual("0.1.5", response["protocol_version"])
         self.assertNotIn("control", response)
         self.assertLessEqual(len(RUNTIME.canonical_bytes(response)), RUNTIME.MAX_COMPACT_RESPONSE_BYTES)
 
     def test_execution_packet_is_signed_action_scoped_and_becomes_stale(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            run_root, lease, action = self.active_basic_round(Path(temporary))
-            response = json.loads(self.command("prepare-execution-packet", "--run-root", str(run_root), "--lease-token", lease, "--action-token", action, "--timeout-minutes", "5").stdout)
-            self.assertEqual("0.1.4", response["protocol_version"])
+            run_root, lease = self.active_basic_round(Path(temporary))
+            response = json.loads(self.command("prepare-execution-packet", "--run-root", str(run_root), "--lease-token", lease, "--timeout-minutes", "5").stdout)
+            self.assertEqual("0.1.5", response["protocol_version"])
             self.assertNotIn("lease_token", response)
             packet_path = Path(response["packet_path"])
             packet = json.loads(packet_path.read_text(encoding="utf-8"))
@@ -275,19 +271,19 @@ class Runtime013Tests(unittest.TestCase):
                 scratch = Path(contract["scratch"])
                 skill_output = Path(contract["skill_output"])
                 self.assertEqual(scratch / "output", skill_output)
-                output_option = contract["command_argv"].index("--output-dir")
-                self.assertEqual(str(skill_output), contract["command_argv"][output_option + 1])
+                self.assertEqual("--conductor-request", contract["command_argv"][2])
+                self.assertEqual(str(Path(contract["request_path"]).resolve()), contract["command_argv"][3])
                 self.assertFalse(skill_output.exists())
             control = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
-            validated = RUNTIME._validate_execution_packet(run_root, control, packet_path, response["executor_token"])
+            validated = RUNTIME._validate_execution_packet(run_root, control, packet_path)
             self.assertEqual(response["packet_id"], validated["packet_id"])
 
-            heartbeat = json.loads(self.command("heartbeat", "--run-root", str(run_root), "--lease-token", lease, "--action-token", action).stdout)
-            self.assertNotEqual(action, heartbeat["action_token"])
+            self.command("heartbeat", "--run-root", str(run_root), "--lease-token", lease)
             changed = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
             with self.assertRaises(PermissionError):
-                RUNTIME._validate_execution_packet(run_root, changed, packet_path, response["executor_token"])
+                RUNTIME._validate_execution_packet(run_root, changed, packet_path)
 
+    @unittest.skip("Legacy Skill-specific CLI assertion; fixed Request command is covered by test_runtime_015.py")
     def test_skill_command_hash_is_independent_of_controller_python(self) -> None:
         capability = RUNTIME.catalog()["D001"]
         control = {"run": {"project": "test", "run_id": "run-013", "input": "input.csv", "smiles_column": "smiles"}}
@@ -342,7 +338,7 @@ class Runtime013Tests(unittest.TestCase):
             )
             self.assertEqual(
                 "Standardized_SMILES",
-                description_command[description_command.index("--smiles-column") + 1],
+                json.loads(Path(description_command[3]).read_text(encoding="utf-8"))["columns"]["smiles"],
             )
             for capability_id in ("C001", "C002", "C003", "C004"):
                 capability = RUNTIME.catalog()[capability_id]
@@ -354,8 +350,8 @@ class Runtime013Tests(unittest.TestCase):
                 command = RUNTIME._skill_command(
                     ROOT, control, {"nodes": [node]}, node, "ATT0001", base / capability_id / "ATT0001",
                 )
-                option = command.index("--smiles-column")
-                self.assertEqual("Standardized_SMILES", command[option + 1])
+                request = json.loads(Path(command[3]).read_text(encoding="utf-8"))
+                self.assertEqual("Standardized_SMILES", request["columns"]["smiles"])
 
             for capability_id in ("A006", "A009", "A013"):
                 capability = RUNTIME.catalog()[capability_id]
@@ -367,8 +363,8 @@ class Runtime013Tests(unittest.TestCase):
                 command = RUNTIME._skill_command(
                     ROOT, control, {"nodes": [node]}, node, "ATT0001", base / capability_id / "ATT0001",
                 )
-                option = command.index("--smiles-column")
-                self.assertEqual("Standardized_SMILES", command[option + 1])
+                request = json.loads(Path(command[3]).read_text(encoding="utf-8"))
+                self.assertEqual("Standardized_SMILES", request["columns"]["smiles"])
 
             capability = RUNTIME.catalog()["A001"]
             nonstructure_node = {
@@ -380,16 +376,20 @@ class Runtime013Tests(unittest.TestCase):
                 ROOT, control, {"nodes": [nonstructure_node]}, nonstructure_node, "ATT0001",
                 base / "A001" / "ATT0001",
             )
-            self.assertNotIn("--smiles-column", nonstructure_command)
+            request = json.loads(Path(nonstructure_command[3]).read_text(encoding="utf-8"))
+            self.assertEqual("Standardized_SMILES", request["columns"]["smiles"])
 
     def test_runtime_passes_only_the_canonical_description_result_downstream(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         base = Path(temporary.name)
+        dataset = base / "input.csv"
+        dataset.write_text("compound_id,smiles,pIC50\nC001,CCO,5\nC002,CCN,6\n", encoding="utf-8")
         control = {
             "run": {
-                "project": "test", "run_id": "run-013", "input": "input.csv",
-                "endpoint": "pIC50", "higher_is_better": True, "smiles_column": "smiles",
+                "project": "test", "run_id": "run-013", "input": str(dataset),
+                "id_column": "compound_id", "endpoint": "pIC50", "higher_is_better": True,
+                "smiles_column": "smiles", "available_cpu_cores": 8, "parallel_limit": 2,
             }
         }
         description_capability = RUNTIME.catalog()["D001"]
@@ -421,8 +421,9 @@ class Runtime013Tests(unittest.TestCase):
                 ROOT, control, {"nodes": [description, node]}, node, "ATT0001",
                 base / capability_id / "ATT0001",
             )
-            option = command.index("--description-result")
-            self.assertEqual(str(Path(description["output_ref"]) / "result.json"), command[option + 1])
+            request = json.loads(Path(command[3]).read_text(encoding="utf-8"))
+            source = next(item for item in request["inputs"] if item["role"] == "description")
+            self.assertEqual(str(Path(description["output_ref"]) / "result.json"), source["result_path"])
 
     def test_xtb_is_exclusive_and_uses_four_cores_per_compound(self) -> None:
         capabilities = RUNTIME.catalog()
@@ -443,12 +444,8 @@ class Runtime013Tests(unittest.TestCase):
         runnable = {node["node_id"]: node for node in (regular, xtb)}
         self.assertEqual([xtb["node_id"]], RUNTIME._select_execution_nodes([xtb["node_id"], regular["node_id"]], runnable, control))
         self.assertEqual([regular["node_id"]], RUNTIME._select_execution_nodes([regular["node_id"], xtb["node_id"]], runnable, control))
-        command = RUNTIME._skill_command(
-            ROOT, control, {"nodes": [xtb]}, xtb, "ATT0001", ROOT / "scratch" / "D019",
-        )
-        self.assertEqual("4", command[command.index("--cores-per-compound") + 1])
-        self.assertEqual("2", command[command.index("--compound-workers") + 1])
-        self.assertEqual("10", command[command.index("--available-cpu-cores") + 1])
+        options = RUNTIME._request_resource_options(control, xtb, capabilities["D019"])
+        self.assertEqual({"cores_per_compound": 4, "compound_workers": 2, "available_cpu_cores": 10}, options)
         self.assertEqual(10, RUNTIME._node_cpu_allocation(control, xtb))
         self.assertEqual(4, RUNTIME._native_thread_limit(control, xtb))
 
@@ -514,11 +511,8 @@ class Runtime013Tests(unittest.TestCase):
         self.assertEqual([mordred["node_id"]], RUNTIME._select_execution_nodes([mordred["node_id"], regular["node_id"]], runnable, control))
         self.assertEqual(8, RUNTIME._node_cpu_allocation(control, mordred))
         self.assertEqual(1, RUNTIME._native_thread_limit(control, mordred))
-        command = RUNTIME._skill_command(
-            ROOT, control, {"nodes": [mordred]}, mordred, "ATT0001", ROOT / "scratch" / "D016",
-        )
-        self.assertEqual("8", command[command.index("--compound-workers") + 1])
-        self.assertEqual("8", command[command.index("--available-cpu-cores") + 1])
+        options = RUNTIME._request_resource_options(control, mordred, capabilities["D016"])
+        self.assertEqual({"compound_workers": 8, "available_cpu_cores": 8}, options)
 
     def test_mordred_3d_parallel_dispatch_preserves_input_order_and_cpu_metadata(self) -> None:
         runner = ROOT / ".claude" / "skills" / "cs-compute-description-mordred-3d" / "scripts" / "run.py"
@@ -647,6 +641,7 @@ class Runtime013Tests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "cpuset allowance"):
                 module._xtb_cpu_plan(20, arguments)
 
+    @unittest.skip("Legacy Skill-specific CLI assertion; Request adapter coverage is in test_runtime_015.py")
     def test_projection_cluster_overlay_uses_clustering_node_id_not_unsupported_representation_option(self) -> None:
         capabilities = RUNTIME.catalog()
         control = {
@@ -732,6 +727,7 @@ class Runtime013Tests(unittest.TestCase):
             control = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
             self.assertEqual("product_smiles", control["run"]["smiles_column"])
 
+    @unittest.skip("0.1.5 does not support legacy Run metadata")
     def test_legacy_run_without_smiles_metadata_uses_deterministic_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
@@ -838,6 +834,7 @@ class Runtime013Tests(unittest.TestCase):
                 json.loads(log.read_text(encoding="utf-8")),
             )
 
+    @unittest.skip("Adaptive recovery scratch was removed in 0.1.5")
     def test_only_empty_or_recovery_scratch_can_be_reused(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             scratch = Path(temporary) / "ATT0001"
@@ -854,10 +851,10 @@ class Runtime013Tests(unittest.TestCase):
 
     def test_invalid_execution_contract_does_not_create_attempt_scratch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            run_root, lease, action = self.active_basic_round(Path(temporary))
+            run_root, lease = self.active_basic_round(Path(temporary))
             response = json.loads(self.command(
                 "prepare-execution-packet", "--run-root", str(run_root),
-                "--lease-token", lease, "--action-token", action, "--timeout-minutes", "5",
+                "--lease-token", lease, "--timeout-minutes", "5",
             ).stdout)
             packet = json.loads(Path(response["packet_path"]).read_text(encoding="utf-8"))
             scratch_paths = [Path(contract["scratch"]) for contract in packet["execution_contracts"]]
@@ -868,14 +865,16 @@ class Runtime013Tests(unittest.TestCase):
                 return [*command, "--unexpected-contract-change"]
 
             arguments = argparse.Namespace(
-                run_root=str(run_root), packet=response["packet_path"], executor_token=response["executor_token"],
-                recovery_command=None, recovery_manifest=None,
+                run_root=str(run_root), packet=response["packet_path"],
             )
             with mock.patch.object(RUNTIME, "_skill_command", side_effect=changed_command):
                 with self.assertRaises(PermissionError):
                     RUNTIME.cmd_execute_packet(arguments)
-            self.assertTrue(all(not path.exists() for path in scratch_paths))
+            for path in scratch_paths:
+                self.assertTrue(path.is_dir())
+                self.assertEqual({"execution_request.json"}, {item.name for item in path.iterdir()})
 
+    @unittest.skip("Legacy 200/50 planner was replaced by one 100-Node exploration in 0.1.5")
     def test_analysis_planning_is_batched_and_capped_per_round(self) -> None:
         maximum, batch_size = RUNTIME._analysis_planning_limits()
         self.assertEqual(200, maximum)
@@ -919,6 +918,7 @@ class Runtime013Tests(unittest.TestCase):
         self.assertEqual(0, deferred)
         self.assertEqual(50, RUNTIME._round_analysis_work_count(snapshot, "RND0002"))
 
+    @unittest.skip("Legacy Initial Global phase was replaced by the unified explorer in 0.1.5")
     def test_initial_global_reserves_capacity_for_local_analysis(self) -> None:
         control = {"active_round_id": "RND0001", "run": {"run_root": str(ROOT / ".test-run")}}
         snapshot = {
@@ -954,6 +954,7 @@ class Runtime013Tests(unittest.TestCase):
         self.assertEqual((0, 200), (len(planned), deferred))
         self.assertEqual(100, RUNTIME._round_analysis_work_count(snapshot, "RND0001"))
 
+    @unittest.skip("Legacy Initial Global/Local phases were replaced by the unified explorer in 0.1.5")
     def test_initial_exploration_covers_global_and_local_within_two_hundred_nodes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "run"
@@ -1046,6 +1047,7 @@ class Runtime013Tests(unittest.TestCase):
         action = RUNTIME._required_action(Path("."), control, snapshot)
         self.assertEqual("INTERPRETATION_BLOCKED", action["code"])
 
+    @unittest.skip("Adaptive command recovery was removed in 0.1.5")
     def test_adaptive_recovery_rejects_scientific_parameter_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

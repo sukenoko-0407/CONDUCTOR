@@ -1,53 +1,68 @@
-# CONDUCTOR 0.1.4 design spec
+# CONDUCTOR 0.1.5 design spec
 
 ## 権限境界
 
 | Component | 担当 | 禁止 |
 |---|---|---|
-| Human | Round開始・継続・レポート改訂・受理、資源承認 | なし |
-| Main Orchestrator | 人間依頼の契約化、一つのRoundの科学的選択、Executor／Interpreter起動 | 専門Skill直接実行、JSON直接編集、自動新Round開始 |
-| Executor | 署名付きpacket一つの科学process実行、Tool failure隔離 | 科学候補選択、Round操作、別Subagent起動 |
-| Runtime | ID、FSM、lease、Action token、DAG、packet署名、commit、audit | 科学的価値判断 |
-| Interpreter | bounded evidenceの個別精査、横断比較、ID-free draft | scope／ID発行、新規計算、State変更 |
+| Human | Round開始・継続・改訂・受理、資源承認 | なし |
+| Main Orchestrator | 人間依頼の契約化、科学的選択、Executor／Interpreter起動 | Skill直接実行、State直接編集、自動新Round開始 |
+| Executor | 署名済packet一つの実行 | 候補選択、引数修正、別Subagent起動 |
+| Runtime | ID、FSM、lease、DAG、Request、packet、Attempt、commit、audit | 科学的価値判断 |
+| Interpreter | bounded evidenceの個別・横断解釈、ID-free draft | scope／ID発行、新規計算、State変更 |
 
-Main AgentのOrchestrator役は手動起動Skillで一時的に有効化し、既存projectの`CLAUDE.md`へ常駐させません。ExecutorとInterpreterはMainから直接起動する短命な兄弟Subagentです。
+Main Orchestratorは手動Skillで一時的に有効化し、Projectの`CLAUDE.md`へ常駐させません。ExecutorとInterpreterはMainが直接起動する短命な兄弟Subagentです。
 
-## 正本と派生情報
+## State階層
 
-`conductor_control.json`は小さな運用正本です。Run設定、active Round、FSM、lease、件数、単一`required_action`、closure gate、詳細fileへのpointerを持ちます。通常の再開で最初に読むのはこれだけです。
+`conductor_control.json`は小さい運用正本です。Run設定、active Round、FSM、lease、件数、単一`required_action`、closure gate、詳細file pointerだけを持ちます。再開時は最初にこれだけを読みます。
 
-`runtime/event_ledger.jsonl`はchecksum chain付きappend-only監査履歴、`runtime/dag_snapshot.json`はRuntime専用の詳細Node記録です。Control、DAG snapshot、Eventを同一transaction journalで同期します。DAGは有向非巡回で、上流由来、実行可能性、再計算範囲、provenanceを表しますが、LLMは直接編集しません。
+`runtime/dag_snapshot.json`はRuntime専用の詳細Node表現、`runtime/event_ledger.jsonl`はchecksum chain付き監査履歴です。Control、DAG、Eventはtransaction journalで同期します。LLMは直接編集しません。
 
-Execution packet、failure packet、Attempt scratch、compact responseは新しいState正本ではありません。packetは署名、Run／Round、Control revision、lease hash、Action-token hash、有効期限へ結び付けられ、一回のExecutor実行にだけ使用できます。packetが署名する科学Skill commandは環境非依存のRuntime Python tokenを先頭に持つ論理commandであり、検証後に実行側Runtimeだけが自身のPython絶対pathへ解決します。
+Round FSMは`ACTIVE -> FINALIZING -> AWAITING_HUMAN_REVIEW -> CLOSED`です。`CLOSED`から新Roundへ進むには人間の明示指示が必要です。
 
-## Round FSM
+Node IDはRun全体で`N######`、状態は`pending / running / succeeded / failed / cancelled`だけです。再試行は同じNodeの新Attemptで、最大3回です。成功済み同一signatureは再実行せず、現在Roundの`reused_node_ids`へ参照します。
 
-`ACTIVE -> FINALIZING -> AWAITING_HUMAN_REVIEW -> CLOSED`です。`CLOSED`から新Roundへ進むには人間の明示指示が必要です。`AWAITING_HUMAN_REVIEW`では人間が同じRoundを継続、report revision、acceptのいずれかを指定します。
+## 実行契約
 
-過去Roundで成功した同一signatureのNodeは再実行せず、現在Roundの`reused_node_ids`へ参照だけを登録します。Main sessionやExecutorが中断しても同じRound、Node、AttemptをRuntimeが照合し、勝手に次Roundや置換Nodeを作りません。
+各科学NodeにはRuntimeが`execution_request.json`を生成します。構造は次の固定10領域です。
 
-## NodeとAttempt
+- `identity`
+- `inputs`
+- `columns`
+- `endpoint`
+- `subject`
+- `parameters`
+- `resources`
+- `output`
+- `created_at`
+- `schema_version`
 
-Node IDはRun全体で`N######`です。状態は`pending / running / succeeded / failed / cancelled`だけです。再試行は同じNodeの新Attemptであり、status語を増やしません。技術的失敗には最大3 Attemptの有限budgetを設けます。`not applicable`や利用不能partitionは成功resultのquality field、実行しない判断はcancel reasonとして保持します。
+Runtime commandは全Skillで次の形だけです。
 
-Description、Clustering、Operatorの科学計算kernelと一般利用CLIは維持します。CONDUCTORではRuntimeが入力、metric、scope、Cluster、parameter、seed、出力schema、artifact hashを検証してから正本へatomic promotionします。
+```text
+<CONDUCTOR_RUNTIME_PYTHON> <skill>/scripts/launch.py --conductor-request <request.json>
+```
 
-A014は追加的なOperatorです。Global DB構築、全Cluster screening、単一Cluster detailを明示Roleで分離し、通常OperatorのDescription × Clustering直積へ混ぜません。Global DBは一度だけ生成し、後続Roleはread-onlyで参照します。複数payloadはRuntimeがCSV／Parquet／SQLiteの整合を検証して一括commitします。
+Capability metadataがadapter profileとdefault parameterを宣言し、Skill内adapterが既存CLIへ変換します。RuntimeはRequest／command hashをpacketへ署名し、Executorはpacketを一回だけ実行します。packet実行直前には、Requestに記録した入力・上流成果物のSHA-256を現在のfile内容と照合し、不一致なら科学process起動前にfail closedとします。one-use Action tokenとExecutor tokenは使わず、単一Writer lease、Control revision、packet署名、一回のatomic state transitionで二重実行を防ぎます。
 
-SkillがAttempt scratchへ出すArtifact ManifestとExecution Eventは、Runtime adapterだけが読む内部実行契約です。DAGの下流接続には`document_type`付きCanonical Resultだけを使います。Vector Clustering、PCA、UMAPへ渡せるDescription metadataは`description_result/1.0.0`の一種類であり、旧Manifest、Version違い、payload不一致、Catalogと異なるsemantics／Metricはfail closedとします。
+各Skillのlauncherは`env/pixi.toml`とRelease時に配布する`env/pixi.lock`を使います。ready markerは`pixi.toml + pixi.lock + platform`のfingerprintで検証します。同一Skillが同時に初回起動されても、Skill-local bootstrap lockに記録したowner PID・host・作成時刻により環境構築は一回だけ行い、死んだownerのlockは安全に回収します。cacheと一時fileはGit管理外の`env/`内へ限定し、再現性の正本である`pixi.lock`はGit管理対象です。
 
-失敗はbounded failure packetへ分類します。Attempt rootはRuntime管理file用、`output/`はSkill成果物専用に分離し、Skill起動前の`output/`は存在させません。回復可能な一Node retryに限り、Executorは割当Attemptの`recovery/`内でoption alias、path、format adapter等を補正できます。Runtimeはlauncherの置換、既存parameter値、protected科学引数、Node signature、artifactを検査し、回復manifestを監査用に保存します。科学parameterを変える補正や一時scriptによるアルゴリズム再実装は拒否します。
+Attempt rootはRuntime管理file、`skill_output/`は科学成果物へ分離します。Skill起動前の`skill_output/`は存在させません。stdout/stderrはAttempt logへ逐次書き込み、timeout時はPOSIX process groupまたはWindows process treeを停止します。失敗時の即席CLI修正は廃止し、timeout等の一時障害だけを同一Requestで最大3回再試行します。argument、column、path、schema等の決定論的エラーは人間修正待ちとし、修正後も同じNode IDへ新Attemptを追加します。
 
-## Main向け情報
+## 探索Planner
 
-`runtime/working_set.json`はサイズと候補数に上限があり、現在必要なResult Card、candidate、human priorityだけを含みます。Runtime mutationは16 KiB以下のcompact responseを返し、raw log、完全DAG、完全Auditはpointer先へ保持します。Mainは`SCIENTIFIC_DECISION`にだけ推論を使い、Node生成、依存判定、状態遷移、再試行、commit、終端判定はRuntimeへ委ねます。
+基本計算はDescription／Clusteringを揃える決定論的段階です。Operator探索は`exploration`一種類で、一Round最大100 Analysis Nodeです。
 
-## Analysis計画量
+Plannerは成功済みsignatureを除外し、過去のCapability、Global／Local scope、入力Description／Clusteringの成功数が少ない候補を優先します。Failed Nodeは成功履歴へ数えません。同点は固定seed hashで決めます。Globalを優先し、概ね`Global, Global, Local`の比率で選びます。全候補queueをStateへ保存せず、次Roundで同じ規則から再構成します。
 
-一つのRoundへ割り当てるAnalysis Nodeは最大200件です。初期Global／Localの全候補は、RuntimeがCapability、scope、入力Description／Clusteringの層を使って決定論的に並べ、最大50件ずつNode化します。初期Globalは最大100件で完了扱いとし、少なくとも残り100件分をCluster-local候補へ利用できるようにします。未Node化候補の巨大なqueueはStateへ保持しません。同じ計画Actionが再度要求された場合は次の50件を登録し、200件に達したらInterpretationへ進みます。次Roundでは既存成功signatureを再利用参照として除外し、残候補を再構成します。Wall TimeとCPU予算は実行資源であり、この件数上限を変更しません。
+Local候補は対応するGlobal comparatorが存在するときだけ作ります。Global MMP DBは一件、全Cluster screeningは一件、Local detailは代表Clusterに限定し、通常Operatorの全直積へ混ぜません。
 
-## Interpretation
+## ArtifactとInterpretation
 
-RuntimeはInterpretation対象、canonical scope、Result Card、比較batch、未確認範囲、人間のfocusを固定します。Interpreterは各Resultを個別に確認した後、Global／Cluster、兄弟Cluster、独立Description family、異なるOperator、Round間の比較、矛盾、反証、negative resultを探索します。新規計算が必要ならfollow-upとして提案するだけです。
+Skill outputはRuntimeがschema、identity、hash、scope、科学的不変条件を検証してから正本へatomic promotionします。Result Cardのartifact linkはRun Root相対pathへ一度だけ正規化し、Result Index、Interpretation、Full Auditでも同じ形式を使います。Description metadataはCanonical Resultだけを下流へ渡します。
 
-RuntimeがInsight ID、scope、sample factを確定し、固定templateでJSON／Markdown／HTMLを生成します。品質拒否は同じInterpretation Nodeの有限Attemptとして記録し、InterpretationとFull Auditが合格するまでRoundを人間レビュー状態へ移しません。
+A014は全詳細CSV、正規化SQLite、集約CSV、reference card、HTML、storage profileを一括commitします。native work DBとParquetを正本にしません。
+
+RuntimeはInterpretation対象、canonical scope、Result Card、比較batch、未確認範囲、人間focusを固定します。Interpreterは個別確認後にGlobal／Cluster、兄弟Cluster、独立Description family、Operator間、Round間、矛盾、反証、negative resultを比較します。RuntimeがInsight ID、scope、sample factsを確定して固定templateからJSON／Markdown／HTMLを生成します。
+
+InterpretationとFull Auditが合格しない限りRoundをhandoffしません。

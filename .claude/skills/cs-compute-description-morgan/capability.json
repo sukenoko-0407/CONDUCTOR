@@ -3,7 +3,7 @@
   "capability_id": "D002",
   "skill_name": "cs-compute-description-morgan",
   "display_name": "Morgan fingerprint (optional chirality)",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "stage": "description",
   "family": "2d_fingerprint",
   "description": "Use when Claude Code needs to run Morgan fingerprint (optional chirality) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -55,5 +55,13 @@
       "cli": "--include-chirality",
       "description": "The same Morgan algorithm with chirality invariants enabled."
     }
-  ]
+  ],
+  "conductor_request": {
+    "schema_version": "1.0.0",
+    "adapter": "description",
+    "required_input_roles": [
+      "dataset"
+    ],
+    "unknown_parameters": "reject_by_skill_cli"
+  }
 }

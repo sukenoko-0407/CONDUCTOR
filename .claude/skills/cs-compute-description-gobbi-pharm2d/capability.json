@@ -3,7 +3,7 @@
   "capability_id": "D011",
   "skill_name": "cs-compute-description-gobbi-pharm2d",
   "display_name": "Gobbi 2D pharmacophore fingerprint (optional SVD)",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "stage": "description",
   "family": "pharmacophore",
   "description": "Use when Claude Code needs to run Gobbi 2D pharmacophore fingerprint (optional SVD) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -53,5 +53,13 @@
       "cli": "--reduction svd --svd-dim 256",
       "description": "Fit TruncatedSVD to the run cohort's raw Gobbi Pharm2D signature matrix."
     }
-  ]
+  ],
+  "conductor_request": {
+    "schema_version": "1.0.0",
+    "adapter": "description",
+    "required_input_roles": [
+      "dataset"
+    ],
+    "unknown_parameters": "reject_by_skill_cli"
+  }
 }

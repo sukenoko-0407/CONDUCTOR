@@ -1,11 +1,11 @@
-# CONDUCTOR 0.1.4 output contract
+# CONDUCTOR 0.1.5 output contract
 
 ```text
 <run_root>/
 ├── conductor_control.json
 ├── runtime/
-│   ├── dag_snapshot.json
 │   ├── input.csv
+│   ├── dag_snapshot.json
 │   ├── event_ledger.jsonl
 │   ├── working_set.json
 │   ├── result_index.jsonl
@@ -16,8 +16,9 @@
 │   └── scratch/
 │       ├── packets/PKT.../execution_packet.json
 │       └── RND####/N######/ATT####/
-│           ├── process.json / failure_packet.json / tmp/ / recovery/
-│           └── output/  # Skill専用。起動前は存在しない
+│           ├── execution_request.json
+│           ├── process.json / failure_packet.json / tmp/
+│           └── skill_output/  # Skill専用。起動前は存在しない
 ├── rounds/RND####/
 ├── description/N######/{features.csv,result.json}
 ├── clustering/N######/{membership.csv,result.json}
@@ -28,14 +29,35 @@
 └── concierge/REQ######/
 ```
 
-A014 `global-build`のAnalysis directoryには、通常の正本に加えて次の複数payloadをatomicに昇格します。
+`conductor_control.json`が小さい運用正本です。DAG snapshotとLedgerはRuntime管理の詳細・監査情報であり、通常再開時にLLMが全文を読む対象ではありません。
+
+`runtime/input.csv`はRun開始時に作る変更不能なcanonical copyです。既存ID列は`compound_id`へ写し、ID列がなければ`CMP######`を一度だけ付与します。元CSVは変更しません。
+
+## Execution Requestとscratch
+
+`execution_request.json`はNodeごとの固定実行契約です。identity、入力Artifact hash、列、endpoint、scope、parameter、CPU資源、出力先を持ちます。Execution packetはRequest hash、command hash、Run／Round、Control revision、lease hash、有効期限へ署名されます。
+
+packet実行時、RuntimeはRequestに含まれる全入力の`path`と`sha256`、上流成果物の`result_path`と`result_sha256`を現在のfile内容へ再照合します。canonical input以外のArtifactはRun Root内に限定し、不一致・欠損・Run Root外参照はSkill起動前に拒否します。
+
+Attempt直下はRuntime管理専用です。科学Skillは未作成の`skill_output/`だけへ書きます。実行成功後、Runtimeがschema、identity、hash、scope、科学的不変条件を検証し、正本directoryへatomic promotionします。scratchとpacketはState正本ではありません。
+
+## Canonical Result
+
+`result.json`は機械的stage結果、`result_card.json`はbounded navigation用です。Canonical Resultは`document_type`と`schema_version`で識別します。Description／Clustering／Analysisは各文書型の`1.0.0`契約です。この番号はCONDUCTOR package versionではありません。
+
+`result_card.json`と`runtime/result_index.jsonl`の`artifact_links`は、すべてRun RootからのPOSIX形式相対pathです。絶対path、`..`、存在しないfile、Run Root外への解決を許可しません。同一pathへNode出力directoryを二重に前置しません。
+
+Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clustering source、population／endpoint-valid／analyzed count、compound-set hashを確定します。Interpretationはこれを上書きできません。
+
+## MMP A014
+
+Global buildの正本は次です。
 
 ```text
 analysis/N######/
-├── mmp_database.sqlite          # CONDUCTOR安定query schema、後続Nodeはread-only
-├── mmpdb_native.sqlite          # mmpdb由来の再現用DB
-├── mmp_pair_detail.csv          # Spotfire用の非圧縮全情報表
-├── mmp_pair_detail.parquet
+├── mmp_database.sqlite          # 正規化されたread-only再利用DB
+├── mmp_pair_detail.csv          # Spotfire用の全詳細行
+├── mmp_storage_profile.json
 ├── pair_summary.csv
 ├── transform_summary.csv
 ├── core_summary.csv
@@ -46,18 +68,12 @@ analysis/N######/
 └── mmp_reference_cards.{jsonl,csv}
 ```
 
-`local-screen`は`mmp_local_screening.csv`、`local-detail`は`mmp_local_detail_pairs.csv`と`mmp_global_vs_local.csv`を保存します。結果ゼロは失敗ではなく、`mmp_result.json`の`negative_result=true`を持つ成功Artifactです。RuntimeはGlobal CSV／Parquet／SQLiteの行数一致を確認してから一括昇格し、一部だけをcommitしません。
+Native mmpdb work DBとParquetは正本として残しません。SQLiteはID参照で正規化し、反復SMILES／SMARTS文字列と派生Summaryの重複を避けます。全科学行は`mmp_pair_detail.csv`に保持します。
 
-Description、Clustering、Operator Skillの既存計算CLIは一般利用のため維持します。CONDUCTORではそれらの詳細manifestやwarningをRuntime scratchで検証し、Run Rootへは上記の最小正本だけを昇格します。
+`local-screen`は`mmp_local_screening.csv`、`local-detail`は`mmp_local_detail_pairs.csv`と`mmp_global_vs_local.csv`を保存します。結果ゼロは`negative_result=true`の成功Artifactです。Runtimeは必要なCSV、DB、storage profileの整合を確認して一括commitします。
 
-`runtime/scratch/packets/`のExecution packet、Node Attempt scratch、failure packetは制御用一時情報であり、新しいState正本ではありません。署名、Control revision、Action token、期限により一回の実行だけに結び付けられます。Attempt直下はRuntime管理専用とし、`process.json`、一時領域、回復fileを置きます。Skillには別の`output/`だけを`--output-dir`として渡し、空directoryを要求するSkillとRuntime管理fileを衝突させません。Main向けRuntime応答は16 KiB以下のcompact JSONとし、raw log、完全DAG、完全Auditはpointer先へ保持します。
+## Reportとpackage
 
-`runtime/input.csv`はRun開始時に元CSVから作る変更不能なcanonical copyです。既存ID列は`compound_id`へ写し、ID列がなければ`CMP######`を一度だけ付与します。以後の全Skill、Cluster matrix、監査はこのcopyを参照し、元CSVは変更しません。
+各Operator reportはscope、Cluster、Clustering手法、Cluster生成Description、解析Description、Endpoint、sample count、metricを共通fact panelに表示します。Interpretation HTML／Markdownは同じResult Cardを正本とし、Runtimeがscope、数値、日本語本文、参照先を検査します。
 
-`result.json`は機械的なstage結果、`result_card.json`はbounded navigation用です。Canonical `result.json`は`document_type`と`schema_version`を必須とし、Description／Clustering／Analysisはいずれも各文書型の`1.0.0`契約で検証します。下流Nodeはこの正本だけを参照し、scratch内のArtifact Manifestを入力にしません。Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clustering source、population／endpoint-valid／analyzed countとcompound-set hashを確定します。Interpretationはこのfactを上書きできません。
-
-Result Cardは生成時点の記録として不変です。人間がNode Reviewで結果を下流利用停止にした場合は、`dag_snapshot.json`のNode `result_quality`が現在値として優先され、Working Set、将来のInterpretation、`query result`に反映されます。科学artifact自体は削除しません。
-
-各Operatorの`report.html`は、scope、Cluster、Clustering手法、Cluster生成Description、解析Description、Endpoint、sample count、metricを共通fact panelに表示します。InterpretationのHTML／Markdownは同じResult Cardを正本とし、Runtimeがscopeと数値の一致、日本語本文、参照先の存在をFull Audit前に検査します。
-
-`CONDUCTOR_modules/`へRun結果は書き込みません。`.claude/skills/<skill>/env/`だけは共有Pixi環境とcacheの構築先として書き込み可能である必要があります。科学的Run成果物はすべてRun Root側にあり、Run停止中なら同じpackage versionのmodulesとSkill本体を差し替えられます。Skillをdirectoryごと差し替える場合は`env/`が再構築されますが、RunのNodeやArtifactには影響しません。
+`CONDUCTOR_modules/`へRun結果は書きません。`.claude/skills/<skill>/env/`だけはPixi環境とcacheの書込先です。科学成果物はすべてRun Rootにあります。

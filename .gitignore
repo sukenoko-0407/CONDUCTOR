@@ -1,6 +1,32 @@
+# Python environments and dependency caches
 .venv/
 .uv-cache/
 .pixi/
+
+# Python bytecode, test, type-check, and coverage caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+pytestdebug.log
+
+# Python package build products
+build/
+dist/
+*.egg-info/
+
+# Skill-local Pixi runtime data. env/pixi.toml and env/pixi.lock stay tracked.
+.claude/skills/*/env/.pixi/
 .claude/skills/*/env/cache/
 .claude/skills/*/env/config/
 .claude/skills/*/env/data/
@@ -9,6 +35,8 @@
 .claude/skills/*/env/pixi-home/
 .claude/skills/*/env/.environment-ready
 .claude/skills/*/env/.bootstrap.lock
+
+# Generated CONDUCTOR results and archived working data
 /Archive/
 /CONDUCTOR_modules/Archive/
 results/
@@ -17,14 +45,15 @@ outputs/*
 descriptions/
 groups/
 analysis/
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-coverage.xml
-htmlcov/
-.smoke-v43-html/
-.smoke-mmp*/
+
+# Repository-local smoke tests and temporary validation environments
+.smoke-*/
 .validation-site/
-*.pyc
+
+# OS, editor, and Office temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+~$*
+*.swp
+*.swo

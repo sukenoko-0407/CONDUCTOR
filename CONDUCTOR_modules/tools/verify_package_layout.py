@@ -8,8 +8,23 @@ from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = MODULE_ROOT.parent
-VERSION = "0.1.4"
-SUPPORTED_COMPONENT_VERSIONS = {"0.1.3", "0.1.4"}
+VERSION = "0.1.5"
+SUPPORTED_COMPONENT_VERSIONS = {VERSION}
+COMMON_SCIENTIFIC_OPTIONS = {
+    "--conductor", "--project", "--run-id", "--round-id", "--node-id",
+    "--attempt-id", "--output-dir", "--input",
+}
+ADAPTER_REQUIRED_OPTIONS = {
+    "description": {"--id-column", "--smiles-column"},
+    "structure_clustering": {"--id-column", "--smiles-column"},
+    "categorical_clustering": {"--id-column", "--columns"},
+    "vector_clustering": {"--id-column", "--description-result", "--input-representation"},
+    "meta_clustering": {"--id-column"},
+    "standard_operator": {"--id-column", "--property-column", "--higher-is-better", "--description", "--description-node-id", "--membership", "--clustering-node-id", "--scope-mode"},
+    "projection_operator": {"--id-column", "--property-column", "--higher-is-better", "--description", "--description-result", "--membership", "--clustering-node-id"},
+    "multidescription_operator": {"--id-column", "--property-column", "--higher-is-better", "--description", "--description-node-id", "--membership", "--clustering-node-id"},
+    "mmp_operator": {"--id-column", "--smiles-column", "--endpoint-column", "--higher-is-better", "--mmp-database", "--cluster-membership"},
+}
 
 
 def main() -> int:
@@ -26,7 +41,8 @@ def main() -> int:
         "schemas/result_card.schema.json", "schemas/working_set.schema.json",
         "schemas/interpretation.schema.json", "tools/runtime_controller.py",
         "schemas/execution_packet.schema.json", "schemas/failure_packet.schema.json",
-        "schemas/compact_runtime_response.schema.json", "schemas/recovery_manifest.schema.json",
+        "schemas/compact_runtime_response.schema.json", "schemas/execution_request.schema.json",
+        "tools/templates/conductor_request_adapter.py", "tools/templates/launch.py",
         "tools/templates/state_manager.py", "pyproject.toml", "uv.lock",
     ]
     for relative in required:
@@ -40,7 +56,7 @@ def main() -> int:
         if not (PROJECT_ROOT / ".claude" / "agents" / name).is_file():
             errors.append(f"missing Agent: {name}")
     if (PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-orchestrator.md").exists():
-        errors.append("obsolete Orchestrator Agent remains; 0.1.3 uses an inline Main Agent Skill")
+        errors.append("obsolete Orchestrator Agent remains; the Main Agent uses an inline Orchestrator Skill")
     if (PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-description-migrator.md").exists():
         errors.append("obsolete migration Agent remains")
 
@@ -82,15 +98,36 @@ def main() -> int:
             capability_ids.append(str(capability.get("capability_id")))
             if capability.get("skill_name") != name or capability.get("version") not in SUPPORTED_COMPONENT_VERSIONS:
                 errors.append(f"{name}: metadata identity/version mismatch")
-            if name == "cs-analysis-matched-molecular-pairs" and capability.get("version") != VERSION:
-                errors.append("A014 must use the 0.1.4 component contract")
             stage = capability.get("stage")
             if stage in {"description", "clustering", "analysis"}:
                 run_text = (root / "scripts" / "run.py").read_text(encoding="utf-8")
                 skill_text = (root / "SKILL.md").read_text(encoding="utf-8")
+                launcher_text = (root / "scripts" / "launch.py").read_text(encoding="utf-8")
+                if not isinstance(capability.get("conductor_request"), dict):
+                    errors.append(f"{name}: missing conductor_request capability contract")
+                    adapter_name = None
+                else:
+                    adapter_name = capability["conductor_request"].get("adapter")
+                if not (root / "scripts" / "conductor_request_adapter.py").is_file():
+                    errors.append(f"{name}: missing common Execution Request adapter")
+                if "--conductor-request" not in launcher_text:
+                    errors.append(f"{name}: launcher has no common Execution Request entry")
+                for token in (".bootstrap.lock", ".environment-ready", '"--locked"', "owner.json", "environment_fingerprint", "manifest.read_bytes()"):
+                    if token not in launcher_text:
+                        errors.append(f"{name}: launcher lacks concurrent Pixi bootstrap guard ({token})")
                 for token in ("--conductor", "--round-id", "--node-id", "--attempt-id"):
-                    if token not in run_text or token not in skill_text:
-                        errors.append(f"{name}: incomplete CONDUCTOR execution contract ({token})")
+                    if token not in run_text:
+                        errors.append(f"{name}: scientific kernel lacks internal CONDUCTOR context ({token})")
+                expected_options = COMMON_SCIENTIFIC_OPTIONS | ADAPTER_REQUIRED_OPTIONS.get(str(adapter_name), set())
+                for option in sorted(expected_options):
+                    if option not in run_text:
+                        errors.append(f"{name}: {adapter_name} adapter may emit unsupported CLI option {option}")
+                for parameter, value in (capability.get("default_parameters") or {}).items():
+                    if parameter in {"role", "target_cluster", "comparison_cluster"} or value is False or value is None:
+                        continue
+                    option = "--" + str(parameter).replace("_", "-")
+                    if option not in run_text:
+                        errors.append(f"{name}: default parameter has no matching CLI option ({option})")
             if stage == "interpretation":
                 if (root / "schemas" / "state.schema.json").exists():
                     errors.append(f"{name}: obsolete State schema remains")
@@ -103,8 +140,14 @@ def main() -> int:
     profile_path = MODULE_ROOT / "catalog" / "analysis_profile.json"
     if profile_path.is_file():
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
-        if set(profile.get("initial_exploration", {}).get("global_operator_capabilities", [])) != {f"A{i:03d}" for i in range(1, 15)}:
-            errors.append("initial Global exploration must contain every Operator")
+        exploration = profile.get("exploration", {})
+        expected_operators = {f"A{i:03d}" for i in range(1, 15)}
+        if set(exploration.get("global_operator_capabilities", [])) != expected_operators:
+            errors.append("Global exploration must contain every Operator")
+        if profile.get("runtime_planning", {}).get("max_new_analysis_nodes_per_round") != 100:
+            errors.append("Round Analysis limit must be 100")
+        if exploration.get("scope_sequence") != ["global", "global", "local"]:
+            errors.append("Global-first exploration sequence mismatch")
         if profile.get("modeling", {}).get("minimum_local_samples") != 30:
             errors.append("minimum Local model sample count mismatch")
 
@@ -164,7 +207,7 @@ def main() -> int:
     executor = PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-executor.md"
     if executor.is_file():
         executor_text = executor.read_text(encoding="utf-8")
-        for token in ("short-lived", "execute exactly once", "End after this single Runtime call", "never start a second packet", "<CONDUCTOR_RUNTIME_PYTHON>"):
+        for token in ("short-lived", "Execute exactly once", "End after this single Runtime call", "Never start another packet", "<CONDUCTOR_RUNTIME_PYTHON>"):
             if token not in executor_text:
                 errors.append(f"Executor contract is missing: {token}")
         frontmatter = executor_text.split("---", 2)[1]
@@ -176,7 +219,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print("CONDUCTOR 0.1.4 package layout is valid")
+    print("CONDUCTOR 0.1.5 package layout is valid")
     return 0
 
 
