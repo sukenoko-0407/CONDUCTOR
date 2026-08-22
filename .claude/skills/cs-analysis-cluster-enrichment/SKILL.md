@@ -37,7 +37,7 @@ Cluster activity enrichmentを実行し、客観的な数値結果とCONDUCTOR O
 - 意図が曖昧なら、出力契約が変わることを示して実行前に確認する。確認できない場合は通常モードとして`--conductor`を省略する。
 - 通常モードではCONDUCTOR context引数を指定しない。CONDUCTORモードでは`--conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001`をすべて指定する。CLIもこの組合せを検証する。
 
-Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証され、成功時に0.1.5の最小正本artifactへ昇格される。
+Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証され、成功時に0.1.6の最小正本artifactへ昇格される。
 
 ## Output contract
 

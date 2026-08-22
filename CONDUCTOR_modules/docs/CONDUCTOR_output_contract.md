@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.5 output contract
+# CONDUCTOR 0.1.6 output contract
 
 ```text
 <run_root>/
@@ -14,7 +14,7 @@
 │   ├── cluster_membership.csv
 │   ├── logs/
 │   └── scratch/
-│       ├── packets/PKT.../execution_packet.json
+│       ├── packets/PKT.../{execution_packet.json,worker_status.json,worker.log}
 │       └── RND####/N######/ATT####/
 │           ├── execution_request.json
 │           ├── process.json / failure_packet.json / tmp/
@@ -35,11 +35,11 @@
 
 ## Execution Requestとscratch
 
-`execution_request.json`はNodeごとの固定実行契約です。identity、入力Artifact hash、列、endpoint、scope、parameter、CPU資源、出力先を持ちます。Execution packetはRequest hash、command hash、Run／Round、Control revision、lease hash、有効期限へ署名されます。
+`execution_request.json`はNodeごとの固定実行契約です。identity、入力Artifact hash、列、endpoint、scope、parameter、CPU資源、出力先を持ちます。Execution packetはRequest hash、command hash、Run／Round、Control revision、lease hash、有効期限へ署名されます。`worker_status.json`はPacketのclaim、Worker PID、terminal結果を示す再接続用補助記録であり、Control／DAG／Ledgerに代わるState正本ではありません。
 
 packet実行時、RuntimeはRequestに含まれる全入力の`path`と`sha256`、上流成果物の`result_path`と`result_sha256`を現在のfile内容へ再照合します。canonical input以外のArtifactはRun Root内に限定し、不一致・欠損・Run Root外参照はSkill起動前に拒否します。
 
-Attempt直下はRuntime管理専用です。科学Skillは未作成の`skill_output/`だけへ書きます。実行成功後、Runtimeがschema、identity、hash、scope、科学的不変条件を検証し、正本directoryへatomic promotionします。scratchとpacketはState正本ではありません。
+Attempt直下はRuntime管理専用です。科学Skillは未作成の`skill_output/`だけへ書きます。実行成功後、Runtime Workerがschema、identity、hash、scope、科学的不変条件を検証し、正本directoryへatomic promotionします。scratch、packet、worker statusはState正本ではありません。
 
 ## Canonical Result
 

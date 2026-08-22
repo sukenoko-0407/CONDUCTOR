@@ -18,18 +18,22 @@ assert SPEC and SPEC.loader
 RUNTIME = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNTIME)
 HAS_JSONSCHEMA = importlib.util.find_spec("jsonschema") is not None
+HAS_MMP_IMPORT_DEPS = all(
+    importlib.util.find_spec(name) is not None
+    for name in ("jsonschema", "numpy", "rdkit")
+)
 
 
 class Runtime015(unittest.TestCase):
     def test_runtime_identifies_version_015(self) -> None:
-        self.assertEqual("0.1.5", RUNTIME.VERSION)
-        self.assertEqual("0.1.5", RUNTIME.PROTOCOL_VERSION)
-        self.assertEqual("CONDUCTOR 0.1.5 deterministic Runtime Controller", RUNTIME.build_parser().description)
+        self.assertEqual("0.1.6", RUNTIME.VERSION)
+        self.assertEqual("0.1.6", RUNTIME.PROTOCOL_VERSION)
+        self.assertEqual("CONDUCTOR 0.1.6 deterministic Runtime Controller", RUNTIME.build_parser().description)
 
     def test_mmp_round_guard_accepts_only_current_runtime(self) -> None:
         control = {"active_round_id": "RND0002"}
         old = {"rounds": {"RND0002": {"runtime_version": "0.1.4"}}}
-        current = {"rounds": {"RND0002": {"runtime_version": "0.1.5"}}}
+        current = {"rounds": {"RND0002": {"runtime_version": "0.1.6"}}}
         self.assertFalse(RUNTIME._mmp_enabled_for_active_round(control, old))
         self.assertTrue(RUNTIME._mmp_enabled_for_active_round(control, current))
 
@@ -58,7 +62,7 @@ class Runtime015(unittest.TestCase):
         self.assertTrue(RUNTIME._requires_exclusive_cpu({"capability_id": "A014", "parameters": {"role": "global-build"}}))
         self.assertFalse(RUNTIME._requires_exclusive_cpu({"capability_id": "A014", "parameters": {"role": "local-screen"}}))
 
-    @unittest.skipUnless(HAS_JSONSCHEMA, "jsonschema is installed by the MMP Pixi environment")
+    @unittest.skipUnless(HAS_MMP_IMPORT_DEPS, "MMP import dependencies are installed by the MMP Pixi environment")
     def test_global_mmp_fragment_jobs_are_capped_at_eight(self) -> None:
         scripts = ROOT / ".claude" / "skills" / "cs-analysis-matched-molecular-pairs" / "scripts"
         spec = importlib.util.spec_from_file_location("mmp_fragment_jobs_test", scripts / "run.py")

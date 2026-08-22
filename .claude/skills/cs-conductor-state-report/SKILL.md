@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-state-report
-description: Render an explicitly supplied CONDUCTOR 0.1.5 Run Root as a read-only human DAG report. Use only on explicit human request and never as an analysis Node.
+description: Render an explicitly supplied CONDUCTOR 0.1.6 Run Root as a read-only human DAG report. Use only on explicit human request and never as an analysis Node.
 allowed-tools: Read, Write, Bash
 ---
 

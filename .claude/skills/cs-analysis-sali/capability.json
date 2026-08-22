@@ -3,7 +3,7 @@
   "capability_id": "A008",
   "skill_name": "cs-analysis-sali",
   "display_name": "Extended structure-activity landscape index",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "analysis",
   "family": "landscape",
   "description": "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI and preserve high-SALI cliff pairs for CONDUCTOR Interpretation.",

@@ -1,6 +1,6 @@
 # CONDUCTOR 解析依頼プロンプト
 
-対象Version: `0.1.5`
+対象Version: `0.1.6`
 
 `cs-conductor-orchestrator`は、人間が指定した一つの操作だけをMain Agentに実行させる。Round受理と次Round開始は、意図しない自動開始を避けるため別々に指示することを推奨する。
 
@@ -24,10 +24,10 @@ Wall Time: <minutes>
 Roundの目的・重視点（任意）:
 <人間の観点。未指定なら標準の基本計算とGlobal優先explorationを実施>
 
-既存のconductor_control.jsonがないことを確認した場合だけ初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、科学計算は署名付きexecution packetごとにExecutorを一つだけ起動してください。
+既存のconductor_control.jsonがないことを確認した場合だけ初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、科学計算は署名付きexecution packetをRuntime `execute-packet`へ一回だけ渡してください。科学processは独立したRuntime Workerが所有します。
 
 基本計算、最大100 Analysis Nodeのexploration、Interpretation、Full Auditまで同じRND0001で進め、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動的に受理したり、RND0002を開始したりしないでください。
-探索は成功済みsignatureを除外し、Globalを優先してDescription／Clustering／Operatorの履歴偏りを抑える0.1.5標準Plannerへ任せてください。長いWall Timeを理由に上限を拡大しないでください。
+探索は成功済みsignatureを除外し、Globalを優先してDescription／Clustering／Operatorの履歴偏りを抑える0.1.6標準Plannerへ任せてください。長いWall Timeを理由に上限を拡大しないでください。
 ```
 
 ## 状態確認のみ
@@ -38,7 +38,7 @@ Roundの目的・重視点（任意）:
 操作: 状態確認のみ
 Run Root: <absolute path>
 
-conductor_control.jsonとcompactなRuntime inspectionだけを確認し、Run ID、現在のRound、Round状態、required_action、実行中／待機中件数、Interpretation／Audit gate、blockerを簡潔に報告してください。Round、Node、lease、State、artifactを変更せず、ExecutorやInterpreterを起動しないでください。
+conductor_control.jsonとcompactなRuntime inspectionだけを確認し、Run ID、現在のRound、Round状態、required_action、実行中／待機中件数、Interpretation／Audit gate、blockerを簡潔に報告してください。Round、Node、lease、State、artifactを変更せず、Runtime WorkerやInterpreterを起動しないでください。
 ```
 
 ## 中断したActive Roundの再開

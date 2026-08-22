@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.5 design spec
+# CONDUCTOR 0.1.6 design spec
 
 ## 権限境界
 
@@ -43,7 +43,7 @@ Runtime commandは全Skillで次の形だけです。
 <CONDUCTOR_RUNTIME_PYTHON> <skill>/scripts/launch.py --conductor-request <request.json>
 ```
 
-Capability metadataがadapter profileとdefault parameterを宣言し、Skill内adapterが既存CLIへ変換します。RuntimeはRequest／command hashをpacketへ署名し、Executorはpacketを一回だけ実行します。packet実行直前には、Requestに記録した入力・上流成果物のSHA-256を現在のfile内容と照合し、不一致なら科学process起動前にfail closedとします。one-use Action tokenとExecutor tokenは使わず、単一Writer lease、Control revision、packet署名、一回のatomic state transitionで二重実行を防ぎます。
+Capability metadataがadapter profileとdefault parameterを宣言し、Skill内adapterが既存CLIへ変換します。RuntimeはRequest／command hashをpacketへ署名し、初回claimだけが独立OS Runtime Workerを起動します。packet実行直前には、Requestに記録した入力・上流成果物のSHA-256を現在のfile内容と照合し、不一致なら科学process起動前にfail closedとします。one-use Action tokenとExecutor tokenは使わず、単一Writer lease、Control revision、packet署名、Packet IDとAttemptのatomic結合で二重実行を防ぎます。同じPacketの再投入は既存Workerへの再接続です。
 
 各Skillのlauncherは`env/pixi.toml`とRelease時に配布する`env/pixi.lock`を使います。ready markerは`pixi.toml + pixi.lock + platform`のfingerprintで検証します。同一Skillが同時に初回起動されても、Skill-local bootstrap lockに記録したowner PID・host・作成時刻により環境構築は一回だけ行い、死んだownerのlockは安全に回収します。cacheと一時fileはGit管理外の`env/`内へ限定し、再現性の正本である`pixi.lock`はGit管理対象です。
 

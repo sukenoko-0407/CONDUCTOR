@@ -3,7 +3,7 @@
   "capability_id": "D011",
   "skill_name": "cs-compute-description-gobbi-pharm2d",
   "display_name": "Gobbi 2D pharmacophore fingerprint (optional SVD)",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "description",
   "family": "pharmacophore",
   "description": "Use when Claude Code needs to run Gobbi 2D pharmacophore fingerprint (optional SVD) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

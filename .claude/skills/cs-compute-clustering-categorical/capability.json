@@ -3,7 +3,7 @@
   "capability_id": "C011",
   "skill_name": "cs-compute-clustering-categorical",
   "display_name": "Categorical-column clustering",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "clustering",
   "family": "human_context",
   "description": "Use when Claude Code needs to run Categorical-column clustering from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-Claude CodeのMain Agentを、明示的なCONDUCTOR操作中だけOrchestratorとして動作させます。科学判断をMainに残し、計算実行とInterpretationを短命Subagentへ分離します。
+Claude CodeのMain Agentを、明示的なCONDUCTOR操作中だけOrchestratorとして動作させます。科学判断をMainに残し、計算実行は決定論的Runtime Worker、Interpretationは短命Subagentへ分離します。
 
 ## 想定利用シーン
 
@@ -24,7 +24,7 @@ parallel_limit: 8
 available_cpu_cores: 8
 ```
 
-`parallel_limit`は同時Node数、`available_cpu_cores`はRunへ割り当てられたCPU総数です。後者を省略すると8です。D019（xTB）、D020（ChemBERTa）、A014 Global MMPは単独Executor packetとなり、Skill内部並列と他Nodeを競合させません。
+`parallel_limit`は同時Node数、`available_cpu_cores`はRunへ割り当てられたCPU総数です。後者を省略すると8です。D019（xTB）、D020（ChemBERTa）、A014 Global MMPは単独Packetとなり、Skill内部並列と他Nodeを競合させません。Packetの科学processはRuntime Workerが所有するため、MainのTool callが中断しても同じPacketへ安全に再接続できます。
 
 1 RoundのAnalysis Nodeは最大100件です。探索段階は`exploration`一種類で、成功済み処理を除外しながらGlobalをLocalより優先し、Description／Clustering／Operatorの偏りを抑えて一度に計画します。Wall Timeを長くしても件数は増えません。Description／Clusteringの基本計算は別枠です。
 
@@ -49,3 +49,4 @@ Failed Nodeは新しいNodeへ置換しません。Runtimeが`RETRY_FAILED_NODE`
 | 1.3.0 | A014をGlobal 1件、全Cluster screening 1件、代表Local detailへ限定して制御する手順を追加 |
 | 2.0.0 | 共通Execution Request、lease-only制御、最大100件のGlobal優先explorationへ簡素化 |
 | 2.0.1 | 一時障害と人間修正待ちを分離し、同一Node repair retryを明記 |
+| 2.1.0 | 通常経路からLLM Executorを外し、冪等なRuntime Workerへの直接投入へ変更 |

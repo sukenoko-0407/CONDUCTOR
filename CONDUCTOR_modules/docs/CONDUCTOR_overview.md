@@ -1,6 +1,6 @@
 # CONDUCTOR overview
 
-CONDUCTOR 0.1.5は、SARデータを単一の説明へ早急に収束させず、複数の分子表現、Cluster、Operatorを横断してGlobalとLocalの変化を探すClaude Code向け解析基盤です。同じRunを人間主導で複数Round重ね、解析済み領域を再利用しながら探索の完全性と解釈の質を高めます。
+CONDUCTOR 0.1.6は、SARデータを単一の説明へ早急に収束させず、複数の分子表現、Cluster、Operatorを横断してGlobalとLocalの変化を探すClaude Code向け解析基盤です。同じRunを人間主導で複数Round重ね、解析済み領域を再利用しながら探索の完全性と解釈の質を高めます。
 
 ## 解析の流れ
 
@@ -17,13 +17,13 @@ CONDUCTOR 0.1.5は、SARデータを単一の説明へ早急に収束させず�
 - 人間が`/cs-conductor-orchestrator`を明示した間だけMain AgentがOrchestratorになる。
 - 小さい`conductor_control.json`が現在のRound、必要Action、件数、closure、詳細file pointerを示す運用正本である。
 - RuntimeだけがNode ID、5状態、DAG、lease、Attempt、commit、監査を更新する。
-- 科学計算は一つの短命Executor、既存結果の解釈は専用Interpreterへ分離する。
-- 全科学Skillを共通`execution_request.json`で起動し、RuntimeとExecutorはSkill別の長いCLIを組み立てない。
-- 署名済packetはRun、Round、Control revision、lease、Request hashへ固定され、一回だけ実行できる。
+- 科学計算は決定論的なRuntime Worker、既存結果の解釈は専用Interpreterへ分離する。
+- 全科学Skillを共通`execution_request.json`で起動し、Runtime WorkerはSkill別の長いCLIを組み立てない。
+- 署名済packetはRun、Round、Control revision、lease、Request hashへ固定され、最初のclaimだけが科学processを起動する。再投入は既存Workerへ接続する。
 - Operator Analysisは一Round最大100 Node。50件単位の再計画や初期／追加探索の別状態は持たない。
 - 過去Roundの成功Nodeは再計算せず、現在Roundから再利用参照する。
 - Interpretation JSON／Markdown／HTMLとFull Auditが揃うまでRoundを人間レビュー状態へ進めない。
-- Main sessionやExecutorが中断しても同じRoundとNodeを再開し、人間の明示なしに次Roundを作らない。
+- Main sessionやTool callが中断してもRuntime Workerは継続し、同じRound、Packet、Nodeを再開する。人間の明示なしに次Roundを作らない。
 
 DAGは計算の向きと依存関係を保持する詳細表現です。循環を許さないため、どの入力と上流結果からNodeが生じたか、何が実行可能か、どの結果が再利用可能かを追跡できます。ただしLLMはDAGを直接編集せず、通常の再開時に全DAGを読む必要もありません。
 

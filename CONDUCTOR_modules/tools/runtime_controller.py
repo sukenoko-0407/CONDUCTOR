@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 
-VERSION = "0.1.5"
-PROTOCOL_VERSION = "0.1.5"
+VERSION = "0.1.6"
+PROTOCOL_VERSION = "0.1.6"
 CONTROL_SCHEMA = "3.0.0"
 MAX_CONTROL_BYTES = 32 * 1024
 MAX_WORKING_SET_BYTES = 64 * 1024
@@ -71,6 +71,24 @@ def parse_time(value: str | None) -> datetime | None:
 def pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        import ctypes
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            # Access denied means a process exists but cannot be queried. Treat it
+            # as live so a lock/Worker is never stolen from another principal.
+            return ctypes.get_last_error() == 5
+        try:
+            exit_code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return True
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
@@ -228,6 +246,26 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def atomic_replace(source: Path, target: Path, timeout_seconds: float = 5.0) -> None:
+    """Replace a file or directory atomically, tolerating brief scanner locks.
+
+    Windows sync clients and antivirus scanners can open a freshly written
+    temporary file between ``fsync`` and ``os.replace``.  The operation remains
+    atomic; only the transient sharing violation is retried for a bounded time.
+    """
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    delay = 0.01
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(0.25, delay * 2.0)
+
+
 def atomic_bytes(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
@@ -235,7 +273,7 @@ def atomic_bytes(path: Path, payload: bytes) -> None:
         handle.write(payload)
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    atomic_replace(temporary, path)
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -260,7 +298,7 @@ def write_csv(path: Path, fields: list[str], rows: Iterable[dict[str, Any]]) -> 
             writer.writerow({key: row.get(key) for key in fields})
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(temporary, path)
+    atomic_replace(temporary, path)
 
 
 def project_root() -> Path:
@@ -597,13 +635,68 @@ def _validate_execution_packet(
     return packet
 
 
-def _require_executor_followup(control: dict[str, Any], packet: dict[str, Any]) -> None:
-    if not _lease_live(control):
-        raise PermissionError("Main Agent lease expired while Executor was active")
-    if not secrets.compare_digest(packet["lease_token_hash"], str(control["lease"].get("token_hash"))):
-        raise PermissionError("Main Agent lease changed while Executor was active")
-    if control["required_action"]["code"] != "WAIT_OR_RECONCILE_RUNNING":
-        raise PermissionError("Runtime is not waiting for the claimed Executor batch")
+def _packet_status_path(packet_path: Path) -> Path:
+    return packet_path.resolve().parent / "worker_status.json"
+
+
+def _read_packet_status(packet_path: Path) -> dict[str, Any] | None:
+    path = _packet_status_path(packet_path)
+    if not path.is_file():
+        return None
+    status = read_json(path)
+    validate(status, "runtime_worker_status.schema.json")
+    return status
+
+
+def _write_packet_status(packet_path: Path, status: dict[str, Any]) -> None:
+    status["updated_at"] = utc_now()
+    validate(status, "runtime_worker_status.schema.json")
+    write_json(_packet_status_path(packet_path), status)
+
+
+def _validate_execution_packet_authentic(root: Path, packet_path: Path) -> dict[str, Any]:
+    """Validate immutable packet identity without requiring its old Control revision.
+
+    A claimed packet must remain inspectable after ``batch_started`` advances the
+    Control revision.  Initial claiming still uses the stricter
+    ``_validate_execution_packet`` check.
+    """
+    packet_path = packet_path.resolve()
+    packet_root = (root / "runtime" / "scratch" / "packets").resolve()
+    if packet_root not in packet_path.parents:
+        raise PermissionError("Execution packet is outside the Runtime packet directory")
+    packet = read_json(packet_path)
+    validate(packet, "execution_packet.schema.json")
+    if not hmac.compare_digest(packet["signature"], _packet_signature(root, packet)):
+        raise PermissionError("Execution packet signature is invalid")
+    control = read_json(control_path(root))
+    if packet["run_id"] != control["run"]["run_id"]:
+        raise PermissionError("Execution packet belongs to another Run")
+    return packet
+
+
+def _require_packet_status_identity(packet: dict[str, Any], status: dict[str, Any]) -> None:
+    expected = (packet["packet_id"], packet["run_id"], packet["round_id"], list(packet["node_ids"]))
+    actual = (status.get("packet_id"), status.get("run_id"), status.get("round_id"), list(status.get("node_ids") or []))
+    if actual != expected:
+        raise PermissionError("Runtime Worker status identity does not match its signed packet")
+
+
+def _require_worker_followup(snapshot: dict[str, Any], packet: dict[str, Any]) -> None:
+    """Require the exact claimed Attempts; do not depend on an LLM lease."""
+    lookup = _node_lookup(snapshot)
+    for contract in packet["execution_contracts"]:
+        node = lookup.get(contract["node_id"])
+        if not node or node.get("status") != "running":
+            raise PermissionError(f"Claimed Runtime Worker Node is not running: {contract['node_id']}")
+        if node.get("current_attempt_id") != contract["attempt_id"]:
+            raise PermissionError(f"Claimed Runtime Worker Attempt changed: {contract['node_id']}")
+        attempt = next(
+            (item for item in node.get("attempts") or [] if item.get("attempt_id") == contract["attempt_id"]),
+            None,
+        )
+        if not attempt or attempt.get("packet_id") != packet["packet_id"]:
+            raise PermissionError(f"Runtime Worker packet binding changed: {contract['node_id']}")
 
 
 def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
@@ -678,7 +771,7 @@ def cmd_prepare_execution_packet(args: argparse.Namespace) -> int:
         packet_path=str(packet_path),
         packet_id=packet_id,
         node_ids=requested,
-        executor_agent="cs-conductor-executor",
+        execution_owner="runtime_worker",
     )
     return 0
 
@@ -860,6 +953,55 @@ def _finalize_allowed(root: Path, control: dict[str, Any], snapshot: dict[str, A
     return False, "eligible work or unfulfilled contract remains"
 
 
+def _running_action(root: Path, snapshot: dict[str, Any], running: list[dict[str, Any]]) -> dict[str, Any]:
+    """Distinguish normal waiting from recovery without adding a Node state."""
+    live_owner = False
+    packet_ids: set[str] = set()
+    for node in running:
+        attempt = next(
+            (item for item in node.get("attempts") or [] if item.get("attempt_id") == node.get("current_attempt_id")),
+            None,
+        )
+        if not attempt:
+            continue
+        packet_id = attempt.get("packet_id")
+        if packet_id:
+            packet_ids.add(str(packet_id))
+            packet_path = root / "runtime" / "scratch" / "packets" / str(packet_id) / "execution_packet.json"
+            try:
+                status = _read_packet_status(packet_path)
+            except Exception:
+                status = None
+            if status:
+                worker_pid = int(status.get("worker_pid") or -1)
+                launcher_pid = int(status.get("launcher_pid") or -1)
+                if status.get("status") in {"running", "launching", "claimed", "claiming"} and (
+                    pid_alive(worker_pid) or pid_alive(launcher_pid)
+                ):
+                    live_owner = True
+        process_path = Path(str(attempt.get("scratch") or "")) / "process.json"
+        try:
+            process_record = read_json(process_path) if process_path.is_file() else {}
+        except Exception:
+            process_record = {}
+        if not process_record.get("finished_at") and pid_alive(int(process_record.get("pid", -1))):
+            live_owner = True
+    node_ids = [node["node_id"] for node in running[:20]]
+    if live_owner:
+        return {
+            "code": "WAIT_RUNNING",
+            "reason": "A Runtime Worker or its scientific process is live. Do not launch another Worker or reconcile it as failed.",
+            "node_ids": node_ids,
+            "packet_ids": sorted(packet_ids),
+        }
+    return {
+        "code": "RECONCILE_RUNNING",
+        "reason": "Running Attempts have no live Runtime Worker or scientific process and require one recovery pass.",
+        "node_ids": node_ids,
+        "packet_ids": sorted(packet_ids),
+    }
+
+
 def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
     round_id = control.get("active_round_id")
     if not round_id:
@@ -868,9 +1010,9 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
         return {"code": "HUMAN_REVIEW_REQUIRED", "reason": "Interpretation and audit are ready. Human continuation, report revision, or acceptance is required."}
     if control["round_state"] == "CLOSED":
         return {"code": "AWAIT_HUMAN_ROUND", "reason": "The previous Round is closed. A new Round requires explicit human authorization."}
-    running = [node["node_id"] for node in snapshot["nodes"] if node["status"] == "running"]
+    running = [node for node in snapshot["nodes"] if node["status"] == "running"]
     if running:
-        return {"code": "WAIT_OR_RECONCILE_RUNNING", "reason": "Running Attempts must be reconciled before another control action.", "node_ids": running[:20]}
+        return _running_action(root, snapshot, running)
     if control["round_state"] == "FINALIZING":
         if (control.get("blocker") or {}).get("code") == "INTERPRETATION_RETRY_EXHAUSTED":
             return {"code": "INTERPRETATION_BLOCKED", "reason": "The bounded Interpreter retry budget is exhausted. Human correction or report-revision authorization is required.", "node_id": control["blocker"].get("node_id")}
@@ -2521,7 +2663,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
     if final.exists():
         raise FileExistsError(f"Committed Node output already exists: {final}")
     final.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(temporary, final)
+    atomic_replace(temporary, final)
     if node["kind"] == "clustering":
         known_clusters = {row["cluster_id"] for row in read_jsonl(root / "runtime" / "cluster_registry.jsonl")}
         for row in cluster_registry_rows:
@@ -2699,35 +2841,69 @@ def _write_failure_packet(
     return path
 
 
-def _execute_packet_batch(args: argparse.Namespace) -> int:
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+def _successful_node_quality(node: dict[str, Any], *, recovered: bool = False) -> dict[str, Any]:
+    """Return post-validation quality without retaining an earlier failed Attempt."""
+    current = node.get("result_quality") or {}
+    if node.get("kind") == "clustering" and current.get("validation_passed"):
+        quality = dict(current)
+    else:
+        quality = {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": []}
+    if recovered:
+        quality["quality_flags"] = sorted(set(quality.get("quality_flags") or []) | {"recovered_after_interruption"})
+    return quality
 
-    root = resolve_root(args.run_root)
-    packet_path = Path(args.packet).resolve()
+
+def _claim_execution_packet(root: Path, packet_path: Path) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    """Atomically bind a packet to Attempts before starting an OS worker."""
     selected: list[tuple[dict[str, Any], dict[str, Any], Path, list[str]]] = []
     prepared_commands: list[tuple[dict[str, Any], str, Path, list[str], list[str]]] = []
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        executor_packet = _validate_execution_packet(root, control, packet_path)
-        args.timeout_minutes = int(executor_packet["timeout_minutes"])
-        args.clean_scratch = bool(executor_packet["clean_scratch"])
-        if args.timeout_minutes < 1:
+        existing = _read_packet_status(packet_path)
+        if existing and existing["status"] != "claiming":
+            packet = _validate_execution_packet_authentic(root, packet_path)
+            _require_packet_status_identity(packet, existing)
+            return packet, existing, False
+        if existing and existing["status"] == "claiming":
+            packet = _validate_execution_packet_authentic(root, packet_path)
+            _require_packet_status_identity(packet, existing)
+            lookup = _node_lookup(snapshot)
+            already_bound = all(
+                (node := lookup.get(contract["node_id"]))
+                and node.get("status") == "running"
+                and node.get("current_attempt_id") == contract["attempt_id"]
+                and any(
+                    attempt.get("attempt_id") == contract["attempt_id"]
+                    and attempt.get("packet_id") == packet["packet_id"]
+                    for attempt in node.get("attempts") or []
+                )
+                for contract in packet["execution_contracts"]
+            )
+            if already_bound:
+                existing["status"] = "claimed"
+                _write_packet_status(packet_path, existing)
+                return packet, existing, False
+        packet = _validate_execution_packet(root, control, packet_path)
+        timeout_minutes = int(packet["timeout_minutes"])
+        if timeout_minutes < 1:
             raise ValueError("Node timeout must be at least one minute")
         soft_stop = parse_time(snapshot["rounds"][control["active_round_id"]].get("soft_stop_at"))
         now = datetime.now(timezone.utc)
         if soft_stop and now >= soft_stop:
             raise ValueError("Scientific execution window has ended; refresh control and enter finalizing")
-        remaining_seconds = max(1, int((soft_stop - now).total_seconds())) if soft_stop else args.timeout_minutes * 60
-        execution_timeout_seconds = min(args.timeout_minutes * 60, remaining_seconds)
+        remaining_seconds = max(1, int((soft_stop - now).total_seconds())) if soft_stop else timeout_minutes * 60
+        execution_timeout_seconds = min(timeout_minutes * 60, remaining_seconds)
         runnable = {node["node_id"]: node for node in _runnable(control, snapshot)}
-        requested = list(executor_packet["node_ids"])
+        requested = list(packet["node_ids"])
         if not requested:
             raise ValueError("No runnable Nodes")
         if set(requested) - set(runnable):
             raise ValueError(f"Requested Nodes are not currently runnable: {sorted(set(requested) - set(runnable))}")
         requested = _select_execution_nodes(requested, runnable, control)
-        contract_lookup = {item["node_id"]: item for item in executor_packet.get("execution_contracts", [])}
+        if requested != list(packet["node_ids"]):
+            raise PermissionError("Execution packet selection changed after packet creation")
+        contract_lookup = {item["node_id"]: item for item in packet.get("execution_contracts", [])}
         for node_id in requested:
             node = runnable[node_id]
             attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
@@ -2743,48 +2919,72 @@ def _execute_packet_batch(args: argparse.Namespace) -> int:
             if skill_output.exists():
                 raise FileExistsError(f"Skill output directory must be absent before execution: {skill_output}")
             prepared_commands.append((node, attempt_id, scratch, command, resolved_command))
+        status = {
+            "schema_version": "1.0.0", "protocol_version": PROTOCOL_VERSION,
+            "packet_id": packet["packet_id"], "run_id": packet["run_id"], "round_id": packet["round_id"],
+            "status": "claiming", "node_ids": requested, "worker_pid": None,
+            "worker_host": None, "launcher_pid": os.getpid(),
+            "execution_timeout_seconds": execution_timeout_seconds,
+            "clean_scratch": bool(packet["clean_scratch"]), "created_at": utc_now(), "updated_at": utc_now(),
+        }
+        _write_packet_status(packet_path, status)
         for node, attempt_id, scratch, command, resolved_command in prepared_commands:
             if not scratch.exists():
                 scratch.mkdir(parents=True, exist_ok=False)
-            attempt = {"attempt_id": attempt_id, "status": "running", "started_at": utc_now(), "finished_at": None, "command_argv": command, "scratch": str(scratch), "log": str((root / "runtime" / "logs" / f"{node['node_id']}_{attempt_id}.log").relative_to(root))}
+            attempt = {
+                "attempt_id": attempt_id, "packet_id": packet["packet_id"], "status": "running",
+                "started_at": utc_now(), "finished_at": None, "command_argv": command,
+                "scratch": str(scratch),
+                "log": str((root / "runtime" / "logs" / f"{node['node_id']}_{attempt_id}.log").relative_to(root)),
+            }
             node["attempts"].append(attempt)
             node["current_attempt_id"] = attempt_id
             node["status"] = "running"
             selected.append((node, attempt, scratch, resolved_command))
-        now = datetime.now(timezone.utc)
         control["lease"]["expires_at"] = (
-            now
-            + timedelta(
-                seconds=execution_timeout_seconds,
-                minutes=EXECUTION_LEASE_GRACE_MINUTES,
-            )
+            now + timedelta(seconds=execution_timeout_seconds, minutes=EXECUTION_LEASE_GRACE_MINUTES)
         ).isoformat()
-        _commit(root, control, snapshot, "batch_started", {"nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": attempt["command_argv"]} for node, attempt, _scratch, _resolved_command in selected], "execution_timeout_seconds": execution_timeout_seconds}, round_id=control["active_round_id"])
-    outcomes: dict[str, dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=len(selected)) as executor:
-        futures = {
-            executor.submit(
-                _run_one,
-                command,
-                root / attempt["log"],
-                scratch / "process.json",
-                execution_timeout_seconds,
-                value_hash(attempt["command_argv"]),
-                _node_cpu_allocation(control, node),
-                _available_cpu_cores(control),
-                _native_thread_limit(control, node),
-            ): (node, attempt, scratch)
-            for node, attempt, scratch, command in selected
-        }
-        for future in as_completed(futures):
-            node, attempt, scratch = futures[future]
-            outcomes[node["node_id"]] = {**future.result(), "attempt_id": attempt["attempt_id"], "scratch": str(scratch)}
+        _commit(
+            root, control, snapshot, "batch_started",
+            {
+                "packet_id": packet["packet_id"],
+                "nodes": [{"node_id": node["node_id"], "attempt_id": attempt["attempt_id"], "command_argv": attempt["command_argv"]} for node, attempt, _scratch, _resolved_command in selected],
+                "execution_timeout_seconds": execution_timeout_seconds,
+            },
+            round_id=control["active_round_id"],
+        )
+        status["status"] = "claimed"
+        _write_packet_status(packet_path, status)
+    return packet, status, True
+
+
+def _runtime_worker_selection(root: Path, packet: dict[str, Any]) -> tuple[dict[str, Any], list[tuple[dict[str, Any], dict[str, Any], Path, list[str]]]]:
+    with writer_lock(root):
+        _recover_transaction(root)
+        control, snapshot = _read_state(root)
+        _require_worker_followup(snapshot, packet)
+        lookup = _node_lookup(snapshot)
+        contracts = {item["node_id"]: item for item in packet["execution_contracts"]}
+        selected: list[tuple[dict[str, Any], dict[str, Any], Path, list[str]]] = []
+        for node_id in packet["node_ids"]:
+            node = lookup[node_id]
+            contract = contracts[node_id]
+            attempt = next(item for item in node["attempts"] if item["attempt_id"] == contract["attempt_id"])
+            scratch = Path(attempt["scratch"])
+            command = _resolve_skill_command(list(contract["command_argv"]))
+            if value_hash(attempt["command_argv"]) != contract["command_hash"]:
+                raise PermissionError(f"Claimed command changed: {node_id}")
+            selected.append((node, attempt, scratch, command))
+        return control, selected
+
+
+def _commit_packet_outcomes(root: Path, packet: dict[str, Any], outcomes: dict[str, dict[str, Any]], clean_scratch: bool) -> tuple[dict[str, Any], list[str], list[str]]:
     committed: list[str] = []
     failed: list[str] = []
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_executor_followup(control, executor_packet)
+        _require_worker_followup(snapshot, packet)
         lookup = _node_lookup(snapshot)
         event_payload: list[dict[str, Any]] = []
         for node_id, outcome in outcomes.items():
@@ -2807,11 +3007,11 @@ def _execute_packet_batch(args: argparse.Namespace) -> int:
                     if not source.is_file() or file_hash(source) != artifact["sha256"]:
                         raise ValueError(f"Missing or invalid Skill artifact: {artifact['path']}")
                 cards = _adapt_success(root, control, snapshot, node, attempt, skill_output, event)
-                node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": node.get("result_quality") or {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": []}})
+                node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": _successful_node_quality(node)})
                 attempt.update({"status": "succeeded", "finished_at": node["finished_at"]})
                 committed.append(node_id)
                 event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "succeeded", "result_refs": [card["result_ref"] for card in cards]})
-                if args.clean_scratch:
+                if clean_scratch:
                     shutil.rmtree(scratch, ignore_errors=True)
             except Exception as exc:
                 failure_path = _write_failure_packet(root, node, attempt, outcome, exc)
@@ -2821,29 +3021,228 @@ def _execute_packet_batch(args: argparse.Namespace) -> int:
                 failed.append(node_id)
                 event_payload.append({"node_id": node_id, "attempt_id": attempt["attempt_id"], "status": "failed", "failure_code": failure_packet["classification"], "recoverable": failure_packet["recoverable"], "failure_pointer": str(failure_path.relative_to(root))})
         control["lease"]["heartbeat_at"] = utc_now()
-        control["lease"]["expires_at"] = (
-            datetime.now(timezone.utc) + timedelta(minutes=DEFAULT_LEASE_MINUTES)
-        ).isoformat()
-        _commit(root, control, snapshot, "batch_reconciled", {"outcomes": event_payload}, round_id=control["active_round_id"])
-        working = _write_working_set(root, control, snapshot)
-    detail_dir = root / "runtime" / "logs"
-    _print_compact(
-        control,
-        detail_pointer=str(detail_dir.relative_to(root)),
-        succeeded_count=len(committed),
-        failed_count=len(failed),
-        affected_node_ids=(committed + failed)[:50],
-        packet_id=executor_packet.get("packet_id"),
-    )
-    return 1 if failed and not committed else 0
+        control["lease"]["expires_at"] = (datetime.now(timezone.utc) + timedelta(minutes=DEFAULT_LEASE_MINUTES)).isoformat()
+        _commit(root, control, snapshot, "batch_reconciled", {"packet_id": packet["packet_id"], "outcomes": event_payload}, round_id=control["active_round_id"])
+        _write_working_set(root, control, snapshot)
+    return control, committed, failed
+
+
+def _run_claimed_packet_worker(root: Path, packet_path: Path) -> int:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    packet = _validate_execution_packet_authentic(root, packet_path)
+    with writer_lock(root):
+        status = _read_packet_status(packet_path)
+        if not status or status["status"] not in {"claimed", "launching", "running"}:
+            raise PermissionError("Runtime Worker packet is not in a claimed state")
+        _require_packet_status_identity(packet, status)
+        status.update({"status": "running", "worker_pid": os.getpid(), "worker_host": socket.gethostname(), "launcher_pid": None, "started_at": status.get("started_at") or utc_now()})
+        _write_packet_status(packet_path, status)
+    control, selected = _runtime_worker_selection(root, packet)
+    outcomes: dict[str, dict[str, Any]] = {}
+    timeout_seconds = int(status["execution_timeout_seconds"])
+    with ThreadPoolExecutor(max_workers=len(selected)) as executor:
+        futures = {
+            executor.submit(
+                _run_one, command, root / attempt["log"], scratch / "process.json", timeout_seconds,
+                value_hash(attempt["command_argv"]), _node_cpu_allocation(control, node),
+                _available_cpu_cores(control), _native_thread_limit(control, node),
+            ): (node, attempt, scratch)
+            for node, attempt, scratch, command in selected
+        }
+        for future in as_completed(futures):
+            node, attempt, scratch = futures[future]
+            try:
+                outcome = future.result()
+            except Exception as exc:
+                outcome = {"returncode": 125, "timed_out": False, "started_at": attempt["started_at"], "finished_at": utc_now(), "runner_error": str(exc)}
+            outcomes[node["node_id"]] = {**outcome, "attempt_id": attempt["attempt_id"], "scratch": str(scratch)}
+    control, committed, failed = _commit_packet_outcomes(root, packet, outcomes, bool(status["clean_scratch"]))
+    status.update({
+        "status": "terminal", "finished_at": utc_now(), "succeeded_count": len(committed),
+        "failed_count": len(failed), "affected_node_ids": committed + failed,
+        "returncode": 1 if failed and not committed else 0, "error": None,
+    })
+    _write_packet_status(packet_path, status)
+    return int(status["returncode"])
+
+
+def _spawn_runtime_worker(root: Path, packet_path: Path) -> dict[str, Any]:
+    with writer_lock(root):
+        packet = _validate_execution_packet_authentic(root, packet_path)
+        status = _read_packet_status(packet_path)
+        if not status:
+            raise FileNotFoundError("Runtime Worker status is missing")
+        _require_packet_status_identity(packet, status)
+        if status["status"] == "terminal":
+            return status
+        if status.get("worker_pid") and pid_alive(int(status["worker_pid"])):
+            return status
+        if status["status"] == "launching" and status.get("launcher_pid") and int(status["launcher_pid"]) != os.getpid() and pid_alive(int(status["launcher_pid"])):
+            return status
+        if status["status"] not in {"claimed", "claiming", "launching"}:
+            return status
+        status.update({"status": "launching", "launcher_pid": os.getpid()})
+        _write_packet_status(packet_path, status)
+        worker_log = packet_path.parent / "worker.log"
+        command = [sys.executable, str(Path(__file__).resolve()), "_worker-execute-packet", "--run-root", str(root), "--packet", str(packet_path)]
+        popen_options: dict[str, Any] = {"cwd": project_root(), "stdin": subprocess.DEVNULL, "close_fds": True}
+        if os.name == "posix":
+            popen_options["start_new_session"] = True
+        elif os.name == "nt":
+            popen_options["creationflags"] = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+                | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
+        try:
+            with worker_log.open("a", encoding="utf-8", errors="replace") as log_handle:
+                process = subprocess.Popen(command, stdout=log_handle, stderr=subprocess.STDOUT, **popen_options)
+        except Exception as exc:
+            status.update({"status": "worker_start_failed", "finished_at": utc_now(), "returncode": 125, "error": str(exc)[:2000]})
+            _write_packet_status(packet_path, status)
+            raise
+        status.update({"status": "running", "worker_pid": process.pid, "worker_host": socket.gethostname(), "launcher_pid": None, "started_at": status.get("started_at") or utc_now()})
+        _write_packet_status(packet_path, status)
+    return status
+
+
+def _wait_for_packet(root: Path, packet_path: Path, poll_seconds: float = 5.0) -> tuple[dict[str, Any], dict[str, Any]]:
+    packet = _validate_execution_packet_authentic(root, packet_path)
+    while True:
+        status = _read_packet_status(packet_path)
+        if not status:
+            raise FileNotFoundError("Runtime Worker status is missing")
+        _require_packet_status_identity(packet, status)
+        if status["status"] in {"terminal", "worker_start_failed"}:
+            return read_json(control_path(root)), status
+        worker_pid = int(status.get("worker_pid") or -1)
+        launcher_pid = int(status.get("launcher_pid") or -1)
+        if not pid_alive(worker_pid) and not pid_alive(launcher_pid):
+            control, snapshot = _read_state(root)
+            lookup = _node_lookup(snapshot)
+            terminal_attempts: list[tuple[str, str]] = []
+            for contract in packet["execution_contracts"]:
+                node = lookup.get(contract["node_id"])
+                attempt = next(
+                    (item for item in (node or {}).get("attempts", []) if item.get("attempt_id") == contract["attempt_id"] and item.get("packet_id") == packet["packet_id"]),
+                    None,
+                )
+                if not node or not attempt or node.get("status") == "running" or attempt.get("status") not in {"succeeded", "failed"}:
+                    terminal_attempts = []
+                    break
+                terminal_attempts.append((node["node_id"], attempt["status"]))
+            if terminal_attempts and len(terminal_attempts) == len(packet["execution_contracts"]):
+                succeeded = [node_id for node_id, attempt_status in terminal_attempts if attempt_status == "succeeded"]
+                failed = [node_id for node_id, attempt_status in terminal_attempts if attempt_status == "failed"]
+                status.update({
+                    "status": "terminal", "finished_at": utc_now(), "succeeded_count": len(succeeded),
+                    "failed_count": len(failed), "affected_node_ids": succeeded + failed,
+                    "returncode": 1 if failed and not succeeded else 0, "error": None,
+                })
+                _write_packet_status(packet_path, status)
+                return control, status
+            return control, {**status, "status": "worker_start_failed", "returncode": 125, "error": "Runtime Worker disappeared before publishing a terminal result"}
+        time.sleep(max(1.0, poll_seconds))
+
+
+def _record_worker_boundary_failure(
+    root: Path,
+    packet_path: Path,
+    failure_status: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Persist a lost-worker boundary without guessing a scientific outcome."""
+    with writer_lock(root):
+        _recover_transaction(root)
+        packet = _validate_execution_packet_authentic(root, packet_path)
+        current = _read_packet_status(packet_path)
+        if not current:
+            raise FileNotFoundError("Runtime Worker status is missing")
+        _require_packet_status_identity(packet, current)
+        if current["status"] == "terminal":
+            return read_json(control_path(root)), current
+        current.update(
+            {
+                "status": "worker_start_failed",
+                "finished_at": failure_status.get("finished_at") or utc_now(),
+                "returncode": int(failure_status.get("returncode") or 125),
+                "error": str(failure_status.get("error") or "Runtime Worker boundary failure")[:2000],
+            }
+        )
+        _write_packet_status(packet_path, current)
+        control, snapshot = _read_state(root)
+        lookup = _node_lookup(snapshot)
+        affected = [
+            contract["node_id"]
+            for contract in packet["execution_contracts"]
+            if (node := lookup.get(contract["node_id"]))
+            and node.get("status") == "running"
+            and node.get("current_attempt_id") == contract["attempt_id"]
+        ]
+        running_nodes = [item for item in snapshot["nodes"] if item.get("status") == "running"]
+        effective = _running_action(root, snapshot, running_nodes) if running_nodes else control["required_action"]
+        if affected and control["required_action"].get("code") != effective.get("code"):
+            _commit(
+                root,
+                control,
+                snapshot,
+                "runtime_worker_boundary_failure",
+                {
+                    "packet_id": packet["packet_id"],
+                    "node_ids": affected,
+                    "error": current["error"],
+                },
+                round_id=packet["round_id"],
+            )
+            control = read_json(control_path(root))
+        return control, current
 
 
 def cmd_execute_packet(args: argparse.Namespace) -> int:
-    # Delegate to the same transactional implementation.  Packet validation
-    # supplies the signed lease identity without exposing the lease token.
-    args.timeout_minutes = DEFAULT_EXECUTION_TIMEOUT_MINUTES
-    args.clean_scratch = True
-    return _execute_packet_batch(args)
+    """Idempotently submit and await a detached deterministic Runtime Worker."""
+    root = resolve_root(args.run_root)
+    packet_path = Path(args.packet).resolve()
+    packet, status, claimed = _claim_execution_packet(root, packet_path)
+    if status["status"] not in {"terminal", "worker_start_failed"}:
+        status = _spawn_runtime_worker(root, packet_path)
+    control, terminal = _wait_for_packet(root, packet_path)
+    if terminal["status"] == "worker_start_failed":
+        control, terminal = _record_worker_boundary_failure(root, packet_path, terminal)
+    _print_compact(
+        control,
+        detail_pointer=str((root / "runtime" / "logs").relative_to(root)),
+        packet_id=packet["packet_id"], worker_status=terminal["status"],
+        worker_pid=terminal.get("worker_pid"), succeeded_count=int(terminal.get("succeeded_count") or 0),
+        failed_count=int(terminal.get("failed_count") or 0), affected_node_ids=(terminal.get("affected_node_ids") or [])[:50],
+        state_changed=claimed, error=terminal.get("error"),
+        reconcile_required=(control.get("required_action") or {}).get("code") == "RECONCILE_RUNNING",
+    )
+    return int(terminal.get("returncode") or 0)
+
+
+def cmd_worker_execute_packet(args: argparse.Namespace) -> int:
+    try:
+        return _run_claimed_packet_worker(resolve_root(args.run_root), Path(args.packet).resolve())
+    except Exception as exc:
+        root = resolve_root(args.run_root)
+        packet_path = Path(args.packet).resolve()
+        try:
+            _record_worker_boundary_failure(
+                root,
+                packet_path,
+                {"status": "worker_start_failed", "finished_at": utc_now(), "returncode": 125, "error": str(exc)[:2000]},
+            )
+        except Exception:
+            # Last-resort diagnostic persistence when the signed packet itself
+            # cannot be validated. Do not guess or mutate a Node outcome.
+            with writer_lock(root):
+                status = _read_packet_status(packet_path)
+                if status and status["status"] != "terminal":
+                    status.update({"status": "worker_start_failed", "finished_at": utc_now(), "returncode": 125, "error": str(exc)[:2000]})
+                    _write_packet_status(packet_path, status)
+        finally:
+            print(f"Runtime Worker failure: {exc}", file=sys.stderr)
+        return 125
 
 
 def _recover_promoted_output(root: Path, snapshot: dict[str, Any], node: dict[str, Any]) -> list[str]:
@@ -2882,8 +3281,19 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, {"WAIT_OR_RECONCILE_RUNNING"})
-        for node in [item for item in snapshot["nodes"] if item["status"] == "running"]:
+        _require_action(control, args.lease_token, {"WAIT_RUNNING", "RECONCILE_RUNNING"})
+        running_nodes = [item for item in snapshot["nodes"] if item["status"] == "running"]
+        effective = _running_action(root, snapshot, running_nodes) if running_nodes else control["required_action"]
+        if running_nodes and effective["code"] == "WAIT_RUNNING":
+            _print_compact(
+                control,
+                state_changed=False,
+                worker_state="live",
+                affected_node_ids=effective.get("node_ids", []),
+                packet_ids=effective.get("packet_ids", []),
+            )
+            return 0
+        for node in running_nodes:
             attempt = next(item for item in node["attempts"] if item["attempt_id"] == node["current_attempt_id"])
             scratch = Path(attempt["scratch"])
             skill_output = _skill_output_dir(scratch)
@@ -2909,7 +3319,7 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
                             raise ValueError(f"missing or invalid interrupted artifact: {artifact['path']}")
                     cards = _adapt_success(root, control, snapshot, node, attempt, skill_output, event)
                     result_refs = [card["result_ref"] for card in cards]
-                node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": node.get("result_quality") or {"validation_passed": True, "eligible_for_downstream": True, "quality_flags": ["recovered_after_interruption"]}})
+                node.update({"status": "succeeded", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": _successful_node_quality(node, recovered=True)})
                 attempt.update({"status": "succeeded", "finished_at": node["finished_at"], "recovered": True})
                 reconciled.append({"node_id": node["node_id"], "status": "succeeded", "result_refs": result_refs})
             except Exception as exc:
@@ -2917,12 +3327,13 @@ def cmd_reconcile_running(args: argparse.Namespace) -> int:
                 if final.exists():
                     quarantine = root / "runtime" / "quarantine" / f"{node['node_id']}_{timestamp()}"
                     quarantine.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(final, quarantine)
+                    atomic_replace(final, quarantine)
                 node.update({"status": "failed", "current_attempt_id": None, "finished_at": utc_now(), "result_quality": {"validation_passed": False, "eligible_for_downstream": False, "quality_flags": ["interrupted_without_committable_result"]}})
                 attempt.update({"status": "failed", "finished_at": node["finished_at"], "error": str(exc), "recovered": True})
                 reconciled.append({"node_id": node["node_id"], "status": "failed", "error": str(exc)})
-        _commit(root, control, snapshot, "running_attempts_reconciled", {"outcomes": reconciled}, round_id=control["active_round_id"])
-        working = _write_working_set(root, control, snapshot)
+        if reconciled:
+            _commit(root, control, snapshot, "running_attempts_reconciled", {"outcomes": reconciled}, round_id=control["active_round_id"])
+            _write_working_set(root, control, snapshot)
     _print_compact(control, outcome_count=len(reconciled), outcomes=reconciled[:50])
     return 0
 
@@ -2932,21 +3343,37 @@ def cmd_retry_node(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        _require_action(control, args.lease_token, {"RETRY_FAILED_NODE", "FAILED_NODE_REPAIR_REQUIRED"})
+        action = control["required_action"]["code"]
+        human_override = action == "EXECUTE_RUNNABLE_BATCH" and bool(args.control_key)
+        if human_override:
+            _require_action(control, args.lease_token)
+            _require_control_authority(root, args.control_key)
+            if any(item["status"] == "running" for item in snapshot["nodes"]):
+                raise ValueError("Wait for every running Node to become terminal before a human-authorized retry")
+        else:
+            _require_action(control, args.lease_token, {"RETRY_FAILED_NODE", "FAILED_NODE_REPAIR_REQUIRED"})
         if control["round_state"] != "ACTIVE":
             raise ValueError("A scientific Node can be retried only while the Round is ACTIVE")
         node = _node_lookup(snapshot).get(args.node_id)
         if not node or node["status"] != "failed":
             raise ValueError("Only a failed Node can be retried")
-        if control["required_action"].get("node_id") != node["node_id"]:
+        if not human_override and control["required_action"].get("node_id") != node["node_id"]:
             raise ValueError("Runtime selected a different failed Node for bounded retry")
-        human_repair = control["required_action"]["code"] == "FAILED_NODE_REPAIR_REQUIRED"
+        human_repair = action == "FAILED_NODE_REPAIR_REQUIRED" or human_override
         if len(node.get("attempts") or []) >= MAX_EXECUTION_ATTEMPTS and not human_repair:
             raise ValueError("The bounded retry allowance for this Node is exhausted")
         node["status"] = "pending"
         node["finished_at"] = None
         node["assigned_round"] = control["active_round_id"]
-        _commit(root, control, snapshot, "node_retry_requested", {"reason": args.reason}, round_id=control["active_round_id"], node_id=node["node_id"])
+        _commit(
+            root,
+            control,
+            snapshot,
+            "node_retry_requested",
+            {"reason": args.reason, "human_override": human_override},
+            round_id=control["active_round_id"],
+            node_id=node["node_id"],
+        )
     _print_compact(control, node_id=node["node_id"])
     return 0
 
@@ -3200,7 +3627,7 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
         write_json(temporary / "quality_report.json", quality)
         if final.exists():
             raise FileExistsError(f"Interpretation output exists: {final}")
-        os.replace(temporary, final)
+        atomic_replace(temporary, final)
         for insight in insights:
             append_jsonl_fsync(root / "runtime" / "insight_index.jsonl", {**insight, "round_id": control["active_round_id"], "interpretation_node_id": node["node_id"], "updated_at": utc_now()})
         attempt_id = f"ATT{len(node['attempts']) + 1:04d}"
@@ -3530,7 +3957,7 @@ def _action_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.5 deterministic Runtime Controller")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.6 deterministic Runtime Controller")
     commands = parser.add_subparsers(dest="command", required=True)
 
     item = commands.add_parser("init")
@@ -3654,6 +4081,13 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--packet", required=True)
     item.set_defaults(func=cmd_execute_packet)
 
+    # Internal deterministic OS worker. It is spawned only by execute-packet;
+    # Orchestrator and Executor instructions never call it directly.
+    item = commands.add_parser("_worker-execute-packet", help=argparse.SUPPRESS)
+    item.add_argument("--run-root", required=True)
+    item.add_argument("--packet", required=True)
+    item.set_defaults(func=cmd_worker_execute_packet)
+
     item = commands.add_parser("reconcile-running")
     _action_args(item)
     item.set_defaults(func=cmd_reconcile_running)
@@ -3662,6 +4096,7 @@ def build_parser() -> argparse.ArgumentParser:
     _action_args(item)
     item.add_argument("--node-id", required=True)
     item.add_argument("--reason", required=True)
+    item.add_argument("--control-key")
     item.set_defaults(func=cmd_retry_node)
 
     item = commands.add_parser("enter-finalizing")

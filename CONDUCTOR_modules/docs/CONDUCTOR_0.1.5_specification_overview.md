@@ -7,14 +7,14 @@
 目標は次の三点です。
 
 1. Main AgentがRoundを跨いでも短い同一手順で制御できる。
-2. Runtime、Executor、Skill間の引数不一致を構造的に減らす。
+2. Runtime WorkerとSkill間の引数不一致を構造的に減らす。
 3. 科学情報を失わず、利用価値の低い重複保存と制御状態を減らす。
 
 ## 維持するもの
 
 - Main AgentがOrchestrator、人間だけがRound開始権限を持つ。
 - RuntimeはStateの単一Writerで、Node ID、5状態、DAG、Attempt、commit、auditを管理する。
-- Executorは短命な科学計算担当、Interpreterはread-onlyの解釈担当である。
+- 決定論的なOS Runtime Workerは科学process担当、Interpreterはread-onlyの解釈担当である。
 - Round終了前にInterpretation JSON／Markdown／HTMLとFull Auditを必須とする。
 - Description、Clustering、A001～A013の科学kernelと一般利用CLIを維持する。
 - Conciergeは`run_root/concierge/`だけへ書き、解析Stateを変更しない。
@@ -66,11 +66,11 @@ one-use Action tokenとExecutor tokenは使用しません。排他性は次で�
 - live Main Agent lease
 - monotonic Control revision
 - Run／Round／lease hash／Request hash／command hash／期限を含む署名済packet
-- `batch_started`と結果commitのatomic State transaction
+- Packetのatomic claim、`batch_started`、結果commitのState transaction
 
-Packetは発行時revisionでのみ受理されます。実行開始commitでrevisionが進むため、同じpacketの二重実行は拒否されます。Executorへlease tokenを渡しません。
+未claim Packetは発行時revisionでのみ受理されます。初回claimでAttemptへPacket IDを結び付け、実行開始commitでrevisionを進めます。以後、同じPacketの再投入は既存Workerへ接続し、二つ目の科学processを起動しません。Workerへlease tokenを渡しません。
 
-Executorはpacket pathを受け、一回のRuntime callだけを行います。引数修正、補助adapter生成、Skill source変更、別Executor起動はしません。timeout等の一時障害だけを同一Node・同一Requestで最大3 Attemptまで自動再試行します。契約や実装の欠陥は`FAILED_NODE_REPAIR_REQUIRED`として人間へ返し、Round外で修正した後に同じNode IDへ新Attemptを追加します。
+Mainはpacket pathをRuntime `execute-packet`へ一回渡します。Runtimeは独立OS Workerを起動し、Main sessionやTool callが終了しても計算を継続します。`WAIT_RUNNING`と`RECONCILE_RUNNING`を分け、live processをreconcileで失敗扱いしません。引数修正、補助adapter生成、Skill source変更は行いません。timeout等の一時障害だけを同一Node・同一Requestで最大3 Attemptまで自動再試行します。契約や実装の欠陥は`FAILED_NODE_REPAIR_REQUIRED`として人間へ返し、Round外で修正した後に同じNode IDへ新Attemptを追加します。
 
 ## Operator探索
 
@@ -119,6 +119,6 @@ RuntimeがInsight ID、scope、sample factsを確定し、固定rendererでJSON�
 ## 非対応
 
 - 0.1.4以前のRun／State／Packet／Artifact migration
-- Executorによる即席CLI修正
+- MainまたはRuntime Workerによる即席CLI修正
 - MMP native work DBまたはParquetのcanonical保持
 - 人間指示なしの自動新Round開始

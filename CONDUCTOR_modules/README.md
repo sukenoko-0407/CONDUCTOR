@@ -1,6 +1,6 @@
 # CONDUCTOR modules
 
-CONDUCTOR 0.1.5の共有定義packageです。Claude Codeが認識するAgent／SkillはProject rootの`.claude/`、Catalog、Policy、schema、Runtime、template、testは`CONDUCTOR_modules/`へ置きます。
+CONDUCTOR 0.1.6の共有定義packageです。Claude Codeが認識するAgent／SkillはProject rootの`.claude/`、Catalog、Policy、schema、Runtime、template、testは`CONDUCTOR_modules/`へ置きます。
 
 ```text
 project/

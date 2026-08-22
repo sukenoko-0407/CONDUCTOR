@@ -70,10 +70,24 @@ class AnalysisAdditionTests(unittest.TestCase):
         markdown=module.render_markdown(report);html=module.render_html(report)
         for token in ("エグゼクティブサマリー","Insight","次Roundで検討可能な方向","INS000001","C000001","Cluster-local"):self.assertIn(token,markdown+html)
         self.assertIn("個別report",html)
+        self.assertIn("overflow-wrap:anywhere",html)
+        self.assertIn("min-width:0",html)
         self.assertNotIn("主要数値",markdown+html)
         self.assertNotIn("private_metric_0x",markdown+html)
         self.assertEqual(987654.321,report["insights"][0]["fact_panel"]["key_metrics"]["N000020@ATT0001"]["private_metric_0x"])
         self.assertEqual([],module.quality_issues(report))
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows extended-path import workaround")
+    def test_chemberta_enables_extended_site_packages_path_on_windows(self)->None:
+        script=SKILLS/"cs-compute-description-chemberta-embedding"/"scripts"/"run.py"
+        spec=importlib.util.spec_from_file_location("chemberta_run",script);module=importlib.util.module_from_spec(spec);assert spec and spec.loader;spec.loader.exec_module(module)
+        original=list(sys.path);candidate=str(ROOT/"synthetic-long-prefix"/"site-packages")
+        try:
+            sys.path.append(candidate);module._enable_windows_extended_import_paths()
+            expected="\\\\?\\"+str(Path(candidate).resolve())
+            self.assertIn(expected,sys.path)
+        finally:
+            sys.path[:]=original
 
 
 if __name__=="__main__":unittest.main()

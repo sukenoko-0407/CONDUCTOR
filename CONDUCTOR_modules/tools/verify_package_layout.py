@@ -8,7 +8,7 @@ from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = MODULE_ROOT.parent
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 SUPPORTED_COMPONENT_VERSIONS = {VERSION}
 COMMON_SCIENTIFIC_OPTIONS = {
     "--conductor", "--project", "--run-id", "--round-id", "--node-id",
@@ -41,6 +41,7 @@ def main() -> int:
         "schemas/result_card.schema.json", "schemas/working_set.schema.json",
         "schemas/interpretation.schema.json", "tools/runtime_controller.py",
         "schemas/execution_packet.schema.json", "schemas/failure_packet.schema.json",
+        "schemas/runtime_worker_status.schema.json",
         "schemas/compact_runtime_response.schema.json", "schemas/execution_request.schema.json",
         "tools/templates/conductor_request_adapter.py", "tools/templates/launch.py",
         "tools/templates/state_manager.py", "pyproject.toml", "uv.lock",
@@ -207,7 +208,7 @@ def main() -> int:
     executor = PROJECT_ROOT / ".claude" / "agents" / "cs-conductor-executor.md"
     if executor.is_file():
         executor_text = executor.read_text(encoding="utf-8")
-        for token in ("short-lived", "Execute exactly once", "End after this single Runtime call", "Never start another packet", "<CONDUCTOR_RUNTIME_PYTHON>"):
+        for token in ("compatibility-only", "deterministic OS Worker", "A background-task identifier", "Never start another packet", "<CONDUCTOR_RUNTIME_PYTHON>"):
             if token not in executor_text:
                 errors.append(f"Executor contract is missing: {token}")
         frontmatter = executor_text.split("---", 2)[1]
@@ -219,7 +220,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print("CONDUCTOR 0.1.5 package layout is valid")
+    print("CONDUCTOR 0.1.6 package layout is valid")
     return 0
 
 

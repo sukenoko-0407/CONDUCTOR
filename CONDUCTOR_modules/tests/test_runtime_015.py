@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import hashlib
 import json
@@ -230,7 +231,7 @@ class RuntimeControl015(unittest.TestCase):
             "lease": {"expires_at": "2026-01-01T00:00:00+00:00"},
         }
         response = RUNTIME._compact_response(control)
-        self.assertEqual("0.1.5", response["protocol_version"])
+        self.assertEqual("0.1.6", response["protocol_version"])
         self.assertNotIn("action_token", response)
         self.assertNotIn("executor_token", response)
 
@@ -433,6 +434,134 @@ class RuntimeControl015(unittest.TestCase):
         self.assertIn('owner.json', launcher)
         self.assertIn('environment_fingerprint', launcher)
         self.assertIn('manifest.read_bytes()', launcher)
+
+
+class RuntimeWorkerOwnership015(unittest.TestCase):
+    def test_atomic_replace_retries_a_transient_windows_scanner_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "worker_status.json"
+            target.write_text("old", encoding="utf-8")
+            real_replace = os.replace
+            calls = 0
+
+            def transient_replace(source: Path, destination: Path) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise PermissionError(13, "transient scanner lock", str(destination))
+                real_replace(source, destination)
+
+            with mock.patch.object(RUNTIME.os, "replace", side_effect=transient_replace), mock.patch.object(RUNTIME.time, "sleep"):
+                RUNTIME.atomic_bytes(target, b"new")
+
+            self.assertEqual("new", target.read_text(encoding="utf-8"))
+            self.assertEqual(2, calls)
+            self.assertEqual([], list(root.glob(".worker_status.json.*.tmp")))
+
+    def test_successful_retry_replaces_failed_attempt_quality(self) -> None:
+        node = {
+            "kind": "description",
+            "result_quality": {
+                "validation_passed": False,
+                "eligible_for_downstream": False,
+                "quality_flags": ["technical_failure"],
+            },
+        }
+        quality = RUNTIME._successful_node_quality(node)
+        self.assertTrue(quality["validation_passed"])
+        self.assertTrue(quality["eligible_for_downstream"])
+        self.assertNotIn("technical_failure", quality["quality_flags"])
+
+    def test_human_authority_can_retry_failed_node_before_other_runnable_work(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "runtime").mkdir()
+            (root / "conductor_control.json").write_text("{}", encoding="utf-8")
+            (root / "runtime" / "authority.json").write_text(
+                json.dumps({"control_authority_key_hash": RUNTIME.value_hash("human-key")}),
+                encoding="utf-8",
+            )
+            control = {
+                "round_state": "ACTIVE", "active_round_id": "RND0001",
+                "required_action": {"code": "EXECUTE_RUNNABLE_BATCH", "node_ids": ["N000002"]},
+                "lease": {"owner_id": "main", "token_hash": RUNTIME.value_hash("lease"), "expires_at": "2999-01-01T00:00:00+00:00"},
+            }
+            failed = {
+                "node_id": "N000001", "status": "failed", "finished_at": "earlier",
+                "assigned_round": "RND0001", "attempts": [{"attempt_id": "ATT0001"}],
+            }
+            snapshot = {"nodes": [failed, {"node_id": "N000002", "status": "pending"}]}
+            args = RUNTIME.argparse.Namespace(
+                run_root=str(root), lease_token="lease", control_key="human-key",
+                node_id="N000001", reason="human-approved technical repair",
+            )
+            with mock.patch.object(RUNTIME, "writer_lock", return_value=contextlib.nullcontext()), mock.patch.object(
+                RUNTIME, "_recover_transaction"
+            ), mock.patch.object(RUNTIME, "_read_state", return_value=(control, snapshot)), mock.patch.object(
+                RUNTIME, "_commit"
+            ) as commit, mock.patch.object(RUNTIME, "_print_compact"):
+                returned = RUNTIME.cmd_retry_node(args)
+            self.assertEqual(0, returned)
+            self.assertEqual("pending", failed["status"])
+            self.assertIsNone(failed["finished_at"])
+            self.assertTrue(commit.call_args.args[4]["human_override"])
+
+    def test_wait_reconstructs_terminal_status_after_commit_status_race(self) -> None:
+        packet = {
+            "packet_id": "PKT20260822T000000000000Z_1234abcd",
+            "run_id": "run", "round_id": "RND0001", "node_ids": ["N000001"],
+            "execution_contracts": [{"node_id": "N000001", "attempt_id": "ATT0001"}],
+        }
+        status = {
+            "status": "running", "worker_pid": 987654321, "launcher_pid": None,
+            "packet_id": packet["packet_id"], "run_id": "run", "round_id": "RND0001", "node_ids": ["N000001"],
+        }
+        control = {"revision": 4}
+        snapshot = {"nodes": [{
+            "node_id": "N000001", "status": "succeeded", "current_attempt_id": None,
+            "attempts": [{"attempt_id": "ATT0001", "packet_id": packet["packet_id"], "status": "succeeded"}],
+        }]}
+        with mock.patch.object(RUNTIME, "_read_packet_status", return_value=dict(status)), mock.patch.object(
+            RUNTIME, "_read_state", return_value=(control, snapshot)
+        ), mock.patch.object(RUNTIME, "_validate_execution_packet_authentic", return_value=packet), mock.patch.object(
+            RUNTIME, "pid_alive", return_value=False
+        ), mock.patch.object(RUNTIME, "_write_packet_status") as write_status:
+            returned_control, terminal = RUNTIME._wait_for_packet(Path("run"), Path("packet.json"), poll_seconds=0.01)
+        self.assertIs(returned_control, control)
+        self.assertEqual("terminal", terminal["status"])
+        self.assertEqual(1, terminal["succeeded_count"])
+        self.assertEqual(0, terminal["failed_count"])
+        write_status.assert_called_once()
+
+    def test_live_worker_packet_is_not_spawned_twice(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "runtime").mkdir()
+            packet_path = root / "runtime" / "scratch" / "packets" / "PKT" / "execution_packet.json"
+            packet_path.parent.mkdir(parents=True)
+            packet = {"packet_id": "PKT1", "run_id": "run", "round_id": "RND0001", "node_ids": ["N000001"]}
+            status = {**packet, "status": "running", "worker_pid": os.getpid(), "launcher_pid": None}
+            with mock.patch.object(RUNTIME, "_read_packet_status", return_value=status), mock.patch.object(
+                RUNTIME, "_validate_execution_packet_authentic", return_value=packet
+            ), mock.patch.object(RUNTIME.subprocess, "Popen"
+            ) as popen:
+                returned = RUNTIME._spawn_runtime_worker(root, packet_path)
+            self.assertIs(returned, status)
+            popen.assert_not_called()
+
+    def test_running_action_separates_wait_from_reconcile(self) -> None:
+        running = [{
+            "node_id": "N000001", "status": "running", "current_attempt_id": "ATT0001",
+            "attempts": [{"attempt_id": "ATT0001", "packet_id": "PKT1", "scratch": "missing"}],
+        }]
+        live_status = {"status": "running", "worker_pid": os.getpid(), "launcher_pid": None}
+        with mock.patch.object(RUNTIME, "_read_packet_status", return_value=live_status):
+            self.assertEqual("WAIT_RUNNING", RUNTIME._running_action(Path("run"), {"nodes": running}, running)["code"])
+        with mock.patch.object(RUNTIME, "_read_packet_status", return_value={"status": "running", "worker_pid": 987654321, "launcher_pid": None}), mock.patch.object(
+            RUNTIME, "pid_alive", return_value=False
+        ):
+            self.assertEqual("RECONCILE_RUNNING", RUNTIME._running_action(Path("run"), {"nodes": running}, running)["code"])
 
 
 if __name__ == "__main__":

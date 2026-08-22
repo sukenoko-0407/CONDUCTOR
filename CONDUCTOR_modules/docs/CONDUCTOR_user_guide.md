@@ -14,7 +14,9 @@ RuntimeはRun初期化時にSMILES列を確定し、共通Execution Requestで�
 
 ## 実行中
 
-Main Orchestratorは`conductor_control.json`の一つの`required_action`へ従います。科学計算ではRuntimeが共通`execution_request.json`と署名済packetを作り、短命Executorがpacketを一回だけ実行します。MainやExecutorがSkill個別CLIを組み直すことはありません。
+Main Orchestratorは`conductor_control.json`の一つの`required_action`へ従います。科学計算ではRuntimeが共通`execution_request.json`と署名済packetを作り、MainがRuntime `execute-packet`を一回呼びます。RuntimeはPacketを原子的にclaimし、独立したOS Workerへ科学processを所有させます。MainはSkill個別CLIを組み直しません。
+
+`WAIT_RUNNING`はWorkerまたは科学processが生存している正常な待機です。別Workerやreconcileを開始しません。`RECONCILE_RUNNING`の場合だけ、Worker消失後の成果物または失敗状態を一回回収します。同じPacketの`execute-packet`再呼出しは既存Workerへの再接続であり、二重計算にはなりません。
 
 Node失敗時は同じNode IDへ最大3 Attemptまで再試行できます。即席の引数修正や置換Nodeは作りません。実装契約の欠陥であれば、Roundを安全に停止し、packageを修正して同じNodeを再試行します。
 
@@ -26,7 +28,7 @@ A014はGlobal MMP Databaseを一度だけ構築し、同じDBを全Cluster scree
 
 ## 中断と再開
 
-別sessionでは`/cs-conductor-orchestrator`、Run Root、「同じRoundを再開」を指定します。MainはControlだけを最初に読み、live leaseなら二重実行を拒否し、期限切れなら同じRoundをresumeします。人間の指示なしに次Roundを作りません。長いInterpretationや全DAGをプロンプトへ貼る必要はありません。
+別sessionでは`/cs-conductor-orchestrator`、Run Root、「同じRoundを再開」を指定します。MainはControlだけを最初に読み、live leaseなら二重Orchestratorを拒否し、期限切れなら同じRoundをresumeします。claim済みRuntime WorkerはMain sessionから独立して継続します。人間の指示なしに次Roundを作りません。長いInterpretationや全DAGをプロンプトへ貼る必要はありません。
 
 ## Round終了後
 

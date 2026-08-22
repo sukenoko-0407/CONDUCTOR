@@ -3,7 +3,7 @@
   "capability_id": "A014",
   "skill_name": "cs-analysis-matched-molecular-pairs",
   "display_name": "Matched molecular pair analysis",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "analysis",
   "family": "matched_molecular_pairs",
   "description": "Build and query a reusable exhaustive matched molecular pair evidence database with exact-core and environment-aware Global-to-Cluster comparisons.",

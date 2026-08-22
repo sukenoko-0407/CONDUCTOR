@@ -3,7 +3,7 @@
   "capability_id": "C012",
   "skill_name": "cs-compute-clustering-meta-overlap",
   "display_name": "Overlap-based meta clustering",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "clustering",
   "family": "meta",
   "description": "Use when Claude Code needs to run Overlap-based meta clustering from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

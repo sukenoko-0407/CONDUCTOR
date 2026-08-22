@@ -18,7 +18,7 @@
 - Main AgentがOrchestratorであり、人間だけが新しいRoundを開始できる。
 - RuntimeはStateの単一Writerである。
 - Node ID、同一Node内のAttempt、既存の5状態、DAGを維持する。状態種類を追加しない。
-- Executorは署名済みpacketを一回だけ実行し、科学的判断やCLI修正を行わない。
+- 長時間科学processは決定論的Runtime Workerが所有し、互換Executorは通常実行経路へ入らない。
 - Description、Clustering、A001～A013の科学計算kernelと一般利用CLIを変更しない。
 - MMPの標準探索範囲、Exact Core、Transform方向、Pair identity、CSV／SQLiteの科学的内容を変更しない。
 - `--conductor-request`の共通入口と、一般利用時に`--conductor`を自動付与しない原則を維持する。
@@ -31,7 +31,7 @@
 - **同一Node再実行**: 技術的失敗を別Nodeへ置換しない。Node番号を消費して失敗を隠さない。
 - **科学値不変**: MMPストリーミング化では処理順序と保存方法だけを変更し、小規模fixtureで旧実装と行集合・集計値を比較する。
 - **共通実装優先**: adapterとlauncherはtemplateを一度修正し、同期ツールで各Skillへ配布する。
-- **bounded context**: Runtime応答、失敗情報、ログ読込量を上限付きにし、Main AgentとExecutorへ長い標準出力を返さない。
+- **bounded context**: Runtime応答、失敗情報、ログ読込量を上限付きにし、Main Agentへ長い標準出力を返さない。
 
 ## 4. Phase 1: 成果物パスの正規化
 
@@ -118,7 +118,7 @@
 - Runtimeがfailure分類に読むログは末尾の上限付き領域だけにする。
 - LinuxではSkill launcherを新しいprocess sessionで起動し、timeout／中断時にprocess groupへTERM、猶予後KILLを送る。
 - Windowsでは新しいprocess groupを使用し、利用可能な安全なtree terminationを実装する。
-- Node timeout、Executor lease、最大6時間の関係を一箇所のRuntime定数／Request resourceへ整理する。
+- Node timeout、Orchestrator lease、Runtime Worker、最大6時間の関係を一箇所のRuntime定数／Request resourceへ整理する。
 - timeout後にcommit、scratch書込み、CPU消費を続ける子孫processを残さない。
 
 ### 受入試験
@@ -180,7 +180,7 @@
 1. Run初期化と人間指示によるRound開始
 2. 基本計算計画
 3. Request／packet生成
-4. Executorによる科学Node実行
+4. Runtime Workerによる科学Node実行
 5. Artifact promotionとResult Index登録
 6. Global優先exploration
 7. Interpretation JSON／Markdown／HTML生成
@@ -192,7 +192,7 @@
 
 - packet二重実行、stale revision、expired packet
 - Request作成後のinput／upstream artifact差し替え
-- Runtime／Executor／Skillの各中断点
+- Runtime Worker／呼出元Main／Skillの各中断点
 - promotion直後・Result Index追加前の中断とrecovery
 - Failed Nodeの一時的／非回復性分類
 - 子孫processを伴うtimeout

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/sbdd_input.schema.json",
   "title": "CONDUCTOR reserved SBDD input manifest",
-  "description": "Extension contract only; CONDUCTOR 0.1.5 does not execute SBDD calculations.",
+  "description": "Extension contract only; CONDUCTOR 0.1.6 does not execute SBDD calculations.",
   "type": "object",
   "required": ["schema_version", "prepared_by_human"],
   "properties": {

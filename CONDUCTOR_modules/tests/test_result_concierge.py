@@ -19,7 +19,7 @@ SPEC.loader.exec_module(MODULE)
 class ConciergeTests(unittest.TestCase):
     def frozen_run(self, base: Path) -> Path:
         root = base / "run"; (root / "runtime").mkdir(parents=True)
-        control = {"conductor_version": "0.1.5", "run": {"run_id": "r1"}, "active_round_id": None, "round_state": "CLOSED", "lease": {"owner_id": None, "expires_at": None}}
+        control = {"conductor_version": "0.1.6", "run": {"run_id": "r1"}, "active_round_id": None, "round_state": "CLOSED", "lease": {"owner_id": None, "expires_at": None}}
         snapshot = {"nodes": [], "rounds": {}}
         (root / "conductor_control.json").write_text(json.dumps(control), encoding="utf-8")
         (root / "runtime" / "dag_snapshot.json").write_text(json.dumps(snapshot), encoding="utf-8")
@@ -47,7 +47,7 @@ class ConciergeTests(unittest.TestCase):
             self.assertEqual("succeeded", result["status"])
             self.assertTrue((request_dir / "scratch" / "derived.txt").is_file())
             self.assertTrue(Path(result["stdout"]).read_text(encoding="utf-8").strip() == "done")
-            self.assertEqual("0.1.5", json.loads((root / "conductor_control.json").read_text(encoding="utf-8"))["conductor_version"])
+            self.assertEqual("0.1.6", json.loads((root / "conductor_control.json").read_text(encoding="utf-8"))["conductor_version"])
 
     def test_python_helper_outside_request_scratch_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

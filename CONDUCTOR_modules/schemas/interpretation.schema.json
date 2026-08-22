@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/interpretation.schema.json",
-  "title": "CONDUCTOR 0.1.5 Interpretation",
+  "title": "CONDUCTOR 0.1.6 Interpretation",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "round_id", "node_id", "title", "report_header", "executive_summary", "coverage_summary", "insights", "result_catalog", "review_manifest", "created_at"],

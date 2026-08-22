@@ -1,6 +1,6 @@
 # CONDUCTOR ドキュメント
 
-対象Versionは`0.1.5`です。Description、Clustering、Operator、Interpretationを疎結合に接続し、同じRunを人間主導の複数Roundで探索します。共通Execution Request、Global優先の単一exploration、最大100 Analysis Node、実務的範囲の省容量MMP Databaseを採用します。
+対象Versionは`0.1.6`です。Description、Clustering、Operator、Interpretationを疎結合に接続し、同じRunを人間主導の複数Roundで探索します。共通Execution Request、Global優先の単一exploration、最大100 Analysis Node、実務的範囲の省容量MMP Databaseを採用します。
 
 ## 利用時に読む文書
 
@@ -13,9 +13,13 @@
 
 ## 実装・監査
 
-- [CONDUCTOR_0.1.5_specification_overview.md](CONDUCTOR_0.1.5_specification_overview.md): 0.1.5の共通Execution Request、単一探索、Global優先、MMP再設計仕様
+- [CONDUCTOR_0.1.6_specification_overview.md](CONDUCTOR_0.1.6_specification_overview.md): Runtime Worker所有、Executor境界、再接続・再試行仕様
+- [CONDUCTOR_0.1.6_final_acceptance_plan.md](CONDUCTOR_0.1.6_final_acceptance_plan.md): 実データ拡大E2EとLinux HPC最終受入基準
+- [CONDUCTOR_version_history_0.1.6.md](CONDUCTOR_version_history_0.1.6.md): 0.1.6の変更点と維持事項
+- [CONDUCTOR_0.1.5_specification_overview.md](CONDUCTOR_0.1.5_specification_overview.md): 過去Version 0.1.5の共通Execution Request、単一探索、Global優先、MMP再設計仕様
 - [CONDUCTOR_0.1.5_implementation_plan.md](CONDUCTOR_0.1.5_implementation_plan.md): 0.1.5の実装順序、回帰試験、fault test、cutover条件
-- [CONDUCTOR_0.1.5_review_remediation_plan.md](CONDUCTOR_0.1.5_review_remediation_plan.md): 詳細レビュー後の整合性・頑健性是正計画、実装結果、残余のLinux受入項目
+- [CONDUCTOR_0.1.5_review_remediation_plan.md](CONDUCTOR_0.1.5_review_remediation_plan.md): 0.1.5詳細レビュー後の是正記録
+- [CONDUCTOR_runtime_worker_robustness_refactoring_proposal.md](CONDUCTOR_runtime_worker_robustness_refactoring_proposal.md): Runtime Worker所有方式を採用した設計背景と異常時対応の検討記録
 - [CONDUCTOR_0.1.4_specification_overview.md](CONDUCTOR_0.1.4_specification_overview.md): 過去Version 0.1.4のMMP仕様記録
 - [CONDUCTOR_0.1.4_implementation_plan.md](CONDUCTOR_0.1.4_implementation_plan.md): 過去Version 0.1.4の実装記録
 - [CONDUCTOR_design_spec.md](CONDUCTOR_design_spec.md): Main Orchestrator、Executor、Interpreter、Runtime、Control、Event Ledger、詳細DAG snapshot

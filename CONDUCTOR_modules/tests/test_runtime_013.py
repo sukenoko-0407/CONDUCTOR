@@ -237,7 +237,7 @@ class Runtime013Tests(unittest.TestCase):
         executor_tools = next(line for line in frontmatter.splitlines() if line.startswith("tools:"))
         self.assertNotIn("Agent", executor_tools)
         self.assertNotIn("Skill", executor_tools)
-        for instruction in ("short-lived", "Execute exactly once", "End after this single Runtime call", "Never start another packet"):
+        for instruction in ("compatibility-only", "deterministic OS Worker", "A background-task identifier", "Never start another packet"):
             self.assertIn(instruction, executor)
 
     def test_compact_response_is_bounded_and_does_not_embed_control(self) -> None:
@@ -252,7 +252,7 @@ class Runtime013Tests(unittest.TestCase):
             "pointers": {"working_set": "runtime/working_set.json"},
         }
         response = RUNTIME._compact_response(control, detail_pointer="runtime/logs")
-        self.assertEqual("0.1.5", response["protocol_version"])
+        self.assertEqual("0.1.6", response["protocol_version"])
         self.assertNotIn("control", response)
         self.assertLessEqual(len(RUNTIME.canonical_bytes(response)), RUNTIME.MAX_COMPACT_RESPONSE_BYTES)
 
@@ -260,7 +260,7 @@ class Runtime013Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_root, lease = self.active_basic_round(Path(temporary))
             response = json.loads(self.command("prepare-execution-packet", "--run-root", str(run_root), "--lease-token", lease, "--timeout-minutes", "5").stdout)
-            self.assertEqual("0.1.5", response["protocol_version"])
+            self.assertEqual("0.1.6", response["protocol_version"])
             self.assertNotIn("lease_token", response)
             packet_path = Path(response["packet_path"])
             packet = json.loads(packet_path.read_text(encoding="utf-8"))
@@ -727,7 +727,7 @@ class Runtime013Tests(unittest.TestCase):
             control = json.loads((run_root / "conductor_control.json").read_text(encoding="utf-8"))
             self.assertEqual("product_smiles", control["run"]["smiles_column"])
 
-    @unittest.skip("0.1.5 does not support legacy Run metadata")
+    @unittest.skip("0.1.6 does not support legacy Run metadata")
     def test_legacy_run_without_smiles_metadata_uses_deterministic_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
@@ -834,7 +834,7 @@ class Runtime013Tests(unittest.TestCase):
                 json.loads(log.read_text(encoding="utf-8")),
             )
 
-    @unittest.skip("Adaptive recovery scratch was removed in 0.1.5")
+    @unittest.skip("Adaptive recovery scratch was removed in 0.1.6")
     def test_only_empty_or_recovery_scratch_can_be_reused(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             scratch = Path(temporary) / "ATT0001"
@@ -874,7 +874,7 @@ class Runtime013Tests(unittest.TestCase):
                 self.assertTrue(path.is_dir())
                 self.assertEqual({"execution_request.json"}, {item.name for item in path.iterdir()})
 
-    @unittest.skip("Legacy 200/50 planner was replaced by one 100-Node exploration in 0.1.5")
+    @unittest.skip("Legacy 200/50 planner was replaced by one 100-Node exploration in 0.1.6")
     def test_analysis_planning_is_batched_and_capped_per_round(self) -> None:
         maximum, batch_size = RUNTIME._analysis_planning_limits()
         self.assertEqual(200, maximum)
@@ -918,7 +918,7 @@ class Runtime013Tests(unittest.TestCase):
         self.assertEqual(0, deferred)
         self.assertEqual(50, RUNTIME._round_analysis_work_count(snapshot, "RND0002"))
 
-    @unittest.skip("Legacy Initial Global phase was replaced by the unified explorer in 0.1.5")
+    @unittest.skip("Legacy Initial Global phase was replaced by the unified explorer in 0.1.6")
     def test_initial_global_reserves_capacity_for_local_analysis(self) -> None:
         control = {"active_round_id": "RND0001", "run": {"run_root": str(ROOT / ".test-run")}}
         snapshot = {
@@ -954,7 +954,7 @@ class Runtime013Tests(unittest.TestCase):
         self.assertEqual((0, 200), (len(planned), deferred))
         self.assertEqual(100, RUNTIME._round_analysis_work_count(snapshot, "RND0001"))
 
-    @unittest.skip("Legacy Initial Global/Local phases were replaced by the unified explorer in 0.1.5")
+    @unittest.skip("Legacy Initial Global/Local phases were replaced by the unified explorer in 0.1.6")
     def test_initial_exploration_covers_global_and_local_within_two_hundred_nodes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "run"
@@ -1047,7 +1047,7 @@ class Runtime013Tests(unittest.TestCase):
         action = RUNTIME._required_action(Path("."), control, snapshot)
         self.assertEqual("INTERPRETATION_BLOCKED", action["code"])
 
-    @unittest.skip("Adaptive command recovery was removed in 0.1.5")
+    @unittest.skip("Adaptive command recovery was removed in 0.1.6")
     def test_adaptive_recovery_rejects_scientific_parameter_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

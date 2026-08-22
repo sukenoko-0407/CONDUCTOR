@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/conductor_control.schema.json",
-  "title": "CONDUCTOR 0.1.5 Control State",
+  "title": "CONDUCTOR 0.1.6 Control State",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "conductor_version", "revision", "run", "active_round_id", "round_state", "next_round_number", "required_action", "lease", "counts", "closure", "pointers", "last_event_sequence", "last_event_checksum", "updated_at"],
   "properties": {
     "schema_version": {"const": "3.0.0"},
-    "conductor_version": {"const": "0.1.5"},
+    "conductor_version": {"const": "0.1.6"},
     "revision": {"type": "integer", "minimum": 0},
     "run": {
       "type": "object",
@@ -45,7 +45,7 @@
           "enum": [
             "AWAIT_HUMAN_ROUND", "HUMAN_REVIEW_REQUIRED", "HUMAN_APPROVAL_REQUIRED",
             "INTERPRETATION_BLOCKED", "PLAN_BASIC", "PLAN_EXPLORATION",
-            "EXECUTE_RUNNABLE_BATCH", "WAIT_OR_RECONCILE_RUNNING", "RETRY_FAILED_NODE", "FAILED_NODE_REPAIR_REQUIRED",
+            "EXECUTE_RUNNABLE_BATCH", "WAIT_RUNNING", "RECONCILE_RUNNING", "RETRY_FAILED_NODE", "FAILED_NODE_REPAIR_REQUIRED",
             "SCIENTIFIC_DECISION", "ENTER_FINALIZING", "PLAN_INTERPRETATION",
             "WRITE_INTERPRETATION", "RUN_FULL_AUDIT", "COMPLETE_FINALIZING"
           ]

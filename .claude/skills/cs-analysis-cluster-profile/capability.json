@@ -3,7 +3,7 @@
   "capability_id": "A010",
   "skill_name": "cs-analysis-cluster-profile",
   "display_name": "Cluster profile",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "analysis",
   "family": "cluster_profile",
   "description": "Use when Claude Code needs to run Cluster profile from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

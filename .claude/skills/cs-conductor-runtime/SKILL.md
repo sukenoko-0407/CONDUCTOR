@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-runtime
-description: Deterministic CONDUCTOR 0.1.5 Runtime for compact Control, five-state DAG Nodes, common Execution Requests, signed packets, bounded exploration, Interpretation gates, and audit.
+description: Deterministic CONDUCTOR 0.1.6 Runtime for compact Control, five-state DAG Nodes, idempotent OS Workers, common Execution Requests, signed packets, bounded exploration, Interpretation gates, and audit.
 allowed-tools: Read, Bash
 ---
 
@@ -20,8 +20,9 @@ mutationはMain Agentだけがlive lease tokenを付けて実行する。one-use
 
 - `PLAN_BASIC` → `plan-basic`
 - `PLAN_EXPLORATION` → `plan-exploration`
-- `EXECUTE_RUNNABLE_BATCH` → Mainが`prepare-execution-packet`、Executorが`execute-packet`
-- `WAIT_OR_RECONCILE_RUNNING` → `reconcile-running`
+- `EXECUTE_RUNNABLE_BATCH` → Mainが`prepare-execution-packet`後に`execute-packet`
+- `WAIT_RUNNING` → live Runtime Workerを再投入・reconcileせず待機
+- `RECONCILE_RUNNING` → `reconcile-running`を一回だけ実行
 - `RETRY_FAILED_NODE` → `retry-node --node-id <required_action.node_id>`
 - `FAILED_NODE_REPAIR_REQUIRED` → 自動再試行せず停止。人間が実装／入力契約を修正した後だけ、同じNodeを`retry-node`
 - `SCIENTIFIC_DECISION` → `runtime/working_set.json`を読み`scientific-decision`
@@ -41,7 +42,11 @@ RuntimeはCapability metadataから共通`execution_request.json`を一度生成
 <CONDUCTOR_RUNTIME_PYTHON> <skill>/scripts/launch.py --conductor-request <attempt>/execution_request.json
 ```
 
-Requestはidentity、入力Artifact、列、endpoint、scope、parameter、CPU資源、出力先を持つ。Skill内adapterだけが既存科学kernelのCLIへ変換する。RuntimeとExecutorはSkill別CLIを再構築しない。Request、command、packetはhashと署名で固定し、実行直前に入力Artifactと上流`result.json`のSHA-256も再照合する。Executorはpacketを一回だけ実行し、失敗時の即席command修正は行わない。
+Requestはidentity、入力Artifact、列、endpoint、scope、parameter、CPU資源、出力先を持つ。Skill内adapterだけが既存科学kernelのCLIへ変換する。Runtime WorkerはSkill別CLIを再構築しない。Request、command、packetはhashと署名で固定し、実行直前に入力Artifactと上流`result.json`のSHA-256も再照合する。
+
+`execute-packet`はPacketをAttemptへ原子的にclaimし、独立したOS Workerを起動する。呼出元のMain、互換Executor、Bash Tool callが終了してもWorkerは継続する。同じPacketを再投入した場合、`unclaimed`だけを一度起動し、`running`は既存Workerへ再接続し、`terminal`は保存済み結果を返す。Workerと科学processの生存中は`WAIT_RUNNING`、双方が消失したときだけ`RECONCILE_RUNNING`とする。
+
+通常のfailed Node選択はrequired_actionに従う。人間が修正済みNodeの優先再実行を明示した場合に限り、running Nodeがゼロで、Main leaseとControl Authorityが有効なら、`EXECUTE_RUNNABLE_BATCH`中でも`retry-node --control-key`で同じNode IDをpendingへ戻せる。自動探索はこの保守例外を使用しない。
 
 Runtime管理fileはAttempt scratch直下、Skill出力は未作成の`skill_output/`へ分離する。cacheと一時fileはSkill `env/`またはRun `runtime/scratch/`の中だけに置く。
 

@@ -3,7 +3,7 @@
   "capability_id": "D016",
   "skill_name": "cs-compute-description-mordred-3d",
   "display_name": "Mordred 3D descriptors",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "description",
   "family": "3d_shape",
   "description": "Use when Claude Code needs to run Mordred 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",

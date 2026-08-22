@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-orchestrator
-description: Manually activate the Claude Code Main Agent as the CONDUCTOR 0.1.5 Orchestrator for exactly one human-authorized Round. Use only when the human explicitly requests CONDUCTOR control.
+description: Manually activate the Claude Code Main Agent as the CONDUCTOR 0.1.6 Orchestrator for exactly one human-authorized Round. Use only when the human explicitly requests CONDUCTOR control.
 disable-model-invocation: true
 allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 ---
@@ -26,14 +26,15 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --ru
 
 ## 固定ループ
 
-Runtime compact responseの`protocol_version=0.1.5`と、一つの`required_action.code`だけを信頼する。
+Runtime compact responseの`protocol_version=0.1.6`と、一つの`required_action.code`だけを信頼する。
 
 | required action | Main Agentの操作 |
 |---|---|
 | `PLAN_BASIC` | `plan-basic` |
 | `PLAN_EXPLORATION` | `plan-exploration` |
-| `EXECUTE_RUNNABLE_BATCH` | `prepare-execution-packet`後、Executorを一つだけ起動 |
-| `WAIT_OR_RECONCILE_RUNNING` | `reconcile-running`。別Executorを起動しない |
+| `EXECUTE_RUNNABLE_BATCH` | `prepare-execution-packet`後、MainからRuntime `execute-packet`を一回だけ呼ぶ |
+| `WAIT_RUNNING` | Runtime Workerまたは科学processが生存中。再投入・reconcile・短間隔pollをせず待機 |
+| `RECONCILE_RUNNING` | Worker不在が確定したため`reconcile-running`を一回だけ実行 |
 | `RETRY_FAILED_NODE` | failure pointerを必要最小限確認し、同じNodeを`retry-node` |
 | `FAILED_NODE_REPAIR_REQUIRED` | 自動retryを止め、人間へfailure pointerと修正対象を返す。修正承認後だけ同じNodeを`retry-node` |
 | `SCIENTIFIC_DECISION` | bounded Working Setから候補を選び`scientific-decision` |
@@ -45,14 +46,18 @@ Runtime compact responseの`protocol_version=0.1.5`と、一つの`required_acti
 
 `FAILED_NODE_REPAIR_REQUIRED`、`HUMAN_APPROVAL_REQUIRED`、`HUMAN_REVIEW_REQUIRED`、`INTERPRETATION_BLOCKED`、`AWAIT_HUMAN_ROUND`では停止して人間へ返す。Runtimeが許可していない処理へ読み替えない。
 
-## Executor契約
+人間が失敗Nodeの修正と優先再実行を明示した場合だけ、`EXECUTE_RUNNABLE_BATCH`中でも、running Nodeがゼロであることを確認し、Main leaseとControl Authorityを付けた`retry-node`を使える。これは自動探索の優先順位変更ではない。
+
+## Runtime Worker契約
 
 - Mainは専門Skillを直接実行しない。
-- `prepare-execution-packet`が返す`run_root`と`packet_path`だけを`cs-conductor-executor`へ渡す。lease tokenは渡さない。
-- Executorは一つの署名済packetを一回だけ実行して終了する。科学Nodeの並列数とCPU配分はRuntimeが決める。
-- 各科学Skillには共通`execution_request.json`が渡る。MainとExecutorは個別Skillの長いCLIを組み立てない。
+- `prepare-execution-packet`が返す`packet_path`を、そのままRuntime `execute-packet`へ一回だけ渡す。lease tokenは渡さない。
+- `execute-packet`はPacketを原子的にclaimし、独立した決定論的OS Workerを起動して完了を待つ。科学Nodeの並列数とCPU配分はRuntimeが決める。
+- MainのBash Tool callまたはsessionが失われても、claim済みWorkerは継続する。同じPacketを再度`execute-packet`へ渡す操作は既存Workerへの再接続であり、科学processを二重起動しない。
+- 各科学Skillには共通`execution_request.json`が渡る。MainとRuntime Workerは個別Skillの長いCLIを組み立てない。
 - 失敗時もcommandを即席修正しない。Runtimeは回復可能な一時障害だけを同じRequest契約で有限再試行し、引数・列・schema・実装欠陥は人間修正待ちにする。
-- stale、expired、invalid、consumed相当の拒否時はpacketを再送せず、Controlを再確認する。
+- 未claimのstale、expired、invalid packetは再送せず、Controlを再確認する。claim済みPacketはPacket IDで冪等に追跡する。
+- `WAIT_RUNNING`中はMainが科学processを監視・代行しない。異常終了後にRuntimeが`RECONCILE_RUNNING`を返した場合だけ一回reconcileする。
 
 ## Interpreter契約
 

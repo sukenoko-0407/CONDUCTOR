@@ -3,7 +3,7 @@
   "capability_id": "C006",
   "skill_name": "cs-compute-clustering-vector-hierarchical",
   "display_name": "Vector hierarchical clustering",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "stage": "clustering",
   "family": "description_vector",
   "description": "Apply Vector hierarchical clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",

@@ -2,7 +2,7 @@
 
 ## 目的
 
-手動起動されたMain Agentが一つの人間承認Roundを指揮します。全体に一貫した説明を無理に求めず、GlobalとLocalの変化、独立Description間の支持、矛盾、例外、反証を探します。機械的状態管理はRuntime、科学計算は短命Executor、既存結果の解釈は短命Interpreterへ委ねます。
+手動起動されたMain Agentが一つの人間承認Roundを指揮します。全体に一貫した説明を無理に求めず、GlobalとLocalの変化、独立Description間の支持、矛盾、例外、反証を探します。機械的状態管理と科学process所有は決定論的Runtime、既存結果の解釈は短命Interpreterへ委ねます。
 
 ## 基本計算
 

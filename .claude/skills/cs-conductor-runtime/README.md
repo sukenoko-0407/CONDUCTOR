@@ -2,7 +2,7 @@
 
 ## SKILLの目的
 
-CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名付きExecutor packet、実行attempt、事故復旧、Interpretation終端条件を決定論的に管理します。
+CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名付きPacket、冪等なRuntime Worker、実行attempt、事故復旧、Interpretation終端条件を決定論的に管理します。
 
 CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはC002 MCS、D016 Mordred 3D、D019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。C002とD016は最大8個、A014 fragmentも最大8個の単一thread workerを使います。
 
@@ -41,3 +41,4 @@ RequestはSkill起動直前に入力・上流成果物のSHA-256を再照合し�
 | 1.4.0 | A014 Global DB／全Cluster screening／代表Local detailの計画と複数Artifact原子的昇格を追加 |
 | 2.0.0 | 共通Execution Request、lease-only制御、最大100件のGlobal優先explorationへ簡素化 |
 | 2.0.1 | Request内容再照合、Failed Node分類、同一Node repair retry、artifact link正規化を追加 |
+| 2.1.0 | 科学process所有権をLLM Executorから冪等なOS Runtime Workerへ移し、WAITとreconcileを分離 |

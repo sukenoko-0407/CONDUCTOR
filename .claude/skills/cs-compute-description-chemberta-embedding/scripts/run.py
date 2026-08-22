@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -509,7 +510,20 @@ def model_signature(model_dir: Path) -> str:
     return digest.hexdigest()
 
 
+def _enable_windows_extended_import_paths() -> None:
+    """Avoid the legacy MAX_PATH boundary when Transformers scans model modules."""
+    if os.name != "nt":
+        return
+    for index, entry in enumerate(sys.path):
+        if not entry:
+            continue
+        resolved = os.path.abspath(entry)
+        if "site-packages" in resolved.lower() and not resolved.startswith("\\\\?\\"):
+            sys.path[index] = "\\\\?\\" + resolved
+
+
 def embed_smiles(smiles: list[str], args: argparse.Namespace) -> list[list[float]]:
+    _enable_windows_extended_import_paths()
     try:
         import torch
         from transformers import AutoModel, AutoTokenizer
@@ -601,7 +615,7 @@ def run() -> int:
         warnings.append(f"{len(errors)} row-level errors were recorded")
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     manifest = {
-        "schema_version": "2.0.0", "conductor_version": "0.1.5", "artifact_stage": "description", "run_id": run_id,
+        "schema_version": "2.0.0", "conductor_version": "0.1.6", "artifact_stage": "description", "run_id": run_id,
         "node_id": args.node_id, "attempt_id": args.attempt_id,
         "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"],
         "representation_id": CAPABILITY["representation_id"], "input": args.input or "inline_smiles", "input_hash": input_hash,

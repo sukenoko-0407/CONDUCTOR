@@ -61,7 +61,7 @@ def main() -> int:
         capability_path = skill_dir / "capability.json"
         capability = json.loads(capability_path.read_text(encoding="utf-8"))
         profile = adapter_profile(capability)
-        capability["version"] = "0.1.5"
+        capability["version"] = "0.1.6"
         capability["conductor_request"] = {
             "schema_version": "1.0.0",
             "adapter": profile,
@@ -75,15 +75,15 @@ def main() -> int:
         run_path = skill_dir / "scripts" / "run.py"
         if run_path.is_file():
             run_text = run_path.read_text(encoding="utf-8")
-            run_text = re.sub(r'("conductor_version"\s*:\s*)"0\.1\.[34]"', r'\1"0.1.5"', run_text)
+            run_text = re.sub(r'("conductor_version"\s*:\s*)"0\.1\.[34]"', r'\1"0.1.6"', run_text)
             run_path.write_text(run_text, encoding="utf-8")
         manifest_schema = skill_dir / "schemas" / "artifact_manifest.schema.json"
         if manifest_schema.is_file():
             schema = json.loads(manifest_schema.read_text(encoding="utf-8"))
             properties = schema.get("properties", {})
-            properties["conductor_version"] = {"const": "0.1.5"}
+            properties["conductor_version"] = {"const": "0.1.6"}
             if isinstance(properties.get("skill_version"), dict) and "const" in properties["skill_version"]:
-                properties["skill_version"] = {"const": "0.1.5"}
+                properties["skill_version"] = {"const": "0.1.6"}
             manifest_schema.write_text(json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         updated.append(f"{entry['capability_id']} {entry['skill_name']}")
     print("\n".join(updated))
