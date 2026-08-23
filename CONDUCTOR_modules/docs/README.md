@@ -21,6 +21,6 @@
 - [CONDUCTOR_skill_catalog_ja_quick_reference.md](CONDUCTOR_skill_catalog_ja_quick_reference.md): Description、Clustering、Operator、Interpretationの日本語早見表
 - [CONDUCTOR_verification.md](CONDUCTOR_verification.md): 検証方法
 
-`prompt/`には初回、継続Round、別session引継ぎ、Failed Nodeの同一Round再試行、MMP深掘り、Concierge用のプロンプト例があります。Catalog収載対象は`catalog/included_skills.json`、標準解析範囲は`catalog/analysis_profile.json`が正本です。旧Runとの後方互換やmigrationは提供しません。
+`prompt/`には初回、継続Round、別session引継ぎ、Failed Nodeの同一Round再試行、Operator契約修正後の再開、MMP深掘り、Concierge用のプロンプト例があります。Catalog収載対象は`catalog/included_skills.json`、標準解析範囲は`catalog/analysis_profile.json`が正本です。旧Runとの後方互換やmigrationは提供しません。
 
 過去Version固有の仕様書・実装計画・是正計画は現役Packageへ同梱せず、Git履歴および各Version branchを参照します。
