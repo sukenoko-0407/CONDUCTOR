@@ -8,7 +8,7 @@ allowed-tools: Read, Bash
 
 人間が明示したNodeだけを対象とする。最初に`inspect`し、下流影響を提示する。変更は次の二種類だけである。
 
-- `cancel`: `pending` Nodeをcancelする。activeな下流Nodeがあれば拒否する。
+- `cancel`: `pending` Node、または人間がPlanning契約自体を無効と確認した`failed` Nodeをcancelする。activeな下流Nodeがあれば拒否する。計算失敗を成功へ読み替える操作ではない。
 - `disable-result`: `succeeded`結果を保持したまま、今後の下流候補とInterpretation対象から除外する。依存する`pending` Nodeは連鎖的にcancelし、`running`子孫があれば安全のため拒否する。既存の`succeeded`子孫は履歴として保持する。現行Interpretationが当該Resultを参照していればReportを失効させ、同じRoundの再Interpretationを要求する。
 
 任意Status setter、成功への手動変更、Node ID再付番は提供しない。

@@ -46,7 +46,7 @@ Requestはidentity、入力Artifact、列、endpoint、scope、parameter、CPU�
 
 `execute-packet`はPacketをAttemptへ原子的にclaimし、独立したOS Workerを起動する。呼出元のMain、互換Executor、Bash Tool callが終了してもWorkerは継続する。同じPacketを再投入した場合、`unclaimed`だけを一度起動し、`running`は既存Workerへ再接続し、`terminal`は保存済み結果を返す。Workerと科学processの生存中は`WAIT_RUNNING`、双方が消失したときだけ`RECONCILE_RUNNING`とする。
 
-通常のfailed Node選択はrequired_actionに従う。人間が修正済みNodeの優先再実行を明示した場合に限り、running Nodeがゼロで、Main leaseとControl Authorityが有効なら、`EXECUTE_RUNNABLE_BATCH`中でも`retry-node --control-key`で同じNode IDをpendingへ戻せる。自動探索はこの保守例外を使用しない。
+通常のfailed Node選択はrequired_actionに従う。人間が修正済みNodeの優先再実行を明示した場合に限り、running Nodeがゼロで、Main leaseとControl Authorityが有効なら、`EXECUTE_RUNNABLE_BATCH`中でも`retry-node --control-key`で同じNode IDをpendingへ戻せる。自動探索はこの保守例外を使用しない。実装修正後も科学的scope自体が成立しないPlanning由来Nodeは再試行せず、人間の明示承認により`cs-conductor-node-review cancel`でFailedのまま取消す。
 
 Runtime管理fileはAttempt scratch直下、Skill出力は未作成の`skill_output/`へ分離する。cacheと一時fileはSkill `env/`またはRun `runtime/scratch/`の中だけに置く。
 

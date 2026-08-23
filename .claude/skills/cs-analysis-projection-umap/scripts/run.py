@@ -93,7 +93,7 @@ def args() -> argparse.Namespace:
 
 
 def read_table(path: str) -> pd.DataFrame:
-    return pd.read_parquet(path) if Path(path).suffix.lower() == ".parquet" else pd.read_csv(path)
+    return pd.read_parquet(path) if Path(path).suffix.lower() == ".parquet" else pd.read_csv(path, dtype={"compound_id": "string"})
 
 
 def outdir(a: argparse.Namespace) -> Path:
@@ -196,6 +196,16 @@ def run() -> int:
             missing = [column for column in declared_features if column not in desc.columns]
             if missing: raise ValueError(f"Description payload is missing Result-bound feature columns: {missing[:10]}")
             if int(contract["feature_count"]) != len(declared_features): raise ValueError("Description Result feature_count does not match feature_columns")
+        candidate_features = declared_features or [
+            column for column in desc.columns
+            if column not in {"compound_id", "input_smiles", "canonical_smiles", "mol_parse_ok", "description_error", "descriptor_error"}
+            and pd.api.types.is_numeric_dtype(desc[column])
+        ]
+        valid_mask = desc[candidate_features].notna().any(axis=1) if candidate_features else pd.Series(False, index=desc.index)
+        if "mol_parse_ok" in desc.columns:
+            valid_mask &= desc["mol_parse_ok"].map(lambda value: str(value).strip().lower() in {"true", "1", "yes"})
+        invalid_description_count = int((~valid_mask).sum())
+        desc = desc.loc[valid_mask].copy()
         merged = endpoint.merge(desc, on="compound_id", how="inner")
         feature_frame = merged[declared_features] if declared_features else merged.drop(columns=["compound_id", a.property_column], errors="ignore")
         kind, metric = semantics(contract); matrix, features, prep = preprocess(feature_frame, kind); details.update(prep)
@@ -212,6 +222,7 @@ def run() -> int:
             trust_k=min(5,max(1,(len(matrix)-1)//2));coordinates = model.fit_transform(matrix); details["trustworthiness"] = float(trustworthiness(matrix, coordinates, n_neighbors=trust_k))
             details.update({"metric": umap_metric, "stability_seeds": a.stability_seeds})
         result = merged[["compound_id", a.property_column]].copy(); result[["component_1", "component_2"]] = coordinates
+        details["excluded_invalid_description_count"] = invalid_description_count
     else:
         result = pd.read_csv(a.projection).merge(endpoint, on="compound_id", how="inner", suffixes=("", "_endpoint"))
         projection_summary = Path(a.projection).parent / "operator_summary.json"

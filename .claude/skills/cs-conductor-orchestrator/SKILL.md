@@ -36,7 +36,7 @@ Runtime compact responseの`protocol_version=0.1.6`と、一つの`required_acti
 | `WAIT_RUNNING` | Runtime Workerまたは科学processが生存中。再投入・reconcile・短間隔pollをせず待機 |
 | `RECONCILE_RUNNING` | Worker不在が確定したため`reconcile-running`を一回だけ実行 |
 | `RETRY_FAILED_NODE` | failure pointerを必要最小限確認し、同じNodeを`retry-node` |
-| `FAILED_NODE_REPAIR_REQUIRED` | 自動retryを止め、人間へfailure pointerと修正対象を返す。修正承認後だけ同じNodeを`retry-node` |
+| `FAILED_NODE_REPAIR_REQUIRED` | 自動retryを止め、人間へfailure pointerと修正対象を返す。実装修正で同じ科学的Nodeが成立する場合だけ同じNodeを`retry-node`。Planningしたscope自体が無効なら、人間承認後に`cs-conductor-node-review cancel` |
 | `SCIENTIFIC_DECISION` | bounded Working Setから候補を選び`scientific-decision` |
 | `ENTER_FINALIZING` | `enter-finalizing` |
 | `PLAN_INTERPRETATION` | `prepare-interpretation` |

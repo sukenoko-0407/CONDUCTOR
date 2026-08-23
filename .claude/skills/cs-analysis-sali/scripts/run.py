@@ -701,6 +701,16 @@ def run() -> int:
     cluster_context_operators = {"cluster_profile", "cluster_enrichment", "cluster_overlap", "cluster_structural_diversity"}
     property_table = full_property_table if operator in cluster_context_operators else scoped_property_table
     description, features, reference_description = load_description(args.description, scoped_property_table, full_property_table)
+    if description is not None:
+        endpoint_scope_count = int(scope["sample_count"])
+        analyzed_count = int(len(description))
+        scope["endpoint_scope_count"] = endpoint_scope_count
+        scope["sample_count"] = analyzed_count
+        excluded_description_count = endpoint_scope_count - analyzed_count
+        if excluded_description_count:
+            input_warnings.append(
+                f"{excluded_description_count} scoped rows without a usable Description vector were excluded"
+            )
     outdir = default_output(args, run_id)
     if outdir.exists() and any(outdir.iterdir()):
         if not args.overwrite:

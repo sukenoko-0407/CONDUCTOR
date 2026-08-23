@@ -89,7 +89,7 @@ def args()->argparse.Namespace:
     return result
 
 
-def table(path:Path)->pd.DataFrame: return pd.read_parquet(path) if path.suffix.lower()==".parquet" else pd.read_csv(path)
+def table(path:Path)->pd.DataFrame: return pd.read_parquet(path) if path.suffix.lower()==".parquet" else pd.read_csv(path,dtype={"compound_id":"string"})
 
 
 def load(a:argparse.Namespace)->tuple[pd.DataFrame,dict[str,list[str]]]:
@@ -102,6 +102,15 @@ def load(a:argparse.Namespace)->tuple[pd.DataFrame,dict[str,list[str]]]:
         if "compound_id" not in frame: raise ValueError(f"{block} lacks compound_id")
         columns=[c for c in frame if c not in {"compound_id","input_smiles","mol_parse_ok","description_error"} and pd.api.types.is_numeric_dtype(frame[c])]
         if not columns: raise ValueError(f"{block} has no numeric features")
+        if frame["compound_id"].isna().any():
+            raise ValueError(f"{block} compound IDs must be non-empty and unique")
+        frame["compound_id"]=frame["compound_id"].astype(str).str.strip()
+        if frame["compound_id"].eq("").any() or frame["compound_id"].duplicated().any():
+            raise ValueError(f"{block} compound IDs must be non-empty and unique")
+        valid_mask=frame[columns].notna().any(axis=1)
+        if "mol_parse_ok" in frame:
+            valid_mask &= frame["mol_parse_ok"].map(lambda value:str(value).strip().lower() in {"true","1","yes"})
+        frame=frame.loc[valid_mask].copy()
         if block=="D006":
             frame[columns]=frame[columns].clip(lower=0).apply(np.log1p)
         elif block=="D002":
@@ -239,7 +248,10 @@ def run()->int:
     result_ref=base_ref+f"/{a.target_cluster}" if a.conductor and a.role=="within-cluster" and a.target_cluster else base_ref
     context={"description_node_ids":list(a.description_node_id),"clustering_node_ids":[a.clustering_node_id] if a.clustering_node_id else [],"cluster_ids":[a.target_cluster] if a.target_cluster else []}
     limitations=["探索的モデル比較であり予測モデルの採用を推奨するものではない。","小標本では性能差と特徴量選択が不安定になり得る。"]
-    summary={"schema_version":"1.0.0","result_ref":result_ref,"node_id":a.node_id,"attempt_id":a.attempt_id,"operator_id":CAPABILITY["operator_id"],"run_id":a.run_id or "standalone","round_id":a.round_id or "RND0000","scope":{"mode":scope_mode,"target_cluster_id":a.target_cluster},"scope_context":context,"sample_count":len(data),"endpoint":{"column":a.property_column,"higher_is_better":bool(a.higher_is_better)},"metric":"rmse","headline":headline,"key_metrics":details,"top_records":result.head(100).to_dict("records"),"limitations":limitations,"warnings":[],"source_nodes":source_nodes,"primary_artifact":{"path":result_path.name,"sha256":sha(result_path)},"created_at":now()}
+    summary_sample_count=len(data)
+    if a.role=="within-cluster" and details["cluster_results"]:
+        summary_sample_count=int(details["cluster_results"][0]["sample_count"])
+    summary={"schema_version":"1.0.0","result_ref":result_ref,"node_id":a.node_id,"attempt_id":a.attempt_id,"operator_id":CAPABILITY["operator_id"],"run_id":a.run_id or "standalone","round_id":a.round_id or "RND0000","scope":{"mode":scope_mode,"target_cluster_id":a.target_cluster},"scope_context":context,"sample_count":summary_sample_count,"endpoint":{"column":a.property_column,"higher_is_better":bool(a.higher_is_better)},"metric":"rmse","headline":headline,"key_metrics":details,"top_records":result.head(100).to_dict("records"),"limitations":limitations,"warnings":[],"source_nodes":source_nodes,"primary_artifact":{"path":result_path.name,"sha256":sha(result_path)},"created_at":now()}
     cluster_summaries=[]
     if a.conductor and a.role=="cluster-survey":
         for entry in details["cluster_results"]:

@@ -168,6 +168,60 @@ class RuntimeControl015(unittest.TestCase):
     def test_round_analysis_limit_is_one_unbatched_set_of_one_hundred(self) -> None:
         self.assertEqual((100, 100), RUNTIME._analysis_planning_limits())
 
+    def test_global_only_operator_is_rejected_for_local_scope(self) -> None:
+        capabilities = RUNTIME.catalog()
+        self.assertFalse(RUNTIME._supports_standard_local_scope(capabilities["A012"]))
+        self.assertTrue(RUNTIME._supports_standard_local_scope(capabilities["A002"]))
+        self.assertTrue(RUNTIME._analysis_scope_supported(capabilities["A003"], {"mode": "global"}, {}))
+        self.assertTrue(RUNTIME._analysis_scope_supported(capabilities["A003"], {"mode": "projection"}, {"role": "cluster-overlay"}))
+        self.assertTrue(RUNTIME._analysis_scope_supported(capabilities["A005"], {"mode": "multi_scope"}, {"role": "cluster-survey"}))
+        self.assertTrue(RUNTIME._analysis_scope_supported(capabilities["A014"], {"mode": "multi_scope"}, {"role": "local-screen"}))
+        control = {"active_round_id": "RND0001"}
+        snapshot = {"nodes": [], "counters": {"node": 0}, "rounds": {"RND0001": {"reused_node_ids": []}}}
+        with self.assertRaisesRegex(ValueError, "A012 does not support Runtime scope=single_cluster"):
+            RUNTIME._add_node(
+                snapshot, control, "A012", ["N000001"], "exploration",
+                {"mode": "single_cluster", "cluster_ids": ["C000001"]},
+                {"target_cluster": "C000001"},
+            )
+
+    @unittest.skipUnless(HAS_JSONSCHEMA, "jsonschema is installed by the Runtime Pixi environment")
+    def test_projection_overlay_canonical_subject_preserves_global_population(self) -> None:
+        description = {"node_id": "N000001", "kind": "description", "capability_id": "D001", "input_nodes": []}
+        clustering = {"node_id": "N000002", "kind": "clustering", "capability_id": "C005", "input_nodes": ["N000001"]}
+        projection = {"node_id": "N000003", "kind": "analysis", "capability_id": "A003", "input_nodes": ["N000001"], "parameters": {"role": "projection-fit"}, "scope": {"mode": "global"}}
+        overlay = {"node_id": "N000004", "kind": "analysis", "capability_id": "A003", "input_nodes": ["N000003", "N000002"], "parameters": {"role": "cluster-overlay", "target_cluster": "C000001"}, "scope": {"mode": "single_cluster", "cluster_ids": ["C000001"]}}
+        snapshot = {"nodes": [description, clustering, projection, overlay]}
+        control = {"run": {"input": "unused.csv", "endpoint": "pIC50"}}
+        all_ids = [f"CPD{i:03d}" for i in range(5)]
+        with mock.patch.object(RUNTIME, "_read_input_ids", return_value=(all_ids, set(all_ids))), mock.patch.object(
+            RUNTIME, "_membership_ids", return_value=set(all_ids[:2])
+        ), mock.patch.object(RUNTIME, "_description_valid_ids", return_value=set(all_ids)), mock.patch.object(
+            RUNTIME, "_primary_payload", return_value=Path("membership.csv")
+        ):
+            subject = RUNTIME._analysis_subject(Path("."), control, snapshot, overlay, sample_count=5)
+        self.assertEqual("projection", subject["scope_mode"])
+        self.assertEqual(5, subject["population_count"])
+        self.assertEqual(5, subject["analyzed_count"])
+        self.assertEqual(["C000001"], subject["cluster_ids"])
+
+    def test_canonical_description_eligibility_uses_declared_features_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "features.csv").write_text(
+                "compound_id,f1,numeric_metadata,mol_parse_ok\nC001,1,0,true\nC002,,1,true\nC003,3,0,false\n",
+                encoding="utf-8",
+            )
+            RUNTIME.write_json(output / "result.json", {
+                "document_type": "description_result", "schema_version": "1.0.0",
+                "node_id": "N000001", "capability_id": "D001", "payload": "features.csv",
+                "row_count": 3, "feature_count": 1, "value_semantics": "dense_continuous",
+                "natural_metric": "euclidean", "feature_columns": ["f1"], "quality_flags": [],
+                "created_at": RUNTIME.utc_now(),
+            })
+            node = {"node_id": "N000001", "kind": "description", "capability_id": "D001", "output_ref": str(output)}
+            self.assertEqual({"C001"}, RUNTIME._description_valid_ids(node))
+
     def test_exploration_materializes_one_global_first_set_capped_at_one_hundred(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

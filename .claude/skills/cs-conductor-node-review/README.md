@@ -6,7 +6,7 @@
 
 ## 想定利用シーン
 
-Pending Nodeの取消し、成功結果の下流利用停止、影響範囲の確認に使用します。成功結果を無効化すると、それに依存する未実行Nodeもcancelされ、参照中のInterpretationは再作成対象になります。
+Pending Nodeの取消し、Planning契約が無効だったFailed Nodeの取消し、成功結果の下流利用停止、影響範囲の確認に使用します。成功結果を無効化すると、それに依存する未実行Nodeもcancelされ、参照中のInterpretationは再作成対象になります。
 
 ## 環境構築
 
@@ -16,6 +16,7 @@ Pixi環境を自動構築します。
 
 ```bash
 python scripts/launch.py inspect --run-root /path/to/run --node-id N000123
+python scripts/launch.py cancel --run-root /path/to/run --node-id N000123 --reason "Planning契約が無効と人間確認"
 python scripts/launch.py disable-result --run-root /path/to/run --node-id N000123 --reason "人間確認済み理由"
 ```
 

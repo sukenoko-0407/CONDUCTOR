@@ -1234,6 +1234,11 @@ def _add_node(snapshot: dict[str, Any], control: dict[str, Any], capability_id: 
     kind = capability["stage"]
     scope = scope or {"mode": "global" if kind == "analysis" else "not_applicable"}
     parameters = parameters or {}
+    if kind == "analysis" and not _analysis_scope_supported(capability, scope, parameters):
+        raise ValueError(
+            f"{capability_id} does not support Runtime scope={scope.get('mode')} "
+            f"with role={parameters.get('role')}"
+        )
     signature = _signature(capability_id, input_nodes, scope, parameters)
     for node in snapshot["nodes"]:
         if node["signature"] == signature:
@@ -1737,6 +1742,41 @@ def _analysis_inputs(capability: dict[str, Any], descriptions: list[dict[str, An
     return []
 
 
+def _supports_standard_local_scope(capability: dict[str, Any]) -> bool:
+    """Return whether the ordinary local-Operator planner may use this capability.
+
+    Projection overlays, multi-scope models, and MMP local analysis have dedicated
+    planners.  This guard prevents a Global-only Operator such as A012 from being
+    materialized with a target Cluster merely because it appears in a human-managed
+    profile list.
+    """
+    supported = set(capability.get("scope_support") or [])
+    return bool(supported & {"within-cluster", "between-clusters"})
+
+
+def _analysis_scope_supported(capability: dict[str, Any], scope: dict[str, Any], parameters: dict[str, Any]) -> bool:
+    """Validate Runtime scope semantics before an Analysis Node is registered."""
+    supported = set(capability.get("scope_support") or [])
+    mode = str(scope.get("mode") or "global")
+    defaults = capability.get("default_parameters") if isinstance(capability.get("default_parameters"), dict) else {}
+    role = str(parameters.get("role") or defaults.get("role") or "")
+    if mode == "global":
+        required = role if role in {"projection-fit", "global-model"} else "global"
+    elif mode == "projection":
+        required = "cluster-overlay"
+    elif mode == "single_cluster":
+        required = "within-cluster"
+    elif mode == "cluster_vs_cluster":
+        required = "between-clusters"
+    elif mode == "multi_scope":
+        required = "cluster-survey"
+    elif mode == "global_vs_cluster":
+        required = "within-cluster"
+    else:
+        return False
+    return required in supported
+
+
 def _mmp_enabled_for_active_round(control: dict[str, Any], snapshot: dict[str, Any]) -> bool:
     """A014 is available only to a Round created by this Runtime version."""
     round_id = control.get("active_round_id")
@@ -1825,6 +1865,8 @@ def _exploration_local_specs(root: Path, control: dict[str, Any], snapshot: dict
                 if capability_id in {"A003", "A004", "A005", "A014"}:
                     continue
                 capability = caps[capability_id]
+                if not _supports_standard_local_scope(capability):
+                    continue
                 for base_inputs in _analysis_inputs(capability, descriptions, [clustering], "local"):
                     comparator = _global_comparator(global_nodes, capability_id, base_inputs)
                     if not comparator:
@@ -1840,7 +1882,9 @@ def _exploration_local_specs(root: Path, control: dict[str, Any], snapshot: dict
                     specs.append({
                         "capability_id": projection_id,
                         "input_nodes": [global_projection["node_id"], clustering["node_id"]],
-                        "scope": scope,
+                        # A Cluster overlay retains the complete Global projection
+                        # and highlights one Cluster.  It is not a local-subset fit.
+                        "scope": {"mode": "projection", "cluster_ids": [cluster_id]},
                         "parameters": {"role": "cluster-overlay", "target_cluster": cluster_id},
                     })
         global_model = next((node for node in global_nodes if node["capability_id"] == "A005" and node.get("parameters", {}).get("role") == "global-model"), None)
@@ -2341,12 +2385,20 @@ def _membership_ids(path: Path, cluster_id: str) -> set[str]:
 def _description_valid_ids(node: dict[str, Any]) -> set[str] | None:
     import pandas as pd
 
+    _result_path_value, result = _canonical_result(node)
     path = _primary_payload(node)
     frame = pd.read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path, dtype={"compound_id": "string"})
     if "compound_id" not in frame.columns:
         return None
-    excluded = {"compound_id", "input_smiles", "canonical_smiles", "mol_parse_ok", "description_error", "descriptor_error"}
-    features = [column for column in frame.columns if column not in excluded]
+    declared = [str(column) for column in result.get("feature_columns") or []]
+    missing = [column for column in declared if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Description payload is missing canonical feature columns: {missing[:10]}")
+    if declared:
+        features = declared
+    else:
+        excluded = {"compound_id", "input_smiles", "canonical_smiles", "mol_parse_ok", "description_error", "descriptor_error"}
+        features = [column for column in frame.columns if column not in excluded]
     mask = frame[features].notna().any(axis=1) if features else frame["compound_id"].notna()
     if "mol_parse_ok" in frame.columns:
         mask &= frame["mol_parse_ok"].astype(str).str.lower().isin({"true", "1", "yes"})
@@ -2377,6 +2429,12 @@ def _analysis_subject(root: Path, control: dict[str, Any], snapshot: dict[str, A
     clustering_nodes = [item for item in inputs if item["kind"] == "clustering"]
     all_ids, endpoint_valid = _read_input_ids(control)
     scope_mode = node["scope"].get("mode", "global")
+    # A003/A004 Cluster overlays preserve every point from the prior Global
+    # projection and only mark Cluster membership.  Older 0.1.6 planners recorded
+    # these Nodes as single_cluster, so normalize by scientific role as well as by
+    # the corrected projection scope used for newly planned Nodes.
+    if node.get("capability_id") in {"A003", "A004"} and node.get("parameters", {}).get("role") == "cluster-overlay":
+        scope_mode = "projection"
     cluster_ids = list(node["scope"].get("cluster_ids") or [])
     population = set(all_ids)
     overlap: dict[str, Any] | None = None
@@ -3861,13 +3919,13 @@ def cmd_node_cancel(args: argparse.Namespace) -> int:
         _recover_transaction(root)
         control, snapshot = _read_state(root)
         node = _node_lookup(snapshot).get(args.node_id)
-        if not node or node["status"] != "pending":
-            raise ValueError("Only a pending Node can be cancelled")
+        if not node or node["status"] not in {"pending", "failed"}:
+            raise ValueError("Only a pending or failed Node can be cancelled")
         downstream = [item for item in snapshot["nodes"] if args.node_id in item["input_nodes"] and item["status"] not in {"cancelled", "failed"}]
         if downstream:
             raise ValueError(f"Active downstream Nodes prevent cancellation: {[item['node_id'] for item in downstream]}")
         node.update({"status": "cancelled", "assigned_round": None, "finished_at": utc_now(), "result_quality": {"validation_passed": False, "eligible_for_downstream": False, "quality_flags": ["human_cancelled"]}})
-        _commit(root, control, snapshot, "pending_node_cancelled_by_human", {"reason": args.reason}, round_id=control.get("active_round_id"), node_id=node["node_id"])
+        _commit(root, control, snapshot, "node_cancelled_by_human", {"reason": args.reason}, round_id=control.get("active_round_id"), node_id=node["node_id"])
     return 0
 
 
