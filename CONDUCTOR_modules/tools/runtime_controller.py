@@ -1057,7 +1057,7 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
         packet = _latest_failure_packet(root, blocked) or {}
         return {
             "code": "FAILED_NODE_REPAIR_REQUIRED",
-            "reason": "A deterministic failure or exhausted retry requires human repair before same-Node retry or Round finalization.",
+            "reason": "A deterministic failure or exhausted retry requires human repair before same-Node retry. If the Round budget ends first, Runtime may hand off a partial Round for human review.",
             "node_id": blocked["node_id"],
             "classification": packet.get("classification", "unknown_failure"),
             "failure_pointer": next((item.get("failure_packet") for item in reversed(blocked.get("attempts") or []) if item.get("failure_packet")), None),

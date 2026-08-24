@@ -31,6 +31,16 @@ Run Root: <absolute run_root>
 4. 以下の既知事象がこのRunに存在するかを個別に判定する。存在しない事象への修復操作は行わない。
 5. 期待するRun／Roundと異なる、State検証に失敗する、または既知事象と異なる決定論的障害がある場合は、推測で処置せず人間へ報告して停止する。
 
+Round状態による分岐:
+- ACTIVEかつFAILED_NODE_REPAIR_REQUIRED/RETRY_FAILED_NODEの場合:
+  Wall Timeに余裕があり、同じRound内での修復を人間が明示している場合だけ以下のNode別処置へ進む。Wall Time終了によりENTER_FINALIZINGへ変わった場合は、その遷移を異常と決めつけない。
+- すでにFINALIZINGの場合:
+  FINALIZING中にStateを直接戻したりretry-nodeを強行しない。現在のInterpretationとFull Auditを完了してAWAITING_HUMAN_REVIEWへ進め、そこで停止する。Failed Nodeを含む場合、Round outcomeはpartialになり得る。
+- AWAITING_HUMAN_REVIEWの場合:
+  自動でcontinueまたはacceptしない。InterpretationとAuditが有効なら、標準選択はpartial Roundとして受理し、修正版Packageで次Roundに補完を引き継ぐことである。同一Round内の比較を必須とする場合だけ、人間の追加指示によりcontinue-roundを選ぶ。
+- CLOSEDまたはActive Roundなしの場合:
+  新Roundを自動作成せず、人間へ報告して停止する。
+
 Node別の処置:
 - このRunに、A003/A004のrole=cluster-overlayでCanonical subjectまたは投影payload件数が不一致となったFailed Nodeが存在する場合:
   修正版RuntimeはGlobal投影集合を維持して照合するため、同じNode IDをrepair retryする。代替Nodeを作らない。
@@ -64,6 +74,44 @@ Node別の処置:
 - 残ったFailed/Pending/Running Node数
 - InterpretationおよびFull Auditの状態
 - 最終required_action
+```
+
+## AWAITING_HUMAN_REVIEW到達後の推奨手順
+
+InterpretationとFull Auditが完了している場合は、限定的な解釈であることをRound outcomeに残したまま、現在Roundを受理します。
+
+```text
+/cs-conductor-orchestrator
+
+操作: Partial Roundを受理して閉じるだけ
+Run Root: <absolute run_root>
+対象Round: <RND####>
+
+InterpretationとFull Auditが有効であることを確認してください。Failed Nodeと未解析範囲は履歴から削除せず、partial outcomeおよび次Roundへの引継ぎ事項として保持してください。対象Roundをacceptした後は停止し、新しいRoundを自動開始しないでください。
+```
+
+受理完了を確認した後、別の指示として次Roundを開始します。
+
+```text
+/cs-conductor-orchestrator
+
+操作: 修正版Packageで次の新Roundを開始
+Run Root: <absolute run_root>
+期待する新Round: <RND####>
+Wall Time: <minutes>
+parallel_limit: <number>
+Available CPU Cores: <number>
+
+Roundの目的:
+前RoundのInterpretationとpartial outcomeを引き継ぎ、前Roundに実在したOperator契約由来のFailed Nodeだけを修正版で補完した上で、通常の探索を継続する。
+
+指示:
+- 前Roundのsucceeded NodeとResultは再計算せず再利用する。
+- 前Roundのfailure pointerを確認し、実在した失敗だけを対象にする。他Runで報告された事象を追加しない。
+- 同一signatureで科学的scopeが不変なら同じNodeを再利用する。
+- A003/A004 cluster-overlayのように旧scope定義自体が誤っていた場合は、修正後scopeで新しい正規Nodeを作る。
+- A012の旧Local Nodeは再実行せず、Global A012だけを対象にする。
+- 最後にこのRoundのInterpretationとFull Auditを作成し、AWAITING_HUMAN_REVIEWで停止する。
 ```
 
 ## この方法を使わず新Runを選ぶ条件

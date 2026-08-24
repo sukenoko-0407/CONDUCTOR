@@ -46,7 +46,7 @@ Runtime compact responseの`protocol_version=0.1.6`と、一つの`required_acti
 
 `FAILED_NODE_REPAIR_REQUIRED`、`HUMAN_APPROVAL_REQUIRED`、`HUMAN_REVIEW_REQUIRED`、`INTERPRETATION_BLOCKED`、`AWAIT_HUMAN_ROUND`では停止して人間へ返す。Runtimeが許可していない処理へ読み替えない。
 
-人間が失敗Nodeの修正と優先再実行を明示した場合だけ、`EXECUTE_RUNNABLE_BATCH`中でも、running Nodeがゼロであることを確認し、Main leaseとControl Authorityを付けた`retry-node`を使える。これは自動探索の優先順位変更ではない。
+人間が失敗Nodeの修正と優先再実行を明示した場合だけ、`EXECUTE_RUNNABLE_BATCH`中でも、running Nodeがゼロであることを確認し、Main leaseとControl Authorityを付けた`retry-node`を使える。これは自動探索の優先順位変更ではない。Wall Time終了により`ENTER_FINALIZING`へ移った場合はpartial RoundとしてInterpretation／Auditを完成させ、人間へ「受理して次Roundで補完」または「同じRoundをcontinue」の選択を返す。自動的にcontinueや新Round開始をしない。
 
 ## Runtime Worker契約
 

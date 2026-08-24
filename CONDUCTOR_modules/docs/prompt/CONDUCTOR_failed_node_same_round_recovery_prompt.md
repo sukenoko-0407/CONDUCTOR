@@ -89,7 +89,7 @@ State、DAG、Event Ledgerを直接編集して回避しないでください。
 
 ## 現行Runtimeの注意点
 
-`0.1.6`のRuntimeは通常時、実行可能な`pending` Nodeを、有限再試行が可能な`failed` Nodeより先に選びます。ただし、人間がこの保守操作で対象Nodeを明示し、running Nodeがゼロで、MainのleaseとControl Authorityが揃う場合だけ、`EXECUTE_RUNNABLE_BATCH`中でも同じNode IDを優先再試行できます。自動探索がこの例外を利用することは認めません。再試行packetも共通`execution_request.json`を使い、Runtime Workerが引数を修正することはありません。一時障害は`RETRY_FAILED_NODE`、決定論的な契約不良または自動retry上限到達は`FAILED_NODE_REPAIR_REQUIRED`で区別されます。
+`0.1.6`のRuntimeは通常時、実行可能な`pending` Nodeを、有限再試行が可能な`failed` Nodeより先に選びます。ただし、人間がこの保守操作で対象Nodeを明示し、running Nodeがゼロで、MainのleaseとControl Authorityが揃う場合だけ、`EXECUTE_RUNNABLE_BATCH`中でも同じNode IDを優先再試行できます。Wall Timeが先に終了した場合は、Failed Nodeを履歴に保持したpartial RoundとしてInterpretation／Auditへ進めます。人間はそのRoundを受理して次Roundで補完するか、同じRoundをcontinueするかを選びます。再試行packetも共通`execution_request.json`を使い、Runtime Workerが引数を修正することはありません。一時障害は`RETRY_FAILED_NODE`、決定論的な契約不良または自動retry上限到達は`FAILED_NODE_REPAIR_REQUIRED`で区別されます。
 
 - 他のNodeを先に実行してよい場合は、優先停止条件を外して同じRoundを通常再開します。
 - failed Nodeを必ず先に再実行する場合は、上記の人間承認済み保守操作を使います。
