@@ -202,6 +202,31 @@ class Runtime013Tests(unittest.TestCase):
                 }
             )
             self.assertTrue(any("result_cards[1] schema error" in issue for issue in context_issues))
+        draft = {
+            "title": "解析結果",
+            "executive_summary": "主要な解析結果を要約する。",
+            "coverage_summary": "確認した解析範囲を要約する。",
+            "insights": [{
+                "title": "Global解析の知見",
+                "observation": "Global解析においてEndpoint分布の偏りが観察された。",
+                "interpretation": "観察された偏りは次の比較対象を選ぶ手掛かりとなる。",
+                "supporting_results": ["N000002@ATT0001"],
+                "comparison_results": [],
+                "counter_results": [],
+                "limitations": "単一のOperator Resultに基づく。",
+            }],
+        }
+        draft_issues = interpretation_module.validate_draft(
+            {"allowed_result_refs": ["N000002@ATT0001"]}, draft
+        )
+        self.assertTrue(any("JSON array" in issue for issue in draft_issues))
+        draft["insights"][0]["limitations"] = ["単一のOperator Resultに基づく。"]
+        self.assertEqual(
+            [],
+            interpretation_module.validate_draft(
+                {"allowed_result_refs": ["N000002@ATT0001"]}, draft
+            ),
+        )
 
     def test_main_orchestrator_is_manual_skill_not_agent(self) -> None:
         skill = ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "SKILL.md"

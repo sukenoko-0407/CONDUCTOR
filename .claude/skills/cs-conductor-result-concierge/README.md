@@ -43,6 +43,8 @@ python .claude/skills/cs-conductor-result-concierge/scripts/launch.py run-helper
 - 出力先は`<run_root>/concierge/REQ######/`に固定される。
 - Runtime、DAG、解析artifactを変更せず、新しい科学解析も実行しない。
 - 既存artifactに対する依頼固有の抽出、統計要約、比較、Figure作成は可能。補助コードはrequest内`scratch/`に限定する。
+- Operatorが定義したmetric、threshold、comparator、scope、分母を変更・推測しない。値の定義をsource artifactから確定できなければ、その旨を明記する。
+- 追加集計は「Concierge-derived」と明示し、式、source、filter、scope、分母Nをreportへ記録する。既存metricと同名で上書きしない。
 - 追加解析は`next_round_prompt.md`として提案できるが、自動実行しない。
 
 ## 変更履歴

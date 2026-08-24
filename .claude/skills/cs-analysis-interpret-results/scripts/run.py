@@ -103,8 +103,13 @@ def validate_draft(context: dict[str, Any], draft: dict[str, Any]) -> list[str]:
             issues.append(f"{prefix}: Result refs outside context: {sorted(refs-allowed)}")
         if item.get("claim_kind") in {"difference", "agreement", "contradiction"} and not comparisons:
             issues.append(f"{prefix}: comparison claim requires comparison_results")
-        if not item.get("limitations"):
-            issues.append(f"{prefix}: limitations is required")
+        limitations = item.get("limitations")
+        if not isinstance(limitations, list):
+            issues.append(f"{prefix}: limitations must be a JSON array of complete statements, even when there is only one limitation")
+        elif not limitations or any(not isinstance(value, str) or not value.strip() for value in limitations):
+            issues.append(f"{prefix}: limitations requires one or more non-empty strings")
+        elif len(limitations) >= 2 and all(len(value.strip()) == 1 for value in limitations):
+            issues.append(f"{prefix}: limitations contains character fragments instead of complete statements")
         for key in ("title", "observation", "interpretation"):
             if not str(item.get(key) or "").strip():
                 issues.append(f"{prefix}: {key} is required")

@@ -112,6 +112,15 @@ class AnalysisAdditionTests(unittest.TestCase):
         self.assertNotIn("private_metric_0x",markdown+html)
         self.assertEqual(987654.321,report["insights"][0]["fact_panel"]["key_metrics"]["N000020@ATT0001"]["private_metric_0x"])
         self.assertEqual([],module.quality_issues(report))
+        report["insights"][0]["title"]="   "
+        report["insights"][0]["limitations"]=list("反証探索は限定的である。")
+        legacy_html=module.render_html(report)
+        self.assertIn("INS000001の解析知見",legacy_html)
+        self.assertIn("<li>反証探索は限定的である。</li>",legacy_html)
+        self.assertNotIn("<li>反</li>",legacy_html)
+        legacy_issues=module.quality_issues(report)
+        self.assertTrue(any("title is blank" in item for item in legacy_issues))
+        self.assertTrue(any("character fragments" in item for item in legacy_issues))
 
     @unittest.skipUnless(sys.platform == "win32", "Windows extended-path import workaround")
     def test_chemberta_enables_extended_site_packages_path_on_windows(self)->None:

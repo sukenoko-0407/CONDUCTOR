@@ -24,7 +24,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 ## Algorithm-specific options
 
-`references/interpretation_policy.md`を完全に読む。summaryはnavigationにだけ使い、保持するInsightは原数値artifactを確認する。矛盾、negative result、反証探索を記録し、State更新とOperator実行はRuntime／Orchestratorへ委ねる。
+`references/interpretation_policy.md`を完全に読む。summaryはnavigationにだけ使い、保持するInsightは原数値artifactを確認する。各Insightには内容を表す空でない日本語表題を付ける。`limitations`は必ず完全な文からなるJSON配列とし、1件だけでも文字列ではなく `["…"]` とする。矛盾、negative result、反証探索を記録し、State更新とOperator実行はRuntime／Orchestratorへ委ねる。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 

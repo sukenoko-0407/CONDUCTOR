@@ -22,3 +22,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" verify --request-dir /path/to/run
 It may extract, filter, compare, calculate descriptive summaries from frozen values, explain provenance, and redraw existing values. Do not default to `/tmp`; use request-local `scratch/`. An external executable that cannot honor redirected temporary directories may use OS temp exceptionally, but must not write into Runtime or canonical artifact paths and must record the exception in the response limitations. It must not calculate new Descriptions, Clusters, Operators, predictive models, Insights, or Node states. If new CONDUCTOR analysis would help, write an optional `next_round_prompt.md` for human review.
 
 Answers must explain method, representation, subject scope, sample count, observation, interpretation, and limitation. Never label a Cluster result as Global or claim causality from correlation.
+
+Operator artifactに定義済みのmetric、threshold、comparator、scope、denominatorを正本とする。Conciergeが別の式を推測して既存metricの定義を置き換えてはならない。特にA010では`high_threshold`／`low_threshold`はendpoint値の上側／下側分位点であり、良好側は`favorable_threshold`、`favorable_comparator`、`higher_is_better`から読む。値の由来がartifactから確定できない場合は「判定不能」と明記する。
+
+依頼固有の追加集計を行う場合は、既存Operator値とは明確に分けて「Concierge-derived」と表示し、式、source path、filter、対象scope、分母Nをreportへ記載する。既存metricと同名で上書きせず、推定式をOperatorの正式定義として説明しない。旧artifactに`high_activity_fraction`／`low_activity_fraction`しかない場合は、`higher_is_better`とthreshold定義を同時に確認できた場合だけ方向を解釈し、確認できなければ列名をそのまま引用して限界を記載する。

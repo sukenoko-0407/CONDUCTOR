@@ -369,12 +369,63 @@ def cluster_profile(property_table: pd.DataFrame, clusters: dict[str, set[str]],
         raise ValueError("--membership is required for cluster profile")
     global_values = property_table["property_value"]
     high = float(global_values.quantile(args.high_quantile)); low = float(global_values.quantile(args.low_quantile))
+    if args.higher_is_better:
+        favorable_threshold, favorable_comparator, favorable_quantile = high, ">=", float(args.high_quantile)
+        unfavorable_threshold, unfavorable_comparator, unfavorable_quantile = low, "<=", float(args.low_quantile)
+        global_favorable = global_values >= favorable_threshold
+        global_unfavorable = global_values <= unfavorable_threshold
+    else:
+        favorable_threshold, favorable_comparator, favorable_quantile = low, "<=", float(args.low_quantile)
+        unfavorable_threshold, unfavorable_comparator, unfavorable_quantile = high, ">=", float(args.high_quantile)
+        global_favorable = global_values <= favorable_threshold
+        global_unfavorable = global_values >= unfavorable_threshold
     rows = []
     for cluster_id, frame in cluster_frames(property_table, clusters, args.target_cluster):
         values = frame["property_value"]
-        rows.append({"cluster_id": cluster_id, "sample_count": len(values), "property_mean": values.mean(), "property_median": values.median(), "property_std": values.std(ddof=1), "property_iqr": values.quantile(0.75) - values.quantile(0.25), "property_range": values.max() - values.min(), "high_activity_fraction": float((values >= high).mean()) if args.higher_is_better else float((values <= low).mean()), "low_activity_fraction": float((values <= low).mean()) if args.higher_is_better else float((values >= high).mean())})
+        favorable = values >= favorable_threshold if args.higher_is_better else values <= favorable_threshold
+        unfavorable = values <= unfavorable_threshold if args.higher_is_better else values >= unfavorable_threshold
+        rows.append({
+            "cluster_id": cluster_id,
+            "sample_count": len(values),
+            "property_mean": values.mean(),
+            "property_median": values.median(),
+            "property_std": values.std(ddof=1),
+            "property_iqr": values.quantile(0.75) - values.quantile(0.25),
+            "property_range": values.max() - values.min(),
+            "favorable_count": int(favorable.sum()),
+            "favorable_fraction": float(favorable.mean()),
+            "unfavorable_count": int(unfavorable.sum()),
+            "unfavorable_fraction": float(unfavorable.mean()),
+            "higher_is_better": bool(args.higher_is_better),
+            "favorable_threshold": favorable_threshold,
+            "favorable_comparator": favorable_comparator,
+            "favorable_quantile": favorable_quantile,
+            "unfavorable_threshold": unfavorable_threshold,
+            "unfavorable_comparator": unfavorable_comparator,
+            "unfavorable_quantile": unfavorable_quantile,
+            "threshold_population": "global_endpoint_valid",
+            "threshold_quantile_method": "pandas_linear",
+        })
     result = pd.DataFrame(rows)
-    return result, {"cluster_count": len(result), "high_threshold": high, "low_threshold": low}
+    return result, {
+        "cluster_count": len(result),
+        "high_threshold": high,
+        "low_threshold": low,
+        "higher_is_better": bool(args.higher_is_better),
+        "favorable_threshold": favorable_threshold,
+        "favorable_comparator": favorable_comparator,
+        "favorable_quantile": favorable_quantile,
+        "unfavorable_threshold": unfavorable_threshold,
+        "unfavorable_comparator": unfavorable_comparator,
+        "unfavorable_quantile": unfavorable_quantile,
+        "threshold_population": "global_endpoint_valid",
+        "threshold_quantile_method": "pandas_linear",
+        "global_endpoint_valid_count": int(len(global_values)),
+        "global_favorable_count": int(global_favorable.sum()),
+        "global_favorable_fraction": float(global_favorable.mean()),
+        "global_unfavorable_count": int(global_unfavorable.sum()),
+        "global_unfavorable_fraction": float(global_unfavorable.mean()),
+    }
 
 
 def cluster_enrichment(property_table: pd.DataFrame, clusters: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -744,6 +795,18 @@ def run() -> int:
         uncertainty = {
             "metric_scale_dependence": "Raw SALI values depend on the endpoint scale and selected distance metric.",
             "measurement_context": "High SALI pairs require assay-error and condition checks before chemical interpretation.",
+        }
+    elif operator == "cluster_profile":
+        favorable_rule = f"Endpoint {summary['favorable_comparator']} {clean_json(summary['favorable_threshold'])}"
+        unfavorable_rule = f"Endpoint {summary['unfavorable_comparator']} {clean_json(summary['unfavorable_threshold'])}"
+        human_summary = (
+            f"{CAPABILITY['display_name']} analyzed {summary.get('cluster_count', 0)} Cluster(s) using thresholds "
+            f"derived from {summary.get('threshold_population')}. Favorable: {favorable_rule}; "
+            f"unfavorable: {unfavorable_rule}."
+        )
+        uncertainty = {
+            "threshold_definition": "Thresholds are global endpoint quantiles; inclusive comparisons can change the observed fraction when values are tied.",
+            "cluster_size": "Fractions from small Clusters are statistically unstable and should be interpreted with sample_count.",
         }
     else:
         human_summary = f"{CAPABILITY['display_name']} analyzed scope={scope['mode']} with {scope['sample_count']} endpoint rows. See {result_path.name}."

@@ -3581,6 +3581,43 @@ def _combined_subject(cards: list[dict[str, Any]]) -> dict[str, Any]:
     return value
 
 
+def _normalise_insight_limitations(value: Any) -> list[str]:
+    """Return complete limitation statements, never an iterable of characters."""
+    if isinstance(value, str):
+        candidates: list[Any] = value.splitlines() or [value]
+    elif isinstance(value, (list, tuple)):
+        candidates = list(value)
+        nonblank = [str(item).strip() for item in candidates if str(item).strip()]
+        # A former failure mode converted one string with ``list`` semantics.
+        if len(nonblank) >= 2 and all(len(item) == 1 for item in nonblank):
+            candidates = ["".join(str(item) for item in candidates)]
+    elif value is None:
+        candidates = []
+    else:
+        candidates = [value]
+
+    result: list[str] = []
+    for candidate in candidates:
+        text = str(candidate).strip()
+        text = text.lstrip("-*・• \t").strip()
+        if text and text not in result:
+            result.append(text)
+    return result or ["利用可能なOperator Resultと今回確認した解析範囲に依存する。"]
+
+
+def _fallback_insight_title(subject: dict[str, Any], fact_panel: dict[str, Any]) -> str:
+    mode = subject.get("scope_mode")
+    clusters = subject.get("cluster_ids") or []
+    if mode == "global":
+        scope = "Global"
+    elif clusters:
+        scope = "Cluster " + "・".join(str(value) for value in clusters[:3])
+    else:
+        scope = "複数scope"
+    operators = "・".join(str(value) for value in fact_panel.get("operators") or []) or "Operator"
+    return f"{scope}における{operators}解析のInsight"
+
+
 def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, Any], cards: dict[str, dict[str, Any]], round_id: str, interpretation_node: str) -> list[dict[str, Any]]:
     existing_rows = read_jsonl(root / "runtime" / "insight_index.jsonl")
     latest = {row["insight_id"]: row for row in existing_rows}
@@ -3614,7 +3651,8 @@ def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, A
         description_caps = sorted({_node_lookup(snapshot)[node_id]["capability_id"] for node_id in subject["analysis_description_nodes"] if node_id in _node_lookup(snapshot)})
         source_caps = sorted({_node_lookup(snapshot)[node_id]["capability_id"] for node_id in subject["cluster_source_description_nodes"] if node_id in _node_lookup(snapshot)})
         fact_panel = {"operators": sorted({card["capability_id"] for card in selected_cards}), "metrics": sorted({str(card.get("metric")) for card in selected_cards if card.get("metric")}), "analysis_descriptions": description_caps, "cluster_source_descriptions": source_caps, "clustering_method": ", ".join(clustering_caps) if clustering_caps else None, "result_samples": {card["result_ref"]: card["analysis_subject"]["analyzed_count"] for card in selected_cards}, "key_metrics": {card["result_ref"]: dict(list((card.get("key_metrics") or {}).items())[:8]) for card in selected_cards}}
-        formal.append({"insight_id": insight_id, "revision": revision, "attention": attention, "claim_kind": value.get("claim_kind", "single_scope_observation"), "title": str(value.get("title") or "名称未設定のInsight"), "analysis_subject": subject, "supporting_results": supporting, "comparison_results": comparisons, "counter_results": counter, "observation": str(value.get("observation") or ""), "interpretation": str(value.get("interpretation") or ""), "limitations": [str(item) for item in value.get("limitations") or []], "recommended_followups": [{"title": str(item.get("title") or "追加確認"), "rationale": str(item.get("rationale") or "")} for item in value.get("recommended_followups") or []], "fact_panel": fact_panel})
+        title = str(value.get("title") or "").strip() or _fallback_insight_title(subject, fact_panel)
+        formal.append({"insight_id": insight_id, "revision": revision, "attention": attention, "claim_kind": value.get("claim_kind", "single_scope_observation"), "title": title, "analysis_subject": subject, "supporting_results": supporting, "comparison_results": comparisons, "counter_results": counter, "observation": str(value.get("observation") or "").strip(), "interpretation": str(value.get("interpretation") or "").strip(), "limitations": _normalise_insight_limitations(value.get("limitations")), "recommended_followups": [{"title": str(item.get("title") or "追加確認").strip(), "rationale": str(item.get("rationale") or "").strip()} for item in value.get("recommended_followups") or []], "fact_panel": fact_panel})
     return formal
 
 

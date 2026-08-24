@@ -11,8 +11,8 @@ import pandas as pd
 
 GUIDANCE = {
     "cluster_profile": (
-        "Clusterごとの活性中心、ばらつき、高活性・低活性比率を比較する。",
-        "Clusterサイズと全体に占める割合を確認し、小さいClusterの極端値を過度に一般化しない。",
+        "Clusterごとの活性中心、ばらつき、良好側・不良側の比率を比較する。",
+        "良好側はhigher_is_betterとGlobal endpoint分位点から定義される。Clusterサイズを確認し、小さいClusterの極端値を過度に一般化しない。",
     ),
     "activity_distribution": (
         "endpointの中心、範囲、四分位範囲をscope間で比較する。",
@@ -53,7 +53,7 @@ GUIDANCE = {
 }
 
 METRICS = {
-    "cluster_profile": ["property_median", "high_activity_fraction", "property_iqr"],
+    "cluster_profile": ["property_median", "favorable_fraction", "property_iqr"],
     "activity_distribution": ["median", "std"],
     "pairwise_structure_similarity": ["similarity", "abs_delta_property"],
     "descriptor_activity_correlation": ["max_abs_association", "spearman_rho"],
@@ -66,7 +66,7 @@ METRICS = {
 }
 
 RANKING = {
-    "cluster_profile": ("high_activity_fraction", False),
+    "cluster_profile": ("favorable_fraction", False),
     "pairwise_structure_similarity": ("similarity", False),
     "descriptor_activity_correlation": ("max_abs_association", False),
     "knn_activity_consistency": ("abs_delta_property", False),
@@ -213,6 +213,19 @@ def render_operator_report(
         ("Description artifact", str(getattr(args, "description", None) or "-")),
         ("Clustering artifact", str(getattr(args, "membership", None) or "-")),
     ]
+    if operator == "cluster_profile":
+        favorable_quantile = summary.get("favorable_quantile")
+        quantile_text = f"Q{100 * float(favorable_quantile):g}" if favorable_quantile is not None else "quantile未記録"
+        contexts.insert(3, (
+            "Favorable definition",
+            f"Endpoint {summary.get('favorable_comparator', '?')} {display(summary.get('favorable_threshold'))} "
+            f"({quantile_text}; 母集団=Global endpoint valid N={display(summary.get('global_endpoint_valid_count'))})",
+        ))
+        contexts.insert(4, (
+            "Global favorable baseline",
+            f"{display(summary.get('global_favorable_count'))}/{display(summary.get('global_endpoint_valid_count'))} "
+            f"({display(summary.get('global_favorable_fraction'))})",
+        ))
     context_html = "".join(f"<dt>{html.escape(label)}</dt><dd>{html.escape(value)}</dd>" for label, value in contexts)
     cards, nested = summary_cards(summary)
     chart_html = "".join(histogram_svg(result[column], column) for column in METRICS.get(operator, []) if column in result.columns)

@@ -28,6 +28,28 @@ def _result_samples(value: dict[str, Any]) -> str:
     return ", ".join(f"{key}: n={number}" for key, number in samples.items()) if samples else "—"
 
 
+def _display_title(item: dict[str, Any]) -> str:
+    return str(item.get("title") or "").strip() or f"{item.get('insight_id', 'Insight')}の解析知見"
+
+
+def _display_limitations(value: Any) -> list[str]:
+    if isinstance(value, str):
+        candidates: list[Any] = value.splitlines() or [value]
+    elif isinstance(value, (list, tuple)):
+        candidates = list(value)
+        nonblank = [str(item).strip() for item in candidates if str(item).strip()]
+        if len(nonblank) >= 2 and all(len(item) == 1 for item in nonblank):
+            candidates = ["".join(str(item) for item in candidates)]
+    else:
+        candidates = []
+    result: list[str] = []
+    for candidate in candidates:
+        text = str(candidate).strip().lstrip("-*・• \t").strip()
+        if text and text not in result:
+            result.append(text)
+    return result or ["利用可能なOperator Resultと今回確認した解析範囲に依存する。"]
+
+
 def render_markdown(report: dict[str, Any], report_dir: Path | None = None, run_root: Path | None = None) -> str:
     header = report["report_header"]
     review = report["review_manifest"]
@@ -37,8 +59,8 @@ def render_markdown(report: dict[str, Any], report_dir: Path | None = None, run_
     for item in report["insights"]:
         subject = item["analysis_subject"]
         facts = item["fact_panel"]
-        lines += [f"### {item['insight_id']} — {item['title']}", "", f"- 注目度: {ATTENTION_JA[item['attention']]}", f"- 種別: {CLAIM_JA[item['claim_kind']]}", f"- 対象: {_scope(subject)}", f"- Cluster生成: {facts.get('clustering_method') or '該当なし'} / 入力種別 `{subject['clustering_input_kind']}`", f"- Cluster生成Description: {_refs(facts.get('cluster_source_descriptions') or [])}", f"- 解析Description: {_refs(facts.get('analysis_descriptions') or [])}", f"- Operator / Metric: {_refs(facts.get('operators') or [])} / {_refs(facts.get('metrics') or [])}", f"- 母集団 / endpoint有効 / 実解析 / 除外: {subject['population_count']} / {subject['endpoint_valid_count']} / {subject['analyzed_count']} / {subject['excluded_count']}", f"- Result別sample数: {_result_samples(facts)}", f"- 支持Result: {_refs(item['supporting_results'])}", f"- 比較Result: {_refs(item['comparison_results'])}", f"- 反証Result: {_refs(item['counter_results'])}", "", "**観察**", "", item["observation"], "", "**解釈**", "", item["interpretation"], "", "**限界**", ""]
-        lines += [f"- {value}" for value in item["limitations"]] + [""]
+        lines += [f"### {item['insight_id']} — {_display_title(item)}", "", f"- 注目度: {ATTENTION_JA[item['attention']]}", f"- 種別: {CLAIM_JA[item['claim_kind']]}", f"- 対象: {_scope(subject)}", f"- Cluster生成: {facts.get('clustering_method') or '該当なし'} / 入力種別 `{subject['clustering_input_kind']}`", f"- Cluster生成Description: {_refs(facts.get('cluster_source_descriptions') or [])}", f"- 解析Description: {_refs(facts.get('analysis_descriptions') or [])}", f"- Operator / Metric: {_refs(facts.get('operators') or [])} / {_refs(facts.get('metrics') or [])}", f"- 母集団 / endpoint有効 / 実解析 / 除外: {subject['population_count']} / {subject['endpoint_valid_count']} / {subject['analyzed_count']} / {subject['excluded_count']}", f"- Result別sample数: {_result_samples(facts)}", f"- 支持Result: {_refs(item['supporting_results'])}", f"- 比較Result: {_refs(item['comparison_results'])}", f"- 反証Result: {_refs(item['counter_results'])}", "", "**観察**", "", item["observation"], "", "**解釈**", "", item["interpretation"], "", "**限界**", ""]
+        lines += [f"- {value}" for value in _display_limitations(item.get("limitations"))] + [""]
         if item["recommended_followups"]:
             lines += ["**次Roundで検討可能な方向**", ""] + [f"- {value['title']}: {value['rationale']}" for value in item["recommended_followups"]] + [""]
     lines += ["## 参照Operator結果", "", "| Result | Operator | 対象 | n | Metric | Report |", "|---|---|---|---:|---|---|"]
@@ -60,11 +82,11 @@ def render_html(report: dict[str, Any], report_dir: Path | None = None, run_root
     for item in report["insights"]:
         subject = item["analysis_subject"]
         facts = item["fact_panel"]
-        limitations = "".join(f"<li>{html.escape(value)}</li>" for value in item["limitations"])
+        limitations = "".join(f"<li>{html.escape(value)}</li>" for value in _display_limitations(item.get("limitations")))
         followups = "".join(f"<li><b>{html.escape(value['title'])}</b>: {html.escape(value['rationale'])}</li>" for value in item["recommended_followups"])
         overlap = subject.get("cluster_overlap")
         overlap_html = f"<div><span>Cluster重複</span><b>{overlap['count']}件 / Jaccard {overlap['jaccard']:.3f}</b></div>" if overlap else ""
-        cards.append(f"<article class='insight {item['attention']}'><header><div><span class='id'>{html.escape(item['insight_id'])}</span><span class='badge'>{ATTENTION_JA[item['attention']]}</span><span class='badge muted'>{CLAIM_JA[item['claim_kind']]}</span></div><h3>{html.escape(item['title'])}</h3></header><div class='scope'>{html.escape(_scope(subject))}</div><div class='facts'><div><span>Cluster生成</span><b>{html.escape(str(facts.get('clustering_method') or '該当なし'))}</b></div><div><span>生成入力</span><b>{html.escape(subject['clustering_input_kind'])}</b></div><div><span>生成Description</span><b>{html.escape(_refs(facts.get('cluster_source_descriptions') or []))}</b></div><div><span>解析Description</span><b>{html.escape(_refs(facts.get('analysis_descriptions') or []))}</b></div><div><span>Operator</span><b>{html.escape(_refs(facts.get('operators') or []))}</b></div><div><span>Metric</span><b>{html.escape(_refs(facts.get('metrics') or []))}</b></div><div><span>母集団 / endpoint有効</span><b>{subject['population_count']} / {subject['endpoint_valid_count']}</b></div><div><span>実解析 / 除外</span><b>{subject['analyzed_count']} / {subject['excluded_count']}</b></div><div><span>Result別sample数</span><b>{html.escape(_result_samples(facts))}</b></div>{overlap_html}</div><section><h4>観察</h4><p>{html.escape(item['observation'])}</p><h4>解釈</h4><p>{html.escape(item['interpretation'])}</p><h4>支持・比較・反証</h4><p>支持: {html.escape(_refs(item['supporting_results']))}<br>比較: {html.escape(_refs(item['comparison_results']))}<br>反証: {html.escape(_refs(item['counter_results']))}</p><h4>限界</h4><ul>{limitations}</ul>{f'<h4>次Roundで検討可能な方向</h4><ul>{followups}</ul>' if followups else ''}</section></article>")
+        cards.append(f"<article class='insight {item['attention']}'><header><div><span class='id'>{html.escape(item['insight_id'])}</span><span class='badge'>{ATTENTION_JA[item['attention']]}</span><span class='badge muted'>{CLAIM_JA[item['claim_kind']]}</span></div><h3>{html.escape(_display_title(item))}</h3></header><div class='scope'>{html.escape(_scope(subject))}</div><div class='facts'><div><span>Cluster生成</span><b>{html.escape(str(facts.get('clustering_method') or '該当なし'))}</b></div><div><span>生成入力</span><b>{html.escape(subject['clustering_input_kind'])}</b></div><div><span>生成Description</span><b>{html.escape(_refs(facts.get('cluster_source_descriptions') or []))}</b></div><div><span>解析Description</span><b>{html.escape(_refs(facts.get('analysis_descriptions') or []))}</b></div><div><span>Operator</span><b>{html.escape(_refs(facts.get('operators') or []))}</b></div><div><span>Metric</span><b>{html.escape(_refs(facts.get('metrics') or []))}</b></div><div><span>母集団 / endpoint有効</span><b>{subject['population_count']} / {subject['endpoint_valid_count']}</b></div><div><span>実解析 / 除外</span><b>{subject['analyzed_count']} / {subject['excluded_count']}</b></div><div><span>Result別sample数</span><b>{html.escape(_result_samples(facts))}</b></div>{overlap_html}</div><section><h4>観察</h4><p>{html.escape(item['observation'])}</p><h4>解釈</h4><p>{html.escape(item['interpretation'])}</p><h4>支持・比較・反証</h4><p>支持: {html.escape(_refs(item['supporting_results']))}<br>比較: {html.escape(_refs(item['comparison_results']))}<br>反証: {html.escape(_refs(item['counter_results']))}</p><h4>限界</h4><ul>{limitations}</ul>{f'<h4>次Roundで検討可能な方向</h4><ul>{followups}</ul>' if followups else ''}</section></article>")
     if not cards:
         cards.append("<div class='empty'>報告基準を満たすInsightはありません。確認範囲で明確な差異・一致・矛盾を認めなかったnegative resultです。</div>")
     rows = []
@@ -98,6 +120,15 @@ def quality_issues(report: dict[str, Any]) -> list[str]:
         issues.append("coverage_summary must be written as Japanese human-facing prose")
     catalog = {card["result_ref"]: card for card in report["result_catalog"]}
     for insight in report["insights"]:
+        if not str(insight.get("title") or "").strip():
+            issues.append(f"{insight['insight_id']}: title is blank")
+        raw_limitations = insight.get("limitations")
+        if not isinstance(raw_limitations, list) or not raw_limitations:
+            issues.append(f"{insight['insight_id']}: limitations must be a non-empty array")
+        elif any(not isinstance(value, str) or not value.strip() for value in raw_limitations):
+            issues.append(f"{insight['insight_id']}: limitations contains an empty or non-string value")
+        elif len(raw_limitations) >= 2 and all(len(value.strip()) == 1 for value in raw_limitations):
+            issues.append(f"{insight['insight_id']}: limitations contains character fragments")
         references = [*insight["supporting_results"], *insight["comparison_results"], *insight["counter_results"]]
         missing = set(references) - set(catalog)
         if missing:

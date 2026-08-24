@@ -76,6 +76,15 @@ class ConciergeTests(unittest.TestCase):
             result = MODULE.prepare(Namespace(run_root=str(root), request="Interpretationの根拠を説明", request_file=None, focus_id=[], explicit_request=True))
             self.assertTrue(Path(result["request_dir"]).is_dir())
 
+    def test_instructions_preserve_operator_metric_definitions(self) -> None:
+        skill_text = (ROOT / ".claude" / "skills" / "cs-conductor-result-concierge" / "SKILL.md").read_text(encoding="utf-8")
+        prompt_text = (ROOT / "CONDUCTOR_modules" / "docs" / "prompt" / "CONDUCTOR_prompts_daily.md").read_text(encoding="utf-8")
+        for text in (skill_text, prompt_text):
+            self.assertIn("Concierge-derived", text)
+            self.assertIn("comparator", text)
+            self.assertIn("分母N", text)
+            self.assertIn("置き換え", text)
+
 
 if __name__ == "__main__":
     unittest.main()

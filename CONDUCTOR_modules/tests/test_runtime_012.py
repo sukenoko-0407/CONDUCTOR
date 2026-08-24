@@ -210,6 +210,7 @@ class Runtime012Tests(unittest.TestCase):
             "title": "GlobalとClusterの差異",
             "observation": "Globalと対象Clusterの解析結果を比較すると、主要指標に明確な差が観察されました。",
             "interpretation": "この差は局所的な化学空間で関係性が変化する可能性を示しますが、追加の反証確認が必要です。",
+            "limitations": ["対象Clusterと今回参照したOperator Resultの範囲に限定された比較です。"],
             "analysis_subject": combined,
             "fact_panel": {
                 "operators": ["A001"],
@@ -228,6 +229,18 @@ class Runtime012Tests(unittest.TestCase):
         issues = renderer.quality_issues(report)
         self.assertTrue(any("scope_mode does not match" in item for item in issues))
         self.assertTrue(any("Cluster IDs do not match" in item for item in issues))
+
+    def test_interpretation_text_normalisation_prevents_blank_titles_and_character_bullets(self) -> None:
+        limitation = "対象数が少なく、別のDescriptionによる反証確認が必要である。"
+        self.assertEqual([limitation], RUNTIME._normalise_insight_limitations(limitation))
+        self.assertEqual([limitation], RUNTIME._normalise_insight_limitations(list(limitation)))
+        self.assertEqual(
+            "Cluster C000001におけるA008解析のInsight",
+            RUNTIME._fallback_insight_title(
+                {"scope_mode": "single_cluster", "cluster_ids": ["C000001"]},
+                {"operators": ["A008"]},
+            ),
+        )
 
 
 if __name__ == "__main__":

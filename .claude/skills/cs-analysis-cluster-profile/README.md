@@ -6,7 +6,7 @@ Cluster profileを実行し、一般利用向け数値結果とCONDUCTOR向けOp
 
 ## 想定利用シーン
 
-各Clusterの活性分布とhigh/low activity比率を比較する場合。
+各Clusterの活性分布と、endpoint方向を考慮した良好側／不良側比率を比較する場合。
 
 ## 環境構築
 
@@ -30,6 +30,8 @@ python .claude/skills/cs-analysis-cluster-profile/scripts/launch.py --input comp
 ## 制約事項
 
 - endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
+- `high_threshold`／`low_threshold`はGlobal endpointの上側／下側分位点であり、良好／不良を直接表す名称ではない。良好側の判定は出力内の`favorable_threshold`と`favorable_comparator`を使用する。
+- 境界値を含めて数えるため、同値が多い場合はGlobalの`favorable_fraction`が指定分位点から期待される比率と一致しないことがある。
 - 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
 - CONDUCTORモードではState由来のDescription／Clustering Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。
 

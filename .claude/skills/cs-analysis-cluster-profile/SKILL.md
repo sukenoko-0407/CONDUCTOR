@@ -26,6 +26,8 @@ Cluster profileを実行し、客観的な数値結果とCONDUCTOR Operator summ
 
 `--membership`を必須とし、`--high-quantile`、`--low-quantile`、任意の`--target-cluster`を指定できる。
 
+`high_threshold`はGlobalの有効endpointにおける上側分位点、`low_threshold`は下側分位点であり、値の良否を直接意味しない。良好側は`higher_is_better`に従って決定する。`higher_is_better=true`では`Endpoint >= high_threshold`、`false`では`Endpoint <= low_threshold`を`favorable`とする。反対側を`unfavorable`とする。CSVとsummaryには判定閾値、比較演算子、分位点、母集団、count、fractionを明記する。境界値を含むため、同値が多いデータではGlobal fractionが指定quantileの理論比率と一致しないことがある。
+
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
 ## Mode selection: mandatory
@@ -45,6 +47,8 @@ Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証さ�
 - CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ主成果物、`operator_report.html`、`operator_summary.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
 `<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
+
+主成果物の比率列は`favorable_fraction`と`unfavorable_fraction`である。方向を曖昧にする`high_activity_fraction`／`low_activity_fraction`は出力しない。完全な判定規則は同じ行および`operator_summary.json`の`key_metrics`から追跡できる。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。
 
