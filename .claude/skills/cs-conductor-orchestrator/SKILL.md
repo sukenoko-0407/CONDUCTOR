@@ -68,11 +68,11 @@ Runtime compact responseの`protocol_version=0.1.6`と、一つの`required_acti
 
 ## 探索規則
 
-基本計算後のOperator探索は`exploration`一種類だけである。Runtimeが履歴を除外し、Capability、入力Description／Clustering、scopeの偏りを抑えたseed付き選択を行う。単純なGlobal優先列`Global, Global, Local`を基準に、一RoundのAnalysis Nodeは最大100件とする。100件を一度に計画し、50件単位の再計画は行わない。Wall Timeは件数上限を増やさない。
+基本計算後のOperator探索は`exploration`一種類だけである。Runtimeが履歴を除外し、Capability、入力Description／Clustering、scopeの偏りを抑えたseed付き選択を行う。単純なGlobal優先列`Global, Global, Local`を基準に、一RoundのAnalysis Nodeと通常InterpretationのResult Card読込は共通上限50件とする。50件を一度に計画し、分割再計画は行わない。Wall Timeは件数上限を増やさない。
 
 科学的推論が必要なのは`SCIENTIFIC_DECISION`である。人間priority、Global／Cluster-local変化、兄弟Cluster、独立したDescription family、異なるOperator、反証候補を評価する。Node ID、依存関係、Status、再試行、Round gateはRuntimeへ委ねる。
 
-A014はGlobal DBを一件作成し、全Cluster screeningと代表的Local detailへ再利用する。通常Operatorの全直積へ展開しない。標準範囲は1～2 cuts、radius 0～2、core heavy atoms 8以上、両分子に対するcore fraction 0.5以上、variable heavy atoms 10以下である。拡張探索は人間の明示指示がある場合だけ行う。
+A014の定型フローは再利用可能なGlobal DBを一件作るだけで、Local screening／detail Nodeを自動計画しない。通常InterpretationへはcompactなGlobal Result Cardだけを渡す。Clusteringと連携したGlobal–Local MMP解釈はRound終了後に人間が`cs-analysis-interpret-mmp`を明示起動する。標準計算範囲は1～2 cuts、radius 0～2、core heavy atoms 8以上、両分子に対するcore fraction 0.5以上、variable heavy atoms 10以下である。
 
 Wall Timeは上限であり早期終了目標ではない。許可済み作業を完了後、必ずInterpretation、Full Audit、`AWAITING_HUMAN_REVIEW`まで進む。人間の明示指示なしに次Roundを開始しない。
 

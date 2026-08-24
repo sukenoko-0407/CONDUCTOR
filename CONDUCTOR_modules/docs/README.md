@@ -1,6 +1,6 @@
 # CONDUCTOR ドキュメント
 
-対象Versionは`0.1.6`です。Description、Clustering、Operator、Interpretationを疎結合に接続し、同じRunを人間主導の複数Roundで探索します。共通Execution Request、Global優先の単一exploration、最大100 Analysis Node、実務的範囲の省容量MMP Databaseを採用します。
+対象Versionは`0.1.6`です。Description、Clustering、Operator、Interpretationを疎結合に接続し、同じRunを人間主導の複数Roundで探索します。共通Execution Request、Global優先の単一exploration、Analysis／Interpretation共通上限50、実務的範囲の省容量MMP Databaseを採用します。
 
 ## 利用時に読む文書
 
@@ -21,6 +21,6 @@
 - [CONDUCTOR_skill_catalog_ja_quick_reference.md](CONDUCTOR_skill_catalog_ja_quick_reference.md): Description、Clustering、Operator、Interpretationの日本語早見表
 - [CONDUCTOR_verification.md](CONDUCTOR_verification.md): 検証方法
 
-`prompt/`には初回、継続Round、別session引継ぎ、Failed Nodeの同一Round再試行、Operator契約修正後の再開、MMP深掘り、Concierge用のプロンプト例があります。Catalog収載対象は`catalog/included_skills.json`、標準解析範囲は`catalog/analysis_profile.json`が正本です。旧Runとの後方互換やmigrationは提供しません。
+`prompt/`には初回、継続Round、別session引継ぎ、Failed Nodeの同一Round再試行、Operator契約修正後の再開、read-only MMP Global–Local解釈、Concierge用のプロンプト例があります。Catalog収載対象は`catalog/included_skills.json`、標準解析範囲は`catalog/analysis_profile.json`が正本です。旧Runとの後方互換やmigrationは提供しません。
 
 過去Version固有の仕様書・実装計画・是正計画は現役Packageへ同梱せず、Git履歴および各Version branchを参照します。

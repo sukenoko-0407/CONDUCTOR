@@ -58,8 +58,8 @@ Runtime管理fileはAttempt scratch直下、Skill出力は未作成の`skill_out
 
 ## 探索とInterpretation
 
-Operator探索は`exploration`一種類、最大100 Analysis Node／Roundである。Runtimeは成功済signatureを除外し、履歴上少ないCapability、scope、入力familyを優先しながらseed付きで選ぶ。Failed Nodeは成功履歴として数えず、再選択時も同じNode IDを再利用する。Globalを優先し、概ね`Global, Global, Local`の比率にする。全候補queueはStateへ保存せず、次Roundで再構成する。Description／Clusteringの基本計算はこの上限外である。
+Operator探索は`exploration`一種類で、Analysis Nodeと通常InterpretationのResult Card読込に共通上限50を使う。Runtimeは成功済signatureを除外し、履歴上少ないCapability、scope、入力familyを優先しながらseed付きで選ぶ。Failed Nodeは成功履歴として数えず、再選択時も同じNode IDを再利用する。Globalを優先し、概ね`Global, Global, Local`の比率にする。全候補queueはStateへ保存せず、次Roundで再構成する。Description／Clusteringの基本計算はこの上限外である。
 
-Interpretation入力はbounded Result Card集合である。未レビュー結果はcoverage limitationとして記録し、全履歴をInterpreterへ読ませない。A014は正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。
+Interpretation入力は最大50件のbounded Result Card集合である。未レビュー結果はcoverage limitationとして記録し、全履歴をInterpreterへ読ませない。A014はGlobal正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。通常Result CardからMMP reference candidateの入れ子を除き、Global–Local比較は人間起動のread-only `cs-analysis-interpret-mmp`へ分離する。
 
 異常Nodeの人間操作は`cs-conductor-node-review`、read-only確認は`query`を使う。JSONを手修正しない。

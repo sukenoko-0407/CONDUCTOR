@@ -24,9 +24,20 @@
         "random_seed": {"type": "integer"}
       }
     },
-    "runtime_planning": {"type": "object", "required": ["max_new_analysis_nodes_per_round"], "properties": {"max_new_analysis_nodes_per_round": {"const": 100}}, "additionalProperties": false},
+    "runtime_planning": {"type": "object", "required": ["max_new_analysis_nodes_per_round", "max_interpretation_result_cards"], "properties": {"max_new_analysis_nodes_per_round": {"const": 50}, "max_interpretation_result_cards": {"const": 50}}, "additionalProperties": false},
     "modeling": {"type": "object", "required": ["fixed_description_panel", "minimum_local_samples"]},
-    "matched_molecular_pairs": {"type": "object"}
+    "matched_molecular_pairs": {
+      "type": "object",
+      "required": ["capability_id", "global_role", "standard_flow", "manual_interpretation_skill", "standard_result_reference_examples"],
+      "properties": {
+        "capability_id": {"const": "A014"},
+        "global_role": {"const": "global-build"},
+        "standard_flow": {"const": "global_only"},
+        "manual_interpretation_skill": {"const": "cs-analysis-interpret-mmp"},
+        "standard_result_reference_examples": {"const": 0}
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

@@ -47,6 +47,7 @@
     "cs-analysis-cluster-structural-diversity",
     "cs-analysis-matched-molecular-pairs",
     "cs-analysis-interpret-results",
+    "cs-analysis-interpret-mmp",
     "cs-conductor-runtime",
     "cs-conductor-run-audit",
     "cs-conductor-state-report"

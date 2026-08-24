@@ -13,6 +13,7 @@
 | `C######` | Run全体で一意のCluster | C000041 | Runtime |
 | `INS######` | Run全体で一意のInsight | INS000023 | Runtime commit |
 | `REQ######` | Concierge依頼 | REQ000004 | Concierge |
+| `MMPREQ######` | read-only MMP解釈依頼 | MMPREQ000004 | I002 Skill |
 | `MMP-<hash>` | Pair × Transform × Exact Core | MMP-A1B2C3D4E5F6 | A014 |
 | `TRF-<hash>` | Canonical方向の置換 | TRF-A1B2C3D4E5F6 | A014 |
 | `CORE-<hash>` | Exact Core | CORE-A1B2C3D4E5F6 | A014 |

@@ -11,7 +11,7 @@
 - packetは署名、Control revision、lease hash、Request hash、期限で一回の実行へ固定される。
 - Skill output directoryは起動前に存在せず、Runtime管理fileと衝突しない。
 - one-use Action token、Executor token、adaptive command recovery、Skill別Runtime CLI builderが残っていない。
-- Operator探索は`exploration`一種類で最大100 Node、Global優先、履歴バランス、成功済みsignature除外を満たす。
+- Operator探索は`exploration`一種類で最大50 Node、通常Interpretationも最大50 Result Card、Global優先、履歴バランス、成功済みsignature除外を満たす。
 - Local Analysisは対応Global comparatorを持つ。
 - Global deliverableはGlobal scopeだけで満たされ、基本計算は計画Node集合すべての完了で判定される。
 - Failed Nodeは成功済み探索履歴へ数えられず、再試行時にもNode IDを増やさない。契約・列・path不良は自動反復しない。

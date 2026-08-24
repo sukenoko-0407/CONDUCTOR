@@ -165,8 +165,12 @@ class RuntimeControl015(unittest.TestCase):
         executor_destinations = {action.dest for action in commands["execute-packet"]._actions}
         self.assertEqual({"help", "run_root", "packet"}, executor_destinations)
 
-    def test_round_analysis_limit_is_one_unbatched_set_of_one_hundred(self) -> None:
-        self.assertEqual((100, 100), RUNTIME._analysis_planning_limits())
+    def test_round_analysis_limit_is_one_unbatched_set_of_fifty(self) -> None:
+        self.assertEqual((50, 50), RUNTIME._analysis_planning_limits())
+        parsed = RUNTIME.build_parser().parse_args([
+            "prepare-interpretation", "--run-root", "run", "--lease-token", "lease",
+        ])
+        self.assertEqual(50, parsed.detailed_limit)
 
     def test_global_only_operator_is_rejected_for_local_scope(self) -> None:
         capabilities = RUNTIME.catalog()
@@ -222,7 +226,7 @@ class RuntimeControl015(unittest.TestCase):
             node = {"node_id": "N000001", "kind": "description", "capability_id": "D001", "output_ref": str(output)}
             self.assertEqual({"C001"}, RUNTIME._description_valid_ids(node))
 
-    def test_exploration_materializes_one_global_first_set_capped_at_one_hundred(self) -> None:
+    def test_exploration_materializes_one_global_first_set_capped_at_fifty(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             control = {
@@ -247,14 +251,44 @@ class RuntimeControl015(unittest.TestCase):
                 RUNTIME, "_exploration_local_specs", return_value=local_specs
             ):
                 planned = RUNTIME._plan_exploration(root, control, snapshot)
-            self.assertEqual(100, len(planned))
-            self.assertEqual(100, len(snapshot["nodes"]))
+            self.assertEqual(50, len(planned))
+            self.assertEqual(50, len(snapshot["nodes"]))
             scope_counts = {
                 mode: sum(node["scope"]["mode"] == mode for node in snapshot["nodes"])
                 for mode in ("global", "single_cluster")
             }
-            self.assertEqual({"global": 67, "single_cluster": 33}, scope_counts)
-            self.assertEqual(100, snapshot["plans"]["RND0001"]["exploration_nodes_planned"])
+            self.assertEqual({"global": 34, "single_cluster": 16}, scope_counts)
+            self.assertEqual(50, snapshot["plans"]["RND0001"]["exploration_nodes_planned"])
+
+    def test_standard_exploration_never_materializes_local_mmp_nodes(self) -> None:
+        self.assertNotIn("A014", RUNTIME.profile()["exploration"]["local_operator_capabilities"])
+        self.assertEqual("global_only", RUNTIME.profile()["matched_molecular_pairs"]["standard_flow"])
+        specs = RUNTIME._exploration_local_specs(
+            Path("."),
+            {"active_round_id": "RND0001", "run": {}},
+            {"nodes": [], "rounds": {"RND0001": {}}, "plans": {"RND0001": {}}},
+            [],
+        )
+        self.assertFalse(any(spec["capability_id"] == "A014" for spec in specs))
+
+    def test_scientific_decision_exposes_global_mmp_only(self) -> None:
+        control = {"active_round_id": "RND0001"}
+        snapshot = {"nodes": [], "plans": {"RND0001": {}}, "rounds": {"RND0001": {}}}
+        profile = {
+            "exploration": {
+                "description_panel": [],
+                "global_operator_capabilities": ["A014"],
+            },
+        }
+        with mock.patch.object(RUNTIME, "profile", return_value=profile), mock.patch.object(
+            RUNTIME, "catalog", return_value={"A014": {"capability_id": "A014"}}
+        ), mock.patch.object(RUNTIME, "_active_contract", return_value=None), mock.patch.object(
+            RUNTIME, "_analysis_inputs", return_value=[[]]
+        ), mock.patch.object(RUNTIME, "_cluster_rows", return_value=[{"cluster_id": "C000001"}]):
+            candidates = RUNTIME._candidate_cells(Path("."), control, snapshot)
+        self.assertEqual(1, len(candidates))
+        self.assertEqual({"mode": "global"}, candidates[0]["scope"])
+        self.assertEqual({"role": "global-build"}, candidates[0]["parameters"])
 
     def test_default_lease_execution_timeout_and_cpu_budget(self) -> None:
         parser = RUNTIME.build_parser()

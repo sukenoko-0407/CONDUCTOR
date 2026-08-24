@@ -12,7 +12,6 @@
 - [修正済みFailed Nodeを同一Roundで再実行](#special-failure-retry)
 - [既知のOperator契約不一致を修復して再開](#special-operator-contract)
 - [A010を同一Run内で再実行](#special-a010)
-- [MMP深掘り解析](#special-mmp)
 - [Interpretation日本語HTMLの追加作成](#special-translation)
 - [同一Runを使用せず新Runを選ぶ条件](#special-new-run)
 
@@ -162,41 +161,6 @@ A010以外の科学Nodeをこの依頼だけを理由に追加しないでくだ
 ```
 
 `disable-result`は旧成果物を削除しないが、旧A010を参照するInterpretationを失効させることがある。新結果commit後にInterpretationを再作成する。
-
-<a id="special-mmp"></a>
-## MMP深掘り解析
-
-既存のA014 Global MMPデータベースを再構築せず、特定ClusterやInsightを起点に深掘りする。
-
-```text
-/cs-conductor-orchestrator
-
-操作: 人間が承認した次Roundを開始し、MMP深掘りを実施
-Run Root: <absolute run_root>
-開始するRound: <RND####>
-Wall Time: <minutes>
-parallel_limit: <number>
-Available CPU Cores: <number; 省略時8>
-
-MMP深掘りの起点:
-- 対象Cluster: <C###### または複数ID>
-- 関連するInsight／Node: <INS###### / N######; 任意>
-- 注目するendpoint変化、Transform、Exact Core、化学系列: <具体的な観点>
-
-要求:
-- 既存のA014 Global MMPデータベースをread-onlyで再利用する
-- Globalと対象ClusterのTransform effectを比較する
-- Exact CoreとEnvironment radiusを区別し、支持Pair数、化合物数、効果量、ばらつき、符号反転を示す
-- 対象Clusterに該当情報がない場合もnegative resultとして明記する
-- Global MMPデータベースを再構築・変更しない
-- 対象外Clusterを無制限に展開しない
-- InterpretationとFull Auditまで同じRoundで完了し、AWAITING_HUMAN_REVIEWで停止する
-- Roundを自動受理せず、さらに次Roundを開始しない
-
-最初にconductor_control.jsonを確認し、Active Roundがなく、直前RoundがCLOSEDで、指定Round番号がnext_round_noと一致する場合だけprepare／authorizeしてください。
-```
-
-Clusterを限定しない場合は、対象を「既存MMP screening上位候補」と指定する。その場合もRuntime上限内の代表候補に限定し、全ClusterのDetail Nodeを一度に作らない。
 
 <a id="special-translation"></a>
 ## Interpretation日本語HTMLの追加作成

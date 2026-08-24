@@ -14,13 +14,16 @@
   "exploration": {
     "description_panel": ["D001", "D002", "D004", "D011", "D013", "D016", "D019", "D020"],
     "global_operator_capabilities": ["A001", "A002", "A003", "A004", "A005", "A006", "A007", "A008", "A009", "A010", "A011", "A012", "A013", "A014"],
-    "local_operator_capabilities": ["A001", "A002", "A003", "A004", "A005", "A006", "A007", "A008", "A009", "A010", "A011", "A013", "A014"],
+    "local_operator_capabilities": ["A001", "A002", "A003", "A004", "A005", "A006", "A007", "A008", "A009", "A010", "A011", "A013"],
     "scope_sequence": ["global", "global", "local"],
     "representative_clusters_per_clustering": 4,
     "sampling": "seeded_history_balanced_without_replacement",
     "random_seed": 61453
   },
-  "runtime_planning": {"max_new_analysis_nodes_per_round": 100},
+  "runtime_planning": {
+    "max_new_analysis_nodes_per_round": 50,
+    "max_interpretation_result_cards": 50
+  },
   "modeling": {
     "fixed_description_panel": ["D001", "D002", "D006", "D013", "D016", "D019"],
     "minimum_local_samples": 30
@@ -28,10 +31,8 @@
   "matched_molecular_pairs": {
     "capability_id": "A014",
     "global_role": "global-build",
-    "screen_role": "local-screen",
-    "detail_role": "local-detail",
-    "representative_clustering_capabilities": ["C002", "C005", "C006", "C008", "C010"],
-    "representative_clusters_per_clustering": 1,
-    "max_reference_cards_in_working_set": 20
+    "standard_flow": "global_only",
+    "manual_interpretation_skill": "cs-analysis-interpret-mmp",
+    "standard_result_reference_examples": 0
   }
 }

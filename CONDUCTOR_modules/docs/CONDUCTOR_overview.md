@@ -20,7 +20,7 @@ CONDUCTOR 0.1.6は、SARデータを単一の説明へ早急に収束させず�
 - 科学計算は決定論的なRuntime Worker、既存結果の解釈は専用Interpreterへ分離する。
 - 全科学Skillを共通`execution_request.json`で起動し、Runtime WorkerはSkill別の長いCLIを組み立てない。
 - 署名済packetはRun、Round、Control revision、lease、Request hashへ固定され、最初のclaimだけが科学processを起動する。再投入は既存Workerへ接続する。
-- Operator Analysisは一Round最大100 Node。50件単位の再計画や初期／追加探索の別状態は持たない。
+- Operator Analysisと通常InterpretationのResult Card読込は共通上限50。分割再計画や初期／追加探索の別状態は持たない。
 - 過去Roundの成功Nodeは再計算せず、現在Roundから再利用参照する。
 - Interpretation JSON／Markdown／HTMLとFull Auditが揃うまでRoundを人間レビュー状態へ進めない。
 - Main sessionやTool callが中断してもRuntime Workerは継続し、同じRound、Packet、Nodeを再開する。人間の明示なしに次Roundを作らない。
@@ -33,7 +33,7 @@ Runtimeは各Nodeについてidentity、入力Artifact、列、endpoint、scope�
 
 ## MMP Operator
 
-A014は入力全体からGlobal MMP Databaseを一度構築し、全Cluster screeningと代表的Local detailへ再利用します。標準範囲は1～2 cuts、Environment radius 0～2、Exact Core 8 heavy atoms以上、両分子に対するcore fraction 0.5以上、variable part 10 heavy atoms以下です。3 cutsまたはradius 3～5は明示的な拡張探索だけで使います。
+A014の定型フローは入力全体からGlobal MMP Databaseを一度構築するだけです。通常InterpretationへはcompactなGlobal概要を渡し、Transform／Exact Core／Clusterの詳細は展開しません。Round終了後、人間がread-only `cs-analysis-interpret-mmp`を起動すると、既存Clusteringを使ったGlobal、Local、Outside、分散縮小、Cluster固有效果をDAG外で比較できます。Outsideはpair両化合物が対象Cluster外の比較集合で、境界pairを含みません。
 
 科学正本は正規化SQLite、全詳細CSV、集約CSVです。人間がSpotfire等で再利用できる全Pair情報を保持しつつ、反復文字列と派生SummaryをDBへ重複保存せず、大容量native work DBも完成後に残しません。
 

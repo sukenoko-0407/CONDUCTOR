@@ -145,8 +145,15 @@ def main() -> int:
         expected_operators = {f"A{i:03d}" for i in range(1, 15)}
         if set(exploration.get("global_operator_capabilities", [])) != expected_operators:
             errors.append("Global exploration must contain every Operator")
-        if profile.get("runtime_planning", {}).get("max_new_analysis_nodes_per_round") != 100:
-            errors.append("Round Analysis limit must be 100")
+        if profile.get("runtime_planning", {}).get("max_new_analysis_nodes_per_round") != 50:
+            errors.append("Round Analysis limit must be 50")
+        if profile.get("runtime_planning", {}).get("max_interpretation_result_cards") != 50:
+            errors.append("Interpretation Result Card limit must be 50")
+        mmp = profile.get("matched_molecular_pairs", {})
+        if mmp.get("standard_flow") != "global_only" or mmp.get("manual_interpretation_skill") != "cs-analysis-interpret-mmp":
+            errors.append("Standard A014 flow must be Global-only with explicit read-only I002 interpretation")
+        if "A014" in exploration.get("local_operator_capabilities", []):
+            errors.append("A014 must not be part of standard Local exploration")
         if exploration.get("scope_sequence") != ["global", "global", "local"]:
             errors.append("Global-first exploration sequence mismatch")
         if profile.get("modeling", {}).get("minimum_local_samples") != 30:

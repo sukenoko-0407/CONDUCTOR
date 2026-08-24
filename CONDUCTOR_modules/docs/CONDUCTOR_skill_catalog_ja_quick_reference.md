@@ -69,7 +69,7 @@ Description、Clustering、Endpointを入力として、関係性や局所的変
 | A011 | Cluster activity enrichment | 良好活性化合物のCluster内偏在 | Favorable化合物が特定Clusterに濃縮するかを評価 |
 | A012 | Cluster overlap | Cluster間のMembership重複 | 異なるClustering結果の一致・包含・重なりを評価 |
 | A013 | Cluster structural diversity | Cluster内部の構造多様性 | Clusterが構造的に均質か多様かを評価 |
-| A014 | Matched molecular pair analysis | 置換、Exact Core、周辺環境とEndpoint差 | Global MMP Databaseを網羅構築し、全Cluster screeningと選択Clusterの詳細比較に再利用 |
+| A014 | Matched molecular pair analysis | 置換、Exact Core、周辺環境とEndpoint差 | 定型フローでは再利用可能なGlobal MMP Databaseを網羅構築 |
 
 OperatorはGlobalだけでなく、十分な化合物数を持つClusterにも適用できます。数値結果は因果関係の確定ではなく、比較・反証・深掘りの起点として扱います。
 
@@ -78,5 +78,6 @@ OperatorはGlobalだけでなく、十分な化合物数を持つClusterにも�
 | ID | 名称 | 主に表すもの | 主な特徴 |
 |---|---|---|---|
 | I001 | SAR result interpretation | 複数Operator結果から得られる注目点 | Global／Local差、一致、矛盾、例外を横断比較し、Evidence付きInsightと次の解析候補を人間向けMarkdown／HTMLに整理 |
+| I002 | Read-only MMP Global–Local interpretation | ClusteringによるTransform効果の変化 | 人間起動でGlobal DBをClusterへ投影し、分散縮小、Cluster固有效果、方向反転をDAG外で比較 |
 
 Interpretationは新しい科学計算を直接実行せず、既存結果を比較して意味づけします。正式なscope、Insight ID、State更新はRuntimeが管理します。

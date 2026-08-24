@@ -26,7 +26,8 @@
 ├── interpretation/N######/{interpretation.json,interpretation.md,interpretation.html,quality_report.json}
 ├── audit/<timestamp>/
 ├── state/<timestamp>/
-└── concierge/REQ######/
+├── concierge/REQ######/
+└── mmp_interpretation/MMPREQ######/
 ```
 
 `conductor_control.json`が小さい運用正本です。DAG snapshotとLedgerはRuntime管理の詳細・監査情報であり、通常再開時にLLMが全文を読む対象ではありません。
@@ -70,7 +71,7 @@ analysis/N######/
 
 Native mmpdb work DBとParquetは正本として残しません。SQLiteはID参照で正規化し、反復SMILES／SMARTS文字列と派生Summaryの重複を避けます。全科学行は`mmp_pair_detail.csv`に保持します。
 
-`local-screen`は`mmp_local_screening.csv`、`local-detail`は`mmp_local_detail_pairs.csv`と`mmp_global_vs_local.csv`を保存します。結果ゼロは`negative_result=true`の成功Artifactです。Runtimeは必要なCSV、DB、storage profileの整合を確認して一括commitします。
+A014 Skill自体は明示実行用の`local-screen`／`local-detail`も保持しますが、標準Runtime PlannerはGlobal buildだけを正規Nodeとして計画します。人間起動の`cs-analysis-interpret-mmp`はGlobal DBと`runtime/cluster_membership.csv`をread-onlyに集計し、`mmp_interpretation/MMPREQ######/`へGlobal–Local比較CSV、Markdown、HTMLを出力します。この補助directoryはDAG、Result Index、Insight Indexへ登録されません。
 
 ## Reportとpackage
 

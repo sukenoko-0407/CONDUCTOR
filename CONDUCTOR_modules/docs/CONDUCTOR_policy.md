@@ -12,7 +12,7 @@
 
 探索段階は`exploration`一種類です。初期探索と追加探索を別FSMや別commandとして扱いません。
 
-Runtimeは次の単純な規則で最大100 Analysis Nodeを選びます。
+Runtimeは次の単純な規則で最大50 Analysis Nodeを選びます。通常InterpretationのResult Card読込も同じ上限50です。「当該Roundの全結果を必ず読む」という追加規則は置きません。
 
 1. 成功済み同一signatureを除外する。
 2. Globalを優先し、概ね`Global, Global, Local`の比率にする。
@@ -22,11 +22,11 @@ Runtimeは次の単純な規則で最大100 Analysis Nodeを選びます。
 
 これは機械的に科学結論を決める規則ではありません。`SCIENTIFIC_DECISION`では人間priority、Insight、反証候補に基づき、同一Clusterの別Operator、sibling Cluster、Global比較、別Description上の同一Cluster等をMainが選びます。
 
-Wall Timeは実行余裕でありNode上限を増やしません。Description／Clusteringの基本計算はAnalysis 100件の外です。
+Wall Timeは実行余裕でありNode上限を増やしません。Description／Clusteringの基本計算はAnalysis 50件の外です。
 
 ## MMP
 
-A014 Global DBは一度だけ作り、全Cluster screeningと後続RoundのLocal照会へread-onlyで再利用します。標準は1～2 cuts、radius 0～2、core heavy atoms 8以上、core fraction 0.5以上、variable heavy atoms 10以下です。3 cutsまたはradius 3～5は人間が明示した拡張探索だけで使います。
+A014の定型フローはGlobal DBを一度だけ作り、Local screening／detail Nodeを自動計画しません。通常InterpretationはcompactなGlobal Result Cardだけを扱います。Global–Local比較は、人間がRound終了後に`cs-analysis-interpret-mmp`を起動し、そのRoundで成功したGlobal DBとcanonical Cluster membershipをread-onlyに再集計して行います。過去RoundのDB再利用には人間によるA014 Node ID指定が必要です。
 
 全Pair詳細はCSVへ保持しますが、DBは正規化し、反復文字列、派生Summary、native work DBを重複保存しません。MMPを通常Operatorの全直積へ展開しません。
 
@@ -40,4 +40,4 @@ Vector Clusteringは手法別calibrationを使います。binary fingerprintはT
 
 過去結果は削除せず、短いResult Cardと可変attentionで取捨選択します。Roundを跨いで全Artifactや長文Reportを読み直しません。人間意見は次のRound contractへ添付します。Orchestratorは新Roundを自発的に作りません。
 
-RoundはInterpretationとFull Auditまでが一単位です。ゼロInsightでもReportを作ります。許可済み作業が残る間は理由なく終了せず、100 Analysis Nodeへ達した場合は残候補を次Roundへ送り、当該RoundのInterpretationへ進みます。
+RoundはInterpretationとFull Auditまでが一単位です。ゼロInsightでもReportを作ります。許可済み作業が残る間は理由なく終了せず、50 Analysis Nodeへ達した場合は残候補を次Roundへ送り、当該RoundのInterpretationへ進みます。read-only MMP Interpretationは人間起動の補助成果物であり、Round gateには含めません。

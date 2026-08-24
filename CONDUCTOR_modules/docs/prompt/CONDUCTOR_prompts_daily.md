@@ -16,6 +16,7 @@
 - [Round 2以降を開始](#daily-next-round)
 - [新しいClaude Code sessionへの引継ぎ](#daily-handoff)
 - [Result Conciergeによる既存結果の確認](#daily-concierge)
+- [MMP Global–Local専用解釈](#daily-mmp-interpretation)
 
 <a id="daily-common"></a>
 ## 共通原則
@@ -50,7 +51,7 @@ Roundの目的・重視点（任意）:
 
 既存のconductor_control.jsonがないことを確認した場合だけ初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、Runtimeが生成した署名付きExecution packetだけをexecute-packetへ一回渡してください。
 
-基本計算、最大100 Analysis Nodeのexploration、Interpretation、Full Auditまで同じRND0001で進め、AWAITING_HUMAN_REVIEWになったら停止してください。長いWall Timeを理由にNode上限を拡大せず、Roundを自動受理したりRND0002を開始したりしないでください。
+基本計算、最大50 Analysis Nodeのexploration、Interpretation、Full Auditまで同じRND0001で進め、AWAITING_HUMAN_REVIEWになったら停止してください。長いWall Timeを理由にNode上限を拡大せず、Roundを自動受理したりRND0002を開始したりしないでください。
 ```
 
 <a id="daily-status"></a>
@@ -215,4 +216,34 @@ Reportにはsource、手法、表現、scope、sample数、観察、解釈、限
 Operator artifactに記録されたmetric、threshold、comparator、scope、denominatorを正本とし、別の式を推測して既存metricの定義を置き換えないでください。定義を確認できない値は「判定不能」としてください。A010ではhigh/low thresholdをendpoint値の上側／下側分位点として扱い、良好側はfavorable threshold、comparator、higher_is_betterから確認してください。
 
 依頼固有の追加集計は「Concierge-derived」と明示し、式、source path、filter、scope、分母Nを記録してください。最後に保護対象のhashが変化していないことをverifyしてください。
+```
+
+<a id="daily-mmp-interpretation"></a>
+## MMP Global–Local専用解釈
+
+Round終了後、既存のA014 Global MMP DatabaseとClustering結果をread-onlyで突き合わせる。通常のInterpretationやDAGは変更しない。
+
+```text
+/cs-analysis-interpret-mmp
+
+Run Root: <absolute path>
+対象Round: <RND####>
+解析モード: <全Clustering survey / Clustering指定 / Cluster指定 / Transform指定>
+
+対象指定（任意）:
+- Global A014 Node: <N######; 過去RoundのDatabaseを人間が明示再利用する場合だけ>
+- Clustering Node: <N######>
+- Cluster: <C######>
+- Transform: <transform_id>
+
+重視する視点（任意）:
+<例: Clustering後にTransform効果の分散が縮小する手法、特定Clusterだけで増幅・方向反転するTransform、negative result>
+
+既存RunをFreezeし、成功済みGlobal A014 DatabaseとcanonicalなCluster registry／membershipだけをread-onlyで使用してください。新しいMMP計算、Node、Insight、Roundは作成しないでください。
+
+prepareでrun_root/mmp_interpretation/MMPREQ######/を新規作成し、最初にboundedなmmp_interpretation_context.jsonだけを確認してください。必要な場合だけ同directoryのmmp_interpretation_draft.jsonを改善し、finalizeとverifyまで実行してください。
+
+Global、Local（pair両化合物が対象Cluster内）、Outside（pair両化合物が対象Cluster外）を区別し、Transform効果の中央値、IQR／MAD、方向整合性、pair数、独立化合物数、Exact Core支持を比較してください。特に、非重複Clusteringにおける分散縮小、Cluster特異的な増幅、方向反転を候補化してください。Boundary pairは混ぜず別に数えてください。
+
+出力は割り当てられたMMPREQ directory内だけに保存し、DAG、State、Result Index、Insight Index、Event Ledger、通常Interpretationを変更しないでください。既定では対象Roundに新たな成功済みGlobal A014がなければ計算を開始せず、その旨を報告してください。過去RoundのDatabaseは、人間が上記でGlobal A014 Node IDを明示した場合だけ再利用してください。
 ```

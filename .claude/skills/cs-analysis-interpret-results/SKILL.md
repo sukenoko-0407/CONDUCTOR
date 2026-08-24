@@ -70,4 +70,4 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --context path/to/context.json --
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
 - Description、Clustering、Operatorを実行しない。追加計算が必要なら`recommended_followups`として提案する。
-- A014ではExact Core、Environment radius、CONDUCTOR Clusterを混同せず、radius行を独立supportとして数えない。
+- A014はRuntimeが渡すcompactなGlobal Result Cardだけを扱い、Databaseの存在、coverage、negative resultを認識する。Transform／Exact Core／Environment／Clusterの詳細比較は通常Interpretationで展開せず、人間が`cs-analysis-interpret-mmp`を明示起動する。

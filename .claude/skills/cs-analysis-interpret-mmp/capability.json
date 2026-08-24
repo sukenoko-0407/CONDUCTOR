@@ -1,0 +1,42 @@
+{
+  "schema_version": "2.0.0",
+  "capability_id": "I002",
+  "skill_name": "cs-analysis-interpret-mmp",
+  "display_name": "Read-only MMP Global–Local interpretation",
+  "version": "0.1.6",
+  "stage": "interpretation",
+  "family": "mmp_cluster_interpretation",
+  "description": "Human-triggered read-only interpretation of an existing Global A014 MMP database against canonical CONDUCTOR Cluster memberships, without DAG or State mutation.",
+  "cost": {
+    "class": "medium",
+    "human_approval_required": false,
+    "hpc_profile": "cpu64"
+  },
+  "applicability": {
+    "status": "stable",
+    "platforms": ["linux-64", "win-64"],
+    "molecule_standardization": "out_of_scope"
+  },
+  "interpretation_id": "I002",
+  "dependencies": ["analysis", "clustering"],
+  "input_contract": [
+    "explicit_frozen_run_root",
+    "successful_global_A014_database",
+    "canonical_cluster_registry_and_membership",
+    "explicit_human_request"
+  ],
+  "output": {
+    "directory": "mmp_interpretation/MMPREQ######/",
+    "markdown": "mmp_interpretation.md",
+    "html": "mmp_interpretation.html",
+    "context": "mmp_interpretation_context.json",
+    "tables": "*.csv"
+  },
+  "implementation": {
+    "purpose": "read_only_global_local_mmp_cluster_interpretation",
+    "state_access": "read_only",
+    "invocation": "explicit_human_request_only",
+    "dag_registration": "forbidden",
+    "write_scope": "run_root/mmp_interpretation/MMPREQ######"
+  }
+}

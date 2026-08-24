@@ -6,7 +6,7 @@ CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名�
 
 CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはC002 MCS、D016 Mordred 3D、D019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。C002とD016は最大8個、A014 fragmentも最大8個の単一thread workerを使います。
 
-Analysisは1 Round最大100 Nodeです。探索は`exploration`へ一本化し、成功済みsignatureを除外した候補からGlobalを優先して一度に計画します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの上限の対象外です。
+Analysis Nodeと通常InterpretationのResult Card読込は共通上限50です。探索は`exploration`へ一本化し、成功済みsignatureを除外した候補からGlobalを優先して一度に計画します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの上限の対象外です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
 
 ## 想定利用シーン
 

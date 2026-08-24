@@ -51,17 +51,17 @@ Attempt rootはRuntime管理file、`skill_output/`は科学成果物へ分離し
 
 ## 探索Planner
 
-基本計算はDescription／Clusteringを揃える決定論的段階です。Operator探索は`exploration`一種類で、一Round最大100 Analysis Nodeです。
+基本計算はDescription／Clusteringを揃える決定論的段階です。Operator探索は`exploration`一種類で、一Round最大50 Analysis Nodeです。通常InterpretationのResult Card読込も同じ上限50を使います。
 
 Plannerは成功済みsignatureを除外し、過去のCapability、Global／Local scope、入力Description／Clusteringの成功数が少ない候補を優先します。Failed Nodeは成功履歴へ数えません。同点は固定seed hashで決めます。Globalを優先し、概ね`Global, Global, Local`の比率で選びます。全候補queueをStateへ保存せず、次Roundで同じ規則から再構成します。
 
-Local候補は対応するGlobal comparatorが存在するときだけ作ります。Global MMP DBは一件、全Cluster screeningは一件、Local detailは代表Clusterに限定し、通常Operatorの全直積へ混ぜません。
+Local候補は対応するGlobal comparatorが存在するときだけ作ります。A014だけは定型PlannerがGlobal DB一件だけを作り、Local Nodeを自動計画しません。Clustering連携は人間起動のread-only MMP InterpretationがGlobal DBとcanonical membershipから派生集計します。
 
 ## ArtifactとInterpretation
 
 Skill outputはRuntimeがschema、identity、hash、scope、科学的不変条件を検証してから正本へatomic promotionします。Result Cardのartifact linkはRun Root相対pathへ一度だけ正規化し、Result Index、Interpretation、Full Auditでも同じ形式を使います。Description metadataはCanonical Resultだけを下流へ渡します。
 
-A014は全詳細CSV、正規化SQLite、集約CSV、reference card、HTML、storage profileを一括commitします。native work DBとParquetを正本にしません。
+A014 Globalは全詳細CSV、正規化SQLite、集約CSV、reference card、HTML、storage profileを一括commitします。native work DBとParquetを正本にしません。通常Result CardはMMP候補の入れ子を持たず、coverageと専用Skillへのpointerだけを保持します。
 
 RuntimeはInterpretation対象、canonical scope、Result Card、比較batch、未確認範囲、人間focusを固定します。Interpreterは個別確認後にGlobal／Cluster、兄弟Cluster、独立Description family、Operator間、Round間、矛盾、反証、negative resultを比較します。RuntimeがInsight ID、scope、sample factsを確定して固定templateからJSON／Markdown／HTMLを生成します。
 

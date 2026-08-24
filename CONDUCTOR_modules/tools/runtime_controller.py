@@ -1109,9 +1109,9 @@ def _signature(capability_id: str, input_nodes: list[str], scope: dict[str, Any]
 
 def _analysis_planning_limits() -> tuple[int, int]:
     settings = profile().get("runtime_planning") or {}
-    maximum = int(settings.get("max_new_analysis_nodes_per_round", 100))
+    maximum = int(settings.get("max_new_analysis_nodes_per_round", 50))
     batch_size = maximum
-    if maximum != 100:
+    if maximum != 50:
         raise ValueError("Invalid Runtime analysis planning limits")
     return maximum, batch_size
 
@@ -1849,7 +1849,7 @@ def _global_comparator(global_nodes: list[dict[str, Any]], capability_id: str, l
     return max(compatible, key=lambda node: (len(node["input_nodes"]), node["node_id"]), default=None)
 
 
-def _exploration_local_specs(root: Path, control: dict[str, Any], snapshot: dict[str, Any], global_nodes: list[dict[str, Any]], mmp_screen_node: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def _exploration_local_specs(root: Path, control: dict[str, Any], snapshot: dict[str, Any], global_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     settings = profile()["exploration"]
     caps = catalog()
     descriptions = _succeeded(snapshot, "description", settings["description_panel"])
@@ -1896,19 +1896,6 @@ def _exploration_local_specs(root: Path, control: dict[str, Any], snapshot: dict
                 "scope": {"mode": "multi_scope", "clustering_node": clustering["node_id"]},
                 "parameters": {"role": "cluster-survey", "min_local_samples": profile()["modeling"]["minimum_local_samples"]},
             })
-    mmp_profile = profile().get("matched_molecular_pairs") or {}
-    global_mmp = next((node for node in global_nodes if node["capability_id"] == "A014" and node.get("parameters", {}).get("role") == "global-build"), None)
-    if global_mmp and clusterings and mmp_screen_node:
-        representative = set(mmp_profile.get("representative_clustering_capabilities") or [])
-        per_clustering = int(mmp_profile.get("representative_clusters_per_clustering", 1))
-        for clustering in [node for node in clusterings if node["capability_id"] in representative]:
-            for cluster_id in _representative_cluster_ids(root, clustering, per_clustering):
-                specs.append({
-                    "capability_id": "A014",
-                    "input_nodes": [global_mmp["node_id"], mmp_screen_node["node_id"], clustering["node_id"]],
-                    "scope": {"mode": "single_cluster", "cluster_ids": [cluster_id]},
-                    "parameters": {"role": mmp_profile.get("detail_role", "local-detail"), "target_cluster": cluster_id},
-                })
     return specs
 
 
@@ -1968,30 +1955,17 @@ def _plan_exploration(root: Path, control: dict[str, Any], snapshot: dict[str, A
     global_nodes = [lookup[node_id] for node_id in planned_global]
     global_nodes.extend(node for node in _succeeded(snapshot, "analysis") if node.get("scope", {}).get("mode") == "global")
     remaining = max(0, budget - len(planned_global))
-    screen_planned: list[str] = []
-    mmp_screen_node: dict[str, Any] | None = None
-    global_mmp = next((node for node in global_nodes if node["capability_id"] == "A014" and node.get("parameters", {}).get("role") == "global-build"), None)
-    clusterings = _usable_clusterings(snapshot)
-    if global_mmp and clusterings and remaining:
-        mmp_profile = profile().get("matched_molecular_pairs") or {}
-        mmp_screen_node, created = _add_node(
-            snapshot, control, "A014", [global_mmp["node_id"], *[node["node_id"] for node in clusterings]],
-            "exploration", {"mode": "multi_scope"}, {"role": mmp_profile.get("screen_role", "local-screen")},
-        )
-        if created or (mmp_screen_node.get("assigned_round") == control["active_round_id"] and mmp_screen_node.get("status") != "succeeded"):
-            screen_planned.append(mmp_screen_node["node_id"])
-            remaining -= 1
-    local_specs = _history_balanced_specs(snapshot, _exploration_local_specs(root, control, snapshot, global_nodes, mmp_screen_node), int(settings["random_seed"]) + 1)
+    local_specs = _history_balanced_specs(snapshot, _exploration_local_specs(root, control, snapshot, global_nodes), int(settings["random_seed"]) + 1)
     planned_local, _deferred_local = _materialize_analysis_specs(
         snapshot, control, local_specs, "exploration", batch_limit=remaining, preserve_order=True,
     )
-    planned = list(dict.fromkeys([*planned_global, *screen_planned, *planned_local]))
+    planned = list(dict.fromkeys([*planned_global, *planned_local]))
     plan = snapshot["plans"][control["active_round_id"]]
     plan.update({
         "exploration": True,
         "exploration_nodes_planned": len(planned),
         "global_nodes_planned": len(planned_global),
-        "local_nodes_planned": len(screen_planned) + len(planned_local),
+        "local_nodes_planned": len(planned_local),
         "selection_seed": int(settings["random_seed"]),
         "scope_sequence": list(settings["scope_sequence"]),
     })
@@ -2005,7 +1979,7 @@ def _candidate_cells(root: Path, control: dict[str, Any], snapshot: dict[str, An
     maximum, _batch_size = _analysis_planning_limits()
     if _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum:
         return []
-    if contract and _round_analysis_work_count(snapshot, control["active_round_id"]) >= min(100, int(contract["budgets"]["max_additional_nodes"])):
+    if contract and _round_analysis_work_count(snapshot, control["active_round_id"]) >= min(maximum, int(contract["budgets"]["max_additional_nodes"])):
         return []
     caps = catalog()
     descriptions = _succeeded(snapshot, "description", p["exploration"]["description_panel"])
@@ -2019,10 +1993,17 @@ def _candidate_cells(root: Path, control: dict[str, Any], snapshot: dict[str, An
     for capability_id in p["exploration"]["global_operator_capabilities"]:
         capability = caps[capability_id]
         for scope_mode in ("global", "local"):
+            # The regular DAG contains one reusable Global A014 Database only.
+            # Cluster-projected MMP interpretation is an explicit, read-only I002 request.
+            if capability_id == "A014" and scope_mode == "local":
+                continue
             for input_nodes in _analysis_inputs(capability, descriptions, clusterings, scope_mode):
                 scopes = [{"mode": "global"}] if scope_mode == "global" else [{"mode": "single_cluster", "cluster_ids": [row["cluster_id"]]} for row in _cluster_rows(root, next((item for item in input_nodes if _node_lookup(snapshot)[item]["kind"] == "clustering"), None))[:4]]
                 for scope in scopes:
-                    parameters = {"target_cluster": scope.get("cluster_ids", [None])[0]} if scope_mode == "local" else {}
+                    if capability_id == "A014":
+                        parameters = {"role": "global-build"}
+                    else:
+                        parameters = {"target_cluster": scope.get("cluster_ids", [None])[0]} if scope_mode == "local" else {}
                     signature = _signature(capability_id, input_nodes, scope, parameters)
                     if signature not in existing:
                         candidates.append({"candidate_id": value_hash(signature)[:16], "capability_id": capability_id, "input_nodes": input_nodes, "scope": scope, "parameters": parameters, "balance_key": [capability_id, scope_mode, *sorted(_node_lookup(snapshot)[item]["capability_id"] for item in input_nodes)]})
@@ -2685,7 +2666,11 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         if "mmp_reference_cards" in mmp_payloads:
             artifact_links["mmp_reference_cards"] = _run_relative_artifact(root, final / mmp_payloads["mmp_reference_cards"])
         card_quality_flags = ["negative_result"] if (summary.get("key_metrics") or {}).get("negative_result") is True else []
-        card = {"schema_version": "1.0.0", "result_ref": result_ref, "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": summary.get("metric"), "headline": str(summary.get("headline") or ""), "key_metrics": summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": card_quality_flags, "limitations": summary.get("limitations") or [], "artifact_links": artifact_links, "attention": "watch", "created_at": utc_now()}
+        card_key_metrics = dict(summary.get("key_metrics") or {})
+        if node["capability_id"] == "A014":
+            card_key_metrics.pop("mmp_reference_candidates", None)
+            card_key_metrics["specialized_interpretation"] = "cs-analysis-interpret-mmp"
+        card = {"schema_version": "1.0.0", "result_ref": result_ref, "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": summary.get("metric"), "headline": str(summary.get("headline") or ""), "key_metrics": card_key_metrics, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": card_quality_flags, "limitations": summary.get("limitations") or [], "artifact_links": artifact_links, "attention": "watch", "created_at": utc_now()}
         validate(card, "result_card.schema.json")
         write_json(temporary / "result_card.json", card)
         result_card_files = ["result_card.json"]
@@ -3530,8 +3515,8 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         rereview = set(args.rereview_result_ref or [])
         all_cards = {card["result_ref"]: card for card in read_jsonl(root / "runtime" / "result_index.jsonl")}
         cards.extend(all_cards[ref] for ref in sorted(rereview) if ref in all_cards and all_cards[ref] not in cards)
-        iteration_limit = max(1, int(_active_contract(root, control)["budgets"]["interpretation_iterations"])) * 20
-        detailed_limit = min(args.detailed_limit, iteration_limit)
+        configured_limit = int((profile().get("runtime_planning") or {}).get("max_interpretation_result_cards", 50))
+        detailed_limit = min(args.detailed_limit, configured_limit)
         review = _review_manifest(round_id, cards, detailed_limit)
         selected_refs = set(review["detailed_result_refs"])
         selected_cards = [card for card in cards if card["result_ref"] in selected_refs]
@@ -4079,7 +4064,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--walltime-minutes", type=int, default=480)
     item.add_argument("--parallel-limit", type=int)
     item.add_argument("--available-cpu-cores", type=int)
-    item.add_argument("--max-additional-nodes", type=int, default=100)
+    item.add_argument("--max-additional-nodes", type=int, default=50)
     item.add_argument("--interpretation-iterations", type=int, default=3)
     item.add_argument("--approve-high-cost", action="store_true")
     item.add_argument("--required-deliverables-json")
@@ -4203,7 +4188,7 @@ def build_parser() -> argparse.ArgumentParser:
     _action_args(item)
     item.add_argument("--focus")
     item.add_argument("--rereview-result-ref", action="append")
-    item.add_argument("--detailed-limit", type=int, default=60)
+    item.add_argument("--detailed-limit", type=int, default=50)
     item.set_defaults(func=cmd_prepare_interpretation)
 
     item = commands.add_parser("commit-interpretation")

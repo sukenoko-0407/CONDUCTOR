@@ -120,7 +120,9 @@ def build(workspace: Path) -> tuple[dict[str, Any], str]:
     referenced.update(profile["modeling"]["fixed_description_panel"])
     if profile.get("matched_molecular_pairs"):
         referenced.add(profile["matched_molecular_pairs"]["capability_id"])
-        referenced.update(profile["matched_molecular_pairs"]["representative_clustering_capabilities"])
+        manual_skill = profile["matched_molecular_pairs"]["manual_interpretation_skill"]
+        if manual_skill not in names:
+            raise ValueError(f"MMP manual interpretation Skill is not allowlisted: {manual_skill}")
     unknown = sorted(referenced - known)
     if unknown:
         raise ValueError(f"Analysis profile references unknown capabilities: {unknown}")

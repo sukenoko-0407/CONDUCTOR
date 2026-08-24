@@ -33,9 +33,9 @@ Mordred 3Dの複素数変換警告と入力依存の欠損Descriptorは現行挙
 
 - Description、Clustering、Operator、Interpretationの疎結合構造
 - `--conductor-request`と一般利用CLIの分離
-- 一Round最大100 Analysis Node、Global優先、成功済みsignatureの非復元選択
+- 一Round最大50 Analysis Node、通常Interpretation最大50 Result Card、Global優先、成功済みsignatureの非復元選択
 - Local Analysisに対応Global comparatorを要求する原則
-- A014 MMPの全詳細CSV、正規化SQLite、Summary、Reference Card
+- A014 MMPの全詳細CSV、正規化SQLite、Summary、Reference Card、および人間起動のread-only Global–Local MMP解釈
 - ConciergeのRun State非干渉と`run_root/concierge/`限定書込み
 - 並列Skillの内部worker数を`available_cpu_cores`内へ制限する資源契約
 

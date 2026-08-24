@@ -3,7 +3,7 @@
 > この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
 
 Profile: `balanced-global-first-0.1.6`
-Generated: `2026-08-22T11:21:21.762907+00:00`
+Generated: `2026-08-24T22:17:14.549245+00:00`
 
 ## Description
 
@@ -69,6 +69,7 @@ Generated: `2026-08-22T11:21:21.762907+00:00`
 | ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | I001 | `cs-analysis-interpret-results` | SAR result interpretation | - | result_integration | - | runtime_interpretation_context, selected_result_artifacts, interpretation_policy_markdown | - | - | low | stable | False |
+| I002 | `cs-analysis-interpret-mmp` | Read-only MMP Global–Local interpretation | - | mmp_cluster_interpretation | - | explicit_frozen_run_root, successful_global_A014_database, canonical_cluster_registry_and_membership, explicit_human_request | - | - | medium | stable | False |
 
 ## Orchestration
 

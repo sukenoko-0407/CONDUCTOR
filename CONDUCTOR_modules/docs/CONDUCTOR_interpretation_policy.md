@@ -22,12 +22,9 @@ Interpretationは作業記録ではなく、Operatorが生成した固定結果�
 
 ## MMPの扱い
 
-- A014のGlobal／Cluster-localはCONDUCTORの解析scopeであり、MMP内部のExact CoreやEnvironmentとは別概念として記載する。
-- 同じPairのradius 0～5は入れ子のContextであり、独立した再現として数えない。
-- 同一化合物Pairに複数Exact Coreがある場合、MMP instanceはすべて保持するが、Pair-weighted統計では一Pairへ畳み込み、`mmp_instance_count`と`pair_count`を区別する。
-- Pair数が多くても独立Exact Coreが少ない傾向はportableな置換効果として過大評価しない。
-- Global対Localの主張には両scopeのResultを引用し、LocalでPairがない／差がない結果もNegative Resultとして残す。
-- MMP Reference Cardは候補索引であり結論ではない。Insightへ採用する場合だけ、リンクされた全情報CSVまたは個別HTMLで原数値と反証Pairを確認する。
+- 通常InterpreterはA014のcompactなGlobal Result CardからDatabaseの存在、coverage、negative resultだけを認識し、MMP Reference Cardを詳細展開しない。
+- Transform、Exact Core、Environment、ClusteringによるGlobal–Local変化は、Round終了後に人間がread-only `cs-analysis-interpret-mmp`を起動して確認する。
+- 専用Skillの補助Reportは正式Insight、Node、Stateを作らない。次Roundへ反映する場合は、人間がReportの視点をRound依頼へ添付する。
 
 ## 出力単位
 

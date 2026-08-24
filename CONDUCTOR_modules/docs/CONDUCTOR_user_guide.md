@@ -6,7 +6,7 @@ Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`
 
 `parallel_limit`は同時Node数、Available CPU Coresは科学計算へ割り当てる総数です。MCS、Mordred 3D、xTB、ChemBERTa、Global MMPは単独packetで実行し、Skill内部並列と他Nodeを競合させません。
 
-高コスト基本計算は最初に一括承認できます。MCSは基本計算で個別承認不要です。Description／Clustering基本計算後、Operator探索を最大100 Analysis Node計画します。探索は初期／追加に分けず、成功済み計算を除外し、GlobalをLocalより優先して履歴バランスを取ります。Wall Timeを長くしても100件は増えません。
+高コスト基本計算は最初に一括承認できます。MCSは基本計算で個別承認不要です。Description／Clustering基本計算後、Operator探索を最大50 Analysis Node計画します。通常Interpretationも最大50 Result Cardを読み込みます。探索は初期／追加に分けず、成功済み計算を除外し、GlobalをLocalより優先して履歴バランスを取ります。Wall Timeを長くしても50件は増えません。
 
 endpointの変換はRun開始前に人間が行います。`endpoint_transform`は実施済み変換の記録で、Runtimeが値を変換する指定ではありません。
 
@@ -22,7 +22,7 @@ Node失敗時は同じNode IDへ最大3 Attemptまで再試行できます。即
 
 ## MMP解析
 
-A014はGlobal MMP Databaseを一度だけ構築し、同じDBを全Cluster screeningと選択Cluster詳細へread-onlyで再利用します。標準範囲は1～2 cuts、radius 0～2、Exact Core 8 heavy atoms以上、両分子の0.50以上、variable part 10 heavy atoms以下です。拡張範囲は人間が明示した場合だけ使います。
+A014の定型フローはGlobal MMP Databaseを一度だけ構築します。通常InterpretationはcompactなGlobal概要だけを読みます。Round終了後、そのRoundで新しいGlobal A014が成功している場合に人間が`cs-analysis-interpret-mmp`を明示起動すると、同じDBとcanonical Cluster membershipからGlobal、Local、Outsideをread-only再集計し、Clustering別の分散縮小とCluster固有Transformを確認できます。過去RoundのDBは人間がA014 Node IDを明示した場合だけ再利用します。標準範囲は1～2 cuts、radius 0～2、Exact Core 8 heavy atoms以上、両分子の0.50以上、variable part 10 heavy atoms以下です。
 
 全Pairは`mmp_pair_detail.csv`でSpotfireへ渡せます。Exact CoreとEnvironmentはMMP内部のKeyで、CONDUCTORのGlobal／Cluster scopeとは別概念です。
 

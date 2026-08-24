@@ -36,7 +36,8 @@
 
 - Mordred 3Dの複素数変換警告と欠損Descriptorの現行処理
 - Description、Clustering、Operatorの一般利用CLI
-- 一Round最大100 Analysis NodeとGlobal優先exploration
+- 一Round最大50 Analysis Node／通常Interpretation最大50 Result CardとGlobal優先exploration
+- A014定型フローをGlobal buildへ限定し、人間起動のread-only MMP Global–Local Interpretationを追加
 - 人間だけがRound開始を許可する原則
 - 旧Runとの非互換方針
 

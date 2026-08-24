@@ -26,7 +26,7 @@ available_cpu_cores: 8
 
 `parallel_limit`は同時Node数、`available_cpu_cores`はRunへ割り当てられたCPU総数です。後者を省略すると8です。D019（xTB）、D020（ChemBERTa）、A014 Global MMPは単独Packetとなり、Skill内部並列と他Nodeを競合させません。Packetの科学processはRuntime Workerが所有するため、MainのTool callが中断しても同じPacketへ安全に再接続できます。
 
-1 RoundのAnalysis Nodeは最大100件です。探索段階は`exploration`一種類で、成功済み処理を除外しながらGlobalをLocalより優先し、Description／Clustering／Operatorの偏りを抑えて一度に計画します。Wall Timeを長くしても件数は増えません。Description／Clusteringの基本計算は別枠です。
+1 RoundのAnalysis Nodeと通常InterpretationのResult Card読込は共通上限50件です。探索段階は`exploration`一種類で、成功済み処理を除外しながらGlobalをLocalより優先し、Description／Clustering／Operatorの偏りを抑えて一度に計画します。Wall Timeを長くしても件数は増えません。Description／Clusteringの基本計算は別枠です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
 
 Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を明示します。旧RunでSMILES列を自動認識できなかった場合は、再開依頼に使用するSMILES列名も記載します。
 
