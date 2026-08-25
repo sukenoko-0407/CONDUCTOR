@@ -8,6 +8,7 @@
 
 - [共通原則](#daily-common)
 - [新規Run・Round 1開始](#daily-new-run)
+- [長時間のRound 1（基本計算＋広いOperator探索）](#daily-long-round1)
 - [状態確認のみ](#daily-status)
 - [中断したActive Roundの再開](#daily-resume)
 - [人間レビュー後に同じRoundを継続](#daily-continue)
@@ -55,6 +56,47 @@ Roundの目的・重視点（任意）:
 
 基本計算、人間指定予算内のexploration、boundedなReview Bundle絶対評価を同じRND0001で進めてください。screening modeではcompact summary、full modeでは`design_lead`と`contextual_anomaly`を中心に選抜したBundleのInterpretationを作り、Full Audit後にAWAITING_HUMAN_REVIEWで停止してください。長いWall Timeを理由にNode予算を拡大せず、Roundを自動受理したりRND0002を開始したりしないでください。
 ```
+
+<a id="daily-long-round1"></a>
+## 長時間のRound 1（基本計算＋広いOperator探索）
+
+基本計算を省略せず揃えた後、Globalを優先した広いOperator探索と、代表的なLocal／Cluster比較まで同じRoundで進めるためのプロンプト。0.2.0では「初期探索」と「追加探索」を別状態として管理しないため、単一explorationの中で初期探索相当の広さを確保し、そのまま未実施領域へ進む。
+
+```text
+/cs-conductor-orchestrator
+
+操作: 新規Runを初期化し、長時間のRND0001を開始
+入力CSV: <absolute path>
+SMILES列名（自動推定が曖昧な場合のみ）: <column name>
+endpoint: <column name>
+higher_is_better: <true/false>
+project: <project name>
+Run Root出力先: <absolute path>
+parallel_limit: <number>
+Available CPU Cores: <number; 省略時8>
+Wall Time: <推奨1440 minutes。利用可能時間に合わせて変更>
+Operator Node予算: <推奨200。150～250程度を目安とし、安全上限500>
+Report mode: screening
+高コスト基本計算一括承認: yes
+
+Roundの目的:
+基本計算を十分に揃えたうえで、初期探索相当の広いGlobal解析と、代表的なLocal／Cluster解析を実施し、さらに予算内で未実施領域を偏りなく探索する。
+
+重視する点（任意）:
+<特に確認したいDescription、Clustering、Operator、Cluster、または科学的観点。指定がなければ標準Policyに従う>
+
+既存のconductor_control.jsonがないことを確認した場合だけ新規Runを初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、Runtimeが生成した署名付きExecution packetだけを正規経路で処理してください。
+
+人間から明確な省略指示がない限り、利用可能なDescriptionと標準Clusteringを含む基本計算を完了してからOperator探索を進めてください。高コスト基本計算は上記の一括承認に含まれます。成功済みNodeを再計算しないでください。
+
+Operator探索では、まずGlobal解析の不足を優先して、Description／Operator familyが一部へ偏らない広い解析を行ってください。その後、十分な化合物数を持つ代表的なClusterについてGlobal–LocalおよびSibling Cluster比較が成立するLocal解析へ進み、残りの予算では未実施のDescription、Clustering、Operatorの組合せから全体バランスを保って追加してください。特定の組合せだけを機械的に大量展開せず、同一signatureを重複登録しないでください。
+
+成功Resultから成立するReview Bundleをbounded batchで逐次評価してください。実行可能な承認済み作業、Wall Time、Operator Node予算が残っている間は、明確なblockerなしに早期finalizeしないでください。一方、Wall Timeだけを理由にNode予算を拡大しないでください。
+
+このRoundはscreening modeなので、正式Interpretationは作成せず、Review Bundle評価、result_assessments.csv、compact Screening Summary、Full Auditを完成させてください。最後はAWAITING_HUMAN_REVIEWで停止し、RND0001を自動受理したりRND0002を開始したりしないでください。
+```
+
+正式な`interpretation.html`が必要な場合は、RND0001を人間が確認・受理した後、別途`report_mode=full`の次Roundを開始する。RND0001自体で正式Reportまで必要な場合に限り、上記の`Report mode`を`full`へ変更する。
 
 <a id="daily-status"></a>
 ## 状態確認のみ
