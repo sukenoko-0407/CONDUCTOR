@@ -3,7 +3,7 @@
   "capability_id": "A014",
   "skill_name": "cs-analysis-matched-molecular-pairs",
   "display_name": "Matched molecular pair analysis",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "matched_molecular_pairs",
   "description": "Build and query a reusable exhaustive matched molecular pair evidence database with exact-core and environment-aware Global-to-Cluster comparisons.",
@@ -60,6 +60,23 @@
     "max_radius": 2,
     "extended_search": false,
     "max_compounds": 2000
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A014-1.0.0", "result_role": "specialized",
+    "allowed_axes": ["favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [
+      {"name": "pair_count", "source": "pair_count", "unit": "count", "direction": "higher", "comparison_scope": "global"},
+      {"name": "transform_count", "source": "transform_count", "unit": "count", "direction": "higher", "comparison_scope": "global"}
+    ],
+    "primary_favorable_metric": null, "global_comparator": "not_applicable", "sibling_comparison": "not_applicable", "standalone_insight": "specialized_only",
+    "minimum_support": {"global": 5, "local": 5}, "null_result": "not_scorable",
+    "anchors": {
+      "favorable_signal": ["方向情報なし", "低支持のTransform", "限定contextで明確", "複数coreで一貫した方向"],
+      "context_deviation": ["context差なし", "軽度の差", "GlobalとClusterで明確な差", "Transform効果の反転・局在"],
+      "chemical_actionability": ["変換不明", "広い変換", "特定Transform/Core", "方向付きTransformと適用contextが明確"],
+      "independent_support": ["支持なし", "単一pair", "複数pairまたはcore", "独立contextで再現"],
+      "follow_up_leverage": ["確認価値なし", "追加query可能", "明確な反証Transformあり", "少数合成で設計判断可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

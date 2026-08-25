@@ -40,6 +40,7 @@
       }
     },
     "scope_support": {"type": "array", "items": {"enum": ["global", "within-cluster", "between-clusters", "projection-fit", "cluster-overlay", "global-model", "cluster-survey"]}, "minItems": 1, "uniqueItems": true},
+    "interpretation_profile": {"type": "object"},
     "value_semantics": {"type": "string"},
     "natural_metric": {"type": ["string", "null"]},
     "allowed_metrics": {"type": "array", "items": {"type": "string"}},

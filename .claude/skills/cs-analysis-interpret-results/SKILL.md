@@ -1,6 +1,6 @@
 ---
 name: cs-analysis-interpret-results
-description: Use when the dedicated Claude Code Interpreter must validate an ID-free Japanese draft built from a Runtime-bounded evidence set. It compares existing Operator results but never executes new scientific analysis or mutates State.
+description: Use when the dedicated Claude Code Interpreter must validate one bounded Review Bundle assessment draft or an ID-free Japanese Interpretation draft. It never executes new scientific analysis or mutates State.
 allowed-tools: Read, Write, Bash, Glob, Grep
 ---
 
@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 
 ## Purpose
 
-専用Interpretation Policyに従い、複数Operator result、Cluster局所性、依存関係、失敗を読み取り専用で比較する。
+Runtimeが比較可能なResult Cardから作ったReview Bundle評価draft、または評価索引から選抜したResultのInterpretation draftを読み取り専用で検証する。
 
 ## Input
 
@@ -17,14 +17,14 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Required workflow
 
 1. 実行前に通常モードかCONDUCTORモードかを決定する。
-2. Runtimeが作成したcontextとdraftを確認し、許可されたOperator resultだけを扱う。
+2. Runtimeが作成したcontextとdraftを確認し、`context.mode`が`screening`か`synthesis`かを最初に判定する。
 3. algorithm固有optionが必要なら`python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --help`で確認し、根拠なくdefaultを変更しない。
 4. `--output-dir`には存在しない新規directoryを指定する。既存出力を上書きしない。
 5. 実行後にpreview JSON／Markdown／HTMLを確認する。正式成果物はRuntimeだけがcommitする。
 
 ## Algorithm-specific options
 
-`references/interpretation_policy.md`を完全に読む。summaryはnavigationにだけ使い、保持するInsightは原数値artifactを確認する。各Insightには内容を表す空でない日本語表題を付ける。`limitations`は必ず完全な文からなるJSON配列とし、1件だけでも文字列ではなく `["…"]` とする。矛盾、negative result、反証探索を記録し、State更新とOperator実行はRuntime／Orchestratorへ委ねる。
+`screening`ではOperator Interpretation Profileの固定anchorを使い、各Review Bundleを0～3の複数絶対軸で評価する。軸を合計せず、信頼性と分離する。長文Insight、Markdown／HTML、正式ID、Candidate classを作らない。`synthesis`では`references/interpretation_policy.md`を完全に読み、`design_lead`と`contextual_anomaly`だけを主候補にする。各Insightには`review_bundle_ids`、内容を表す日本語表題、完全な文の`limitations`配列を付ける。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -35,9 +35,9 @@ allowed-tools: Read, Write, Bash, Glob, Grep
 ## Output contract
 
 - 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
-- CONDUCTORではInterpreterがこのSkillでdraftを事前検査できる。正式ID、scope、Markdown／HTML、Ledger commitは0.1.6 Runtimeだけが確定する。
+- CONDUCTORではInterpreterがBundle assessmentまたはSynthesis draftを事前検査できる。評価索引、Candidate class、正式ID、scope、Markdown／HTML、Ledger commitは0.2.0 Runtimeだけが確定する。
 
-構造化JSONには検証用`key_metrics`を保持するが、人間向けMarkdown／HTMLには全展開しない。数値詳細は参照Operator report、元Artifact、またはConciergeで確認する。
+構造化JSONではResult Card v2のtyped `comparison_metrics`と、必要最小限の`operator_details`を検証根拠として保持する。人間向けMarkdown／HTMLには数値を全展開せず、詳細は参照Operator report、元Artifact、またはConciergeで確認する。
 
 `<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 

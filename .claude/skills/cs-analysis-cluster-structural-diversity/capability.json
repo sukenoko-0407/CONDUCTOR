@@ -3,7 +3,7 @@
   "capability_id": "A013",
   "skill_name": "cs-analysis-cluster-structural-diversity",
   "display_name": "Cluster structural diversity",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "cluster_quality",
   "description": "Use when Claude Code needs to run Cluster structural diversity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -51,6 +51,22 @@
   "default_parameters": {
     "max_pairs": 200000,
     "random_seed": 61453
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A013-1.0.0", "result_role": "context",
+    "allowed_axes": ["context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [
+      {"name": "mean_tanimoto", "source": "selected_mean_tanimoto", "unit": null, "direction": "higher", "comparison_scope": "sibling"},
+      {"name": "structural_diversity", "source": "selected_structural_diversity_score", "unit": null, "direction": "neutral", "comparison_scope": "sibling"}
+    ],
+    "primary_favorable_metric": null, "global_comparator": "not_applicable", "sibling_comparison": "supported", "standalone_insight": "supporting_only",
+    "minimum_support": {"global": 5, "local": 5}, "null_result": "background",
+    "anchors": {
+      "context_deviation": ["多様性差なし", "軽度の差", "兄弟Clusterで明確な差", "解釈可能性を質的に変える差"],
+      "chemical_actionability": ["構造series不明", "広い構造群", "まとまったseries", "具体的core・seriesへ接続"],
+      "independent_support": ["支持なし", "単一fingerprintのみ", "別構造指標で支持", "独立解析でも支持"],
+      "follow_up_leverage": ["確認価値なし", "構造確認可能", "候補Clusterの選別に有用", "少数化合物で解釈検証可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

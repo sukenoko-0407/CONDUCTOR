@@ -3,7 +3,7 @@
   "capability_id": "A008",
   "skill_name": "cs-analysis-sali",
   "display_name": "Extended structure-activity landscape index",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "landscape",
   "description": "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI and preserve high-SALI cliff pairs for CONDUCTOR Interpretation.",
@@ -45,6 +45,23 @@
   ],
   "default_parameters": {
     "k": 10
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A008-1.0.0", "result_role": "landscape",
+    "allowed_axes": ["context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [
+      {"name": "median_sali", "source": "median_sali", "unit": "endpoint_per_distance", "direction": "lower", "comparison_scope": "all"},
+      {"name": "p95_sali", "source": "p95_sali", "unit": "endpoint_per_distance", "direction": "lower", "comparison_scope": "all"},
+      {"name": "near_zero_distance_edges", "source": "near_zero_distance_edge_count", "unit": "count", "direction": "lower", "comparison_scope": "all"}
+    ],
+    "primary_favorable_metric": null, "global_comparator": "required_for_local", "sibling_comparison": "supported", "standalone_insight": "conditional",
+    "minimum_support": {"global": 10, "local": 5}, "null_result": "background",
+    "anchors": {
+      "context_deviation": ["地形差なし", "軽度の差", "GlobalとLocalで平滑性が明確に変化", "Cliff性の反転・局在・消失"],
+      "chemical_actionability": ["該当対不明", "広い領域", "特定の化合物対", "具体的構造差に接続"],
+      "independent_support": ["支持なし", "同一空間のみ", "異なるDescriptionで支持", "独立Operatorも支持"],
+      "follow_up_leverage": ["確認価値なし", "上位対を確認可能", "明確な反証解析あり", "少数の対で仮説検証可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

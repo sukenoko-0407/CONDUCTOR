@@ -3,7 +3,7 @@
   "capability_id": "A003",
   "skill_name": "cs-analysis-projection-pca",
   "display_name": "PCA projection",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "projection",
   "description": "Use when Claude Code needs to run PCA projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -49,6 +49,18 @@
   "default_parameters": {
     "role": "projection-fit",
     "random_seed": 61453
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A003-1.0.0", "result_role": "context",
+    "allowed_axes": ["context_deviation", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [{"name": "explained_variance_first_two", "source": "explained_variance_first_two", "unit": "fraction", "direction": "higher", "comparison_scope": "all"}],
+    "primary_favorable_metric": null, "global_comparator": "optional", "sibling_comparison": "supported", "standalone_insight": "supporting_only",
+    "minimum_support": {"global": 5, "local": 5}, "null_result": "background",
+    "anchors": {
+      "context_deviation": ["局在差なし", "軽度の局在", "Cluster局在が明確", "Global解釈を変える分離・反転"],
+      "independent_support": ["支持なし", "単一投影のみ", "異なる表現で再現", "複数の独立解析で再現"],
+      "follow_up_leverage": ["確認価値なし", "可視確認のみ", "特定Clusterの追加解析が明確", "少数解析で仮説を反証可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

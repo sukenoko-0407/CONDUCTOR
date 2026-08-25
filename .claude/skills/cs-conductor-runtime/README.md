@@ -6,7 +6,7 @@ CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名�
 
 CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはC002 MCS、D016 Mordred 3D、D019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。C002とD016は最大8個、A014 fragmentも最大8個の単一thread workerを使います。
 
-Analysis Nodeと通常InterpretationのResult Card読込は共通上限50です。探索は`exploration`へ一本化し、成功済みsignatureを除外した候補からGlobalを優先して一度に計画します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの上限の対象外です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
+Operator予算は人間指定の`max_additional_nodes`（既定50、安全上限500）で、Runtimeは最大25 Nodeずつ計画します。成功Result Cardは最大8件ずつ評価し、Run-wide JSONLとRound CSVへ0～10点の確認優先度を保存します。`screening` Roundはcompact summaryで、`full` Roundは評価上位と多様性から最大50件を選抜したInterpretationで終了します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの予算の対象外です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
 
 ## 想定利用シーン
 
@@ -24,7 +24,7 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state query --run-r
 
 ## 制約事項
 
-人間の代わりにRoundを開始・受理しません。Runtime JSON/JSONLの直接編集、複数Writer、InterpretationなしのRound終了は許可しません。新規RunではSMILES列を一意に確定し、共通Execution Requestを介してDescription、構造ベースClustering、構造を直接読むOperatorへ引き渡します。候補が複数の場合は`init --smiles-column <column>`が必要です。
+人間の代わりにRoundを開始・受理しません。Runtime JSON/JSONLの直接編集と複数Writerは許可しません。正式Interpretationを省略できるのは、人間がRound Contractで`report_mode=screening`を選んだ場合だけです。新規RunではSMILES列を一意に確定し、共通Execution Requestを介してDescription、構造ベースClustering、構造を直接読むOperatorへ引き渡します。候補が複数の場合は`init --smiles-column <column>`が必要です。
 
 RequestはSkill起動直前に入力・上流成果物のSHA-256を再照合します。自動retryはtimeout等の一時障害だけを最大3 Attemptとし、argument、column、path、schema等の決定論的失敗は`FAILED_NODE_REPAIR_REQUIRED`として人間へ返します。再開は同じNode IDで行います。
 
@@ -42,3 +42,4 @@ RequestはSkill起動直前に入力・上流成果物のSHA-256を再照合し�
 | 2.0.0 | 共通Execution Request、lease-only制御、最大100件のGlobal優先explorationへ簡素化 |
 | 2.0.1 | Request内容再照合、Failed Node分類、同一Node repair retry、artifact link正規化を追加 |
 | 2.1.0 | 科学process所有権をLLM Executorから冪等なOS Runtime Workerへ移し、WAITとreconcileを分離 |
+| 2.2.0 | 0.1.7の逐次Result Screening、可変Operator予算、screening／full Roundを追加 |

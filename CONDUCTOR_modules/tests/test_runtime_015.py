@@ -164,13 +164,44 @@ class RuntimeControl015(unittest.TestCase):
             self.assertNotIn("executor_token", destinations)
         executor_destinations = {action.dest for action in commands["execute-packet"]._actions}
         self.assertEqual({"help", "run_root", "packet"}, executor_destinations)
+        canonical = RUNTIME.build_parser().parse_args([
+            "execute-packet", "--run-root", "run", "--packet", "packet.json",
+        ])
+        tolerant = RUNTIME.build_parser().parse_args([
+            "execute-packet", "--run-root", "run", "--packet-path", "packet.json",
+        ])
+        self.assertEqual("packet.json", canonical.packet)
+        self.assertEqual(canonical.packet, tolerant.packet)
 
-    def test_round_analysis_limit_is_one_unbatched_set_of_fifty(self) -> None:
-        self.assertEqual((50, 50), RUNTIME._analysis_planning_limits())
+    def test_round_analysis_limit_has_separate_safety_and_activation_bounds(self) -> None:
+        self.assertEqual((500, 25), RUNTIME._analysis_planning_limits())
         parsed = RUNTIME.build_parser().parse_args([
             "prepare-interpretation", "--run-root", "run", "--lease-token", "lease",
         ])
         self.assertEqual(50, parsed.detailed_limit)
+
+    def test_a005_promotes_one_role_specific_oof_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            skill_output = root / "skill"
+            promoted = root / "promoted"
+            skill_output.mkdir(); promoted.mkdir()
+            source = skill_output / "cluster_oof_predictions.csv"
+            source.write_text("cluster_id,compound_id,predicted\nC000001,C001,1.0\n", encoding="utf-8")
+            artifacts = {"oof_predictions": {"type": "oof_predictions", "path": source.name, "sha256": RUNTIME.file_hash(source)}}
+            node = {"capability_id": "A005", "parameters": {"role": "cluster-survey"}}
+            self.assertEqual("cluster_oof_predictions.csv", RUNTIME._promote_a005_oof_artifact(node, skill_output, promoted, artifacts))
+            self.assertEqual(source.read_bytes(), (promoted / source.name).read_bytes())
+            bad = {"oof_predictions": {**artifacts["oof_predictions"], "path": "global_oof_predictions.csv"}}
+            with self.assertRaisesRegex(ValueError, "filename mismatch"):
+                RUNTIME._promote_a005_oof_artifact(node, skill_output, promoted, bad)
+            global_source = skill_output / "global_oof_predictions.csv"
+            global_source.write_text("compound_id,predicted\nC001,1.0\n", encoding="utf-8")
+            global_artifact = {"oof_predictions": {"type": "oof_predictions", "path": global_source.name, "sha256": RUNTIME.file_hash(global_source)}}
+            self.assertEqual(
+                "global_oof_predictions.csv",
+                RUNTIME._promote_a005_oof_artifact({"capability_id": "A005", "parameters": {}}, skill_output, promoted, global_artifact),
+            )
 
     def test_global_only_operator_is_rejected_for_local_scope(self) -> None:
         capabilities = RUNTIME.catalog()
@@ -226,7 +257,7 @@ class RuntimeControl015(unittest.TestCase):
             node = {"node_id": "N000001", "kind": "description", "capability_id": "D001", "output_ref": str(output)}
             self.assertEqual({"C001"}, RUNTIME._description_valid_ids(node))
 
-    def test_exploration_materializes_one_global_first_set_capped_at_fifty(self) -> None:
+    def test_exploration_materializes_one_global_first_activation_slice(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             control = {
@@ -251,14 +282,14 @@ class RuntimeControl015(unittest.TestCase):
                 RUNTIME, "_exploration_local_specs", return_value=local_specs
             ):
                 planned = RUNTIME._plan_exploration(root, control, snapshot)
-            self.assertEqual(50, len(planned))
-            self.assertEqual(50, len(snapshot["nodes"]))
+            self.assertEqual(25, len(planned))
+            self.assertEqual(25, len(snapshot["nodes"]))
             scope_counts = {
                 mode: sum(node["scope"]["mode"] == mode for node in snapshot["nodes"])
                 for mode in ("global", "single_cluster")
             }
-            self.assertEqual({"global": 34, "single_cluster": 16}, scope_counts)
-            self.assertEqual(50, snapshot["plans"]["RND0001"]["exploration_nodes_planned"])
+            self.assertEqual({"global": 17, "single_cluster": 8}, scope_counts)
+            self.assertEqual(25, snapshot["plans"]["RND0001"]["exploration_nodes_planned"])
 
     def test_standard_exploration_never_materializes_local_mmp_nodes(self) -> None:
         self.assertNotIn("A014", RUNTIME.profile()["exploration"]["local_operator_capabilities"])
@@ -319,7 +350,7 @@ class RuntimeControl015(unittest.TestCase):
             "lease": {"expires_at": "2026-01-01T00:00:00+00:00"},
         }
         response = RUNTIME._compact_response(control)
-        self.assertEqual("0.1.6", response["protocol_version"])
+        self.assertEqual("0.2.0", response["protocol_version"])
         self.assertNotIn("action_token", response)
         self.assertNotIn("executor_token", response)
 

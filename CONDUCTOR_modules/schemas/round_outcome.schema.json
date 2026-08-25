@@ -10,7 +10,9 @@
     "completion": {"enum": ["complete", "partial", "blocked"]},
     "stop_reason": {"enum": ["contract_satisfied", "budget_exhausted", "no_eligible_work", "human_checkpoint", "abnormal_interruption", "blocked"]},
     "deliverables": {"type": "array"},
-    "interpretation_node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
+    "report_mode": {"enum": ["screening", "full"]},
+    "interpretation_node_id": {"type": ["string", "null"], "pattern": "^N[0-9]{6}$"},
+    "screening_summary_ref": {"type": ["string", "null"]},
     "audit_ref": {"type": "string"},
     "created_at": {"type": "string", "format": "date-time"}
   }

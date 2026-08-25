@@ -130,7 +130,7 @@ class MatchedMolecularPairs014(unittest.TestCase):
 
     def test_capability_and_schemas_validate(self) -> None:
         capability = json.loads((SKILL / "capability.json").read_text(encoding="utf-8"))
-        self.assertEqual(("A014", "0.1.6"), (capability["capability_id"], capability["version"]))
+        self.assertEqual(("A014", "0.2.0"), (capability["capability_id"], capability["version"]))
         self.assertEqual(2, capability["default_parameters"]["num_cuts"])
         self.assertEqual(2, capability["default_parameters"]["max_radius"])
         self.assertEqual(10, capability["default_parameters"]["max_variable_heavy_atoms"])

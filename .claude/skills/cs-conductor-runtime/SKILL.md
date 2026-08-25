@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-runtime
-description: Deterministic CONDUCTOR 0.1.6 Runtime for compact Control, five-state DAG Nodes, idempotent OS Workers, common Execution Requests, signed packets, bounded exploration, Interpretation gates, and audit.
+description: Deterministic CONDUCTOR 0.2.0 Runtime for compact Control, five-state DAG Nodes, idempotent OS Workers, Review Bundle assessment, bounded Interpretation synthesis, and audit.
 allowed-tools: Read, Bash
 ---
 
@@ -27,12 +27,16 @@ mutationはMain Agentだけがlive lease tokenを付けて実行する。one-use
 - `FAILED_NODE_REPAIR_REQUIRED` → 自動再試行せず停止。人間が実装／入力契約を修正した後だけ、同じNodeを`retry-node`
 - `SCIENTIFIC_DECISION` → `runtime/working_set.json`を読み`scientific-decision`
 - `ENTER_FINALIZING` → `enter-finalizing`
+- `PREPARE_RESULT_SCREENING` → `prepare-result-screening`
+- `WRITE_RESULT_SCREENING` → InterpreterのScreening draft後に`commit-result-screening`
+- `RESULT_SCREENING_BLOCKED` → 自動再試行せず人間判断を待つ
+- `WRITE_SCREENING_SUMMARY` → `write-screening-summary`
 - `PLAN_INTERPRETATION` → `prepare-interpretation`
 - `WRITE_INTERPRETATION` → Interpreter draft後に`commit-interpretation`
 - `RUN_FULL_AUDIT` → `audit --mode full --register`
 - `COMPLETE_FINALIZING` → `complete-finalizing`
 
-Human stop codeでは処理を止める。Runtimeは新Roundを開始せず、Interpretation JSON／Markdown／HTMLとFull Auditが合格するまでRoundをhandoffしない。回復可能な一時障害の自動再試行は同一Nodeで最大3 Attemptとし、修正後の人間承認retryも新しいNode IDを発番しない。
+Human stop codeでは処理を止める。Runtimeは新Roundを開始しない。`screening` Roundは評価索引・compact summary・Full Audit、`full` Roundはそれらに加えてInterpretation JSON／Markdown／HTMLが合格するまでhandoffしない。回復可能な一時障害の自動再試行は同一Nodeで最大3 Attemptとし、修正後の人間承認retryも新しいNode IDを発番しない。
 
 ## 科学Skill実行
 
@@ -46,6 +50,8 @@ Requestはidentity、入力Artifact、列、endpoint、scope、parameter、CPU�
 
 `execute-packet`はPacketをAttemptへ原子的にclaimし、独立したOS Workerを起動する。呼出元のMain、互換Executor、Bash Tool callが終了してもWorkerは継続する。同じPacketを再投入した場合、`unclaimed`だけを一度起動し、`running`は既存Workerへ再接続し、`terminal`は保存済み結果を返す。Workerと科学processの生存中は`WAIT_RUNNING`、双方が消失したときだけ`RECONCILE_RUNNING`とする。
 
+公開CLIの正本は`execute-packet --run-root <RUN_ROOT> --packet <packet_path>`である。`prepare-execution-packet`の応答キー`packet_path`は`--packet`へ渡す。LLM境界の表記揺れを吸収するため、公開`execute-packet`に限り`--packet-path`も同じ値として受理するが、文書と内部Workerは`--packet`に統一する。
+
 通常のfailed Node選択はrequired_actionに従う。人間が修正済みNodeの優先再実行を明示した場合に限り、running Nodeがゼロで、Main leaseとControl Authorityが有効なら、`EXECUTE_RUNNABLE_BATCH`中でも`retry-node --control-key`で同じNode IDをpendingへ戻せる。自動探索はこの保守例外を使用しない。Wall Timeが先に終了した場合、Failed Nodeを履歴に保持したpartial RoundとしてInterpretation／Auditへ進み、人間はそのRoundを受理して次Roundで補完するか、同じRoundをcontinueするかを選べる。実装修正後も科学的scope自体が成立しないPlanning由来Nodeは再試行せず、人間の明示承認により`cs-conductor-node-review cancel`でFailedのまま取消す。
 
 Runtime管理fileはAttempt scratch直下、Skill出力は未作成の`skill_output/`へ分離する。cacheと一時fileはSkill `env/`またはRun `runtime/scratch/`の中だけに置く。
@@ -58,8 +64,8 @@ Runtime管理fileはAttempt scratch直下、Skill出力は未作成の`skill_out
 
 ## 探索とInterpretation
 
-Operator探索は`exploration`一種類で、Analysis Nodeと通常InterpretationのResult Card読込に共通上限50を使う。Runtimeは成功済signatureを除外し、履歴上少ないCapability、scope、入力familyを優先しながらseed付きで選ぶ。Failed Nodeは成功履歴として数えず、再選択時も同じNode IDを再利用する。Globalを優先し、概ね`Global, Global, Local`の比率にする。全候補queueはStateへ保存せず、次Roundで再構成する。Description／Clusteringの基本計算はこの上限外である。
+Operator探索は`exploration`一種類である。人間指定の`max_additional_nodes`をprofile安全上限500以内で受け、Runtimeは最大25 Nodeずつ計画・実行する。成功Result Card v2はGlobal、Global–Local、sibling ClusterのReview Bundleへ束ね、最大8 Bundleずつ0～3の複数絶対軸で評価する。合計点は作らず、信頼性を別に保存する。Runtimeは成功済signatureを除外し、履歴上少ないCapability、scope、入力familyを優先しながらseed付きで選ぶ。Failed Nodeは成功履歴として数えず、再選択時も同じNode IDを再利用する。Globalを優先し、概ね`Global, Global, Local`の比率にする。全候補queueはStateへ保存せず、次Roundで再構成する。Description／Clusteringの基本計算はこの上限外である。
 
-Interpretation入力は最大50件のbounded Result Card集合である。未レビュー結果はcoverage limitationとして記録し、全履歴をInterpreterへ読ませない。A014はGlobal正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。通常Result CardからMMP reference candidateの入れ子を除き、Global–Local比較は人間起動のread-only `cs-analysis-interpret-mmp`へ分離する。
+正式Interpretationは`design_lead`、次いで`contextual_anomaly`と判定されたReview Bundleから最大50 Resultを選抜してSynthesisする。機能しない解析は索引へ残すが単独Insightにしない。Local活性Resultで必須Global comparatorがなければ`awaiting_comparator`とし、採点しない。`report_mode=screening`では正式Interpretationを省略できる。0.1.x成果物は受理しない。A014はGlobal正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。通常Result CardからMMP reference candidateの入れ子を除き、Global–Local比較は人間起動のread-only `cs-analysis-interpret-mmp`へ分離する。
 
 異常Nodeの人間操作は`cs-conductor-node-review`、read-only確認は`query`を使う。JSONを手修正しない。

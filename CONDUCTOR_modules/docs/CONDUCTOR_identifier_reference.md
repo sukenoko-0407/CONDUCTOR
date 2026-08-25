@@ -11,6 +11,10 @@
 | `N######` | Run全体で一意の実行Node | N000125 | Runtime |
 | `ATT####` | 同一Node内の実行attempt | ATT0002 | Runtime |
 | `C######` | Run全体で一意のCluster | C000041 | Runtime |
+| `SCR<16hex>` | 一回のbounded Result Screening batch | SCR1a2b3c4d5e6f7890 | Runtime |
+| `CFM<16hex>` | 比較可能なOperator条件を結ぶcomparison family | CFM1a2b3c4d5e6f7890 | Runtime |
+| `RVB<16hex>` | Global／Global–Local／sibling等のReview Bundle | RVB1a2b3c4d5e6f7890 | Runtime |
+| `ASR<16hex>` | Review Bundle、source hash、rubricに結合した評価record | ASR1a2b3c4d5e6f7890 | Runtime commit |
 | `INS######` | Run全体で一意のInsight | INS000023 | Runtime commit |
 | `REQ######` | Concierge依頼 | REQ000004 | Concierge |
 | `MMPREQ######` | read-only MMP解釈依頼 | MMPREQ000004 | I002 Skill |

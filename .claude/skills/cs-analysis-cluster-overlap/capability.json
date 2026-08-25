@@ -3,7 +3,7 @@
   "capability_id": "A012",
   "skill_name": "cs-analysis-cluster-overlap",
   "display_name": "Cluster overlap",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "cluster_quality",
   "description": "Use when Claude Code needs to run Cluster overlap from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -41,6 +41,18 @@
   "scope_support": [
     "global"
   ],
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A012-1.0.0", "result_role": "quality",
+    "allowed_axes": ["context_deviation", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [{"name": "maximum_cluster_overlap", "source": "max_jaccard", "unit": "jaccard", "direction": "lower", "comparison_scope": "sibling"}],
+    "primary_favorable_metric": null, "global_comparator": "not_applicable", "sibling_comparison": "required", "standalone_insight": "supporting_only",
+    "minimum_support": {"global": 5, "local": 5}, "null_result": "supporting",
+    "anchors": {
+      "context_deviation": ["比較差なし", "軽度の重複差", "解釈に影響する重複", "独立性判断を反転させる重複"],
+      "independent_support": ["独立性なし", "大きく重複", "部分的に独立", "互いに独立"],
+      "follow_up_leverage": ["確認価値なし", "重複確認のみ", "比較の再解釈に有用", "候補の独立性判断を大きく改善"]
+    }
+  },
   "conductor_request": {
     "schema_version": "1.0.0",
     "adapter": "standard_operator",

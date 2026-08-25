@@ -397,7 +397,17 @@ def cluster_enrichment(property_table: pd.DataFrame, clusters: dict[str, set[str
         mw_p = mannwhitneyu(inside, outside, alternative="two-sided").pvalue if len(inside) and len(outside) else np.nan
         rows.append({"cluster_id": cluster_id, "sample_count": len(inside), "favorable_count": a, "favorable_fraction": a / max(1, a + b), "global_favorable_fraction": (a + c) / max(1, len(all_ids)), "odds_ratio": odds, "fisher_pvalue": fisher_p, "mannwhitney_pvalue": mw_p, "median_shift_vs_global": inside.median() - values.median()})
     result = pd.DataFrame(rows).sort_values(["fisher_pvalue", "cluster_id"])
-    return result, {"cluster_count": len(result), "favorable_threshold": threshold}
+    selected_row = result.iloc[0].to_dict() if args.target_cluster and len(result) == 1 else {}
+    return result, {
+        "cluster_count": len(result),
+        "favorable_threshold": threshold,
+        "global_favorable_fraction": float(favorable.mean()),
+        "selected_cluster_id": selected_row.get("cluster_id"),
+        "selected_favorable_fraction": selected_row.get("favorable_fraction"),
+        "selected_odds_ratio": selected_row.get("odds_ratio"),
+        "selected_fisher_pvalue": selected_row.get("fisher_pvalue"),
+        "selected_median_shift_vs_global": selected_row.get("median_shift_vs_global"),
+    }
 
 
 def pairwise_structure(property_table: pd.DataFrame, clusters: dict[str, set[str]], args: argparse.Namespace) -> tuple[pd.DataFrame, np.ndarray, list[str], dict[str, Any]]:
@@ -755,7 +765,7 @@ def run() -> int:
         "clustering_representation": args.clustering_representation, "created_at": utc_now(),
     }
     config = {key: value for key, value in vars(args).items()}
-    manifest = {"schema_version": "2.0.0", "conductor_version": "0.1.6", "artifact_stage": "analysis", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "value_semantics": "operator_result", "natural_metric": summary.get("metric"), "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now(), "configuration": config}
+    manifest = {"schema_version": "2.0.0", "conductor_version": "0.2.0", "artifact_stage": "analysis", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "value_semantics": "operator_result", "natural_metric": summary.get("metric"), "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now(), "configuration": config}
     if args.conductor:
         report_path = outdir / "operator_report.html"
         report_path.write_text(

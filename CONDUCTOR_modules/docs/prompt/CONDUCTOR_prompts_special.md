@@ -1,8 +1,8 @@
 # CONDUCTOR 特別対応プロンプト集
 
-対象Version: `0.1.6`
+対象Version: `0.2.0`
 
-障害修復、旧契約の補正、特定Operatorの再解析、限定的な深掘り、既存Reportの翻訳に使う。通常のRound運用には[日常運用プロンプト集](CONDUCTOR_prompts_daily.md)を使用する。
+障害修復、実行契約の補正、特定Operatorの再解析、限定的な深掘り、既存Reportの翻訳に使う。通常のRound運用には[日常運用プロンプト集](CONDUCTOR_prompts_daily.md)を使用する。対象は0.2.0で新規作成したRunに限り、0.1.x Runの修復継続には使用しない。
 
 ## 目次
 
@@ -83,13 +83,13 @@ Run Root: <absolute run_root>
 対象Round: <RND####>
 優先対象Node: <N######>
 修正内容: <修正した技術的不具合の要約>
-SMILES列名（旧Runでmetadataがなく自動推定できない場合のみ）: <column name>
+SMILES列名（現行Runでmetadata欠損を修復する場合のみ）: <column name>
 
 最初にconductor_control.jsonを確認し、対象RoundがACTIVEであること、running Nodeがゼロであることを照合してください。修正済みfailed Nodeを同じNode IDの新Attemptとして再実行し、代替Nodeや新Roundを作らないでください。
 
 required_actionがRETRY_FAILED_NODEなら同じNodeを再試行してください。FAILED_NODE_REPAIR_REQUIREDで、上記の人間承認済み修正が完了している場合はrepair retryしてください。EXECUTE_RUNNABLE_BATCHでも、このプロンプトで人間が優先再実行を明示しており、running Nodeがゼロなら、Control Authorityを付けたretry-nodeで同じNodeをpendingへ戻してください。
 
-それ以外のrequired_actionでは別の科学Nodeを実行せず、required_actionと対象Node状態を報告して停止してください。修復後は通常の固定ループへ戻り、InterpretationとFull Auditまで完了してAWAITING_HUMAN_REVIEWで停止してください。Roundを自動受理せず、次Roundを開始しないでください。
+それ以外のrequired_actionでは別の科学Nodeを実行せず、required_actionと対象Node状態を報告して停止してください。修復後は通常の固定ループへ戻り、新規Result Screening、対象Roundのhandoff成果物、Full Auditまで完了してAWAITING_HUMAN_REVIEWで停止してください。screening RoundへInterpretationを追加せず、Roundを自動受理せず、次Roundを開始しないでください。
 ```
 
 Wall Timeが先に終了して`FINALIZING`へ進んだ場合はretryを強行しない。得られた結果でInterpretationとAuditを完成させ、人間がpartial Round受理または同一Round継続を選ぶ。
@@ -122,7 +122,7 @@ Node別処置:
 - 上記以外のFailed Node: 一括retry、cancel、独自Status化をせず、人間判断を待つ。
 - succeeded Node: 他Runで同じCapabilityに問題があっても再計算しない。
 
-ACTIVEかつ修復可能なrequired_actionの場合だけ処置してください。FINALIZINGならretryせずInterpretationとFull Auditを完成させてAWAITING_HUMAN_REVIEWで停止してください。AWAITING_HUMAN_REVIEWなら自動continue／acceptせず、CLOSEDなら新Roundを作らず報告してください。
+ACTIVEかつ修復可能なrequired_actionの場合だけ処置してください。FINALIZINGならretryせず、対象Roundのreport modeに従うhandoff成果物とFull Auditを完成させてAWAITING_HUMAN_REVIEWで停止してください。AWAITING_HUMAN_REVIEWなら自動continue／acceptせず、CLOSEDなら新Roundを作らず報告してください。
 
 State、DAG、Ledgerを直接編集せず、RuntimeのExecution Request／Packet経路を使用してください。終了時に再試行NodeとAttempt、cancel Node、未処置事象、残存Status件数、Interpretation、Audit、最終required_actionを報告してください。
 ```
@@ -130,7 +130,7 @@ State、DAG、Ledgerを直接編集せず、RuntimeのExecution Request／Packet
 <a id="special-a010"></a>
 ## A010を同一Run内で再実行
 
-旧形式のA010を監査履歴として残し、現在の`cs-analysis-cluster-profile`で再実行する。
+同一0.2.0 RunでPackage修正前に生成したA010を監査履歴として残し、現在の`cs-analysis-cluster-profile`で再実行する。
 
 Round操作は状態に合わせて人間が明記する。
 

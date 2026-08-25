@@ -3,7 +3,7 @@
   "capability_id": "A009",
   "skill_name": "cs-analysis-activity-cliff",
   "display_name": "Activity cliff detection",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "landscape",
   "description": "Use when Claude Code needs to run Activity cliff detection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -51,6 +51,23 @@
     "activity_delta_threshold": 1.0,
     "max_pairs": 200000,
     "random_seed": 61453
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A009-1.0.0", "result_role": "activity_signal",
+    "allowed_axes": ["favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [
+      {"name": "cliff_density", "source": "cliff_density", "unit": "fraction", "direction": "higher", "comparison_scope": "all"},
+      {"name": "cliff_count", "source": "cliff_count", "unit": "count", "direction": "higher", "comparison_scope": "all"}
+    ],
+    "primary_favorable_metric": null, "global_comparator": "required_for_local", "sibling_comparison": "supported", "standalone_insight": "conditional",
+    "minimum_support": {"global": 10, "local": 5}, "null_result": "background",
+    "anchors": {
+      "favorable_signal": ["方向づけ不能", "単一Cliff対", "複数対で方向候補", "一貫した構造変換方向"],
+      "context_deviation": ["Cliff差なし", "軽度の密度差", "GlobalとLocalで明確な差", "Cliffの局在または消失"],
+      "chemical_actionability": ["構造差不明", "広い差", "特定置換に接続", "再現した方向付き変換に接続"],
+      "independent_support": ["支持なし", "単一対のみ", "別表現または複数対が支持", "独立Operatorも支持"],
+      "follow_up_leverage": ["確認価値なし", "対の確認可能", "反証用類縁体が明確", "少数合成で設計判断可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

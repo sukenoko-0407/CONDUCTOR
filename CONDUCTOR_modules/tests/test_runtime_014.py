@@ -25,17 +25,17 @@ HAS_MMP_IMPORT_DEPS = all(
 
 
 class Runtime015(unittest.TestCase):
-    def test_runtime_identifies_version_015(self) -> None:
-        self.assertEqual("0.1.6", RUNTIME.VERSION)
-        self.assertEqual("0.1.6", RUNTIME.PROTOCOL_VERSION)
-        self.assertEqual("CONDUCTOR 0.1.6 deterministic Runtime Controller", RUNTIME.build_parser().description)
+    def test_runtime_identifies_current_version(self) -> None:
+        self.assertEqual("0.2.0", RUNTIME.VERSION)
+        self.assertEqual("0.2.0", RUNTIME.PROTOCOL_VERSION)
+        self.assertEqual("CONDUCTOR 0.2.0 deterministic Runtime Controller", RUNTIME.build_parser().description)
 
-    def test_mmp_round_guard_accepts_only_current_runtime(self) -> None:
+    def test_mmp_round_guard_requires_an_active_runtime_owned_round(self) -> None:
         control = {"active_round_id": "RND0002"}
-        old = {"rounds": {"RND0002": {"runtime_version": "0.1.4"}}}
-        current = {"rounds": {"RND0002": {"runtime_version": "0.1.6"}}}
-        self.assertFalse(RUNTIME._mmp_enabled_for_active_round(control, old))
+        current = {"rounds": {"RND0002": {"runtime_version": "0.2.0"}}}
         self.assertTrue(RUNTIME._mmp_enabled_for_active_round(control, current))
+        self.assertFalse(RUNTIME._mmp_enabled_for_active_round({"active_round_id": None}, current))
+        self.assertFalse(RUNTIME._mmp_enabled_for_active_round(control, {"rounds": {}}))
 
     @unittest.skipUnless(HAS_JSONSCHEMA, "jsonschema is installed by the Runtime Pixi environment")
     def test_global_mmp_request_uses_common_envelope(self) -> None:

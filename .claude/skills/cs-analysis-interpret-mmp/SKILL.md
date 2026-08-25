@@ -10,6 +10,8 @@ Use only after an explicit human request while the Run is `AWAITING_HUMAN_REVIEW
 
 Read-only means that canonical Run artifacts and State are immutable. Deterministic derived calculation inside the request directory is allowed: the Skill reads the successful Global A014 SQLite database and canonical `cluster_registry.jsonl`／`cluster_membership.csv`, then computes Local and Outside summaries without rerunning fragmentation. Outside is the nonlocal comparator in which both pair compounds are outside the target Cluster; boundary pairs are kept separate.
 
+全surveyでは、MMPのユニーク化合物PairをClustering Node単位で一度だけClusterへ投影する。全ClusterのLocal supportを先にScreeningし、`min_local_pairs`を満たす`Cluster × Transform`だけについてOutsideとExact Coreの詳細統計を計算する。空または低supportのClusterも`cluster_screening.csv`には残すが、解釈不能なOutside集計を反復しない。これは既存Databaseを変更しない読み取り最適化である。
+
 ## Required workflow
 
 1. Run `prepare` with an explicit Run Root and target Round. By default, use a successful Global A014 Node produced in that Round. Add an older `--mmp-node-id` or optional Clustering Node, Cluster, or Transform filter only when the human supplied it.
@@ -63,4 +65,5 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" prepare --run-root /path/to/run \
 - Do not modify `conductor_control.json`, `runtime/`, `rounds/`, canonical stage directories, or Interpretation outputs.
 - Do not register this report in DAG, Result Index, Insight Index, or Event Ledger.
 - Do not build a missing Global MMP Database. If the target Round has no new Global A014 Node, stop; reuse an older Database only when the human explicitly specified its Node ID.
+- 低supportの`Cluster × Transform`ではLocal／Globalと適格性を保持し、未評価のOutside列は空値になり得る。詳細比較として解釈しない。
 - Do not default to OS `/tmp`; all generated helpers and temporary files remain in the request directory or Skill-local `env/`.

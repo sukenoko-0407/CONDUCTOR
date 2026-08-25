@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.6 output contract
+# CONDUCTOR 0.2.0 output contract
 
 ```text
 <run_root>/
@@ -9,6 +9,8 @@
 │   ├── event_ledger.jsonl
 │   ├── working_set.json
 │   ├── result_index.jsonl
+│   ├── review_bundle_index.jsonl
+│   ├── result_assessment_index.jsonl
 │   ├── insight_index.jsonl
 │   ├── cluster_registry.jsonl
 │   ├── cluster_membership.csv
@@ -19,7 +21,7 @@
 │           ├── execution_request.json
 │           ├── process.json / failure_packet.json / tmp/
 │           └── skill_output/  # Skill専用。起動前は存在しない
-├── rounds/RND####/
+├── rounds/RND####/{round_contract.json,result_assessments.csv,screening_summary.json,round_outcome.json}
 ├── description/N######/{features.csv,result.json}
 ├── clustering/N######/{membership.csv,result.json}
 ├── analysis/N######/{result.*,result.json,result_card.json,report.html,detail.html}
@@ -44,11 +46,19 @@ Attempt直下はRuntime管理専用です。科学Skillは未作成の`skill_out
 
 ## Canonical Result
 
-`result.json`は機械的stage結果、`result_card.json`はbounded navigation用です。Canonical Resultは`document_type`と`schema_version`で識別します。Description／Clustering／Analysisは各文書型の`1.0.0`契約です。この番号はCONDUCTOR package versionではありません。
+`result.json`は機械的stage結果、`result_card.json`はbounded navigation用です。Canonical Resultは`document_type`と`schema_version`で識別します。Description／Clustering／Analysisのstage Resultは各文書型の`1.0.0`、Result Cardは`2.0.0`契約です。これらはCONDUCTOR package versionとは別のschema versionです。
 
 `result_card.json`と`runtime/result_index.jsonl`の`artifact_links`は、すべてRun RootからのPOSIX形式相対pathです。絶対path、`..`、存在しないfile、Run Root外への解決を許可しません。同一pathへNode出力directoryを二重に前置しません。
 
 Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clustering source、population／endpoint-valid／analyzed count、compound-set hashを確定します。Interpretationはこれを上書きできません。
+
+## Review Bundleと一次評価
+
+`runtime/review_bundle_index.jsonl`はGlobal、Global–Local、sibling Cluster比較のappend-only索引です。Bundleはcomparison family、対象・比較Result、typed comparison table、sample support、comparator validity、Cluster overlapを保持します。sibling Bundleには一致するGlobal baselineを可能な限り含め、favorable値のsibling順位、中央値からの偏差、分散をRuntimeが決定論的に付与します。Localで必須Global comparatorがない場合は`awaiting_comparator`となります。
+
+`runtime/result_assessment_index.jsonl`はBundleごとの0～3絶対評価軸、分離した信頼性、Runtime確定Candidate class、短い理由、支持・反証Resultを保持します。軸の単純合計は保存しません。`rounds/RND####/result_assessments.csv`は再生成可能な人間向けviewです。
+
+`screening_summary.json`はBundle件数、Candidate class、Operator構成、掲載候補pointerだけを持つcompact handoffです。`report_mode=screening`ではこれが正式Interpretationの代わりとなり、`report_mode=full`では`design_lead`と`contextual_anomaly`から最大50 Resultを選抜します。
 
 ## MMP A014
 

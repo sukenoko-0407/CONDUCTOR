@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/interpretation.schema.json",
-  "title": "CONDUCTOR 0.1.6 Interpretation",
+  "title": "CONDUCTOR 0.2.0 Interpretation",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "round_id", "node_id", "title", "report_header", "executive_summary", "coverage_summary", "insights", "result_catalog", "review_manifest", "created_at"],
   "properties": {
-    "schema_version": {"const": "3.0.0"},
+    "schema_version": {"const": "4.0.0"},
     "run_id": {"type": "string", "minLength": 1},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
     "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
@@ -24,14 +24,16 @@
     "insight": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["insight_id", "revision", "attention", "claim_kind", "title", "analysis_subject", "supporting_results", "comparison_results", "counter_results", "observation", "interpretation", "limitations", "recommended_followups", "fact_panel"],
+      "required": ["insight_id", "revision", "attention", "candidate_class", "claim_kind", "title", "analysis_subject", "review_bundle_ids", "supporting_results", "comparison_results", "counter_results", "observation", "interpretation", "limitations", "recommended_followups", "fact_panel"],
       "properties": {
         "insight_id": {"type": "string", "pattern": "^INS[0-9]{6}$"},
         "revision": {"type": "integer", "minimum": 1},
         "attention": {"enum": ["pinned", "active", "watch", "background"]},
-        "claim_kind": {"enum": ["single_scope_observation", "difference", "agreement", "contradiction", "negative_result", "coverage_gap"]},
+        "candidate_class": {"enum": ["design_lead", "contextual_anomaly"]},
+        "claim_kind": {"enum": ["single_scope_observation", "difference", "agreement", "contradiction"]},
         "title": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "\\S"},
         "analysis_subject": {"$ref": "analysis_subject.schema.json"},
+        "review_bundle_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^RVB[0-9a-f]{16}$"}, "uniqueItems": true},
         "supporting_results": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
         "comparison_results": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
         "counter_results": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},

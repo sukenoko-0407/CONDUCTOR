@@ -3,7 +3,7 @@
   "capability_id": "O005",
   "skill_name": "cs-conductor-orchestrator",
   "display_name": "CONDUCTOR Main Agent Orchestrator",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "orchestration",
   "family": "control",
   "dependencies": ["O001"],

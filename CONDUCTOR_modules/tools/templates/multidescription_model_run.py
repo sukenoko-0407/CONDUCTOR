@@ -217,9 +217,11 @@ def report(rows:pd.DataFrame,headline:str)->str:
 def run()->int:
     started=now(); a=args(); data,blocks=load(a); fold=folds(data["compound_id"],a.outer_folds,a.random_seed); data["outer_fold"]=fold; out=output_dir(a)
     if out.exists() and any(out.iterdir()) and not a.overwrite: raise FileExistsError(f"Output directory is not empty: {out}")
-    out.mkdir(parents=True,exist_ok=True); rows=[]; prediction_paths=[]; details={"role":a.role,"panel":list(PANEL),"block_preprocessing":{"D001":"median+scale","D002":"binary median+scale","D006":"log1p+median+scale","D013":"median+scale","D016":"median+scale","D019":"median+scale"},"selection_scope":"outer-training-fold-only","cluster_results":[]}
+    out.mkdir(parents=True,exist_ok=True); rows=[]; prediction_artifact=None; cluster_predictions=[]; details={"role":a.role,"panel":list(PANEL),"block_preprocessing":{"D001":"median+scale","D002":"binary median+scale","D006":"log1p+median+scale","D013":"median+scale","D016":"median+scale","D019":"median+scale"},"selection_scope":"outer-training-fold-only","cluster_results":[]}
     if a.role=="global-model":
-        pred,metrics,extra=evaluate(data,blocks,a.property_column,fold); pred_path=out/"global_oof_predictions.csv"; pred.to_csv(pred_path,index=False); prediction_paths.append(pred_path); rows=metrics.assign(cluster_id="GLOBAL").to_dict("records"); details.update(extra)
+        pred,metrics,extra=evaluate(data,blocks,a.property_column,fold); pred_path=out/"global_oof_predictions.csv"; pred.to_csv(pred_path,index=False); prediction_artifact=pred_path; rows=metrics.assign(cluster_id="GLOBAL").to_dict("records"); details.update(extra)
+        if len(metrics):
+            details.update({"best_model":str(metrics.iloc[0]["model"]),"best_rmse":float(metrics.iloc[0]["rmse"]),"best_mae":float(metrics.iloc[0]["mae"]),"best_r2":float(metrics.iloc[0]["r2"])})
     else:
         cluster_map=memberships(a.membership); selected={a.target_cluster:cluster_map.get(a.target_cluster,set())} if a.role=="within-cluster" else cluster_map
         global_oof=pd.read_csv(a.global_oof) if a.global_oof else None
@@ -228,7 +230,7 @@ def run()->int:
             if len(subset)<a.min_local_samples or subset[a.property_column].nunique()<3: entry.update({"status":"not_applicable","reason":"minimum sample count or endpoint variation not met"}); details["cluster_results"].append(entry); continue
             pred,metrics,extra=evaluate(subset,blocks,a.property_column,subset["outer_fold"].to_numpy()); valid_fold_count=extra["valid_fold_count"]
             if valid_fold_count<3: entry.update({"status":"not_applicable","reason":"fewer than three valid shared folds"}); details["cluster_results"].append(entry); continue
-            cluster_dir=out/"clusters"/str(cluster_id); cluster_dir.mkdir(parents=True,exist_ok=True); pred_path=cluster_dir/"oof_predictions.csv"; pred.to_csv(pred_path,index=False); metrics.to_csv(cluster_dir/"model_comparison.csv",index=False); prediction_paths.append(pred_path)
+            cluster_dir=out/"clusters"/str(cluster_id); cluster_dir.mkdir(parents=True,exist_ok=True); pred_path=cluster_dir/"oof_predictions.csv"; pred.to_csv(pred_path,index=False); metrics.to_csv(cluster_dir/"model_comparison.csv",index=False); cluster_prediction=pred.copy(); cluster_prediction.insert(0,"cluster_id",str(cluster_id)); cluster_predictions.append(cluster_prediction)
             baseline_rmse=None
             if global_oof is not None:
                 common=global_oof[global_oof["compound_id"].astype(str).isin(set(subset["compound_id"].astype(str)))].copy()
@@ -239,7 +241,10 @@ def run()->int:
                         by_model.append((float(np.sqrt(np.mean((model_rows["actual"]-model_rows["predicted"])**2))),str(model_name)))
                     if by_model:baseline_rmse=min(by_model)[0]
             for row in metrics.to_dict("records"): row.update({"cluster_id":cluster_id,"global_context_rmse":baseline_rmse,"rmse_delta_vs_global":None if baseline_rmse is None else row["rmse"]-baseline_rmse}); rows.append(row)
-            entry.update({"status":"succeeded","valid_fold_count":valid_fold_count,"best_model":metrics.iloc[0]["model"] if len(metrics) else None,"best_rmse":metrics.iloc[0]["rmse"] if len(metrics) else None}); details["cluster_results"].append(entry)
+            best=metrics.iloc[0] if len(metrics) else None
+            entry.update({"status":"succeeded","valid_fold_count":valid_fold_count,"best_model":best["model"] if best is not None else None,"best_rmse":best["rmse"] if best is not None else None,"best_mae":best["mae"] if best is not None else None,"best_r2":best["r2"] if best is not None else None,"rmse_delta_vs_global":None if best is None or baseline_rmse is None else float(best["rmse"])-float(baseline_rmse)}); details["cluster_results"].append(entry)
+        if cluster_predictions:
+            prediction_artifact=out/"cluster_oof_predictions.csv"; pd.concat(cluster_predictions,ignore_index=True).to_csv(prediction_artifact,index=False)
     result=pd.DataFrame(rows); result_path=out/CAPABILITY["output"]["filename"]; result.to_csv(result_path,index=False)
     headline=f"固定panel {', '.join(PANEL)}をfold内で選択し、{a.role}としてbaseline・Ridge・PLS・条件付きSpline-Ridgeを比較しました。"
     (out/"operator_report.html").write_text(report(result,headline),encoding="utf-8")
@@ -260,14 +265,14 @@ def run()->int:
             local_headline=f"{cluster_id}（N={entry['sample_count']}）のLocal modelをGlobal OOF contextと比較しました。best RMSE={entry.get('best_rmse')}。"
             cluster_summary={"schema_version":"1.0.0","result_ref":f"{base_ref}/{cluster_id}","node_id":a.node_id,"attempt_id":a.attempt_id,"operator_id":CAPABILITY["operator_id"],"run_id":a.run_id,"round_id":a.round_id,"scope":{"mode":"within-cluster","target_cluster_id":cluster_id},"scope_context":{"description_node_ids":list(a.description_node_id),"clustering_node_ids":[a.clustering_node_id] if a.clustering_node_id else [],"cluster_ids":[cluster_id]},"sample_count":int(entry["sample_count"]),"endpoint":{"column":a.property_column,"higher_is_better":bool(a.higher_is_better)},"metric":"rmse","headline":local_headline,"key_metrics":entry,"top_records":cluster_rows.head(20).to_dict("records"),"limitations":limitations,"warnings":[],"source_nodes":source_nodes,"primary_artifact":{"path":str(comparison_path.relative_to(out)),"sha256":sha(comparison_path)},"created_at":now()}
             validate(cluster_summary,"operator_summary.schema.json");cluster_summaries.append(cluster_summary)
-    config={k:v for k,v in vars(a).items() if k!="description_paths"}; manifest={"schema_version":"2.0.0","conductor_version":"0.1.6","artifact_stage":"analysis","run_id":a.run_id or "standalone","node_id":a.node_id,"attempt_id":a.attempt_id,"capability_id":CAPABILITY["capability_id"],"skill_name":CAPABILITY["skill_name"],"skill_version":CAPABILITY["version"],"input":a.input,"input_hash":input_hash,"value_semantics":"model_evaluation","natural_metric":None,"warnings":[],"created_at":now(),"configuration":config,"fixed_description_panel":list(PANEL)}
+    config={k:v for k,v in vars(a).items() if k!="description_paths"}; manifest={"schema_version":"2.0.0","conductor_version":"0.2.0","artifact_stage":"analysis","run_id":a.run_id or "standalone","node_id":a.node_id,"attempt_id":a.attempt_id,"capability_id":CAPABILITY["capability_id"],"skill_name":CAPABILITY["skill_name"],"skill_version":CAPABILITY["version"],"input":a.input,"input_hash":input_hash,"value_semantics":"model_evaluation","natural_metric":None,"warnings":[],"created_at":now(),"configuration":config,"fixed_description_panel":list(PANEL)}
     if a.conductor:
         validate(summary,"operator_summary.schema.json"); write_json(out/"operator_summary.json",summary); validate(manifest,"artifact_manifest.schema.json"); write_json(out/"analysis_manifest.json",manifest)
         artifacts=[]
         for kind,name in [("operator_result",result_path.name),("operator_report","operator_report.html"),("operator_summary","operator_summary.json"),("manifest","analysis_manifest.json")]: artifacts.append({"type":kind,"path":name,"sha256":sha(out/name)})
         if cluster_summaries:
             write_json(out/"cluster_operator_summaries.json",cluster_summaries);artifacts.append({"type":"operator_summary_collection","path":"cluster_operator_summaries.json","sha256":sha(out/"cluster_operator_summaries.json")})
-        for path in prediction_paths: artifacts.append({"type":"oof_predictions","path":str(path.relative_to(out)),"sha256":sha(path)})
+        if prediction_artifact is not None: artifacts.append({"type":"oof_predictions","path":str(prediction_artifact.relative_to(out)),"sha256":sha(prediction_artifact)})
         event={"schema_version":"2.0.0","project":a.project,"run_id":a.run_id,"round_id":a.round_id,"node_id":a.node_id,"attempt_id":a.attempt_id,"capability_id":CAPABILITY["capability_id"],"skill_name":CAPABILITY["skill_name"],"status":"succeeded","input_hash":input_hash,"config_hash":value_hash(config),"configuration":config,"artifacts":artifacts,"warnings":[],"started_at":started,"finished_at":now()}; validate(event,"execution_event.schema.json"); write_json(out/"execution_event.json",event)
     print(out); return 0
 

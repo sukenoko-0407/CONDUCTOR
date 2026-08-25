@@ -1,6 +1,6 @@
 {
   "schema_version": "3.0.0",
-  "profile_id": "balanced-global-first-0.1.6",
+  "profile_id": "balanced-global-first-0.2.0",
   "managed_by": "human",
   "description": "全Descriptionと代表Clusteringを基本計算で揃え、各RoundでGlobalを優先しながら履歴横断で重複しないOperator探索を行う。",
   "basic_compute": {
@@ -21,8 +21,11 @@
     "random_seed": 61453
   },
   "runtime_planning": {
-    "max_new_analysis_nodes_per_round": 50,
-    "max_interpretation_result_cards": 50
+    "max_new_analysis_nodes_per_round": 500,
+    "analysis_activation_batch_size": 25,
+    "max_interpretation_result_cards": 50,
+    "screening_batch_size": 8,
+    "max_screening_context_bytes": 65536
   },
   "modeling": {
     "fixed_description_panel": ["D001", "D002", "D006", "D013", "D016", "D019"],

@@ -1,24 +1,86 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/result_card.schema.json",
-  "title": "CONDUCTOR Result Card",
+  "title": "CONDUCTOR Result Card v2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "result_ref", "node_id", "capability_id", "round_id", "analysis_subject", "endpoint", "metric", "headline", "key_metrics", "validation_passed", "eligible_for_downstream", "quality_flags", "artifact_links", "created_at"],
+  "required": [
+    "schema_version", "result_ref", "node_id", "capability_id", "round_id",
+    "analysis_subject", "endpoint", "metric", "headline", "result_role",
+    "interpretation_profile_id", "comparison_family_id", "favorable_payload",
+    "comparison_metrics", "operator_details", "quality", "validation_passed",
+    "eligible_for_downstream", "quality_flags", "limitations", "artifact_links", "created_at"
+  ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "2.0.0"},
     "result_ref": {"type": "string", "minLength": 1},
     "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
     "capability_id": {"type": "string", "pattern": "^A[0-9]{3}$"},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
     "analysis_subject": {"$ref": "analysis_subject.schema.json"},
-    "endpoint": {"type": "object"},
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["column", "higher_is_better", "unit", "transform"],
+      "properties": {
+        "column": {"type": "string", "minLength": 1},
+        "higher_is_better": {"type": "boolean"},
+        "unit": {"type": ["string", "null"]},
+        "transform": {"type": ["string", "null"]}
+      }
+    },
     "metric": {"type": ["string", "null"]},
-    "headline": {"type": "string", "maxLength": 1000},
-    "key_metrics": {"type": "object"},
-    "validation_passed": {"type": "boolean"},
+    "headline": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "result_role": {"enum": ["activity_signal", "landscape", "model", "context", "quality", "specialized"]},
+    "interpretation_profile_id": {"type": "string", "pattern": "^IP-A[0-9]{3}-[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "comparison_family_id": {"type": "string", "pattern": "^CFM[0-9a-f]{16}$"},
+    "favorable_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicable", "normalization", "source_metric", "raw_value", "favorable_value", "favorable_effect", "direction_confidence"],
+      "properties": {
+        "applicable": {"type": "boolean"},
+        "normalization": {"enum": ["higher_is_better", "profile_fixed", "not_applicable"]},
+        "source_metric": {"type": ["string", "null"]},
+        "raw_value": {"type": ["number", "null"]},
+        "favorable_value": {"type": ["number", "null"]},
+        "favorable_effect": {"type": ["number", "null"]},
+        "direction_confidence": {"enum": ["not_applicable", "unknown", "declared", "derived"]}
+      }
+    },
+    "comparison_metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value", "normalized_favorable_value", "unit", "direction", "comparison_scope"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "value": {"type": ["number", "null"]},
+          "normalized_favorable_value": {"type": ["number", "null"]},
+          "unit": {"type": ["string", "null"]},
+          "direction": {"enum": ["favorable", "higher", "lower", "absolute", "neutral"]},
+          "comparison_scope": {"enum": ["global", "global_local", "sibling", "all"]}
+        }
+      }
+    },
+    "operator_details": {"type": "object"},
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["population_count", "endpoint_valid_count", "analyzed_count", "excluded_count", "sample_fraction", "minimum_support_met"],
+      "properties": {
+        "population_count": {"type": "integer", "minimum": 0},
+        "endpoint_valid_count": {"type": "integer", "minimum": 0},
+        "analyzed_count": {"type": "integer", "minimum": 0},
+        "excluded_count": {"type": "integer", "minimum": 0},
+        "sample_fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_support_met": {"type": "boolean"}
+      }
+    },
+    "validation_passed": {"const": true},
     "eligible_for_downstream": {"type": "boolean"},
-    "quality_flags": {"type": "array", "items": {"type": "string"}},
+    "quality_flags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "limitations": {"type": "array", "items": {"type": "string"}},
     "artifact_links": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
     "attention": {"enum": ["pinned", "active", "watch", "background"]},

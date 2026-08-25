@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pandas as pd
+
 
 ROOT=Path(__file__).resolve().parents[2]
 SKILLS=ROOT/".claude"/"skills"
@@ -97,6 +99,30 @@ class AnalysisAdditionTests(unittest.TestCase):
             script=SKILLS/"cs-analysis-multidescription-feature-model"/"scripts"/"run.py";spec=importlib.util.spec_from_file_location("a005_invalid_panel",script);module=importlib.util.module_from_spec(spec);assert spec and spec.loader;spec.loader.exec_module(module)
             data,_blocks=module.load(type("Args",(),{"input":str(endpoint),"id_column":"compound_id","property_column":"pIC50","description_paths":paths})())
             self.assertEqual(19,len(data))
+
+    @unittest.skipUnless(HAS_JSONSCHEMA and HAS_SKLEARN,"jsonschema and scikit-learn are installed by the Analysis Skill Pixi environment")
+    def test_multidescription_cluster_survey_declares_one_oof_artifact(self)->None:
+        with tempfile.TemporaryDirectory() as folder_name:
+            folder=Path(folder_name);endpoint,paths=self.tables(folder,70);out=folder/"survey"
+            membership=folder/"membership.csv"
+            with membership.open("w",encoding="utf-8",newline="") as handle:
+                writer=csv.writer(handle);writer.writerow(["compound_id","cluster_id","membership_value"])
+                for i in range(70):writer.writerow([f"C{i:03d}","C000001" if i<35 else "C000002",1])
+            global_oof=folder/"global_oof_predictions.csv"
+            with global_oof.open("w",encoding="utf-8",newline="") as handle:
+                writer=csv.writer(handle);writer.writerow(["compound_id","fold","model","actual","predicted","residual"])
+                for i in range(70):
+                    actual=4.5+0.08*i+0.15*((i%5)-2);writer.writerow([f"C{i:03d}",i%5,"ridge",actual,actual-0.1,0.1])
+            args=["--input",str(endpoint),"--property-column","pIC50","--higher-is-better","--output-dir",str(out),"--outer-folds","5","--role","cluster-survey","--membership",str(membership),"--global-oof",str(global_oof),"--min-local-samples","30","--conductor","--project","p","--run-id","r","--round-id","RND0001","--node-id","N000005","--attempt-id","ATT0001","--clustering-node-id","N000020"]
+            for index,(block,path) in enumerate(paths.items(),1):
+                args.extend(["--description",f"{block}={path}","--description-node-id",f"N{index:06d}"])
+            self.run_cli(SKILLS/"cs-analysis-multidescription-feature-model"/"scripts"/"run.py",*args)
+            event=json.loads((out/"execution_event.json").read_text(encoding="utf-8"))
+            types=[item["type"] for item in event["artifacts"]]
+            self.assertEqual(len(types),len(set(types)))
+            self.assertEqual(1,types.count("oof_predictions"))
+            combined=pd.read_csv(out/"cluster_oof_predictions.csv")
+            self.assertEqual({"C000001","C000002"},set(combined["cluster_id"].astype(str)))
 
     def test_fixed_interpretation_renderer(self)->None:
         path=ROOT/"CONDUCTOR_modules"/"tools"/"templates"/"interpretation_render.py";spec=importlib.util.spec_from_file_location("renderer",path);module=importlib.util.module_from_spec(spec);assert spec and spec.loader;spec.loader.exec_module(module)

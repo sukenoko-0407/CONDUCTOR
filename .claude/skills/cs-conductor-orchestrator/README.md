@@ -26,7 +26,7 @@ available_cpu_cores: 8
 
 `parallel_limit`は同時Node数、`available_cpu_cores`はRunへ割り当てられたCPU総数です。後者を省略すると8です。D019（xTB）、D020（ChemBERTa）、A014 Global MMPは単独Packetとなり、Skill内部並列と他Nodeを競合させません。Packetの科学processはRuntime Workerが所有するため、MainのTool callが中断しても同じPacketへ安全に再接続できます。
 
-1 RoundのAnalysis Nodeと通常InterpretationのResult Card読込は共通上限50件です。探索段階は`exploration`一種類で、成功済み処理を除外しながらGlobalをLocalより優先し、Description／Clustering／Operatorの偏りを抑えて一度に計画します。Wall Timeを長くしても件数は増えません。Description／Clusteringの基本計算は別枠です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
+Operator探索数は人間指定の`max_additional_nodes`で管理し、Runtimeが25 Node以下ずつ計画します。成功Result Cardは最大8件ずつ短命InterpreterがScreeningし、Mainへ長文を蓄積しません。`report_mode=screening`は評価索引とcompact summaryで、`report_mode=full`は選抜Resultからの正式Interpretationまで実行します。Wall Timeだけでは件数を増やしません。
 
 Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を明示します。旧RunでSMILES列を自動認識できなかった場合は、再開依頼に使用するSMILES列名も記載します。
 
@@ -50,3 +50,4 @@ Failed Nodeは新しいNodeへ置換しません。Runtimeが`RETRY_FAILED_NODE`
 | 2.0.0 | 共通Execution Request、lease-only制御、最大100件のGlobal優先explorationへ簡素化 |
 | 2.0.1 | 一時障害と人間修正待ちを分離し、同一Node repair retryを明記 |
 | 2.1.0 | 通常経路からLLM Executorを外し、冪等なRuntime Workerへの直接投入へ変更 |
+| 2.2.0 | 0.1.7の逐次Result Screening、可変Operator予算、screening／full Roundを追加 |

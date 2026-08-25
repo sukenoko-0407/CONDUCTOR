@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-run-audit
-description: Run a read-only Quick or Full audit of an explicitly supplied CONDUCTOR 0.1.6 Run Root. Full mode is a mandatory Round finalization gate.
+description: Run a read-only Quick or Full audit of an explicitly supplied CONDUCTOR 0.1.6/0.1.7 Run Root. Full mode is a mandatory Round finalization gate.
 allowed-tools: Read, Bash
 ---
 

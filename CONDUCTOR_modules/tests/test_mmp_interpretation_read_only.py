@@ -116,6 +116,52 @@ class ReadOnlyMmpInterpretation(unittest.TestCase):
         for key in ("cluster_transform_summary", "clustering_transform_summary", "variance_collapse", "cluster_specific", "direction_reversal"):
             self.assertGreater(len(tables[key].columns), 0, key)
 
+    def test_low_support_cluster_keeps_screening_without_outside_detail(self) -> None:
+        details = pd.DataFrame([
+            {"mmp_id": "M1", "compound_id_from": "CPD001", "compound_id_to": "CPD002", "favorable_delta": 1.0, "transform_id": "T1", "transform_smirks": "A>>B", "core_id": "K1"},
+            {"mmp_id": "M2", "compound_id_from": "CPD006", "compound_id_to": "CPD007", "favorable_delta": -1.0, "transform_id": "T1", "transform_smirks": "A>>B", "core_id": "K2"},
+        ])
+        matrix = pd.DataFrame({
+            "compound_id": [f"CPD{i:03d}" for i in range(1, 11)],
+            "C000001": [i <= 5 for i in range(1, 11)],
+            "C000002": [i > 5 for i in range(1, 11)],
+            "C000003": [False] * 10,
+        })
+        registry = [
+            {"cluster_id": cluster_id, "source_node_id": "N000002", "clustering_capability_id": "C005", "source_description_capability_ids": ["D001"]}
+            for cluster_id in ("C000001", "C000002", "C000003")
+        ]
+        tables = MMP.derive_tables(details, matrix, "compound_id", registry, 2, 2)
+        screening = tables["cluster_screening"].set_index("cluster_id")
+        self.assertEqual(0, int(screening.loc["C000003", "within_pair_count"]))
+        self.assertEqual(0, int(screening.loc["C000001", "eligible_transform_count"]))
+        comparison = tables["cluster_transform_summary"]
+        self.assertFalse(bool(comparison["eligible_local"].any()))
+        self.assertTrue(comparison["outside_endpoint_pair_count"].isna().all())
+        self.assertEqual({"not_evaluated_low_support"}, set(comparison["core_context_flag"]))
+
+    def test_overlapping_clusters_assign_pair_to_membership_intersection(self) -> None:
+        details = pd.DataFrame([
+            {"mmp_id": "M1", "compound_id_from": "CPD001", "compound_id_to": "CPD002", "favorable_delta": 1.0, "transform_id": "T1", "transform_smirks": "A>>B", "core_id": "K1"},
+            {"mmp_id": "M2", "compound_id_from": "CPD003", "compound_id_to": "CPD004", "favorable_delta": 2.0, "transform_id": "T1", "transform_smirks": "A>>B", "core_id": "K1"},
+        ])
+        matrix = pd.DataFrame({
+            "compound_id": [f"CPD{i:03d}" for i in range(1, 7)],
+            "C000001": [True, True, True, True, False, False],
+            "C000002": [True, True, False, False, True, True],
+        })
+        registry = [
+            {"cluster_id": cluster_id, "source_node_id": "N000002", "clustering_capability_id": "C002", "source_description_capability_ids": []}
+            for cluster_id in ("C000001", "C000002")
+        ]
+        tables = MMP.derive_tables(details, matrix, "compound_id", registry, 1, 1)
+        screening = tables["cluster_screening"].set_index("cluster_id")
+        self.assertTrue(bool(screening["overlap_detected"].all()))
+        self.assertEqual(2, int(screening.loc["C000001", "within_pair_count"]))
+        self.assertEqual(1, int(screening.loc["C000002", "within_pair_count"]))
+        method = tables["clustering_transform_summary"]
+        self.assertFalse(bool(method["variance_comparison_eligible"].any()))
+
     def test_older_mmp_database_requires_explicit_node_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "run"

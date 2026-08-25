@@ -3,10 +3,10 @@
   "capability_id": "O001",
   "skill_name": "cs-conductor-runtime",
   "display_name": "CONDUCTOR deterministic runtime",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "orchestration",
   "family": "graph_orchestration",
-  "description": "Deterministic Runtime owning compact Control, five-state Nodes, idempotent OS Workers, common Execution Requests, signed packets, CPU budgets, bounded exploration, Interpretation gates, and Round finalization.",
+  "description": "Deterministic Runtime owning compact Control, five-state Nodes, idempotent OS Workers, common Execution Requests, incremental Result Screening, bounded synthesis, and Round finalization.",
   "cost": {
     "class": "low",
     "human_approval_required": false,
@@ -35,10 +35,12 @@
     "dag": "runtime/dag_snapshot.json",
     "events": "runtime/event_ledger.jsonl",
     "working_set": "runtime/working_set.json",
+    "result_assessments": "runtime/result_assessment_index.jsonl",
+    "round_screening": "rounds/RND####/screening_summary.json",
     "audit": "audit/<timestamp>/"
   },
   "implementation": {
-    "purpose": "deterministic_multiround_idempotent_worker_runtime",
+    "purpose": "deterministic_multiround_incremental_screening_runtime",
     "state_access": "human_authorized_main_agent_single_writer_lease",
     "interpretation_execution_authority": "runtime_commit_only"
   }

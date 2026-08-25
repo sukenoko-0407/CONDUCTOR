@@ -29,8 +29,10 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" verify \
 
 対象Roundで新たに成功したGlobal A014 Nodeが必要です。過去Nodeの再利用は人間がNode IDを明示した場合だけ許可します。LocalはGlobal DBの既存MMP pairをCluster membershipで絞り込む派生集計であり、MMP fragmentationを再実行しません。重複Clusterの分散縮小は独立な分散分解として扱いません。
 
+全surveyはClustering Node単位でPairを一括投影し、全ClusterのsupportをScreeningした後、基準を満たすTransformだけOutside／Exact Core詳細を計算します。既存Databaseの再構築や追加操作は不要です。低support結果はScreeningに残りますが、未評価のOutside詳細は空値になり得ます。
+
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | read-only Global–Local MMP survey、Clustering／Cluster／Transform focus、固定Markdown／HTML reportを追加 |
+| 1.0.0 | read-only Global–Local MMP survey、Clustering／Cluster／Transform focus、固定Markdown／HTML reportを追加。Clustering Node単位の高速Screeningと適格候補限定の詳細集計へ更新 |

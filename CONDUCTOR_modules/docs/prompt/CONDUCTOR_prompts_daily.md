@@ -1,6 +1,6 @@
 # CONDUCTOR 日常運用プロンプト集
 
-対象Version: `0.1.6`
+対象Version: `0.2.0`
 
 通常のRun／Round運用、状態確認、session引継ぎ、既存結果の閲覧に使うプロンプトをまとめた。`<...>`を実際の値へ置き換えて使用する。
 
@@ -25,7 +25,7 @@
 - Main Agent自身をOrchestratorとし、科学SkillをMain Agentから直接実行しない。
 - State、DAG、Event Ledgerを直接編集しない。Runtimeの単一`required_action`に従う。
 - claim済みExecution packetはRuntime Workerが所有する。同じpacketの再接続で二重計算を起こさない。
-- 解析を進める操作ではInterpretationとFull Auditまで完了し、`AWAITING_HUMAN_REVIEW`で停止する。
+- `report_mode=screening`ではReview Bundle絶対評価・compact summary・Full Audit、`report_mode=full`ではさらにRuntimeが選抜したBundleの正式Interpretationまで完了し、`AWAITING_HUMAN_REVIEW`で停止する。
 - 人間の明示指示なしにRoundを受理したり、次Roundを開始したりしない。
 
 <a id="daily-new-run"></a>
@@ -44,6 +44,8 @@ Run Root出力先: <absolute path>
 parallel_limit: <number>
 Available CPU Cores: <number; 省略時8>
 Wall Time: <minutes>
+Operator Node予算: <既定50。広い探索では人間が50超を明示。安全上限500>
+Report mode: <screening/full。序盤探索はscreening、正式解釈が必要ならfull>
 高コスト基本計算一括承認: <yes/no>
 
 Roundの目的・重視点（任意）:
@@ -51,7 +53,7 @@ Roundの目的・重視点（任意）:
 
 既存のconductor_control.jsonがないことを確認した場合だけ初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、Runtimeが生成した署名付きExecution packetだけをexecute-packetへ一回渡してください。
 
-基本計算、最大50 Analysis Nodeのexploration、Interpretation、Full Auditまで同じRND0001で進め、AWAITING_HUMAN_REVIEWになったら停止してください。長いWall Timeを理由にNode上限を拡大せず、Roundを自動受理したりRND0002を開始したりしないでください。
+基本計算、人間指定予算内のexploration、boundedなReview Bundle絶対評価を同じRND0001で進めてください。screening modeではcompact summary、full modeでは`design_lead`と`contextual_anomaly`を中心に選抜したBundleのInterpretationを作り、Full Audit後にAWAITING_HUMAN_REVIEWで停止してください。長いWall Timeを理由にNode予算を拡大せず、Roundを自動受理したりRND0002を開始したりしないでください。
 ```
 
 <a id="daily-status"></a>
@@ -63,7 +65,7 @@ Roundの目的・重視点（任意）:
 操作: 状態確認のみ
 Run Root: <absolute path>
 
-conductor_control.jsonとcompactなRuntime inspectionだけを確認し、Run ID、現在のRound、Round状態、required_action、実行中／待機中件数、Interpretation／Audit gate、blockerを簡潔に報告してください。
+conductor_control.jsonとcompactなRuntime inspectionだけを確認し、Run ID、現在のRound、report mode、Round状態、required_action、実行中／待機中件数、未評価Result件数、handoff／Audit gate、blockerを簡潔に報告してください。
 
 Round、Node、lease、State、artifactを変更せず、Runtime WorkerやInterpreterを起動しないでください。全DAG、全Event Ledger、過去の全Reportを先読みしないでください。
 ```
@@ -83,7 +85,7 @@ Run Root: <absolute path>
 
 最初にconductor_control.jsonを確認し、期待するRoundと実状態を照合してください。新Roundや代替Nodeを作らず、現在のrequired_actionから再開してください。live leaseがある場合は二重実行せず、その状態を報告してください。
 
-同じRoundのInterpretationとFull Auditを完成させ、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動受理しないでください。
+同じRound Contractのreport modeを変更せず、未評価Review Bundleと指定されたhandoff成果物、Full Auditを完成させ、AWAITING_HUMAN_REVIEWになったら停止してください。Roundを自動受理しないでください。
 ```
 
 <a id="daily-continue"></a>
@@ -100,7 +102,7 @@ Run Root: <absolute path>
 追加Wall Time: <minutes>
 継続理由・残作業: <具体的な未完了内容または追加指示>
 
-新Roundは開始せず、対象Roundをcontinueしてください。必要な科学Nodeだけを追加し、既存の成功Nodeは再計算しないでください。追加結果を含む新しいInterpretationとFull Auditを作成し、再びAWAITING_HUMAN_REVIEWになったら停止してください。
+新Roundは開始せず、対象Roundをcontinueしてください。必要な科学Nodeだけを追加し、既存の成功Nodeは再計算しないでください。追加Resultから成立するReview Bundleを評価し、対象Roundがfullなら更新Interpretationも作成してください。Full Audit後、再びAWAITING_HUMAN_REVIEWになったら停止してください。
 ```
 
 <a id="daily-revise"></a>
@@ -118,6 +120,8 @@ Run Root: <absolute path>
 新しいDescription、Clustering、Operator Nodeは計画しないでください。同じRoundの既存結果だけを使ってInterpretationを改訂し、Quality gateとFull Auditを通してください。新Roundは開始せず、AWAITING_HUMAN_REVIEWで停止してください。
 ```
 
+この操作は`report_mode=full`のRoundだけに使用する。screening Roundの正式解釈が必要なら、次の人間承認Roundを`full`で開始する。
+
 <a id="daily-accept"></a>
 ## Roundを受理して閉じる
 
@@ -131,7 +135,7 @@ Run Root: <absolute path>
 対象Round: RND####
 人間のコメント（任意）: <次Roundへの見解、留保事項>
 
-対象RoundがAWAITING_HUMAN_REVIEWで、InterpretationとFull Auditが有効であることを確認してからacceptしてください。Failed Nodeと未解析範囲がある場合はpartial outcomeと引継ぎ事項を保持してください。次Roundのprepare、authorize、開始は行わず、終了後のControl状態とnext Round番号だけを報告してください。
+対象RoundがAWAITING_HUMAN_REVIEWで、screening modeならScreening Summary、full modeならInterpretation、およびFull Auditが有効であることを確認してからacceptしてください。Failed Nodeと未解析範囲がある場合はpartial outcomeと引継ぎ事項を保持してください。次Roundのprepare、authorize、開始は行わず、終了後のControl状態とnext Round番号だけを報告してください。
 ```
 
 <a id="daily-next-round"></a>
@@ -148,6 +152,8 @@ Run Root: <absolute path>
 parallel_limit: <number>
 Available CPU Cores: <number; 変更しない場合は省略可>
 Wall Time: <minutes>
+Operator Node予算: <number; 既定50、安全上限500>
+Report mode: <screening/full>
 
 Roundの目的:
 <探索、深掘り対象、人間が求める成果物>
@@ -157,9 +163,9 @@ Roundの目的:
 - 対象Node／Cluster: <N###### / C###### / 比較したい範囲>
 - その他: <偏りを避けたいDescription、Operator等>
 
-Active Roundがなく、前RoundがCLOSEDであることを確認してください。契約案をこの依頼と照合し、人間が明示した新Roundだけを開始してください。過去の成功Nodeは再計算せず再利用参照として扱い、全artifactを読み直さず、Control、bounded Working Set、必要なResult Cardだけから判断してください。
+Active Roundがなく、前RoundがCLOSEDであることを確認してください。契約案をこの依頼と照合し、人間が明示した新Roundだけを開始してください。過去の成功Nodeは再計算せず再利用参照として扱い、全artifactを読み直さず、Control、bounded Working Set、必要なResult Card／Review Bundleだけから判断してください。
 
-最後に新RoundのInterpretationとFull Auditを作成し、AWAITING_HUMAN_REVIEWで停止してください。さらに次のRoundを開始したり、このRoundを自動受理したりしないでください。
+最後に全新規Resultから成立するReview Bundleの評価を完了し、screeningならcompact summary、fullなら選抜BundleのInterpretationを作成してください。Full Audit後にAWAITING_HUMAN_REVIEWで停止し、さらに次のRoundを開始したり、このRoundを自動受理したりしないでください。
 ```
 
 <a id="daily-handoff"></a>
@@ -180,12 +186,12 @@ Run Root: <absolute path>
 
 ActiveまたはFINALIZINGのRoundがある場合は同じRoundを再開し、別Roundを作らないでください。live leaseがある場合は二重実行せず報告してください。新Roundは、人間が明示的に新Round開始を指定し、Active Roundがなく、直前RoundがCLOSEDである場合だけprepare／authorizeしてください。
 
-Main Agent自身がOrchestratorです。通常は全DAG、全Event Ledger、過去全Reportを読まず、追加情報が必要な場合だけRuntimeのbounded queryからResult Cardまたはfailure summaryを取得してください。Tool応答を失ったmutationは推測で再送せず、Control revisionとverify-returnで照合してください。
+Main Agent自身がOrchestratorです。通常は全DAG、全Event Ledger、過去全Reportを読まず、追加情報が必要な場合だけRuntimeのbounded queryからResult Card、Review Bundle、またはfailure summaryを取得してください。Tool応答を失ったmutationは推測で再送せず、Control revisionとverify-returnで照合してください。
 
-解析を進める操作では同じRoundのInterpretationとFull Auditを完成させ、AWAITING_HUMAN_REVIEWで停止してください。Roundを自動受理せず、人間の指示なしに次Roundを開始しないでください。
+解析を進める操作では同じRoundのResult Screening、契約済みhandoff成果物、Full Auditを完成させ、AWAITING_HUMAN_REVIEWで停止してください。Roundを自動受理せず、人間の指示なしに次Roundを開始しないでください。
 ```
 
-引継ぎの運用正本は`run_root/conductor_control.json`である。詳細は必要な場合だけDAG snapshot、Event Ledger、Result Cardへ辿る。
+引継ぎの運用正本は`run_root/conductor_control.json`である。詳細は必要な場合だけDAG snapshot、Event Ledger、Result Card、Review Bundleへ辿る。0.1.x Run Rootを0.2.0で継続しない。
 
 <a id="daily-concierge"></a>
 ## Result Conciergeによる既存結果の確認

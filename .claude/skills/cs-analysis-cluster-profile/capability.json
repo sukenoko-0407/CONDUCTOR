@@ -3,7 +3,7 @@
   "capability_id": "A010",
   "skill_name": "cs-analysis-cluster-profile",
   "display_name": "Cluster profile",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "cluster_profile",
   "description": "Use when Claude Code needs to run Cluster profile from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -45,6 +45,24 @@
   "default_parameters": {
     "high_quantile": 0.8,
     "low_quantile": 0.2
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A010-1.0.0", "result_role": "activity_signal",
+    "allowed_axes": ["favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [
+      {"name": "favorable_fraction", "source": "selected_favorable_fraction|global_favorable_fraction", "unit": "fraction", "direction": "higher", "comparison_scope": "all"},
+      {"name": "endpoint_median", "source": "selected_property_median", "unit": "endpoint", "direction": "favorable", "comparison_scope": "global_local"},
+      {"name": "endpoint_iqr", "source": "selected_property_iqr", "unit": "endpoint", "direction": "neutral", "comparison_scope": "global_local"}
+    ],
+    "primary_favorable_metric": "favorable_fraction", "global_comparator": "required_for_local", "sibling_comparison": "supported", "standalone_insight": "conditional",
+    "minimum_support": {"global": 10, "local": 5}, "null_result": "background",
+    "anchors": {
+      "favorable_signal": ["favorable濃縮なし", "弱い濃縮", "Localで明確な濃縮", "強く一貫した濃縮"],
+      "context_deviation": ["分布差なし", "軽度の差", "GlobalとLocalで明確な差", "中央値・濃縮・分散が質的に変化"],
+      "chemical_actionability": ["Cluster由来不明", "広いCluster特性", "特定Clusterに接続", "解釈可能な構造seriesに接続"],
+      "independent_support": ["支持なし", "単一profileのみ", "異なるDescriptionまたはOperatorが支持", "複数の独立結果が支持"],
+      "follow_up_leverage": ["確認価値なし", "追加profile可能", "兄弟Cluster・別表現で反証可能", "少数追加で設計判断可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

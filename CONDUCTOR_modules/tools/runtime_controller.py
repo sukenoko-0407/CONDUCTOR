@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+import math
 import os
 import secrets
 import signal
@@ -22,8 +23,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 
-VERSION = "0.1.6"
-PROTOCOL_VERSION = "0.1.6"
+VERSION = "0.2.0"
+PROTOCOL_VERSION = "0.2.0"
 CONTROL_SCHEMA = "3.0.0"
 MAX_CONTROL_BYTES = 32 * 1024
 MAX_WORKING_SET_BYTES = 64 * 1024
@@ -40,6 +41,10 @@ MMP_MAX_FRAGMENT_JOBS = 8
 EXECUTION_LEASE_GRACE_MINUTES = 10
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
+SCREENING_RUBRIC_VERSION = "2.0.0"
+DEFAULT_SCREENING_BATCH_SIZE = 8
+DEFAULT_SCREENING_CONTEXT_BYTES = 64 * 1024
+MAX_SIBLING_BUNDLE_CARDS = 16
 RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
 DIRECT_STRUCTURE_CLUSTERING = {"C001", "C002", "C003", "C004"}
 DIRECT_STRUCTURE_ANALYSIS = {"A006", "A009", "A013"}
@@ -54,6 +59,15 @@ MMP_PAYLOAD_NAMES = {
 }
 ROUND_STATES = {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"}
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
+ASSESSMENT_AXES = (
+    "favorable_signal", "context_deviation", "chemical_actionability",
+    "independent_support", "follow_up_leverage",
+)
+COMPARISON_PARAMETER_EXCLUSIONS = {
+    "target_cluster", "comparison_cluster", "scope_mode", "scope_compound_set_hash",
+    "clustering_node_id", "clustering_representation", "membership", "role",
+    "min_local_samples",
+}
 
 
 def utc_now() -> str:
@@ -169,7 +183,7 @@ def _print_compact(control: dict[str, Any], **payload: Any) -> None:
 
 
 def _available_cpu_cores(control: dict[str, Any]) -> int:
-    """Return the human-declared CPU allocation, including legacy Run fallback."""
+    """Return the human-declared CPU allocation or the new-Run default."""
     value = int(control.get("run", {}).get("available_cpu_cores", DEFAULT_AVAILABLE_CPU_CORES))
     if value < 1:
         raise ValueError("available_cpu_cores must be at least one")
@@ -286,6 +300,16 @@ def append_jsonl_fsync(path: Path, row: dict[str, Any]) -> None:
         handle.write(canonical_bytes(row) + b"\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def append_jsonl_rows_atomic(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    """Append a bounded logical batch without exposing a partially validated index."""
+    additions = list(rows)
+    if not additions:
+        return
+    combined = [*read_jsonl(path), *additions]
+    payload = b"".join(canonical_bytes(row) + b"\n" for row in combined)
+    atomic_bytes(path, payload)
 
 
 def write_csv(path: Path, fields: list[str], rows: Iterable[dict[str, Any]]) -> None:
@@ -461,7 +485,14 @@ def _event(sequence: int, revision: int, previous: str | None, event_type: str, 
 
 
 def _read_state(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    return read_json(control_path(root)), read_json(snapshot_path(root))
+    control = read_json(control_path(root))
+    snapshot = read_json(snapshot_path(root))
+    if control.get("conductor_version") != VERSION:
+        raise ValueError(
+            f"Run version {control.get('conductor_version')!r} is not compatible with "
+            f"CONDUCTOR {VERSION}; start a new Run instead of mutating an older Run"
+        )
+    return control, snapshot
 
 
 def _validate_snapshot(snapshot: dict[str, Any]) -> None:
@@ -578,6 +609,28 @@ def _active_contract(root: Path, control: dict[str, Any]) -> dict[str, Any] | No
     round_id = control.get("active_round_id")
     path = root / "rounds" / str(round_id) / "round_contract.json" if round_id else None
     return read_json(path) if path and path.is_file() else None
+
+
+def _round_report_mode(root: Path, control: dict[str, Any], snapshot: dict[str, Any] | None = None) -> str:
+    """Return the human-authorized handoff mode for the active Round."""
+    contract = _active_contract(root, control)
+    mode = (contract or {}).get("report_mode")
+    if mode in {"screening", "full"}:
+        return str(mode)
+    return "full"
+
+
+def _screening_enabled(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+    """0.2.0 requires Bundle assessment for every active Round."""
+    round_id = control.get("active_round_id")
+    return bool(round_id and str(round_id) in snapshot.get("rounds", {}))
+
+
+def _round_analysis_limit(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> int:
+    safety_limit, _batch_size = _analysis_planning_limits()
+    contract = _active_contract(root, control)
+    requested = int((contract or {}).get("budgets", {}).get("max_additional_nodes", 50))
+    return min(safety_limit, max(0, requested))
 
 
 def _lease_live(control: dict[str, Any]) -> bool:
@@ -860,6 +913,9 @@ def _deliverable_status(root: Path, control: dict[str, Any], snapshot: dict[str,
         if kind == "interpretation_completed":
             satisfied, node_id = _interpretation_fresh(snapshot, control["active_round_id"])
             evidence = [node_id] if node_id else []
+        elif kind == "screening_completed":
+            satisfied, summary_ref = _screening_summary_fresh(root, snapshot, control["active_round_id"])
+            evidence = [summary_ref] if summary_ref else []
         elif kind == "artifact_exists":
             relative = parameters.get("path")
             satisfied = bool(relative and (root / relative).is_file())
@@ -941,13 +997,23 @@ def _finalize_allowed(root: Path, control: dict[str, Any], snapshot: dict[str, A
     timing = _round_time(root, control, snapshot)
     if timing["soft_stop_reached"]:
         return True, "budget_exhausted"
-    maximum_analysis_nodes, _batch_size = _analysis_planning_limits()
-    if _round_analysis_work_count(snapshot, round_id) >= maximum_analysis_nodes:
+    maximum_analysis_nodes = _round_analysis_limit(root, control, snapshot)
+    round_analysis_nodes = [
+        node for node in snapshot["nodes"]
+        if node["kind"] == "analysis"
+        and (node.get("created_in_round") == round_id or node.get("assigned_round") == round_id)
+    ]
+    # Reaching the planning ceiling prevents creation of more Operator Nodes; it
+    # must not discard the final planned slice before its pending Nodes execute.
+    # Failed/cancelled Nodes remain terminal and can still lead to a partial handoff.
+    analysis_work_terminal = all(node["status"] in {"succeeded", "failed", "cancelled"} for node in round_analysis_nodes)
+    basic_was_planned = bool(snapshot.get("plans", {}).get(str(round_id), {}).get("basic_compute"))
+    if basic_was_planned and analysis_work_terminal and _round_analysis_work_count(snapshot, round_id) >= maximum_analysis_nodes:
         return True, "analysis_node_budget_exhausted"
     if record.get("finish_reason") in {"no_eligible_work", "contract_satisfied", "analysis_node_budget_exhausted"}:
         return True, record["finish_reason"]
     deliverables = _deliverable_status(root, control, snapshot)
-    if deliverables and all(item["satisfied"] or item.get("human_acceptance_required") for item in deliverables if item["type"] != "interpretation_completed"):
+    if deliverables and all(item["satisfied"] or item.get("human_acceptance_required") for item in deliverables if item["type"] not in {"interpretation_completed", "screening_completed"}):
         if record.get("scientific_finish_requested"):
             return True, "contract_satisfied"
     return False, "eligible work or unfulfilled contract remains"
@@ -1007,13 +1073,49 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
     if not round_id:
         return {"code": "AWAIT_HUMAN_ROUND", "reason": "No active Round. Only a human-authorized Main Orchestrator operation can start one."}
     if control["round_state"] == "AWAITING_HUMAN_REVIEW":
-        return {"code": "HUMAN_REVIEW_REQUIRED", "reason": "Interpretation and audit are ready. Human continuation, report revision, or acceptance is required."}
+        return {"code": "HUMAN_REVIEW_REQUIRED", "reason": "The contracted Round handoff artifact and audit are ready. Human continuation, report revision, or acceptance is required."}
     if control["round_state"] == "CLOSED":
         return {"code": "AWAIT_HUMAN_ROUND", "reason": "The previous Round is closed. A new Round requires explicit human authorization."}
     running = [node for node in snapshot["nodes"] if node["status"] == "running"]
     if running:
         return _running_action(root, snapshot, running)
+    if _screening_enabled(root, control, snapshot):
+        blocker = control.get("blocker") or {}
+        if blocker.get("code") == "RESULT_SCREENING_RETRY_EXHAUSTED":
+            return {
+                "code": "RESULT_SCREENING_BLOCKED",
+                "reason": "The bounded Result Screening retry budget is exhausted. Human correction or retry authorization is required.",
+                "batch_id": blocker.get("batch_id"),
+                "failure_pointer": blocker.get("failure_pointer"),
+            }
+        current_batch = snapshot.get("rounds", {}).get(round_id, {}).get("current_screening_batch")
+        if current_batch:
+            return {
+                "code": "WRITE_RESULT_SCREENING",
+                "reason": "A bounded Result Screening draft is required before more scientific work is scheduled.",
+                "batch_id": current_batch.get("batch_id"),
+                "context_path": current_batch.get("context_path"),
+                "draft_path": current_batch.get("draft_path"),
+            }
+        pending_screening = _pending_screening_bundles(root, snapshot, round_id)
+        if pending_screening:
+            return {
+                "code": "PREPARE_RESULT_SCREENING",
+                "reason": "New eligible Result Cards require bounded Screening before more scientific work is scheduled.",
+                "unassessed_count": len(pending_screening),
+            }
     if control["round_state"] == "FINALIZING":
+        summary_ref: str | None = None
+        if _screening_enabled(root, control, snapshot):
+            summary_fresh, summary_ref = _screening_summary_fresh(root, snapshot, round_id)
+            if not summary_fresh:
+                return {"code": "WRITE_SCREENING_SUMMARY", "reason": "Write the compact Result Screening summary before Round handoff."}
+        if _round_report_mode(root, control, snapshot) == "screening":
+            marker = f"screening:{summary_ref}"
+            audit = snapshot.get("rounds", {}).get(round_id, {}).get("latest_audit")
+            if not audit or audit.get("status") != "pass" or audit.get("after_handoff_ref") != marker:
+                return {"code": "RUN_FULL_AUDIT", "reason": "A passing Audit newer than the Screening Summary is required."}
+            return {"code": "COMPLETE_FINALIZING", "reason": "Screening Summary and Full Audit satisfy the Round handoff gate."}
         if (control.get("blocker") or {}).get("code") == "INTERPRETATION_RETRY_EXHAUSTED":
             return {"code": "INTERPRETATION_BLOCKED", "reason": "The bounded Interpreter retry budget is exhausted. Human correction or report-revision authorization is required.", "node_id": control["blocker"].get("node_id")}
         fresh, interpretation_node = _interpretation_fresh(snapshot, round_id)
@@ -1023,7 +1125,8 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
                 return {"code": "WRITE_INTERPRETATION", "reason": "A current Interpretation is mandatory before Round handoff.", "node_id": existing[-1]["node_id"]}
             return {"code": "PLAN_INTERPRETATION", "reason": "Create the Round commit Interpretation Node."}
         audit = snapshot.get("rounds", {}).get(round_id, {}).get("latest_audit")
-        if not audit or audit.get("status") != "pass" or audit.get("after_interpretation_node") != interpretation_node:
+        audit_marker = (audit or {}).get("after_handoff_ref") or (f"interpretation:{audit.get('after_interpretation_node')}" if audit and audit.get("after_interpretation_node") else None)
+        if not audit or audit.get("status") != "pass" or audit_marker != f"interpretation:{interpretation_node}":
             return {"code": "RUN_FULL_AUDIT", "reason": "A passing Full Audit newer than the final Interpretation is required."}
         return {"code": "COMPLETE_FINALIZING", "reason": "Interpretation and Full Audit satisfy the Round handoff gate."}
     stop_allowed, stop_reason = _finalize_allowed(root, control, snapshot)
@@ -1069,6 +1172,11 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
     runnable = _runnable(control, snapshot)
     if runnable:
         return {"code": "EXECUTE_RUNNABLE_BATCH", "reason": "Exploration Nodes are ready.", "node_ids": [node["node_id"] for node in runnable]}
+    if (
+        _round_analysis_work_count(snapshot, round_id) < _round_analysis_limit(root, control, snapshot)
+        and _candidate_cells(root, control, snapshot)
+    ):
+        return {"code": "PLAN_EXPLORATION", "reason": "Plan the next bounded exploration slice within the same human-authorized Round budget."}
     allowed, reason = _finalize_allowed(root, control, snapshot)
     if allowed:
         return {"code": "ENTER_FINALIZING", "reason": reason}
@@ -1078,19 +1186,25 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
 def _refresh_control(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> None:
     counts = Counter(node["status"] for node in snapshot["nodes"])
     counts.update({f"kind_{kind}": sum(node["kind"] == kind for node in snapshot["nodes"]) for kind in ("description", "clustering", "analysis", "interpretation")})
-    maximum_analysis_nodes, batch_size = _analysis_planning_limits()
+    maximum_analysis_nodes = _round_analysis_limit(root, control, snapshot) if control.get("active_round_id") else _analysis_planning_limits()[0]
+    pending_assessments = len(_pending_screening_bundles(root, snapshot, control["active_round_id"])) if control.get("active_round_id") and _screening_enabled(root, control, snapshot) else 0
+    assessed_results = len(_round_current_assessments(root, snapshot, control["active_round_id"])) if control.get("active_round_id") and _screening_enabled(root, control, snapshot) else 0
     counts.update({
         "round_analysis_nodes": _round_analysis_work_count(snapshot, control.get("active_round_id")),
         "round_analysis_node_limit": maximum_analysis_nodes,
+        "round_assessed_results": assessed_results,
+        "round_unassessed_results": pending_assessments,
     })
     control["counts"] = dict(sorted(counts.items()))
     deliverables = _deliverable_status(root, control, snapshot) if control.get("active_round_id") else []
     fresh, interpretation_node = _interpretation_fresh(snapshot, control["active_round_id"]) if control.get("active_round_id") else (False, None)
     audit = snapshot.get("rounds", {}).get(str(control.get("active_round_id")), {}).get("latest_audit") if control.get("active_round_id") else None
+    handoff_marker = _handoff_marker(root, control, snapshot) if control.get("active_round_id") else None
+    audit_marker = (audit or {}).get("after_handoff_ref") or (f"interpretation:{audit.get('after_interpretation_node')}" if audit and audit.get("after_interpretation_node") else None)
     control["closure"] = {
         "contract_satisfied": bool(deliverables and all(item["satisfied"] or item.get("human_acceptance_required") for item in deliverables)),
         "interpretation_ready": fresh,
-        "audit_ready": bool(audit and audit.get("status") == "pass" and audit.get("after_interpretation_node") == interpretation_node),
+        "audit_ready": bool(audit and audit.get("status") == "pass" and audit_marker == handoff_marker),
         "outcome": control.get("closure", {}).get("outcome", "undetermined"),
     }
     control["required_action"] = _required_action(root, control, snapshot)
@@ -1100,6 +1214,8 @@ def _refresh_control(root: Path, control: dict[str, Any], snapshot: dict[str, An
         "dag_snapshot": "runtime/dag_snapshot.json",
         "event_ledger": "runtime/event_ledger.jsonl",
         "result_index": "runtime/result_index.jsonl",
+        "result_assessment_index": "runtime/result_assessment_index.jsonl",
+        "review_bundle_index": "runtime/review_bundle_index.jsonl",
     })
 
 
@@ -1110,8 +1226,8 @@ def _signature(capability_id: str, input_nodes: list[str], scope: dict[str, Any]
 def _analysis_planning_limits() -> tuple[int, int]:
     settings = profile().get("runtime_planning") or {}
     maximum = int(settings.get("max_new_analysis_nodes_per_round", 50))
-    batch_size = maximum
-    if maximum != 50:
+    batch_size = int(settings.get("analysis_activation_batch_size", min(25, maximum)))
+    if maximum < 50 or batch_size < 1 or batch_size > maximum:
         raise ValueError("Invalid Runtime analysis planning limits")
     return maximum, batch_size
 
@@ -1370,7 +1486,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         os.chmod(root / "runtime" / "control_authority.key", 0o600)
     except OSError:
         pass
-    for path in (root / "runtime" / "result_index.jsonl", root / "runtime" / "insight_index.jsonl", root / "runtime" / "cluster_registry.jsonl", root / "runtime" / "event_ledger.jsonl"):
+    for path in (root / "runtime" / "result_index.jsonl", root / "runtime" / "result_assessment_index.jsonl", root / "runtime" / "review_bundle_index.jsonl", root / "runtime" / "insight_index.jsonl", root / "runtime" / "cluster_registry.jsonl", root / "runtime" / "event_ledger.jsonl"):
         atomic_bytes(path, b"")
     compound_column = _infer_compound_column(frame.columns)
     if compound_column:
@@ -1416,7 +1532,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "lease": {"owner_id": None, "token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None},
         "counts": {},
         "closure": {"contract_satisfied": False, "interpretation_ready": False, "audit_ready": False, "outcome": "undetermined"},
-        "pointers": {"round_contract": None, "working_set": "runtime/working_set.json", "dag_snapshot": "runtime/dag_snapshot.json", "event_ledger": "runtime/event_ledger.jsonl", "result_index": "runtime/result_index.jsonl"},
+        "pointers": {"round_contract": None, "working_set": "runtime/working_set.json", "dag_snapshot": "runtime/dag_snapshot.json", "event_ledger": "runtime/event_ledger.jsonl", "result_index": "runtime/result_index.jsonl", "result_assessment_index": "runtime/result_assessment_index.jsonl", "review_bundle_index": "runtime/review_bundle_index.jsonl"},
         "blocker": None,
         "last_event_sequence": 0,
         "last_event_checksum": None,
@@ -1429,14 +1545,17 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
-def _default_deliverables(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+def _default_deliverables(snapshot: dict[str, Any], report_mode: str) -> list[dict[str, Any]]:
     first_comprehensive = not any(node["status"] == "succeeded" for node in snapshot["nodes"])
     items: list[dict[str, Any]] = []
     if first_comprehensive:
         p = profile()
         items.append({"deliverable_id": "DELIV_BASIC", "type": "planned_node_coverage", "description": "計画された基本計算Nodeを可能な範囲で完了する。", "parameters": {"plan_key": "basic_compute"}, "human_acceptance_required": False})
         items.append({"deliverable_id": "DELIV_GLOBAL", "type": "capability_coverage", "description": "Global Operatorを優先的に探索する。", "parameters": {"capability_ids": p["exploration"]["global_operator_capabilities"], "scope_modes": ["global"]}, "human_acceptance_required": False})
-    items.append({"deliverable_id": "DELIV_INTERPRETATION", "type": "interpretation_completed", "description": "当該RoundのInterpretationを生成する。", "parameters": {}, "human_acceptance_required": False})
+    if report_mode == "screening":
+        items.append({"deliverable_id": "DELIV_SCREENING", "type": "screening_completed", "description": "当該RoundのResult Screeningとcompact summaryを完了する。", "parameters": {}, "human_acceptance_required": False})
+    else:
+        items.append({"deliverable_id": "DELIV_INTERPRETATION", "type": "interpretation_completed", "description": "当該RoundのInterpretationを生成する。", "parameters": {}, "human_acceptance_required": False})
     return items
 
 
@@ -1454,6 +1573,7 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
         round_id = f"RND{control['next_round_number']:04d}"
         request_payload = {
             "objective": args.objective,
+            "report_mode": args.report_mode,
             "optional_directions": args.optional_direction or [],
             "human_priorities": args.human_priority or [],
             "budgets": {
@@ -1467,7 +1587,7 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
             "high_cost_bundle_approved": bool(args.approve_high_cost),
         }
         request_hash = value_hash(request_payload)
-        contract = {"schema_version": "1.0.0", "round_id": round_id, **request_payload, "required_deliverables": _default_deliverables(snapshot), "request_hash": request_hash, "created_at": utc_now()}
+        contract = {"schema_version": "1.0.0", "round_id": round_id, **request_payload, "required_deliverables": _default_deliverables(snapshot, args.report_mode), "request_hash": request_hash, "created_at": utc_now()}
         if args.required_deliverables_json:
             contract["required_deliverables"] = json.loads(Path(args.required_deliverables_json).read_text(encoding="utf-8") if Path(args.required_deliverables_json).is_file() else args.required_deliverables_json)
         validate(contract, "round_contract.schema.json")
@@ -1507,8 +1627,8 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         total_minutes = contract["budgets"]["walltime_minutes"]
         reserve = min(90, max(5, total_minutes // 5), max(1, total_minutes - 1))
         deadline = started + timedelta(minutes=contract["budgets"]["walltime_minutes"])
-        snapshot["rounds"][round_id] = {"state": "ACTIVE", "runtime_version": VERSION, "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": False, "latest_audit": None, "current_interpretation_node": None, "no_progress_returns": 0}
-        maximum_analysis_nodes, batch_size = _analysis_planning_limits()
+        snapshot["rounds"][round_id] = {"state": "ACTIVE", "runtime_version": VERSION, "report_mode": contract.get("report_mode", "full"), "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": False, "latest_audit": None, "current_interpretation_node": None, "current_screening_batch": None, "screening_summary_ref": None, "no_progress_returns": 0}
+        maximum_analysis_nodes = min(_analysis_planning_limits()[0], int(contract["budgets"]["max_additional_nodes"]))
         snapshot["plans"][round_id] = {
             "basic_compute": False,
             "exploration": False,
@@ -1516,6 +1636,14 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
             "analysis_node_limit": maximum_analysis_nodes,
             "scope_sequence": ["global", "global", "local"],
         }
+        # Assessment and Bundle indices are append-only Runtime-owned records.
+        assessment_index = _assessment_index_path(root)
+        if not assessment_index.exists():
+            atomic_bytes(assessment_index, b"")
+        control["conductor_version"] = VERSION
+        control.setdefault("pointers", {})["result_assessment_index"] = str(
+            assessment_index.relative_to(root)
+        ).replace("\\", "/")
         control.update({"active_round_id": round_id, "round_state": "ACTIVE", "next_round_number": control["next_round_number"] + 1, "blocker": None})
         control["run"]["parallel_limit"] = contract["budgets"]["parallel_limit"]
         control["run"]["available_cpu_cores"] = contract["budgets"].get(
@@ -1586,10 +1714,13 @@ def cmd_continue_round(args: argparse.Namespace) -> int:
             raise ValueError("Same-Round continuation requires AWAITING_HUMAN_REVIEW")
         round_id = control["active_round_id"]
         record = snapshot["rounds"][round_id]
+        report_mode = _round_report_mode(root, control, snapshot)
         now = datetime.now(timezone.utc)
         minutes = args.additional_walltime_minutes
         reserve = min(90, max(5, minutes // 5), max(1, minutes - 1))
-        record.update({"state": "ACTIVE", "deadline_at": (now + timedelta(minutes=minutes)).isoformat(), "soft_stop_at": (now + timedelta(minutes=minutes - reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "latest_audit": None, "interpretation_revision_required": True, "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1})
+        record.update({"state": "ACTIVE", "deadline_at": (now + timedelta(minutes=minutes)).isoformat(), "soft_stop_at": (now + timedelta(minutes=minutes - reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "latest_audit": None, "screening_summary_ref": None})
+        if report_mode == "full":
+            record.update({"interpretation_revision_required": True, "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1})
         record.setdefault("human_continuations", []).append({"reason": args.reason, "at": utc_now()})
         control.update({"round_state": "ACTIVE", "blocker": None})
         control["closure"] = {"contract_satisfied": False, "interpretation_ready": False, "audit_ready": False, "outcome": "undetermined"}
@@ -1609,6 +1740,8 @@ def cmd_revise_report(args: argparse.Namespace) -> int:
             raise ValueError("Report revision requires human review or a blocked Interpretation gate")
         round_id = control["active_round_id"]
         record = snapshot["rounds"][round_id]
+        if _round_report_mode(root, control, snapshot) != "full":
+            raise ValueError("Report revision applies only to a full Interpretation Round")
         record.update({"state": "FINALIZING", "latest_audit": None, "report_revision_reason": args.reason, "interpretation_revision_required": True, "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1, "human_interpretation_retry_authorized": blocked_finalizing})
         control.update({"round_state": "FINALIZING", "blocker": None})
         _commit(root, control, snapshot, "report_revision_requested", {"reason": args.reason}, round_id=round_id)
@@ -1628,8 +1761,17 @@ def cmd_accept_round(args: argparse.Namespace) -> int:
         record = snapshot["rounds"][round_id]
         interpretation = record.get("current_interpretation_node")
         audit = record.get("latest_audit") or {}
-        if not interpretation or audit.get("status") != "pass":
-            raise ValueError("Interpretation and passing Full Audit are required")
+        report_mode = _round_report_mode(root, control, snapshot)
+        if report_mode == "screening":
+            summary_fresh, summary_ref = _screening_summary_fresh(root, snapshot, round_id)
+            expected_marker = f"screening:{summary_ref}" if summary_fresh and summary_ref else None
+            if not summary_fresh or audit.get("status") != "pass" or audit.get("after_handoff_ref") != expected_marker:
+                raise ValueError("Screening Summary and passing Full Audit are required")
+        else:
+            expected_marker = f"interpretation:{interpretation}" if interpretation else None
+            audit_marker = audit.get("after_handoff_ref") or (f"interpretation:{audit.get('after_interpretation_node')}" if audit.get("after_interpretation_node") else None)
+            if not interpretation or audit.get("status") != "pass" or audit_marker != expected_marker:
+                raise ValueError("Interpretation and passing Full Audit are required")
         outcome_path = root / "rounds" / round_id / "round_outcome.json"
         outcome = read_json(outcome_path)
         outcome["human_accepted_at"] = utc_now()
@@ -1778,9 +1920,9 @@ def _analysis_scope_supported(capability: dict[str, Any], scope: dict[str, Any],
 
 
 def _mmp_enabled_for_active_round(control: dict[str, Any], snapshot: dict[str, Any]) -> bool:
-    """A014 is available only to a Round created by this Runtime version."""
+    """Keep A014 available only while a Runtime-owned Round is active."""
     round_id = control.get("active_round_id")
-    return bool(round_id and (snapshot.get("rounds", {}).get(round_id) or {}).get("runtime_version") == VERSION)
+    return bool(round_id and str(round_id) in snapshot.get("rounds", {}))
 
 
 def _usable_clusterings(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1941,12 +2083,13 @@ def _history_balanced_specs(snapshot: dict[str, Any], specs: list[dict[str, Any]
 
 
 def _plan_exploration(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> list[str]:
-    maximum, _batch_size = _analysis_planning_limits()
-    contract = _active_contract(root, control)
-    requested = int((contract or {}).get("budgets", {}).get("max_additional_nodes", maximum))
-    budget = min(maximum, max(0, requested))
+    _maximum, batch_size = _analysis_planning_limits()
+    budget = _round_analysis_limit(root, control, snapshot)
+    already_planned = _round_analysis_work_count(snapshot, control["active_round_id"])
+    remaining_total = max(0, budget - already_planned)
+    slice_budget = min(batch_size, remaining_total)
     settings = profile()["exploration"]
-    global_slots = min(budget, (2 * budget + 2) // 3)
+    global_slots = min(slice_budget, (2 * slice_budget + 2) // 3)
     global_specs = _history_balanced_specs(snapshot, _exploration_global_specs(control, snapshot), int(settings["random_seed"]))
     planned_global, _deferred_global = _materialize_analysis_specs(
         snapshot, control, global_specs, "exploration", batch_limit=global_slots, preserve_order=True,
@@ -1954,7 +2097,7 @@ def _plan_exploration(root: Path, control: dict[str, Any], snapshot: dict[str, A
     lookup = _node_lookup(snapshot)
     global_nodes = [lookup[node_id] for node_id in planned_global]
     global_nodes.extend(node for node in _succeeded(snapshot, "analysis") if node.get("scope", {}).get("mode") == "global")
-    remaining = max(0, budget - len(planned_global))
+    remaining = max(0, slice_budget - len(planned_global))
     local_specs = _history_balanced_specs(snapshot, _exploration_local_specs(root, control, snapshot, global_nodes), int(settings["random_seed"]) + 1)
     planned_local, _deferred_local = _materialize_analysis_specs(
         snapshot, control, local_specs, "exploration", batch_limit=remaining, preserve_order=True,
@@ -1963,9 +2106,9 @@ def _plan_exploration(root: Path, control: dict[str, Any], snapshot: dict[str, A
     plan = snapshot["plans"][control["active_round_id"]]
     plan.update({
         "exploration": True,
-        "exploration_nodes_planned": len(planned),
-        "global_nodes_planned": len(planned_global),
-        "local_nodes_planned": len(planned_local),
+        "exploration_nodes_planned": int(plan.get("exploration_nodes_planned", 0)) + len(planned),
+        "global_nodes_planned": int(plan.get("global_nodes_planned", 0)) + len(planned_global),
+        "local_nodes_planned": int(plan.get("local_nodes_planned", 0)) + len(planned_local),
         "selection_seed": int(settings["random_seed"]),
         "scope_sequence": list(settings["scope_sequence"]),
     })
@@ -1976,10 +2119,10 @@ def _candidate_cells(root: Path, control: dict[str, Any], snapshot: dict[str, An
     p = profile()
     contract = _active_contract(root, control)
     round_plan = snapshot.get("plans", {}).get(str(control.get("active_round_id")), {})
-    maximum, _batch_size = _analysis_planning_limits()
+    maximum = _round_analysis_limit(root, control, snapshot)
     if _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum:
         return []
-    if contract and _round_analysis_work_count(snapshot, control["active_round_id"]) >= min(maximum, int(contract["budgets"]["max_additional_nodes"])):
+    if contract and _round_analysis_work_count(snapshot, control["active_round_id"]) >= maximum:
         return []
     caps = catalog()
     descriptions = _succeeded(snapshot, "description", p["exploration"]["description_panel"])
@@ -2077,7 +2220,7 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
         _require_action(control, args.lease_token, {"SCIENTIFIC_DECISION"})
         candidates = {item["candidate_id"]: item for item in _candidate_cells(root, control, snapshot)}
         selected_ids = [item for item in (args.candidate_ids or "").split(",") if item]
-        maximum, _batch_size = _analysis_planning_limits()
+        maximum = _round_analysis_limit(root, control, snapshot)
         remaining_round_capacity = max(0, maximum - _round_analysis_work_count(snapshot, control["active_round_id"]))
         if len(selected_ids) > remaining_round_capacity:
             raise ValueError(
@@ -2097,7 +2240,7 @@ def cmd_apply_scientific_decision(args: argparse.Namespace) -> int:
         if args.finish_reason:
             if args.finish_reason not in {"no_eligible_work", "contract_satisfied"}:
                 raise ValueError("Invalid finish reason")
-            deliverables = [item for item in _deliverable_status(root, control, snapshot) if item["type"] != "interpretation_completed"]
+            deliverables = [item for item in _deliverable_status(root, control, snapshot) if item["type"] not in {"interpretation_completed", "screening_completed"}]
             if args.finish_reason == "contract_satisfied" and not deliverables:
                 raise ValueError("Runtime cannot verify contract_satisfied without required deliverables")
             if args.finish_reason == "contract_satisfied" and not all(item["satisfied"] or item.get("human_acceptance_required") for item in deliverables):
@@ -2411,7 +2554,7 @@ def _analysis_subject(root: Path, control: dict[str, Any], snapshot: dict[str, A
     all_ids, endpoint_valid = _read_input_ids(control)
     scope_mode = node["scope"].get("mode", "global")
     # A003/A004 Cluster overlays preserve every point from the prior Global
-    # projection and only mark Cluster membership.  Older 0.1.6 planners recorded
+    # projection and only mark Cluster membership.  Older planners recorded
     # these Nodes as single_cluster, so normalize by scientific role as well as by
     # the corrected projection scope used for newly planned Nodes.
     if node.get("capability_id") in {"A003", "A004"} and node.get("parameters", {}).get("role") == "cluster-overlay":
@@ -2595,6 +2738,145 @@ def _operator_report_html(control: dict[str, Any], node: dict[str, Any], subject
     return f"<!doctype html><html lang='ja'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(node['capability_id'])} report</title><style>body{{margin:0;background:#f4f3ef;color:#263238;font-family:system-ui,sans-serif}}main{{max-width:1080px;margin:auto;padding:32px}}header{{border-left:7px solid #526b72;background:#fff;padding:20px 24px}}.facts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:20px 0}}.fact,section{{background:#fff;border:1px solid #d7d9d5;border-radius:8px;padding:14px}}small{{color:#5e6b70}}table{{border-collapse:collapse;width:100%}}th,td{{padding:8px;border-bottom:1px solid #ddd;text-align:left}}@media print{{body{{background:#fff}}main{{padding:0}}}}</style></head><body><main><header><small>CONDUCTOR Operator Result</small><h1>{html.escape(node['capability_id'])}: {html.escape(summary.get('headline') or '解析結果')}</h1></header><div class='facts'><div class='fact'><b>対象</b><br>{scope_label}</div><div class='fact'><b>Cluster</b><br>{html.escape(clusters)}</div><div class='fact'><b>Clustering手法</b><br>{html.escape(clustering_methods)}</div><div class='fact'><b>Cluster生成Description</b><br>{html.escape(source_descriptions)}</div><div class='fact'><b>解析Description</b><br>{html.escape(descriptions)}</div><div class='fact'><b>Endpoint</b><br>{html.escape(control['run']['endpoint'])}</div><div class='fact'><b>母集団 / endpoint有効 / 実解析 / 除外</b><br>{subject['population_count']} / {subject['endpoint_valid_count']} / {subject['analyzed_count']} / {subject['excluded_count']}</div><div class='fact'><b>Metric</b><br>{html.escape(str(summary.get('metric') or '—'))}</div></div><section><h2>主要数値</h2><table>{metrics}</table>{link}</section></main></body></html>"
 
 
+def _finite_scalar(value: Any) -> Any:
+    value = clean(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value if value is None or isinstance(value, (str, int, float, bool)) else None
+
+
+def _metric_source_value(details: dict[str, Any], source: str) -> Any:
+    """Resolve a dotted path; ``a|b`` declares deterministic fallbacks."""
+    for candidate in source.split("|"):
+        value: Any = details
+        found = True
+        for part in candidate.split("."):
+            if not isinstance(value, dict) or part not in value:
+                found = False
+                break
+            value = value[part]
+        if found:
+            scalar = _finite_scalar(value)
+            if scalar is not None:
+                return scalar
+    return None
+
+
+def _compact_operator_details(details: dict[str, Any], limit: int = 24) -> dict[str, Any]:
+    """Preserve small provenance fields without duplicating large result payloads."""
+    compact: dict[str, Any] = {}
+    for key in sorted(details):
+        value = clean(details[key])
+        scalar = _finite_scalar(value)
+        if scalar is not None:
+            compact[str(key)] = scalar
+        elif isinstance(value, list) and len(value) <= 10 and all(_finite_scalar(item) is not None for item in value):
+            compact[str(key)] = [_finite_scalar(item) for item in value]
+        elif isinstance(value, dict) and len(value) <= 8 and all(_finite_scalar(item) is not None for item in value.values()):
+            compact[str(key)] = {str(name): _finite_scalar(item) for name, item in value.items()}
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _comparison_parameters(node: dict[str, Any]) -> dict[str, Any]:
+    return {str(key): clean(value) for key, value in sorted((node.get("parameters") or {}).items()) if key not in COMPARISON_PARAMETER_EXCLUSIONS}
+
+
+def _comparison_family_id(control: dict[str, Any], node: dict[str, Any], subject: dict[str, Any], metric: str | None, profile_id: str) -> str:
+    basis = {
+        "capability_id": node["capability_id"],
+        "profile_id": profile_id,
+        "endpoint": {"column": control["run"]["endpoint"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform"), "higher_is_better": bool(control["run"]["higher_is_better"])},
+        "analysis_description_nodes": sorted(subject.get("analysis_description_nodes") or []),
+        "metric": metric,
+        "operator_parameters": _comparison_parameters(node),
+        "reference_population": control["run"].get("input_hash"),
+    }
+    return "CFM" + value_hash(basis)[:16]
+
+
+def _result_card_v2(control: dict[str, Any], node: dict[str, Any], subject: dict[str, Any], summary: dict[str, Any], result_ref: str, artifact_links: dict[str, str | None]) -> dict[str, Any]:
+    capability = catalog()[node["capability_id"]]
+    interpretation_profile = capability.get("interpretation_profile")
+    if not isinstance(interpretation_profile, dict):
+        raise ValueError(f"{node['capability_id']} has no Operator Interpretation Profile")
+    validate(interpretation_profile, "operator_interpretation_profile.schema.json")
+    details = dict(summary.get("key_metrics") or {})
+    if node["capability_id"] == "A014":
+        details.pop("mmp_reference_candidates", None)
+        details["specialized_interpretation"] = "cs-analysis-interpret-mmp"
+    comparison_metrics = []
+    for spec in interpretation_profile["comparison_metrics"]:
+        raw_metric = _metric_source_value(details, spec["source"])
+        normalized: float | None = None
+        if isinstance(raw_metric, (int, float)) and not isinstance(raw_metric, bool):
+            if spec["direction"] == "favorable":
+                normalized = float(raw_metric) if control["run"]["higher_is_better"] else -float(raw_metric)
+            elif spec["direction"] == "higher":
+                normalized = float(raw_metric)
+            elif spec["direction"] == "lower":
+                normalized = -float(raw_metric)
+        comparison_metrics.append({"name": spec["name"], "value": raw_metric, "normalized_favorable_value": normalized, "unit": spec.get("unit"), "direction": spec["direction"], "comparison_scope": spec["comparison_scope"]})
+    metric_by_name = {item["name"]: item for item in comparison_metrics}
+    primary_name = interpretation_profile.get("primary_favorable_metric")
+    primary = metric_by_name.get(primary_name) if primary_name else None
+    raw_value = primary.get("value") if primary and isinstance(primary.get("value"), (int, float)) and not isinstance(primary.get("value"), bool) else None
+    favorable_value = primary.get("normalized_favorable_value") if primary else None
+    normalization = "higher_is_better" if primary and primary["direction"] == "favorable" else "profile_fixed" if primary and primary["direction"] in {"higher", "lower"} else "not_applicable"
+    minimum = interpretation_profile["minimum_support"]["global" if subject["scope_mode"] == "global" else "local"]
+    analyzed = int(subject["analyzed_count"])
+    population = int(subject["population_count"])
+    quality_flags = ["negative_result"] if details.get("negative_result") is True else []
+    available_metric_count = sum(
+        1
+        for item in comparison_metrics
+        if isinstance(item.get("value"), (int, float)) and not isinstance(item.get("value"), bool)
+    )
+    if comparison_metrics and available_metric_count == 0:
+        quality_flags.append("missing_comparison_metrics")
+    if primary_name is not None and favorable_value is None:
+        quality_flags.append("missing_primary_favorable_metric")
+    if analyzed < int(minimum):
+        quality_flags.append("below_interpretation_minimum_support")
+    card = {
+        "schema_version": "2.0.0", "result_ref": result_ref, "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"],
+        "analysis_subject": subject,
+        "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": bool(control["run"]["higher_is_better"]), "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")},
+        "metric": summary.get("metric"), "headline": str(summary.get("headline") or f"{node['capability_id']} completed"),
+        "result_role": interpretation_profile["result_role"], "interpretation_profile_id": interpretation_profile["profile_id"],
+        "comparison_family_id": _comparison_family_id(control, node, subject, summary.get("metric"), interpretation_profile["profile_id"]),
+        "favorable_payload": {"applicable": primary_name is not None, "normalization": normalization, "source_metric": primary_name, "raw_value": raw_value, "favorable_value": favorable_value, "favorable_effect": None, "direction_confidence": "derived" if favorable_value is not None else "unknown" if primary_name else "not_applicable"},
+        "comparison_metrics": comparison_metrics, "operator_details": _compact_operator_details(details),
+        "quality": {"population_count": population, "endpoint_valid_count": int(subject["endpoint_valid_count"]), "analyzed_count": analyzed, "excluded_count": int(subject["excluded_count"]), "sample_fraction": analyzed / max(1, population), "minimum_support_met": analyzed >= int(minimum)},
+        "validation_passed": True, "eligible_for_downstream": True, "quality_flags": sorted(set(quality_flags)), "limitations": [str(item) for item in (summary.get("limitations") or [])],
+        "artifact_links": artifact_links, "attention": "watch", "created_at": utc_now(),
+    }
+    validate(card, "result_card.schema.json")
+    return card
+
+
+def _promote_a005_oof_artifact(
+    node: dict[str, Any],
+    skill_output: Path,
+    output: Path,
+    artifacts: dict[str, dict[str, Any]],
+) -> str | None:
+    if node.get("capability_id") != "A005" or "oof_predictions" not in artifacts:
+        return None
+    prediction = artifacts["oof_predictions"]
+    role = node.get("parameters", {}).get("role") or "global-model"
+    expected_name = "global_oof_predictions.csv" if role == "global-model" else "cluster_oof_predictions.csv"
+    if Path(prediction["path"]).name != expected_name:
+        raise ValueError(f"A005 OOF Artifact filename mismatch: expected {expected_name}")
+    _copy_artifact(
+        _skill_artifact_path(skill_output, prediction["path"]),
+        output / expected_name,
+        prediction["sha256"],
+    )
+    return expected_name
+
+
 def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any], node: dict[str, Any], attempt: dict[str, Any], skill_output: Path, event: dict[str, Any]) -> list[dict[str, Any]]:
     artifacts = {item["type"]: item for item in event["artifacts"]}
     if len(artifacts) != len(event["artifacts"]):
@@ -2665,13 +2947,7 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
             artifact_links["mmp_database"] = _run_relative_artifact(root, final / mmp_payloads["mmp_database"])
         if "mmp_reference_cards" in mmp_payloads:
             artifact_links["mmp_reference_cards"] = _run_relative_artifact(root, final / mmp_payloads["mmp_reference_cards"])
-        card_quality_flags = ["negative_result"] if (summary.get("key_metrics") or {}).get("negative_result") is True else []
-        card_key_metrics = dict(summary.get("key_metrics") or {})
-        if node["capability_id"] == "A014":
-            card_key_metrics.pop("mmp_reference_candidates", None)
-            card_key_metrics["specialized_interpretation"] = "cs-analysis-interpret-mmp"
-        card = {"schema_version": "1.0.0", "result_ref": result_ref, "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": summary.get("metric"), "headline": str(summary.get("headline") or ""), "key_metrics": card_key_metrics, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": card_quality_flags, "limitations": summary.get("limitations") or [], "artifact_links": artifact_links, "attention": "watch", "created_at": utc_now()}
-        validate(card, "result_card.schema.json")
+        card = _result_card_v2(control, node, subject, summary, result_ref, artifact_links)
         write_json(temporary / "result_card.json", card)
         result_card_files = ["result_card.json"]
         result_cards.append(card)
@@ -2687,8 +2963,8 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
                 source_payload = _skill_artifact_path(skill_output, local_summary["primary_artifact"]["path"])
                 local_relative = Path("clusters") / cluster_id / "model_comparison.csv"
                 _copy_artifact(source_payload, temporary / local_relative, local_summary["primary_artifact"].get("sha256"))
-                local_card = {"schema_version": "1.0.0", "result_ref": str(local_summary["result_ref"]), "node_id": node["node_id"], "capability_id": node["capability_id"], "round_id": node["assigned_round"], "analysis_subject": local_subject, "endpoint": {"column": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "unit": control["run"].get("endpoint_unit"), "transform": control["run"].get("endpoint_transform")}, "metric": local_summary.get("metric"), "headline": str(local_summary.get("headline") or ""), "key_metrics": local_summary.get("key_metrics") or {}, "validation_passed": True, "eligible_for_downstream": True, "quality_flags": [], "limitations": local_summary.get("limitations") or [], "artifact_links": {"result": _run_relative_artifact(root, final / local_relative), "report": _run_relative_artifact(root, final / report_name), "detail": _run_relative_artifact(root, final / detail_name) if detail_name else None}, "attention": "watch", "created_at": utc_now()}
-                validate(local_card, "result_card.schema.json")
+                local_links = {"result": _run_relative_artifact(root, final / local_relative), "report": _run_relative_artifact(root, final / report_name), "detail": _run_relative_artifact(root, final / detail_name) if detail_name else None}
+                local_card = _result_card_v2(control, local_node, local_subject, local_summary, str(local_summary["result_ref"]), local_links)
                 card_file = f"result_card_{cluster_id}.json"
                 write_json(temporary / card_file, local_card)
                 result_card_files.append(card_file)
@@ -2698,7 +2974,8 @@ def _adapt_success(root: Path, control: dict[str, Any], snapshot: dict[str, Any]
         result = {"document_type": "analysis_result", "schema_version": "1.0.0", "node_id": node["node_id"], "capability_id": node["capability_id"], "analysis_subject": subject, "primary_payload": primary_name, "report": report_name, "result_cards": result_card_files, "payloads": result_payloads, "created_at": utc_now()}
         validate(result, "analysis_result.schema.json")
         write_json(temporary / "result.json", result)
-        for name in ("global_oof_predictions.csv", "cluster_model_comparison.csv", "projection.png"):
+        _promote_a005_oof_artifact(node, skill_output, temporary, artifacts)
+        for name in ("cluster_model_comparison.csv", "projection.png"):
             if (skill_output / name).is_file():
                 _copy_artifact(skill_output / name, temporary / name)
     else:
@@ -3460,27 +3737,379 @@ def _current_round_cards(root: Path, snapshot: dict[str, Any], round_id: str) ->
     return list(latest.values())
 
 
-def _review_manifest(round_id: str, cards: list[dict[str, Any]], detailed_limit: int) -> dict[str, Any]:
-    ordered = sorted(cards, key=lambda card: (card["analysis_subject"]["scope_mode"], card["capability_id"], card["result_ref"]))
-    buckets: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    for card in ordered:
-        buckets[(card["analysis_subject"]["scope_mode"], card["capability_id"])].append(card)
-    detailed: list[dict[str, Any]] = []
-    while buckets and len(detailed) < detailed_limit:
-        for key in sorted(list(buckets)):
-            detailed.append(buckets[key].pop(0))
-            if not buckets[key]:
-                del buckets[key]
-            if len(detailed) >= detailed_limit:
-                break
-    detailed_refs = {card["result_ref"] for card in detailed}
-    unreviewed = [card for card in ordered if card["result_ref"] not in detailed_refs]
-    scope_counts = Counter(card["analysis_subject"]["scope_mode"] for card in ordered)
-    operator_counts = Counter(card["capability_id"] for card in ordered)
-    descriptions = Counter(item for card in ordered for item in card["analysis_subject"]["analysis_description_nodes"])
-    manifest = {"schema_version": "1.0.0", "round_id": round_id, "detailed_result_refs": [card["result_ref"] for card in detailed], "aggregate_result_refs": [], "unreviewed_results": [{"result_ref": card["result_ref"], "reason": "bounded_interpretation_context"} for card in unreviewed], "scope_counts": dict(scope_counts), "operator_counts": dict(operator_counts), "description_counts": dict(descriptions), "created_at": utc_now()}
+def _assessment_index_path(root: Path) -> Path:
+    return root / "runtime" / "result_assessment_index.jsonl"
+
+
+def _bundle_index_path(root: Path) -> Path:
+    return root / "runtime" / "review_bundle_index.jsonl"
+
+
+def _latest_assessments(root: Path) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in read_jsonl(_assessment_index_path(root)):
+        previous = latest.get(row["bundle_id"])
+        if previous is None or int(row.get("revision", 0)) >= int(previous.get("revision", 0)):
+            latest[row["bundle_id"]] = row
+    return latest
+
+
+def _assessment_is_current(bundle: dict[str, Any], assessment: dict[str, Any] | None) -> bool:
+    return bool(
+        assessment
+        and assessment.get("source_hash") == bundle.get("source_hash")
+        and assessment.get("rubric_version") == SCREENING_RUBRIC_VERSION
+        and assessment.get("assessment_status") in {"evaluated", "not_scorable", "awaiting_comparator"}
+    )
+
+
+def _usable_result_cards(root: Path, snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    lookup = _node_lookup(snapshot)
+    cards: dict[str, dict[str, Any]] = {}
+    for card in read_jsonl(root / "runtime" / "result_index.jsonl"):
+        source = lookup.get(card.get("node_id"))
+        if source and source.get("kind") == "analysis" and source.get("status") == "succeeded" and (source.get("result_quality") or {}).get("eligible_for_downstream", True):
+            cards[card["result_ref"]] = card
+    return sorted(cards.values(), key=lambda card: card["result_ref"])
+
+
+def _sample_support(sample_count: int, minimum: int) -> str:
+    if sample_count < minimum:
+        return "insufficient"
+    if sample_count < minimum * 2:
+        return "limited"
+    if sample_count < minimum * 4:
+        return "moderate"
+    return "strong"
+
+
+def _cluster_overlap_status(root: Path, cluster_ids: list[str]) -> str:
+    if len(cluster_ids) < 2:
+        return "not_applicable"
+    path = root / "runtime" / "cluster_membership.csv"
+    if not path.is_file():
+        return "unknown"
+    selected = set(cluster_ids)
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not selected.issubset(set(reader.fieldnames or [])):
+            return "unknown"
+        for row in reader:
+            count = sum(str(row.get(cluster_id, "")).strip().lower() in {"1", "true", "yes"} for cluster_id in selected)
+            if count > 1:
+                return "overlapping"
+    return "independent"
+
+
+def _comparison_row(card: dict[str, Any], global_card: dict[str, Any] | None = None) -> dict[str, Any]:
+    favorable = card.get("favorable_payload") or {}
+    global_favorable = (global_card or {}).get("favorable_payload") or {}
+    value = favorable.get("favorable_value")
+    baseline = global_favorable.get("favorable_value")
+    effect = float(value) - float(baseline) if isinstance(value, (int, float)) and isinstance(baseline, (int, float)) else None
+    return {
+        "result_ref": card["result_ref"],
+        "scope_mode": card["analysis_subject"]["scope_mode"],
+        "cluster_ids": list(card["analysis_subject"].get("cluster_ids") or []),
+        "analyzed_count": int(card["analysis_subject"]["analyzed_count"]),
+        "favorable_value": value,
+        "favorable_effect_vs_global": effect,
+        "metrics": {item["name"]: {"value": item.get("value"), "normalized_favorable_value": item.get("normalized_favorable_value"), "unit": item.get("unit")} for item in card.get("comparison_metrics") or []},
+        "minimum_support_met": bool((card.get("quality") or {}).get("minimum_support_met")),
+    }
+
+
+def _make_review_bundle(
+    root: Path,
+    round_id: str,
+    bundle_type: str,
+    target_cards: list[dict[str, Any]],
+    comparator_cards: list[dict[str, Any]],
+    comparison_status: str,
+) -> dict[str, Any]:
+    all_cards = list({card["result_ref"]: card for card in [*target_cards, *comparator_cards]}.values())
+    first = target_cards[0]
+    capability_profile = catalog()[first["capability_id"]]["interpretation_profile"]
+    cluster_ids = sorted({cluster_id for card in all_cards for cluster_id in card["analysis_subject"].get("cluster_ids") or []})
+    global_card = next((card for card in comparator_cards if card["analysis_subject"]["scope_mode"] == "global"), None)
+    min_count = min(int(card["analysis_subject"]["analyzed_count"]) for card in target_cards)
+    minimum_key = "global" if bundle_type == "global" else "local"
+    minimum = int(capability_profile["minimum_support"][minimum_key])
+    refs = sorted(card["result_ref"] for card in all_cards)
+    identity = {"type": bundle_type, "family": first["comparison_family_id"], "targets": sorted(card["result_ref"] for card in target_cards), "comparators": sorted(card["result_ref"] for card in comparator_cards)}
+    bundle_id = "RVB" + value_hash(identity)[:16]
+    comparison_table = [
+        _comparison_row(card, global_card)
+        for card in sorted(all_cards, key=lambda item: item["result_ref"])
+    ]
+    if bundle_type == "sibling_cluster":
+        local_rows = [row for row in comparison_table if row["scope_mode"] != "global"]
+        favorable_values = sorted(
+            float(row["favorable_value"])
+            for row in local_rows
+            if isinstance(row.get("favorable_value"), (int, float))
+            and not isinstance(row.get("favorable_value"), bool)
+        )
+        if favorable_values:
+            midpoint = len(favorable_values) // 2
+            sibling_median = (
+                favorable_values[midpoint]
+                if len(favorable_values) % 2
+                else (favorable_values[midpoint - 1] + favorable_values[midpoint]) / 2.0
+            )
+            sibling_mean = sum(favorable_values) / len(favorable_values)
+            sibling_variance = sum((value - sibling_mean) ** 2 for value in favorable_values) / len(favorable_values)
+            ranked = sorted(set(favorable_values), reverse=True)
+            for row in local_rows:
+                value = row.get("favorable_value")
+                row.update({
+                    "sibling_count": len(local_rows),
+                    "sibling_median_favorable_value": sibling_median,
+                    "sibling_favorable_variance": sibling_variance,
+                    "sibling_rank": ranked.index(float(value)) + 1 if isinstance(value, (int, float)) and not isinstance(value, bool) else None,
+                    "sibling_deviation_from_median": float(value) - sibling_median if isinstance(value, (int, float)) and not isinstance(value, bool) else None,
+                })
+    has_favorable_value = any(
+        isinstance(card.get("favorable_payload", {}).get("favorable_value"), (int, float))
+        and not isinstance(card.get("favorable_payload", {}).get("favorable_value"), bool)
+        for card in target_cards
+    )
+    comparable_value_counts: dict[str, int] = defaultdict(int)
+    for row in comparison_table:
+        for metric_name, metric in (row.get("metrics") or {}).items():
+            value = metric.get("value")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                comparable_value_counts[str(metric_name)] += 1
+    has_comparable_metric = any(count >= 2 for count in comparable_value_counts.values())
+    bundle = {
+        "schema_version": "1.0.0", "bundle_id": bundle_id, "bundle_type": bundle_type, "round_id": round_id,
+        "capability_id": first["capability_id"], "interpretation_profile_id": first["interpretation_profile_id"], "comparison_family_id": first["comparison_family_id"],
+        "target_result_refs": sorted(card["result_ref"] for card in target_cards), "comparator_result_refs": sorted(card["result_ref"] for card in comparator_cards), "all_result_refs": refs,
+        "cluster_ids": cluster_ids, "comparison_status": comparison_status,
+        "applicable_axes": sorted(
+            axis for axis in capability_profile["allowed_axes"]
+            if not (
+                (axis in {"context_deviation", "independent_support"} and bundle_type == "global")
+                or (axis == "context_deviation" and comparison_status != "ready")
+                or (axis == "context_deviation" and not has_comparable_metric)
+                or (axis == "favorable_signal" and not has_favorable_value)
+            )
+        ),
+        "comparison_table": comparison_table,
+        "runtime_facts": {
+            "sample_support": _sample_support(min_count, minimum),
+            "comparator_validity": "matched" if global_card else "partial" if bundle_type == "sibling_cluster" else "none",
+            "overlap_status": _cluster_overlap_status(root, cluster_ids) if bundle_type == "sibling_cluster" else "not_applicable",
+            "minimum_support_met": min_count >= minimum,
+        },
+        "source_hash": "", "created_at": utc_now(),
+    }
+    # Assessment freshness depends on the complete deterministic comparison
+    # payload, not only on the underlying Cards.  In particular, Cluster
+    # overlap and support facts can change when membership records are repaired.
+    bundle["source_hash"] = value_hash({key: value for key, value in bundle.items() if key not in {"source_hash", "created_at"}})
+    validate(bundle, "review_bundle.schema.json")
+    return bundle
+
+
+def _current_round_bundles(root: Path, snapshot: dict[str, Any], round_id: str) -> list[dict[str, Any]]:
+    current = _current_round_cards(root, snapshot, round_id)
+    current_refs = {card["result_ref"] for card in current}
+    usable = _usable_result_cards(root, snapshot)
+    by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for card in usable:
+        by_family[card["comparison_family_id"]].append(card)
+    bundles: dict[str, dict[str, Any]] = {}
+    for card in current:
+        profile_value = catalog()[card["capability_id"]]["interpretation_profile"]
+        scope = card["analysis_subject"]["scope_mode"]
+        family_cards = by_family[card["comparison_family_id"]]
+        globals_ = [item for item in family_cards if item["analysis_subject"]["scope_mode"] == "global"]
+        if scope == "global":
+            bundle = _make_review_bundle(root, round_id, "global", [card], [], "ready")
+        else:
+            comparator = sorted(globals_, key=lambda item: item["result_ref"])[-1:] if globals_ else []
+            required = profile_value["global_comparator"] == "required_for_local"
+            status = "ready" if comparator else "awaiting_comparator" if required else "not_applicable"
+            bundle = _make_review_bundle(root, round_id, "global_local", [card], comparator, status)
+        bundles[bundle["bundle_id"]] = bundle
+    sibling_groups: dict[tuple[str, tuple[str, ...]], list[dict[str, Any]]] = defaultdict(list)
+    for card in usable:
+        subject = card["analysis_subject"]
+        if subject["scope_mode"] != "global" and subject.get("clustering_nodes"):
+            sibling_groups[(card["comparison_family_id"], tuple(sorted(subject["clustering_nodes"])))].append(card)
+    for (family, _clustering), cards in sibling_groups.items():
+        targets = [card for card in cards if card["result_ref"] in current_refs]
+        if not targets or len(cards) < 2:
+            continue
+        profile_value = catalog()[targets[0]["capability_id"]]["interpretation_profile"]
+        if profile_value["sibling_comparison"] == "not_applicable":
+            continue
+        # Keep each Interpreter context bounded.  The ordinary planning policy
+        # creates only a few representative Clusters; this deterministic chunk
+        # is a safety valve for human-requested broad surveys.
+        target_refs = {item["result_ref"] for item in targets}
+        ordered_targets = sorted(targets, key=lambda item: item["result_ref"])
+        ordered_others = sorted((card for card in cards if card["result_ref"] not in target_refs), key=lambda item: item["result_ref"])
+        global_comparators = sorted(
+            (card for card in by_family[family] if card["analysis_subject"]["scope_mode"] == "global"),
+            key=lambda item: item["result_ref"],
+        )[-1:]
+        for offset in range(0, len(ordered_targets), MAX_SIBLING_BUNDLE_CARDS):
+            target_chunk = ordered_targets[offset:offset + MAX_SIBLING_BUNDLE_CARDS]
+            room = max(0, MAX_SIBLING_BUNDLE_CARDS - len(target_chunk) - len(global_comparators))
+            comparator_chunk = [*global_comparators, *ordered_others[:room]]
+            if len(target_chunk) + len(comparator_chunk) < 2:
+                continue
+            bundle = _make_review_bundle(root, round_id, "sibling_cluster", target_chunk, comparator_chunk, "ready")
+            bundles[bundle["bundle_id"]] = bundle
+    return sorted(bundles.values(), key=lambda item: (item["capability_id"], item["bundle_type"], item["bundle_id"]))
+
+
+def _pending_screening_bundles(root: Path, snapshot: dict[str, Any], round_id: str) -> list[dict[str, Any]]:
+    latest = _latest_assessments(root)
+    bundles = _current_round_bundles(root, snapshot, round_id)
+    return sorted(
+        [bundle for bundle in bundles if bundle["comparison_status"] != "awaiting_comparator" and not _assessment_is_current(bundle, latest.get(bundle["bundle_id"]))],
+        key=lambda bundle: (bundle["capability_id"], bundle["bundle_type"], bundle["bundle_id"]),
+    )
+
+
+def _round_current_assessments(root: Path, snapshot: dict[str, Any], round_id: str) -> list[dict[str, Any]]:
+    latest = _latest_assessments(root)
+    rows: list[dict[str, Any]] = []
+    for bundle in _current_round_bundles(root, snapshot, round_id):
+        row = latest.get(bundle["bundle_id"])
+        if _assessment_is_current(bundle, row):
+            rows.append(row)
+    class_order = {"design_lead": 0, "contextual_anomaly": 1, "supporting_evidence": 2, "background": 3, "not_scorable": 4, "awaiting_comparator": 5}
+    return sorted(rows, key=lambda row: (class_order.get(row["candidate_class"], 9), row["bundle_id"]))
+
+
+def _write_round_assessment_csv(root: Path, snapshot: dict[str, Any], round_id: str) -> Path:
+    path = root / "rounds" / round_id / "result_assessments.csv"
+    headers = [
+        "assessment_id", "bundle_id", "bundle_type", "round_id", "capability_id", "target_result_refs",
+        "assessment_status", "candidate_class", "sample_support", "comparator_validity", "effect_stability", "independence",
+        "favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage", "reason",
+        "supporting_result_refs", "counter_result_refs", "rubric_version", "source_hash", "revision", "created_at",
+    ]
+    rows = []
+    for row in _round_current_assessments(root, snapshot, round_id):
+        scores = row.get("scores") or {}
+        reliability = row.get("reliability") or {}
+        rows.append({
+            **{key: row.get(key) for key in headers},
+            "target_result_refs": ";".join(row.get("target_result_refs") or []),
+            "supporting_result_refs": ";".join(row.get("supporting_result_refs") or []),
+            "counter_result_refs": ";".join(row.get("counter_result_refs") or []),
+            **{key: scores.get(key) for key in ASSESSMENT_AXES},
+            **{key: reliability.get(key) for key in ("sample_support", "comparator_validity", "effect_stability", "independence")},
+        })
+    write_csv(path, headers, rows)
+    return path
+
+
+def _screening_summary_fresh(root: Path, snapshot: dict[str, Any], round_id: str) -> tuple[bool, str | None]:
+    record = snapshot.get("rounds", {}).get(round_id, {})
+    relative = record.get("screening_summary_ref")
+    if not relative:
+        return False, None
+    path = root / str(relative)
+    if not path.is_file() or _pending_screening_bundles(root, snapshot, round_id):
+        return False, None
+    try:
+        summary = read_json(path)
+        validate(summary, "screening_summary.schema.json")
+    except Exception:
+        return False, None
+    bundles = _current_round_bundles(root, snapshot, round_id)
+    return summary.get("bundle_count") == len(bundles) and summary.get("unassessed_count") == 0, str(relative)
+
+
+def _handoff_marker(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> str | None:
+    round_id = control.get("active_round_id")
+    if not round_id:
+        return None
+    if _round_report_mode(root, control, snapshot) == "screening":
+        fresh, relative = _screening_summary_fresh(root, snapshot, round_id)
+        return f"screening:{relative}" if fresh and relative else None
+    fresh, node_id = _interpretation_fresh(snapshot, round_id)
+    return f"interpretation:{node_id}" if fresh and node_id else None
+
+
+def _assessment_review_manifest(
+    round_id: str,
+    bundles: list[dict[str, Any]],
+    assessments: dict[str, dict[str, Any]],
+    detailed_limit: int,
+) -> dict[str, Any]:
+    """Select reportable Bundle classes without collapsing scientific axes to a total score."""
+    bundle_map = {bundle["bundle_id"]: bundle for bundle in bundles}
+    rows = [row for bundle_id, row in assessments.items() if bundle_id in bundle_map]
+    class_rank = {"design_lead": 0, "contextual_anomaly": 1, "supporting_evidence": 2, "background": 3, "not_scorable": 4, "awaiting_comparator": 5}
+    support_rank = {"strong": 0, "moderate": 1, "limited": 2, "insufficient": 3}
+    rows.sort(key=lambda row: (
+        class_rank.get(row["candidate_class"], 9),
+        support_rank.get((row.get("reliability") or {}).get("sample_support"), 9),
+        -int(((row.get("scores") or {}).get("chemical_actionability")) if isinstance((row.get("scores") or {}).get("chemical_actionability"), int) else -1),
+        row["capability_id"], row["bundle_id"],
+    ))
+    selected_bundles: list[str] = []
+    selected_refs: list[str] = []
+    for row in rows:
+        if row["candidate_class"] not in {"design_lead", "contextual_anomaly"}:
+            continue
+        refs = bundle_map[row["bundle_id"]]["all_result_refs"]
+        new_refs = [ref for ref in refs if ref not in selected_refs]
+        if selected_bundles and len(selected_refs) + len(new_refs) > detailed_limit:
+            continue
+        selected_bundles.append(row["bundle_id"])
+        selected_refs.extend(new_refs)
+        if len(selected_refs) >= detailed_limit:
+            break
+    selected_set = set(selected_bundles)
+    manifest = {
+        "schema_version": "2.0.0",
+        "round_id": round_id,
+        "selected_bundle_ids": selected_bundles,
+        "detailed_result_refs": selected_refs,
+        "unselected_bundles": [{"bundle_id": bundle["bundle_id"], "candidate_class": (assessments.get(bundle["bundle_id"]) or {}).get("candidate_class", "awaiting_comparator"), "reason": "not_selected_by_report_gate"} for bundle in bundles if bundle["bundle_id"] not in selected_set],
+        "candidate_class_counts": dict(Counter(row["candidate_class"] for row in rows)),
+        "bundle_type_counts": dict(Counter(bundle["bundle_type"] for bundle in bundles)),
+        "operator_counts": dict(Counter(bundle["capability_id"] for bundle in bundles)),
+        "selection_method": "candidate_class_reliability_actionability_diversity",
+        "created_at": utc_now(),
+    }
     validate(manifest, "interpretation_review_manifest.schema.json")
     return manifest
+
+
+def _candidate_class(profile_value: dict[str, Any], bundle: dict[str, Any], status: str, scores: dict[str, Any] | None) -> str:
+    if bundle["comparison_status"] == "awaiting_comparator":
+        return "awaiting_comparator"
+    if status == "not_scorable" or scores is None:
+        return "not_scorable"
+    if not bundle["runtime_facts"]["minimum_support_met"]:
+        return "background"
+    def score(name: str) -> int:
+        value = scores.get(name)
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+    standalone = profile_value["standalone_insight"]
+    if standalone in {"allowed", "conditional"} and score("favorable_signal") >= 2 and score("chemical_actionability") >= 2:
+        return "design_lead"
+    comparison_is_valid = bundle["bundle_type"] not in {"global_local", "sibling_cluster"} or bundle["runtime_facts"]["comparator_validity"] in {"partial", "matched"}
+    if standalone in {"allowed", "conditional"} and comparison_is_valid and score("context_deviation") >= 2 and score("follow_up_leverage") >= 1:
+        return "contextual_anomaly"
+    if standalone == "supporting_only" or score("independent_support") >= 1 or score("context_deviation") >= 1:
+        return "supporting_evidence"
+    return "background"
+
+
+def _persist_review_bundles(root: Path, bundles: list[dict[str, Any]]) -> None:
+    path = _bundle_index_path(root)
+    known = {(row["bundle_id"], row.get("source_hash")) for row in read_jsonl(path)}
+    append_jsonl_rows_atomic(path, [bundle for bundle in bundles if (bundle["bundle_id"], bundle["source_hash"]) not in known])
 
 
 def cmd_enter_finalizing(args: argparse.Namespace) -> int:
@@ -3504,6 +4133,273 @@ def cmd_enter_finalizing(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
+    root = resolve_root(args.run_root)
+    with writer_lock(root):
+        _recover_transaction(root)
+        control, snapshot = _read_state(root)
+        _require_action(control, args.lease_token, {"PREPARE_RESULT_SCREENING"})
+        round_id = control["active_round_id"]
+        pending = _pending_screening_bundles(root, snapshot, round_id)
+        if not pending:
+            raise ValueError("No ready Review Bundle requires Screening")
+        _persist_review_bundles(root, _current_round_bundles(root, snapshot, round_id))
+        settings = profile().get("runtime_planning") or {}
+        batch_size = int(settings.get("screening_batch_size", DEFAULT_SCREENING_BATCH_SIZE))
+        byte_limit = int(settings.get("max_screening_context_bytes", DEFAULT_SCREENING_CONTEXT_BYTES))
+        targets = pending[:batch_size]
+        usable_cards = {card["result_ref"]: card for card in _usable_result_cards(root, snapshot)}
+        def make_context(selected: list[dict[str, Any]]) -> dict[str, Any]:
+            refs = list(dict.fromkeys(ref for bundle in selected for ref in bundle["all_result_refs"]))
+            selected_cards = [usable_cards[ref] for ref in refs if ref in usable_cards]
+            selected_profiles = [catalog()[capability_id]["interpretation_profile"] for capability_id in sorted({bundle["capability_id"] for bundle in selected})]
+            batch_id = "SCR" + value_hash({
+                "round_id": round_id,
+                "rubric_version": SCREENING_RUBRIC_VERSION,
+                "targets": [(bundle["bundle_id"], bundle["source_hash"]) for bundle in selected],
+            })[:16]
+            return {
+                "schema_version": "2.0.0",
+                "mode": "screening",
+                "run_id": control["run"]["run_id"],
+                "round_id": round_id,
+                "batch_id": batch_id,
+                "rubric_version": SCREENING_RUBRIC_VERSION,
+                "allowed_result_refs": refs,
+                "target_bundle_ids": [bundle["bundle_id"] for bundle in selected],
+                "review_bundles": selected,
+                "result_cards": selected_cards,
+                "interpretation_profiles": selected_profiles,
+                "rubric": {
+                    "score_meaning": "Absolute axis ratings; score only each Bundle's applicable_axes and never sum or rank them against other Bundles.",
+                    "axes": {
+                        "favorable_signal": "0-3 or not_applicable: evidence for movement in the Runtime-normalized favorable direction",
+                        "context_deviation": "0-3 or not_applicable: Global-Local or sibling change that alters interpretation",
+                        "chemical_actionability": "0-3 or not_applicable: connection to a manipulable feature, core, region, or transformation",
+                        "independent_support": "0-3 or not_applicable: support from meaningfully independent evidence",
+                        "follow_up_leverage": "0-3 or not_applicable: ability of a small follow-up to change a decision",
+                    },
+                    "reliability": "Runtime owns sample_support and comparator_validity. Assess only effect_stability and independence.",
+                    "candidate_class": "Runtime derives the fixed candidate class; the Interpreter must not invent one.",
+                    "not_scorable": "Use only when the bounded Bundle cannot support a defensible axis assessment.",
+                },
+                "created_at": utc_now(),
+            }
+
+        context = make_context(targets)
+        while len(targets) > 1 and len(canonical_bytes(context)) > byte_limit:
+            targets.pop()
+            context = make_context(targets)
+        if len(canonical_bytes(context)) > byte_limit:
+            raise ValueError("A single Review Bundle exceeds the bounded Screening context limit")
+        validate(context, "screening_batch.schema.json")
+        batch_id = context["batch_id"]
+        scratch = root / "runtime" / "scratch" / round_id / "screening" / batch_id
+        scratch.mkdir(parents=True, exist_ok=True)
+        context_path = scratch / "context.json"
+        draft_path = scratch / "draft.json"
+        write_json(context_path, context)
+        write_json(draft_path, {"schema_version": "2.0.0", "batch_id": batch_id, "assessments": []})
+        snapshot["rounds"][round_id]["current_screening_batch"] = {
+            "batch_id": batch_id,
+            "context_path": str(context_path),
+            "draft_path": str(draft_path),
+            "target_bundle_ids": context["target_bundle_ids"],
+            "attempts": 0,
+            "prepared_at": utc_now(),
+        }
+        _commit(root, control, snapshot, "result_screening_prepared", {
+            "batch_id": batch_id,
+            "target_bundle_ids": context["target_bundle_ids"],
+            "context_path": str(context_path.relative_to(root)),
+            "draft_path": str(draft_path.relative_to(root)),
+        }, round_id=round_id)
+        _write_working_set(root, control, snapshot)
+    _print_compact(
+        control,
+        batch_id=batch_id,
+        target_count=len(targets),
+        context_path=str(context_path),
+        draft_path=str(draft_path),
+        interpreter_agent="cs-conductor-interpreter",
+        interpreter_mode="screening",
+    )
+    return 0
+
+
+def cmd_commit_result_screening(args: argparse.Namespace) -> int:
+    root = resolve_root(args.run_root)
+    with writer_lock(root):
+        _recover_transaction(root)
+        control, snapshot = _read_state(root)
+        _require_action(control, args.lease_token, {"WRITE_RESULT_SCREENING"})
+        round_id = control["active_round_id"]
+        record = snapshot["rounds"][round_id]
+        batch = record.get("current_screening_batch") or {}
+        if batch.get("batch_id") != args.batch_id:
+            raise ValueError("Screening batch is not current")
+        draft_path = Path(args.draft).resolve() if args.draft else Path(batch["draft_path"]).resolve()
+        if draft_path != Path(batch["draft_path"]).resolve():
+            raise ValueError("Draft path does not match the Runtime-prepared Screening workspace")
+        try:
+            context = read_json(Path(batch["context_path"]))
+            draft = read_json(draft_path)
+            validate(draft, "screening_draft.schema.json")
+            if draft["batch_id"] != batch["batch_id"]:
+                raise ValueError("Screening draft batch_id mismatch")
+            targets = list(context["target_bundle_ids"])
+            by_id = {row["bundle_id"]: row for row in draft["assessments"]}
+            if len(by_id) != len(draft["assessments"]) or set(by_id) != set(targets):
+                raise ValueError("Screening draft must assess every target Review Bundle exactly once")
+            allowed = set(context["allowed_result_refs"])
+            bundles = {bundle["bundle_id"]: bundle for bundle in context["review_bundles"]}
+            cards = {card["result_ref"]: card for card in context["result_cards"]}
+            latest = _latest_assessments(root)
+            existing_ids = {row["assessment_id"] for row in read_jsonl(_assessment_index_path(root))}
+            committed: list[dict[str, Any]] = []
+            for bundle_id in targets:
+                value = by_id[bundle_id]
+                bundle = bundles[bundle_id]
+                supporting = list(dict.fromkeys(value.get("supporting_result_refs") or []))
+                counter = list(dict.fromkeys(value.get("counter_result_refs") or []))
+                if set([*supporting, *counter]) - allowed:
+                    raise ValueError(f"Assessment references Results outside context: {bundle_id}")
+                if set([*supporting, *counter]) - set(bundle["all_result_refs"]):
+                    raise ValueError(f"Assessment references Results outside its Review Bundle: {bundle_id}")
+                status = value["assessment_status"]
+                scores = value.get("scores")
+                stability = value.get("effect_stability")
+                independence = value.get("independence")
+                profile_value = catalog()[bundle["capability_id"]]["interpretation_profile"]
+                if status == "evaluated":
+                    if not isinstance(scores, dict) or stability not in {"unknown", "unstable", "mixed", "stable"} or independence not in {"unknown", "overlapping", "partially_independent", "independent"}:
+                        raise ValueError(f"Evaluated assessment requires scores and reliability judgments: {bundle_id}")
+                    allowed_axes = set(bundle["applicable_axes"])
+                    for axis in ASSESSMENT_AXES:
+                        axis_value = scores[axis]
+                        if axis in allowed_axes and not isinstance(axis_value, int):
+                            raise ValueError(f"Allowed axis must be scored 0-3: {bundle_id}/{axis}")
+                        if axis not in allowed_axes and axis_value != "not_applicable":
+                            raise ValueError(f"Disallowed axis must be not_applicable: {bundle_id}/{axis}")
+                else:
+                    if scores is not None or stability is not None or independence is not None:
+                        raise ValueError(f"not_scorable assessment must use null scores and reliability judgments: {bundle_id}")
+                source_hash = bundle["source_hash"]
+                previous = latest.get(bundle_id)
+                revision = int(previous.get("revision", 0)) + 1 if previous else 1
+                assessment_id = "ASR" + value_hash([bundle_id, source_hash, SCREENING_RUBRIC_VERSION, revision])[:16]
+                quality_flags = sorted({flag for ref in bundle["all_result_refs"] for flag in (cards.get(ref, {}).get("quality_flags") or [])})
+                candidate_class = _candidate_class(profile_value, bundle, status, scores)
+                row = {
+                    "schema_version": "2.0.0", "assessment_id": assessment_id, "bundle_id": bundle_id, "bundle_type": bundle["bundle_type"],
+                    "round_id": round_id, "capability_id": bundle["capability_id"], "target_result_refs": bundle["target_result_refs"],
+                    "assessment_status": status, "candidate_class": candidate_class, "scores": scores,
+                    "reliability": {"sample_support": bundle["runtime_facts"]["sample_support"], "comparator_validity": bundle["runtime_facts"]["comparator_validity"], "effect_stability": stability or "unknown", "independence": independence or "unknown", "quality_flags": quality_flags},
+                    "reason": str(value["reason"]).strip(), "supporting_result_refs": supporting, "counter_result_refs": counter,
+                    "rubric_version": SCREENING_RUBRIC_VERSION, "source_hash": source_hash, "revision": revision, "created_at": utc_now(),
+                }
+                validate(row, "result_assessment.schema.json")
+                committed.append(row)
+            additions = [row for row in committed if row["assessment_id"] not in existing_ids]
+            append_jsonl_rows_atomic(_assessment_index_path(root), additions)
+        except Exception as exc:
+            batch["attempts"] = int(batch.get("attempts", 0)) + 1
+            failure_path = Path(batch["draft_path"]).with_name(f"screening_failure_{batch['attempts']:02d}.json")
+            write_json(failure_path, {"schema_version": "1.0.0", "batch_id": batch.get("batch_id"), "error": str(exc)[:4000], "created_at": utc_now()})
+            exhausted = batch["attempts"] >= MAX_INTERPRETER_ATTEMPTS
+            if exhausted:
+                control["blocker"] = {"code": "RESULT_SCREENING_RETRY_EXHAUSTED", "batch_id": batch.get("batch_id"), "failure_pointer": str(failure_path.relative_to(root))}
+            _commit(root, control, snapshot, "result_screening_rejected", {
+                "batch_id": batch.get("batch_id"), "attempts": batch["attempts"],
+                "failure_pointer": str(failure_path.relative_to(root)), "retry_exhausted": exhausted,
+            }, round_id=round_id)
+            _write_working_set(root, control, snapshot)
+            _print_compact(control, batch_id=batch.get("batch_id"), screening_status="fail", retry_exhausted=exhausted, failure_pointer=str(failure_path.relative_to(root)))
+            return 1
+        record["current_screening_batch"] = None
+        record["screening_summary_ref"] = None
+        if (control.get("blocker") or {}).get("code") == "RESULT_SCREENING_RETRY_EXHAUSTED":
+            control["blocker"] = None
+        csv_path = _write_round_assessment_csv(root, snapshot, round_id)
+        _commit(root, control, snapshot, "result_screening_committed", {
+            "batch_id": batch["batch_id"],
+            "assessment_ids": [row["assessment_id"] for row in committed],
+            "assessment_csv": str(csv_path.relative_to(root)),
+        }, round_id=round_id)
+        _write_working_set(root, control, snapshot)
+        remaining = len(_pending_screening_bundles(root, snapshot, round_id))
+    _print_compact(control, batch_id=batch["batch_id"], screening_status="pass", assessed_count=len(committed), unassessed_count=remaining)
+    return 0
+
+
+def cmd_reset_result_screening(args: argparse.Namespace) -> int:
+    root = resolve_root(args.run_root)
+    _require_control_authority(root, args.control_key)
+    with writer_lock(root):
+        _recover_transaction(root)
+        control, snapshot = _read_state(root)
+        if (control.get("blocker") or {}).get("code") != "RESULT_SCREENING_RETRY_EXHAUSTED":
+            raise ValueError("Result Screening is not blocked")
+        round_id = control["active_round_id"]
+        batch = snapshot["rounds"][round_id].get("current_screening_batch") or {}
+        batch["attempts"] = 0
+        control["blocker"] = None
+        _commit(root, control, snapshot, "result_screening_retry_authorized", {"batch_id": batch.get("batch_id"), "reason": args.reason}, round_id=round_id)
+        _write_working_set(root, control, snapshot)
+    _print_compact(control, batch_id=batch.get("batch_id"), screening_retry_authorized=True)
+    return 0
+
+
+def cmd_write_screening_summary(args: argparse.Namespace) -> int:
+    root = resolve_root(args.run_root)
+    with writer_lock(root):
+        _recover_transaction(root)
+        control, snapshot = _read_state(root)
+        _require_action(control, args.lease_token, {"WRITE_SCREENING_SUMMARY"})
+        round_id = control["active_round_id"]
+        pending = _pending_screening_bundles(root, snapshot, round_id)
+        if pending:
+            raise ValueError("Screening Summary cannot be written while ready Review Bundles remain unassessed")
+        bundles = _current_round_bundles(root, snapshot, round_id)
+        _persist_review_bundles(root, bundles)
+        assessments = _round_current_assessments(root, snapshot, round_id)
+        csv_path = _write_round_assessment_csv(root, snapshot, round_id)
+        awaiting = [bundle for bundle in bundles if bundle["comparison_status"] == "awaiting_comparator"]
+        candidate_counts = Counter(row["candidate_class"] for row in assessments)
+        candidate_counts["awaiting_comparator"] += len(awaiting)
+        operator_counts = Counter(bundle["capability_id"] for bundle in bundles)
+        bundle_type_counts = Counter(bundle["bundle_type"] for bundle in bundles)
+        reportable = [{key: row.get(key) for key in ("assessment_id", "bundle_id", "bundle_type", "capability_id", "target_result_refs", "candidate_class", "scores", "reliability", "reason")} for row in assessments if row["candidate_class"] in {"design_lead", "contextual_anomaly"}][:20]
+        relative = Path("rounds") / round_id / "screening_summary.json"
+        summary = {
+            "schema_version": "2.0.0",
+            "run_id": control["run"]["run_id"],
+            "round_id": round_id,
+            "report_mode": _round_report_mode(root, control, snapshot),
+            "bundle_count": len(bundles),
+            "evaluated_count": sum(row["assessment_status"] == "evaluated" for row in assessments),
+            "not_scorable_count": sum(row["assessment_status"] == "not_scorable" for row in assessments),
+            "awaiting_comparator_count": len(awaiting),
+            "unassessed_count": 0,
+            "candidate_class_counts": dict(sorted(candidate_counts.items())),
+            "operator_counts": dict(sorted(operator_counts.items())),
+            "bundle_type_counts": dict(sorted(bundle_type_counts.items())),
+            "reportable_candidates": reportable,
+            "assessment_index_ref": str(_assessment_index_path(root).relative_to(root)).replace("\\", "/"),
+            "assessment_csv_ref": str(csv_path.relative_to(root)).replace("\\", "/"),
+            "bundle_index_ref": str(_bundle_index_path(root).relative_to(root)).replace("\\", "/"),
+            "stop_reason": str(snapshot["rounds"][round_id].get("finalizing_reason") or "contract_satisfied"),
+            "created_at": utc_now(),
+        }
+        validate(summary, "screening_summary.schema.json")
+        write_json(root / relative, summary)
+        snapshot["rounds"][round_id].update({"screening_summary_ref": relative.as_posix(), "screening_completed_at": utc_now(), "latest_audit": None})
+        _commit(root, control, snapshot, "screening_summary_written", {"path": relative.as_posix(), "bundle_count": len(bundles), "evaluated_count": summary["evaluated_count"]}, round_id=round_id)
+        _write_working_set(root, control, snapshot)
+    _print_compact(control, screening_summary=str(root / relative), evaluated_count=summary["evaluated_count"], awaiting_comparator_count=summary["awaiting_comparator_count"], reportable_count=len(summary["reportable_candidates"]))
+    return 0
+
+
 def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
     with writer_lock(root):
@@ -3511,25 +4407,34 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         control, snapshot = _read_state(root)
         _require_action(control, args.lease_token, {"PLAN_INTERPRETATION"})
         round_id = control["active_round_id"]
-        cards = _current_round_cards(root, snapshot, round_id)
+        bundles = _current_round_bundles(root, snapshot, round_id)
         rereview = set(args.rereview_result_ref or [])
-        all_cards = {card["result_ref"]: card for card in read_jsonl(root / "runtime" / "result_index.jsonl")}
-        cards.extend(all_cards[ref] for ref in sorted(rereview) if ref in all_cards and all_cards[ref] not in cards)
+        all_cards = {card["result_ref"]: card for card in _usable_result_cards(root, snapshot)}
+        latest_assessments = _latest_assessments(root)
+        if rereview:
+            historical = {row["bundle_id"]: row for row in read_jsonl(_bundle_index_path(root))}
+            for bundle in historical.values():
+                if set(bundle.get("all_result_refs") or []) & rereview and bundle not in bundles:
+                    bundles.append(bundle)
         configured_limit = int((profile().get("runtime_planning") or {}).get("max_interpretation_result_cards", 50))
         detailed_limit = min(args.detailed_limit, configured_limit)
-        review = _review_manifest(round_id, cards, detailed_limit)
+        review = _assessment_review_manifest(round_id, bundles, latest_assessments, detailed_limit)
         selected_refs = set(review["detailed_result_refs"])
-        selected_cards = [card for card in cards if card["result_ref"] in selected_refs]
+        selected_cards = [card for ref, card in all_cards.items() if ref in selected_refs]
         selected_cards.sort(key=lambda card: review["detailed_result_refs"].index(card["result_ref"]))
+        selected_bundle_ids = set(review["selected_bundle_ids"])
+        selected_bundles = [bundle for bundle in bundles if bundle["bundle_id"] in selected_bundle_ids]
+        selected_bundles.sort(key=lambda bundle: review["selected_bundle_ids"].index(bundle["bundle_id"]))
         analysis_nodes = sorted({card["node_id"] for card in selected_cards})
         previous = snapshot["rounds"][round_id].get("current_interpretation_node")
         record = snapshot["rounds"][round_id]
         effective_focus = args.focus or record.get("report_revision_reason")
         revision_serial = int(record.get("interpretation_revision_serial", 0))
-        node, _created = _add_node(snapshot, control, "I001", analysis_nodes, "round_commit", {"mode": "multi_scope"}, {"reviewed_result_refs": review["detailed_result_refs"], "focus": effective_focus, "revision_serial": revision_serial}, supersedes=previous)
+        node, _created = _add_node(snapshot, control, "I001", analysis_nodes, "round_commit", {"mode": "multi_scope"}, {"reviewed_bundle_ids": review["selected_bundle_ids"], "reviewed_result_refs": review["detailed_result_refs"], "focus": effective_focus, "revision_serial": revision_serial}, supersedes=previous)
         scratch = root / "runtime" / "scratch" / round_id / node["node_id"] / "interpretation"
         scratch.mkdir(parents=True, exist_ok=True)
-        context = {"schema_version": "1.0.0", "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "interpretation_policy": str((module_root() / "docs" / "CONDUCTOR_interpretation_policy.md").resolve()), "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_manifest": review, "comparison_batches": [[card["result_ref"] for card in selected_cards[index:index + 20]] for index in range(0, len(selected_cards), 20)], "role_contract": {"read_only_evidence_space": True, "scientific_computation_allowed": False, "node_creation_allowed": False, "followups_are_recommendations_only": True}, "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "comparison_claim_requires_comparison_results": True, "japanese_human_report": True}, "created_at": utc_now()}
+        selected_assessments = {bundle_id: latest_assessments[bundle_id] for bundle_id in review["selected_bundle_ids"] if bundle_id in latest_assessments}
+        context = {"schema_version": "2.0.0", "mode": "synthesis", "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "interpretation_policy": str((module_root() / "docs" / "CONDUCTOR_interpretation_policy.md").resolve()), "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_bundles": selected_bundles, "result_assessments": selected_assessments, "review_manifest": review, "comparison_batches": [review["selected_bundle_ids"][index:index + 10] for index in range(0, len(review["selected_bundle_ids"]), 10)], "role_contract": {"read_only_evidence_space": True, "scientific_computation_allowed": False, "node_creation_allowed": False, "followups_are_recommendations_only": True, "absolute_axes_not_total_score": True, "reportable_classes": ["design_lead", "contextual_anomaly"]}, "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "candidate_class_is_runtime_verified": True, "comparison_claim_requires_comparison_results": True, "japanese_human_report": True}, "created_at": utc_now()}
         draft = {"title": "CONDUCTOR解析結果の解釈", "executive_summary": "", "coverage_summary": "", "insights": []}
         write_json(scratch / "context.json", context)
         write_json(scratch / "draft.json", draft)
@@ -3603,11 +4508,18 @@ def _fallback_insight_title(subject: dict[str, Any], fact_panel: dict[str, Any])
     return f"{scope}における{operators}解析のInsight"
 
 
-def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, Any], cards: dict[str, dict[str, Any]], round_id: str, interpretation_node: str) -> list[dict[str, Any]]:
+def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, Any], cards: dict[str, dict[str, Any]], bundles: dict[str, dict[str, Any]], assessments: dict[str, dict[str, Any]], round_id: str, interpretation_node: str) -> list[dict[str, Any]]:
     existing_rows = read_jsonl(root / "runtime" / "insight_index.jsonl")
     latest = {row["insight_id"]: row for row in existing_rows}
     formal: list[dict[str, Any]] = []
     for value in draft.get("insights") or []:
+        bundle_ids = list(dict.fromkeys(value.get("review_bundle_ids") or []))
+        if not bundle_ids or set(bundle_ids) - set(bundles):
+            raise ValueError("Every Insight requires valid review_bundle_ids")
+        classes = {(assessments.get(bundle_id) or {}).get("candidate_class") for bundle_id in bundle_ids}
+        if not classes or classes - {"design_lead", "contextual_anomaly"}:
+            raise ValueError("Insight may use only reportable Review Bundle classes")
+        candidate_class = "design_lead" if "design_lead" in classes else "contextual_anomaly"
         supporting = list(dict.fromkeys(value.get("supporting_results") or []))
         comparisons = list(dict.fromkeys(value.get("comparison_results") or []))
         counter = list(dict.fromkeys(value.get("counter_results") or []))
@@ -3616,6 +4528,9 @@ def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, A
             raise ValueError("Every Insight requires supporting_results")
         if set(refs) - set(cards):
             raise ValueError(f"Insight references Results outside the Interpretation context: {sorted(set(refs)-set(cards))}")
+        bundle_refs = {ref for bundle_id in bundle_ids for ref in bundles[bundle_id]["all_result_refs"]}
+        if set(refs) - bundle_refs:
+            raise ValueError("Insight Result references must belong to its Review Bundles")
         existing_id = value.get("existing_insight_id")
         if existing_id:
             if existing_id not in latest:
@@ -3635,16 +4550,16 @@ def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, A
         clustering_caps = sorted({_node_lookup(snapshot)[node_id]["capability_id"] for node_id in subject["clustering_nodes"] if node_id in _node_lookup(snapshot)})
         description_caps = sorted({_node_lookup(snapshot)[node_id]["capability_id"] for node_id in subject["analysis_description_nodes"] if node_id in _node_lookup(snapshot)})
         source_caps = sorted({_node_lookup(snapshot)[node_id]["capability_id"] for node_id in subject["cluster_source_description_nodes"] if node_id in _node_lookup(snapshot)})
-        fact_panel = {"operators": sorted({card["capability_id"] for card in selected_cards}), "metrics": sorted({str(card.get("metric")) for card in selected_cards if card.get("metric")}), "analysis_descriptions": description_caps, "cluster_source_descriptions": source_caps, "clustering_method": ", ".join(clustering_caps) if clustering_caps else None, "result_samples": {card["result_ref"]: card["analysis_subject"]["analyzed_count"] for card in selected_cards}, "key_metrics": {card["result_ref"]: dict(list((card.get("key_metrics") or {}).items())[:8]) for card in selected_cards}}
+        fact_panel = {"operators": sorted({card["capability_id"] for card in selected_cards}), "metrics": sorted({str(card.get("metric")) for card in selected_cards if card.get("metric")}), "analysis_descriptions": description_caps, "cluster_source_descriptions": source_caps, "clustering_method": ", ".join(clustering_caps) if clustering_caps else None, "result_samples": {card["result_ref"]: card["analysis_subject"]["analyzed_count"] for card in selected_cards}, "comparison_families": sorted({card["comparison_family_id"] for card in selected_cards}), "interpretation_profiles": sorted({card["interpretation_profile_id"] for card in selected_cards})}
         title = str(value.get("title") or "").strip() or _fallback_insight_title(subject, fact_panel)
-        formal.append({"insight_id": insight_id, "revision": revision, "attention": attention, "claim_kind": value.get("claim_kind", "single_scope_observation"), "title": title, "analysis_subject": subject, "supporting_results": supporting, "comparison_results": comparisons, "counter_results": counter, "observation": str(value.get("observation") or "").strip(), "interpretation": str(value.get("interpretation") or "").strip(), "limitations": _normalise_insight_limitations(value.get("limitations")), "recommended_followups": [{"title": str(item.get("title") or "追加確認").strip(), "rationale": str(item.get("rationale") or "").strip()} for item in value.get("recommended_followups") or []], "fact_panel": fact_panel})
+        formal.append({"insight_id": insight_id, "revision": revision, "attention": attention, "candidate_class": candidate_class, "claim_kind": value.get("claim_kind", "single_scope_observation"), "title": title, "analysis_subject": subject, "review_bundle_ids": bundle_ids, "supporting_results": supporting, "comparison_results": comparisons, "counter_results": counter, "observation": str(value.get("observation") or "").strip(), "interpretation": str(value.get("interpretation") or "").strip(), "limitations": _normalise_insight_limitations(value.get("limitations")), "recommended_followups": [{"title": str(item.get("title") or "追加確認").strip(), "rationale": str(item.get("rationale") or "").strip()} for item in value.get("recommended_followups") or []], "fact_panel": fact_panel})
     return formal
 
 
 def _anticipated_outcome(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> str:
     deliverables = _deliverable_status(root, control, snapshot)
     technical_failures = any(node["status"] == "failed" and (node.get("created_in_round") == control["active_round_id"] or node.get("assigned_round") == control["active_round_id"]) for node in snapshot["nodes"])
-    unmet = [item for item in deliverables if item["type"] != "interpretation_completed" and not item["satisfied"] and not item.get("human_acceptance_required")]
+    unmet = [item for item in deliverables if item["type"] not in {"interpretation_completed", "screening_completed"} and not item["satisfied"] and not item.get("human_acceptance_required")]
     return "partial" if technical_failures or unmet else "complete"
 
 
@@ -3665,9 +4580,11 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
             draft = read_json(draft_path)
             context = read_json(Path(node["parameters"]["context_path"]))
             cards = {card["result_ref"]: card for card in context["result_cards"]}
-            insights = _formalize_insights(root, candidate_snapshot, draft, cards, control["active_round_id"], node["node_id"])
+            bundles = {bundle["bundle_id"]: bundle for bundle in context.get("review_bundles") or []}
+            assessments = dict(context.get("result_assessments") or {})
+            insights = _formalize_insights(root, candidate_snapshot, draft, cards, bundles, assessments, control["active_round_id"], node["node_id"])
             outcome = _anticipated_outcome(root, control, snapshot)
-            report = {"schema_version": "3.0.0", "run_id": control["run"]["run_id"], "round_id": control["active_round_id"], "node_id": node["node_id"], "supersedes": node.get("supersedes"), "title": str(draft.get("title") or "CONDUCTOR解析結果の解釈"), "report_header": {"project": control["run"]["project"], "endpoint": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "endpoint_unit": control["run"].get("endpoint_unit"), "endpoint_transform": control["run"].get("endpoint_transform"), "completion": outcome}, "executive_summary": str(draft.get("executive_summary") or ("今回の詳細確認範囲では、支持結果と反証結果を突き合わせても報告基準を満たすInsightは抽出されませんでした。これは解析失敗ではなく、明瞭な差異・一致・矛盾を確認できなかったnegative resultです。" if not insights else "今回の解析で得られた主要なInsightを示します。")), "coverage_summary": str(draft.get("coverage_summary") or f"当該Roundから選択したOperator Result {len(cards)}件を、ScopeとOperatorの偏りを抑えた順序で詳細確認しました。未確認結果はreview manifestに明記しています。"), "insights": insights, "result_catalog": list(cards.values()), "review_manifest": context["review_manifest"], "created_at": utc_now()}
+            report = {"schema_version": "4.0.0", "run_id": control["run"]["run_id"], "round_id": control["active_round_id"], "node_id": node["node_id"], "supersedes": node.get("supersedes"), "title": str(draft.get("title") or "CONDUCTOR解析結果の解釈"), "report_header": {"project": control["run"]["project"], "endpoint": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "endpoint_unit": control["run"].get("endpoint_unit"), "endpoint_transform": control["run"].get("endpoint_transform"), "completion": outcome}, "executive_summary": str(draft.get("executive_summary") or ("今回の範囲では、防御可能なdesign leadまたはcontextual anomalyは得られませんでした。" if not insights else "活性改善に接続し得る主要候補を示します。")), "coverage_summary": str(draft.get("coverage_summary") or f"Runtimeが選択したReview Bundle {len(bundles)}件を確認しました。未選択Bundleとcomparator不足はreview manifestに記録しています。"), "insights": insights, "result_catalog": list(cards.values()), "review_manifest": context["review_manifest"], "created_at": utc_now()}
             validate(report, "interpretation.schema.json")
             renderer = _renderer_module()
             issues = renderer.quality_issues(report)
@@ -3761,6 +4678,30 @@ def _audit(root: Path, mode: str) -> dict[str, Any]:
     result_rows = read_jsonl(root / "runtime" / "result_index.jsonl")
     result_refs = [row.get("result_ref") for row in result_rows]
     check("RESULT_REFS_UNIQUE", len(result_refs) == len(set(result_refs)))
+    bundle_rows = read_jsonl(_bundle_index_path(root))
+    bundle_versions: dict[tuple[str, str], dict[str, Any]] = {}
+    invalid_bundles = []
+    for row in bundle_rows:
+        try:
+            validate(row, "review_bundle.schema.json")
+            if set(row.get("all_result_refs") or []) - set(result_refs):
+                raise ValueError("Review Bundle references a Result absent from Result Index")
+            bundle_versions[(row["bundle_id"], row["source_hash"])] = row
+        except Exception as exc:
+            invalid_bundles.append({"bundle_id": row.get("bundle_id"), "error": str(exc)})
+    check("REVIEW_BUNDLE_INDEX", not invalid_bundles, invalid_bundles)
+    assessment_rows = read_jsonl(_assessment_index_path(root))
+    assessment_ids = [row.get("assessment_id") for row in assessment_rows]
+    invalid_assessments = []
+    for row in assessment_rows:
+        try:
+            validate(row, "result_assessment.schema.json")
+            if (row.get("bundle_id"), row.get("source_hash")) not in bundle_versions:
+                raise ValueError("assessment source Review Bundle is absent from Bundle Index")
+        except Exception as exc:
+            invalid_assessments.append({"assessment_id": row.get("assessment_id"), "error": str(exc)})
+    check("ASSESSMENT_IDS_UNIQUE", len(assessment_ids) == len(set(assessment_ids)))
+    check("RESULT_ASSESSMENT_INDEX", not invalid_assessments, invalid_assessments)
     if mode == "full":
         missing: list[str] = []
         invalid: list[str] = []
@@ -3802,24 +4743,33 @@ def _audit(root: Path, mode: str) -> dict[str, Any]:
                 invalid_clusters.append({"cluster_id": row.get("cluster_id"), "source_node_id": row.get("source_node_id"), "membership_path": row.get("membership_path")})
         check("CLUSTER_REGISTRY_SOURCES", not invalid_clusters, invalid_clusters)
         if control.get("active_round_id") and control["round_state"] in {"FINALIZING", "AWAITING_HUMAN_REVIEW"}:
-            fresh, interpretation_node = _interpretation_fresh(snapshot, control["active_round_id"])
-            check("INTERPRETATION_FRESH", fresh, {"node_id": interpretation_node})
-            if interpretation_node:
-                report_dir = Path(_node_lookup(snapshot)[interpretation_node]["output_ref"])
-                try:
-                    report = read_json(report_dir / "interpretation.json")
-                    validate(report, "interpretation.schema.json")
-                    issues = _renderer_module().quality_issues(report)
-                    check("INTERPRETATION_QUALITY", not issues, issues)
-                    links_missing = []
-                    for card in report["result_catalog"]:
-                        try:
-                            _validate_result_card_links(root, card)
-                        except Exception as exc:
-                            links_missing.append(str(exc))
-                    check("INTERPRETATION_LINKS", not links_missing, links_missing)
-                except Exception as exc:
-                    check("INTERPRETATION_SCHEMA", False, str(exc))
+            report_mode = _round_report_mode(root, control, snapshot)
+            if _screening_enabled(root, control, snapshot):
+                screening_fresh, screening_ref = _screening_summary_fresh(root, snapshot, control["active_round_id"])
+                check("SCREENING_SUMMARY_FRESH", screening_fresh, {"summary_ref": screening_ref})
+                pending_screening = _pending_screening_bundles(root, snapshot, control["active_round_id"])
+                check("ROUND_RESULTS_ASSESSED", not pending_screening, {"unassessed_count": len(pending_screening)})
+            if report_mode == "screening":
+                pass
+            else:
+                fresh, interpretation_node = _interpretation_fresh(snapshot, control["active_round_id"])
+                check("INTERPRETATION_FRESH", fresh, {"node_id": interpretation_node})
+                if interpretation_node:
+                    report_dir = Path(_node_lookup(snapshot)[interpretation_node]["output_ref"])
+                    try:
+                        report = read_json(report_dir / "interpretation.json")
+                        validate(report, "interpretation.schema.json")
+                        issues = _renderer_module().quality_issues(report)
+                        check("INTERPRETATION_QUALITY", not issues, issues)
+                        links_missing = []
+                        for card in report["result_catalog"]:
+                            try:
+                                _validate_result_card_links(root, card)
+                            except Exception as exc:
+                                links_missing.append(str(exc))
+                        check("INTERPRETATION_LINKS", not links_missing, links_missing)
+                    except Exception as exc:
+                        check("INTERPRETATION_SCHEMA", False, str(exc))
     errors = [item for item in checks if not item["passed"] and item["severity"] == "error"]
     warnings = [item for item in checks if not item["passed"] and item["severity"] == "warning"]
     return {"schema_version": "1.0.0", "mode": mode, "run_id": control["run"]["run_id"], "control_revision": control["revision"], "status": "fail" if errors else "warning" if warnings else "pass", "error_count": len(errors), "warning_count": len(warnings), "checks": checks, "created_at": utc_now()}
@@ -3851,8 +4801,9 @@ def cmd_audit(args: argparse.Namespace) -> int:
         audit = _audit(root, args.mode)
         output = _write_audit(root, audit)
         interpretation = snapshot["rounds"][control["active_round_id"]].get("current_interpretation_node")
-        snapshot["rounds"][control["active_round_id"]]["latest_audit"] = {"status": audit["status"], "path": str((output / "audit.json").relative_to(root)), "created_at": audit["created_at"], "after_interpretation_node": interpretation}
-        _commit(root, control, snapshot, "full_audit_registered", {"status": audit["status"], "path": str(output.relative_to(root)), "after_interpretation_node": interpretation}, round_id=control["active_round_id"])
+        handoff_ref = _handoff_marker(root, control, snapshot)
+        snapshot["rounds"][control["active_round_id"]]["latest_audit"] = {"status": audit["status"], "path": str((output / "audit.json").relative_to(root)), "created_at": audit["created_at"], "after_interpretation_node": interpretation, "after_handoff_ref": handoff_ref}
+        _commit(root, control, snapshot, "full_audit_registered", {"status": audit["status"], "path": str(output.relative_to(root)), "after_interpretation_node": interpretation, "after_handoff_ref": handoff_ref}, round_id=control["active_round_id"])
         working = _write_working_set(root, control, snapshot)
     _print_compact(control, output_dir=str(output), audit_status=audit["status"], error_count=audit["error_count"], warning_count=audit["warning_count"])
     return 1 if audit["status"] == "fail" else 0
@@ -3865,22 +4816,36 @@ def cmd_complete_finalizing(args: argparse.Namespace) -> int:
         control, snapshot = _read_state(root)
         _require_action(control, args.lease_token, {"COMPLETE_FINALIZING"})
         round_id = control["active_round_id"]
-        fresh, interpretation_node = _interpretation_fresh(snapshot, round_id)
+        report_mode = _round_report_mode(root, control, snapshot)
+        interpretation_node: str | None = None
+        screening_summary_ref: str | None = None
+        if report_mode == "screening":
+            fresh, screening_summary_ref = _screening_summary_fresh(root, snapshot, round_id)
+            handoff_marker = f"screening:{screening_summary_ref}" if fresh and screening_summary_ref else None
+        else:
+            fresh, interpretation_node = _interpretation_fresh(snapshot, round_id)
+            handoff_marker = f"interpretation:{interpretation_node}" if fresh and interpretation_node else None
         audit = snapshot["rounds"][round_id].get("latest_audit")
-        if not fresh or not audit or audit.get("status") != "pass" or audit.get("after_interpretation_node") != interpretation_node:
-            raise ValueError("Interpretation and Full Audit gate is not satisfied")
+        audit_marker = (audit or {}).get("after_handoff_ref") or (f"interpretation:{audit.get('after_interpretation_node')}" if audit and audit.get("after_interpretation_node") else None)
+        if not fresh or not audit or audit.get("status") != "pass" or audit_marker != handoff_marker:
+            raise ValueError("Round handoff artifact and Full Audit gate are not satisfied")
         deliverables = _deliverable_status(root, control, snapshot)
         completion = _anticipated_outcome(root, control, snapshot)
         stop_reason = snapshot["rounds"][round_id].get("finalizing_reason") or "contract_satisfied"
+        if stop_reason == "analysis_node_budget_exhausted":
+            stop_reason = "budget_exhausted"
         if stop_reason not in {"contract_satisfied", "budget_exhausted", "no_eligible_work", "human_checkpoint", "abnormal_interruption", "blocked"}:
             stop_reason = "blocked" if completion == "blocked" else "contract_satisfied"
-        outcome = {"schema_version": "1.0.0", "round_id": round_id, "completion": completion, "stop_reason": stop_reason, "deliverables": deliverables, "interpretation_node_id": interpretation_node, "audit_ref": audit["path"], "created_at": utc_now()}
+        outcome = {"schema_version": "1.0.0", "round_id": round_id, "report_mode": report_mode, "completion": completion, "stop_reason": stop_reason, "deliverables": deliverables, "interpretation_node_id": interpretation_node, "screening_summary_ref": screening_summary_ref, "audit_ref": audit["path"], "created_at": utc_now()}
         validate(outcome, "round_outcome.schema.json")
         write_json(root / "rounds" / round_id / "round_outcome.json", outcome)
-        write_json(root / "rounds" / round_id / "interpretation_ref.json", {"schema_version": "1.0.0", "round_id": round_id, "node_id": interpretation_node, "path": str(Path(_node_lookup(snapshot)[interpretation_node]["output_ref"]).relative_to(root)), "created_at": utc_now()})
+        if interpretation_node:
+            write_json(root / "rounds" / round_id / "interpretation_ref.json", {"schema_version": "1.0.0", "round_id": round_id, "node_id": interpretation_node, "path": str(Path(_node_lookup(snapshot)[interpretation_node]["output_ref"]).relative_to(root)), "created_at": utc_now()})
+        elif screening_summary_ref:
+            write_json(root / "rounds" / round_id / "screening_ref.json", {"schema_version": "1.0.0", "round_id": round_id, "path": screening_summary_ref, "created_at": utc_now()})
         snapshot["rounds"][round_id].update({"state": "AWAITING_HUMAN_REVIEW", "outcome": completion, "handoff_at": utc_now()})
         control.update({"round_state": "AWAITING_HUMAN_REVIEW", "blocker": None})
-        control["closure"] = {"contract_satisfied": completion == "complete", "interpretation_ready": True, "audit_ready": True, "outcome": completion}
+        control["closure"] = {"contract_satisfied": completion == "complete", "interpretation_ready": bool(interpretation_node), "audit_ready": True, "outcome": completion}
         owner = control["lease"]["owner_id"]
         control["lease"] = {"owner_id": None, "token_hash": None, "expires_at": None, "heartbeat_at": None, "process_id": None}
         _commit(root, control, snapshot, "round_handed_to_human", {"outcome": outcome, "released_owner": owner}, round_id=round_id)
@@ -3914,6 +4879,9 @@ def cmd_query(args: argparse.Namespace) -> int:
                 current["eligible_for_downstream"] = node_quality.get("eligible_for_downstream", current.get("eligible_for_downstream", True))
                 current["quality_flags"] = sorted(set(current.get("quality_flags") or []) | set(node_quality.get("quality_flags") or []))
             data[row["result_ref"]] = current
+        value = [data[item] for item in ids if item in data] if ids else list(data.values())[-limit:]
+    elif args.kind == "assessment":
+        data = _latest_assessments(root)
         value = [data[item] for item in ids if item in data] if ids else list(data.values())[-limit:]
     elif args.kind == "insight":
         data = {row["insight_id"]: row for row in read_jsonl(root / "runtime" / "insight_index.jsonl")}
@@ -4038,7 +5006,7 @@ def _action_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.6 deterministic Runtime Controller")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.2.0 deterministic Runtime Controller")
     commands = parser.add_subparsers(dest="command", required=True)
 
     item = commands.add_parser("init")
@@ -4065,6 +5033,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--parallel-limit", type=int)
     item.add_argument("--available-cpu-cores", type=int)
     item.add_argument("--max-additional-nodes", type=int, default=50)
+    item.add_argument("--report-mode", choices=["screening", "full"], default="screening")
     item.add_argument("--interpretation-iterations", type=int, default=3)
     item.add_argument("--approve-high-cost", action="store_true")
     item.add_argument("--required-deliverables-json")
@@ -4083,7 +5052,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--owner-id", required=True)
     item.add_argument("--process-id", type=int)
     item.add_argument("--lease-minutes", type=int, default=DEFAULT_LEASE_MINUTES)
-    item.add_argument("--smiles-column", help="Populate missing SMILES metadata when resuming a legacy Run; an existing value is immutable")
+    item.add_argument("--smiles-column", help="Populate missing SMILES metadata on a structurally valid current-version Run; an existing value is immutable")
     item.set_defaults(func=cmd_resume_round)
 
     item = commands.add_parser("continue-round")
@@ -4159,7 +5128,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("execute-packet")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--packet", required=True)
+    # ``--packet`` is the canonical public spelling.  Accept ``--packet-path``
+    # only at this human/LLM-facing boundary because prepare-execution-packet
+    # returns a JSON field named ``packet_path``.  Both spellings normalize to
+    # one internal destination and do not alter packet identity or signatures.
+    item.add_argument("--packet", "--packet-path", dest="packet", required=True)
     item.set_defaults(func=cmd_execute_packet)
 
     # Internal deterministic OS worker. It is spawned only by execute-packet;
@@ -4183,6 +5156,26 @@ def build_parser() -> argparse.ArgumentParser:
     item = commands.add_parser("enter-finalizing")
     _action_args(item)
     item.set_defaults(func=cmd_enter_finalizing)
+
+    item = commands.add_parser("prepare-result-screening")
+    _action_args(item)
+    item.set_defaults(func=cmd_prepare_result_screening)
+
+    item = commands.add_parser("commit-result-screening")
+    _action_args(item)
+    item.add_argument("--batch-id", required=True)
+    item.add_argument("--draft")
+    item.set_defaults(func=cmd_commit_result_screening)
+
+    item = commands.add_parser("reset-result-screening")
+    item.add_argument("--run-root", required=True)
+    item.add_argument("--control-key", required=True)
+    item.add_argument("--reason", required=True)
+    item.set_defaults(func=cmd_reset_result_screening)
+
+    item = commands.add_parser("write-screening-summary")
+    _action_args(item)
+    item.set_defaults(func=cmd_write_screening_summary)
 
     item = commands.add_parser("prepare-interpretation")
     _action_args(item)
@@ -4210,7 +5203,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     item = commands.add_parser("query")
     item.add_argument("--run-root", required=True)
-    item.add_argument("--kind", choices=["control", "working-set", "node", "cluster", "result", "insight", "candidates"], required=True)
+    item.add_argument("--kind", choices=["control", "working-set", "node", "cluster", "result", "assessment", "insight", "candidates"], required=True)
     item.add_argument("--ids")
     item.add_argument("--limit", type=int, default=20)
     item.set_defaults(func=cmd_query)

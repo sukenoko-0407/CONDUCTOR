@@ -44,6 +44,8 @@ Runtime経由ではSkillのCONDUCTOR出力はattempt scratchとして検証さ�
 - 通常モード: `results/analysis/<input>/<skill>/<run-id>/`へ`A005_multidescription_feature_model.csv`、OOF予測、`operator_report.html`を生成する。State用summary、manifest、execution eventは生成しない。
 - CONDUCTORモード: `results/CONDUCTOR/<project>/<run-id>/analysis/<skill>/<node-id-safe>/attempts/<attempt-id>/`へ主成果物、`operator_report.html`、`operator_summary.json`、`analysis_manifest.json`、`warnings.json`、`execution_event.json`を生成しschema検証する。
 
+Global modelのOOFは`global_oof_predictions.csv`、Cluster survey／within-clusterのOOFは`cluster_id`列を持つ単一`cluster_oof_predictions.csv`へ保存する。一つのExecution Eventが宣言する`oof_predictions` Artifactは最大一つであり、Cluster別model comparisonとResult Cardは別に保持する。
+
 `<node-id-safe>`はnode IDの`:`を`-`へ置換したdirectory名であり、同一Skillの複数node間の出力衝突を防ぐ。
 
 `--output-dir`は両モードの既定出力先より優先するが、モード自体は変更しない。

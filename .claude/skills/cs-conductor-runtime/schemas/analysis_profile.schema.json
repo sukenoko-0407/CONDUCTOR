@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/analysis_profile.schema.json",
-  "title": "CONDUCTOR 0.1.6 analysis profile",
+  "title": "CONDUCTOR 0.2.0 analysis profile",
   "type": "object",
   "required": ["schema_version", "profile_id", "managed_by", "basic_compute", "exploration", "runtime_planning", "modeling"],
   "properties": {
@@ -24,7 +24,7 @@
         "random_seed": {"type": "integer"}
       }
     },
-    "runtime_planning": {"type": "object", "required": ["max_new_analysis_nodes_per_round", "max_interpretation_result_cards"], "properties": {"max_new_analysis_nodes_per_round": {"const": 50}, "max_interpretation_result_cards": {"const": 50}}, "additionalProperties": false},
+    "runtime_planning": {"type": "object", "required": ["max_new_analysis_nodes_per_round", "analysis_activation_batch_size", "max_interpretation_result_cards", "screening_batch_size", "max_screening_context_bytes"], "properties": {"max_new_analysis_nodes_per_round": {"type": "integer", "minimum": 50, "maximum": 5000}, "analysis_activation_batch_size": {"type": "integer", "minimum": 1, "maximum": 100}, "max_interpretation_result_cards": {"type": "integer", "minimum": 1, "maximum": 50}, "screening_batch_size": {"type": "integer", "minimum": 1, "maximum": 20}, "max_screening_context_bytes": {"type": "integer", "minimum": 16384, "maximum": 262144}}, "additionalProperties": false},
     "modeling": {"type": "object", "required": ["fixed_description_panel", "minimum_local_samples"]},
     "matched_molecular_pairs": {
       "type": "object",

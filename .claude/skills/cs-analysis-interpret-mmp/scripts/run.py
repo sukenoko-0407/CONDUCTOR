@@ -189,6 +189,7 @@ def select_global_mmp(root: Path, snapshot: dict[str, Any], round_id: str, reque
 def load_mmp_database(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
     uri = f"file:{path.resolve().as_posix()}?mode=ro"
     with closing(sqlite3.connect(uri, uri=True)) as connection:
+        connection.execute("PRAGMA query_only = ON")
         details = pd.read_sql_query(
             """
             SELECT p.mmp_id,
@@ -201,7 +202,6 @@ def load_mmp_database(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
               JOIN compounds ct ON ct.compound_key = p.compound_to_key
               JOIN transforms t ON t.transform_key = p.transform_key
               JOIN cores c ON c.core_key = p.core_key
-             ORDER BY p.pair_key
             """,
             connection,
         )
@@ -280,35 +280,168 @@ METHOD_COLUMNS = [
 ]
 
 
+def grouped_transform_summary(
+    frame: pd.DataFrame,
+    prefix: str,
+    group_columns: list[str] | None = None,
+) -> pd.DataFrame:
+    group_columns = list(group_columns or [])
+    columns = [*group_columns, "transform_id", "transform_smirks", *[f"{prefix}_{column}" for column in STAT_COLUMNS]]
+    if frame.empty:
+        return pd.DataFrame(columns=columns)
+    keys = [*group_columns, "transform_id", "transform_smirks"]
+    grouped = frame.groupby(keys, dropna=False, observed=True)
+    summary = grouped.size().rename(f"{prefix}_mmp_instance_count").reset_index()
+    pair_count = (
+        frame[keys + PAIR_COLUMNS].drop_duplicates()
+        .groupby(keys, dropna=False, observed=True).size()
+        .rename(f"{prefix}_pair_count").reset_index()
+    )
+    compounds = pd.concat([
+        frame[keys + ["compound_id_from"]].rename(columns={"compound_id_from": "compound_id"}),
+        frame[keys + ["compound_id_to"]].rename(columns={"compound_id_to": "compound_id"}),
+    ], ignore_index=True).drop_duplicates()
+    compound_count = (
+        compounds.groupby(keys, dropna=False, observed=True).size()
+        .rename(f"{prefix}_independent_compound_count").reset_index()
+    )
+    core_count = grouped["core_id"].nunique().rename(f"{prefix}_independent_core_count").reset_index()
+    pair_effects = (
+        frame.groupby(keys + PAIR_COLUMNS, dropna=False, observed=True)["favorable_delta"]
+        .median().dropna().rename("pair_effect").reset_index()
+    )
+    if len(pair_effects):
+        effect_group = pair_effects.groupby(keys, dropna=False, observed=True)["pair_effect"]
+        effect_stats = effect_group.agg(
+            **{
+                f"{prefix}_endpoint_pair_count": "size",
+                f"{prefix}_median": "median",
+                f"{prefix}_q1": lambda values: values.quantile(.25),
+                f"{prefix}_q3": lambda values: values.quantile(.75),
+            }
+        ).reset_index()
+        effect_stats[f"{prefix}_iqr"] = effect_stats[f"{prefix}_q3"] - effect_stats[f"{prefix}_q1"]
+        centered = pair_effects.merge(effect_stats[keys + [f"{prefix}_median"]], on=keys, how="left")
+        centered["absolute_deviation"] = (centered["pair_effect"] - centered[f"{prefix}_median"]).abs()
+        mad = (
+            centered.groupby(keys, dropna=False, observed=True)["absolute_deviation"].median()
+            .rename(f"{prefix}_mad").reset_index()
+        )
+        direction = pair_effects.assign(
+            positive=(pair_effects["pair_effect"] > 0).astype(float),
+            negative=(pair_effects["pair_effect"] < 0).astype(float),
+        ).groupby(keys, dropna=False, observed=True)[["positive", "negative"]].mean().reset_index()
+        direction[f"{prefix}_direction_consistency"] = direction[["positive", "negative"]].max(axis=1)
+        direction = direction[keys + [f"{prefix}_direction_consistency"]]
+    else:
+        effect_stats = pd.DataFrame(columns=keys + [
+            f"{prefix}_endpoint_pair_count", f"{prefix}_median", f"{prefix}_q1", f"{prefix}_q3", f"{prefix}_iqr",
+        ])
+        mad = pd.DataFrame(columns=keys + [f"{prefix}_mad"])
+        direction = pd.DataFrame(columns=keys + [f"{prefix}_direction_consistency"])
+    for addition in (pair_count, compound_count, core_count, effect_stats, mad, direction):
+        summary = summary.merge(addition, on=keys, how="left")
+    for name in (
+        f"{prefix}_mmp_instance_count", f"{prefix}_pair_count", f"{prefix}_endpoint_pair_count",
+        f"{prefix}_independent_compound_count", f"{prefix}_independent_core_count",
+    ):
+        summary[name] = pd.to_numeric(summary[name], errors="coerce").fillna(0).astype(int)
+    return summary.reindex(columns=columns)
+
+
 def transform_summary(frame: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for (transform_id, smirks), group in frame.groupby(["transform_id", "transform_smirks"], dropna=False):
-        group = group.copy()
-        pair_effects = group.groupby(["compound_id_from", "compound_id_to"], dropna=False)["favorable_delta"].median().dropna()
-        median = float(pair_effects.median()) if len(pair_effects) else math.nan
-        rows.append({
-            "transform_id": transform_id,
-            "transform_smirks": smirks,
-            f"{prefix}_mmp_instance_count": int(len(group)),
-            f"{prefix}_pair_count": int(group[["compound_id_from", "compound_id_to"]].drop_duplicates().shape[0]),
-            f"{prefix}_endpoint_pair_count": int(len(pair_effects)),
-            f"{prefix}_independent_compound_count": int(len(set(group["compound_id_from"]) | set(group["compound_id_to"]))),
-            f"{prefix}_independent_core_count": int(group["core_id"].nunique()),
-            f"{prefix}_median": median,
-            f"{prefix}_q1": float(pair_effects.quantile(.25)) if len(pair_effects) else math.nan,
-            f"{prefix}_q3": float(pair_effects.quantile(.75)) if len(pair_effects) else math.nan,
-            f"{prefix}_iqr": float(pair_effects.quantile(.75) - pair_effects.quantile(.25)) if len(pair_effects) else math.nan,
-            f"{prefix}_mad": float((pair_effects - median).abs().median()) if len(pair_effects) else math.nan,
-            f"{prefix}_direction_consistency": float(max((pair_effects > 0).mean(), (pair_effects < 0).mean())) if len(pair_effects) else math.nan,
-        })
-    columns = ["transform_id", "transform_smirks", *[f"{prefix}_{column}" for column in STAT_COLUMNS]]
-    return pd.DataFrame(rows, columns=columns)
+    return grouped_transform_summary(frame, prefix)
 
 
 def source_overlap(matrix: pd.DataFrame, source_clusters: list[str]) -> bool:
     if len(source_clusters) < 2:
         return False
     return bool((matrix[source_clusters].astype(int).sum(axis=1) > 1).any())
+
+
+PAIR_COLUMNS = ["compound_id_from", "compound_id_to"]
+
+
+def source_pair_projection(
+    valid: pd.DataFrame,
+    matrix: pd.DataFrame,
+    id_column: str,
+    cluster_ids: list[str],
+    overlapping: bool,
+) -> tuple[dict[str, frozenset[str]], pd.DataFrame, Counter[str]]:
+    """Project unique compound pairs onto all Clusters from one Clustering Node.
+
+    The former implementation scanned every MMP row once per Cluster.  This
+    routine inspects each unique compound pair once per Clustering Node and
+    expands only actual within-Cluster assignments.  Overlapping Clustering is
+    kept exact by assigning a pair to the intersection of endpoint membership
+    sets.
+    """
+
+    indexed = matrix.set_index(id_column, drop=False)
+    compound_ids = indexed.index.astype(str).to_numpy()
+    membership_values = indexed[cluster_ids].to_numpy(dtype=bool, copy=False)
+    members_by_cluster = {
+        cluster_id: frozenset(compound_ids[membership_values[:, index]].tolist())
+        for index, cluster_id in enumerate(cluster_ids)
+    }
+    pairs = valid[PAIR_COLUMNS].drop_duplicates()
+    boundary_counts: Counter[str] = Counter()
+    pair_ids = pairs[PAIR_COLUMNS].astype(str).to_numpy()
+    row_lookup = pd.Series(np.arange(len(compound_ids), dtype=np.int64), index=compound_ids)
+    # Pandas Copy-on-Write may expose these arrays as read-only views.  We map
+    # missing compounds to the padded sentinel row below, so take explicit
+    # writable copies before replacing -1.
+    left_rows = pairs["compound_id_from"].astype(str).map(row_lookup).fillna(-1).to_numpy(dtype=np.int64, copy=True)
+    right_rows = pairs["compound_id_to"].astype(str).map(row_lookup).fillna(-1).to_numpy(dtype=np.int64, copy=True)
+    # The final all-False row represents a compound absent from the membership
+    # matrix without introducing a special branch in vectorized indexing.
+    padded_membership = np.vstack([membership_values, np.zeros((1, len(cluster_ids)), dtype=bool)])
+    left_rows[left_rows < 0] = len(compound_ids)
+    right_rows[right_rows < 0] = len(compound_ids)
+    if overlapping:
+        assignment_chunks: list[pd.DataFrame] = []
+        # Keep temporary Boolean matrices below roughly 64 MiB each.  Three
+        # matrices can coexist while calculating intersection and XOR.
+        rows_per_chunk = max(1, (64 * 1024 * 1024) // max(3 * len(cluster_ids), 1))
+        cluster_array = np.asarray(cluster_ids, dtype=object)
+        for start in range(0, len(pairs), rows_per_chunk):
+            stop = min(len(pairs), start + rows_per_chunk)
+            left_membership = padded_membership[left_rows[start:stop]]
+            right_membership = padded_membership[right_rows[start:stop]]
+            local_row, local_column = np.nonzero(left_membership & right_membership)
+            if len(local_row):
+                assignment_chunks.append(pd.DataFrame({
+                    "compound_id_from": pair_ids[start:stop, 0][local_row],
+                    "compound_id_to": pair_ids[start:stop, 1][local_row],
+                    "__cluster_id": cluster_array[local_column],
+                }))
+            boundary = np.count_nonzero(left_membership ^ right_membership, axis=0)
+            boundary_counts.update({cluster_ids[index]: int(count) for index, count in enumerate(boundary) if count})
+        assignment_frame = pd.concat(assignment_chunks, ignore_index=True) if assignment_chunks else pd.DataFrame(columns=[*PAIR_COLUMNS, "__cluster_id"])
+    else:
+        has_label = membership_values.any(axis=1)
+        label_codes = np.where(has_label, membership_values.argmax(axis=1), -1)
+        padded_labels = np.append(label_codes, -1)
+        left_labels = padded_labels[left_rows]
+        right_labels = padded_labels[right_rows]
+        local_mask = (left_labels >= 0) & (left_labels == right_labels)
+        assignment_frame = pd.DataFrame({
+            "compound_id_from": pair_ids[local_mask, 0],
+            "compound_id_to": pair_ids[local_mask, 1],
+            "__cluster_id": np.asarray(cluster_ids, dtype=object)[left_labels[local_mask]],
+        })
+        boundary_mask = left_labels != right_labels
+        left_boundary = left_labels[boundary_mask & (left_labels >= 0)]
+        right_boundary = right_labels[boundary_mask & (right_labels >= 0)]
+        counts = np.bincount(np.concatenate([left_boundary, right_boundary]), minlength=len(cluster_ids))
+        boundary_counts.update({cluster_ids[index]: int(count) for index, count in enumerate(counts) if count})
+    if len(assignment_frame):
+        local_details = valid.merge(assignment_frame, on=PAIR_COLUMNS, how="inner", validate="many_to_many")
+    else:
+        local_details = valid.iloc[0:0].copy()
+        local_details["__cluster_id"] = pd.Series(dtype="string")
+    return members_by_cluster, local_details, boundary_counts
 
 
 def derive_tables(
@@ -327,64 +460,102 @@ def derive_tables(
     overlap = {source: source_overlap(matrix, [str(row["cluster_id"]) for row in rows]) for source, rows in by_source.items()}
     comparisons: list[pd.DataFrame] = []
     screening: list[dict[str, Any]] = []
-    for origin in registry:
-        cluster_id = str(origin["cluster_id"])
-        source_node = str(origin.get("source_node_id"))
-        members = set(matrix.loc[matrix[cluster_id], id_column].astype(str))
-        left = valid["compound_id_from"].isin(members)
-        right = valid["compound_id_to"].isin(members)
-        local = valid[left & right].copy()
-        outside = valid[~left & ~right].copy()
-        boundary = valid[left ^ right].copy()
-        local_summary = transform_summary(local, "local")
-        outside_summary = transform_summary(outside, "outside")
-        combined = local_summary.merge(global_summary, on=["transform_id", "transform_smirks"], how="left")
-        combined = combined.merge(outside_summary, on=["transform_id", "transform_smirks"], how="left")
-        if len(combined):
-            local_cores = {key: set(group["core_id"].astype(str)) for key, group in local.groupby("transform_id")}
-            outside_cores = {key: set(group["core_id"].astype(str)) for key, group in outside.groupby("transform_id")}
-            combined.insert(0, "cluster_id", cluster_id)
-            combined.insert(0, "clustering_node_id", source_node)
-            combined.insert(1, "clustering_capability_id", str(origin.get("clustering_capability_id", "")))
-            combined["cluster_size"] = len(members)
-            combined["clustering_overlap_detected"] = overlap[source_node]
-            combined["boundary_pair_count"] = int(boundary[["compound_id_from", "compound_id_to"]].drop_duplicates().shape[0])
-            combined["shared_core_count"] = combined["transform_id"].map(lambda key: len(local_cores.get(key, set()) & outside_cores.get(key, set())))
-            combined["local_minus_global"] = combined["local_median"] - combined["global_median"]
-            combined["local_minus_outside"] = combined["local_median"] - combined["outside_median"]
-            combined["dispersion_ratio"] = np.where(combined["global_iqr"] > 0, combined["local_iqr"] / combined["global_iqr"], np.nan)
-            combined["dispersion_reduction"] = 1.0 - combined["dispersion_ratio"]
-            combined["direction_reversal_vs_global"] = (
-                combined["local_median"].notna() & combined["global_median"].notna()
-                & (combined["local_median"] != 0) & (combined["global_median"] != 0)
-                & (np.sign(combined["local_median"]) != np.sign(combined["global_median"]))
-            )
-            combined["direction_reversal_vs_outside"] = (
-                combined["local_median"].notna() & combined["outside_median"].notna()
-                & (combined["local_median"] != 0) & (combined["outside_median"] != 0)
-                & (np.sign(combined["local_median"]) != np.sign(combined["outside_median"]))
-            )
-            combined["eligible_local"] = combined["local_endpoint_pair_count"] >= min_local_pairs
-            combined["eligible_outside"] = combined["outside_endpoint_pair_count"] >= min_outside_pairs
-            combined["core_context_flag"] = np.where(combined["shared_core_count"] > 0, "shared_exact_core_available", "different_or_unshared_exact_core")
-            comparisons.append(combined)
-        screening.append({
-            "clustering_node_id": source_node,
-            "clustering_capability_id": str(origin.get("clustering_capability_id", "")),
-            "source_description_capability_ids": "|".join(map(str, origin.get("source_description_capability_ids", []))),
-            "cluster_id": cluster_id,
-            "cluster_size": len(members),
-            "overlap_detected": overlap[source_node],
-            "within_mmp_instance_count": len(local),
-            "within_pair_count": int(local[["compound_id_from", "compound_id_to"]].drop_duplicates().shape[0]),
-            "boundary_pair_count": int(boundary[["compound_id_from", "compound_id_to"]].drop_duplicates().shape[0]),
-            "transform_count": int(local["transform_id"].nunique()),
-            "exact_core_count": int(local["core_id"].nunique()),
-            "eligible_transform_count": int((transform_summary(local, "local")["local_endpoint_pair_count"] >= min_local_pairs).sum()) if len(local) else 0,
-        })
+    for source_node, origins in by_source.items():
+        cluster_ids = [str(origin["cluster_id"]) for origin in origins]
+        print(
+            f"MMP screening {source_node}: {len(cluster_ids)} Clusters, overlap={overlap[source_node]}",
+            file=sys.stderr,
+            flush=True,
+        )
+        members_by_cluster, local_details, boundary_counts = source_pair_projection(
+            valid, matrix, id_column, cluster_ids, overlap[source_node]
+        )
+        local_groups = {
+            str(cluster_id): group.drop(columns="__cluster_id")
+            for cluster_id, group in local_details.groupby("__cluster_id", sort=False, observed=True)
+        }
+        local_summary_all = grouped_transform_summary(local_details, "local", ["__cluster_id"])
+        local_summary_groups = {
+            str(cluster_id): group.drop(columns="__cluster_id").reset_index(drop=True)
+            for cluster_id, group in local_summary_all.groupby("__cluster_id", sort=False, observed=True)
+        }
+        empty_local_summary = transform_summary(valid.iloc[0:0], "local")
+        for origin in origins:
+            cluster_id = str(origin["cluster_id"])
+            members = members_by_cluster.get(cluster_id, frozenset())
+            local = local_groups.get(cluster_id, valid.iloc[0:0])
+            local_summary = local_summary_groups.get(cluster_id, empty_local_summary)
+            eligible_mask = local_summary["local_endpoint_pair_count"] >= min_local_pairs if len(local_summary) else pd.Series(dtype=bool)
+            eligible_transform_ids = set(local_summary.loc[eligible_mask, "transform_id"])
+            outside = valid.iloc[0:0]
+            if eligible_transform_ids:
+                candidates = valid[valid["transform_id"].isin(eligible_transform_ids)]
+                outside = candidates[
+                    ~candidates["compound_id_from"].isin(members)
+                    & ~candidates["compound_id_to"].isin(members)
+                ].copy()
+            outside_summary = transform_summary(outside, "outside")
+            combined = local_summary.merge(global_summary, on=["transform_id", "transform_smirks"], how="left")
+            combined = combined.merge(outside_summary, on=["transform_id", "transform_smirks"], how="left")
+            if len(combined):
+                # Empty deferred Outside summaries carry object-typed columns;
+                # normalize every statistic before arithmetic and sign tests.
+                for prefix in ("local", "global", "outside"):
+                    for column in STAT_COLUMNS:
+                        name = f"{prefix}_{column}"
+                        combined[name] = pd.to_numeric(combined[name], errors="coerce")
+                local_cores = {key: set(group["core_id"].astype(str)) for key, group in local.groupby("transform_id", observed=True)}
+                outside_cores = {key: set(group["core_id"].astype(str)) for key, group in outside.groupby("transform_id", observed=True)}
+                combined.insert(0, "cluster_id", cluster_id)
+                combined.insert(0, "clustering_node_id", source_node)
+                combined.insert(1, "clustering_capability_id", str(origin.get("clustering_capability_id", "")))
+                combined["cluster_size"] = len(members)
+                combined["clustering_overlap_detected"] = overlap[source_node]
+                combined["boundary_pair_count"] = int(boundary_counts.get(cluster_id, 0))
+                combined["shared_core_count"] = combined["transform_id"].map(lambda key: len(local_cores.get(key, set()) & outside_cores.get(key, set())))
+                combined["local_minus_global"] = combined["local_median"] - combined["global_median"]
+                combined["local_minus_outside"] = combined["local_median"] - combined["outside_median"]
+                combined["dispersion_ratio"] = np.where(combined["global_iqr"] > 0, combined["local_iqr"] / combined["global_iqr"], np.nan)
+                combined["dispersion_reduction"] = 1.0 - combined["dispersion_ratio"]
+                combined["direction_reversal_vs_global"] = (
+                    combined["local_median"].notna() & combined["global_median"].notna()
+                    & (combined["local_median"] != 0) & (combined["global_median"] != 0)
+                    & (np.sign(combined["local_median"]) != np.sign(combined["global_median"]))
+                )
+                combined["direction_reversal_vs_outside"] = (
+                    combined["local_median"].notna() & combined["outside_median"].notna()
+                    & (combined["local_median"] != 0) & (combined["outside_median"] != 0)
+                    & (np.sign(combined["local_median"]) != np.sign(combined["outside_median"]))
+                )
+                combined["eligible_local"] = combined["local_endpoint_pair_count"] >= min_local_pairs
+                combined["eligible_outside"] = combined["outside_endpoint_pair_count"].fillna(0) >= min_outside_pairs
+                combined["core_context_flag"] = np.where(
+                    ~combined["eligible_local"],
+                    "not_evaluated_low_support",
+                    np.where(combined["shared_core_count"] > 0, "shared_exact_core_available", "different_or_unshared_exact_core"),
+                )
+                comparisons.append(combined)
+            screening.append({
+                "clustering_node_id": source_node,
+                "clustering_capability_id": str(origin.get("clustering_capability_id", "")),
+                "source_description_capability_ids": "|".join(map(str, origin.get("source_description_capability_ids", []))),
+                "cluster_id": cluster_id,
+                "cluster_size": len(members),
+                "overlap_detected": overlap[source_node],
+                "within_mmp_instance_count": len(local),
+                "within_pair_count": int(local[PAIR_COLUMNS].drop_duplicates().shape[0]),
+                "boundary_pair_count": int(boundary_counts.get(cluster_id, 0)),
+                "transform_count": int(local["transform_id"].nunique()),
+                "exact_core_count": int(local["core_id"].nunique()),
+                "eligible_transform_count": int(eligible_mask.sum()) if len(local_summary) else 0,
+            })
     comparison = pd.concat(comparisons, ignore_index=True) if comparisons else pd.DataFrame(columns=COMPARISON_COLUMNS)
     comparison = comparison.reindex(columns=COMPARISON_COLUMNS)
+    if len(comparison):
+        comparison = comparison.sort_values(["clustering_node_id", "cluster_id", "transform_id"], kind="stable").reset_index(drop=True)
     screen = pd.DataFrame(screening)
+    if len(screen):
+        screen = screen.sort_values(["clustering_node_id", "cluster_id"], kind="stable").reset_index(drop=True)
     method_rows: list[dict[str, Any]] = []
     if len(comparison):
         eligible = comparison[comparison["eligible_local"]].copy()

@@ -7,7 +7,7 @@ skills:
   - cs-conductor-runtime
 ---
 
-You are a compatibility-only CONDUCTOR packet attachment. Normal 0.1.6 operation has the Main Orchestrator call Runtime `execute-packet` directly. If explicitly invoked, accept only `run_root` and `packet_path`.
+You are a compatibility-only CONDUCTOR packet attachment. Normal 0.1.7 operation has the Main Orchestrator call Runtime `execute-packet` directly. If explicitly invoked, accept only `run_root` and `packet_path`.
 
 1. Confirm that `packet_path` is below `run_root/runtime/scratch/packets/`. Do not inspect the full DAG, Ledger, past Interpretation, or unrelated Results.
 2. Use the packet `working_directory`. Execute exactly once:

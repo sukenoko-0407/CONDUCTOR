@@ -1,16 +1,17 @@
-# CONDUCTOR 0.1.6 design spec
+# CONDUCTOR 0.2.0 design spec
 
 ## 権限境界
 
 | Component | 担当 | 禁止 |
 |---|---|---|
 | Human | Round開始・継続・改訂・受理、資源承認 | なし |
-| Main Orchestrator | 人間依頼の契約化、科学的選択、Executor／Interpreter起動 | Skill直接実行、State直接編集、自動新Round開始 |
-| Executor | 署名済packet一つの実行 | 候補選択、引数修正、別Subagent起動 |
+| Main Orchestrator | 人間依頼の契約化、科学的選択、Runtime呼び出し、Interpreter起動 | Skill直接実行、State直接編集、自動新Round開始 |
+| Runtime Worker | 署名済packetのclaim、科学processの実行・待機・回収 | 科学的候補選択、引数の即席修正、新Round開始 |
+| Compatibility Executor | 人間が明示起動したときのみ、packet一つをRuntimeへ中継 | 通常計算、候補選択、引数修正、別Subagent起動 |
 | Runtime | ID、FSM、lease、DAG、Request、packet、Attempt、commit、audit | 科学的価値判断 |
-| Interpreter | bounded evidenceの個別・横断解釈、ID-free draft | scope／ID発行、新規計算、State変更 |
+| Interpreter | 少数Review Bundleの絶対評価または選抜evidenceのID-free Synthesis draft | scope／ID／Candidate class発行、新規計算、State変更 |
 
-Main Orchestratorは手動Skillで一時的に有効化し、Projectの`CLAUDE.md`へ常駐させません。ExecutorとInterpreterはMainが直接起動する短命な兄弟Subagentです。
+Main Orchestratorは手動Skillで一時的に有効化し、Projectの`CLAUDE.md`へ常駐させません。通常の科学計算はLLM Subagentではなく決定論的なOS Runtime Workerが所有します。InterpreterだけをMainが必要時に短命Subagentとして起動します。Compatibility Executorは通常フローに含めません。
 
 ## State階層
 
@@ -51,7 +52,7 @@ Attempt rootはRuntime管理file、`skill_output/`は科学成果物へ分離し
 
 ## 探索Planner
 
-基本計算はDescription／Clusteringを揃える決定論的段階です。Operator探索は`exploration`一種類で、一Round最大50 Analysis Nodeです。通常InterpretationのResult Card読込も同じ上限50を使います。
+基本計算はDescription／Clusteringを揃える決定論的段階です。Operator探索は`exploration`一種類です。人間指定予算を最大25 NodeのSliceへ分け、各Sliceの成功Resultを最大8件ずつScreeningしてから次へ進みます。profile安全上限は500、既定予算は50です。
 
 Plannerは成功済みsignatureを除外し、過去のCapability、Global／Local scope、入力Description／Clusteringの成功数が少ない候補を優先します。Failed Nodeは成功履歴へ数えません。同点は固定seed hashで決めます。Globalを優先し、概ね`Global, Global, Local`の比率で選びます。全候補queueをStateへ保存せず、次Roundで同じ規則から再構成します。
 
@@ -63,6 +64,6 @@ Skill outputはRuntimeがschema、identity、hash、scope、科学的不変条�
 
 A014 Globalは全詳細CSV、正規化SQLite、集約CSV、reference card、HTML、storage profileを一括commitします。native work DBとParquetを正本にしません。通常Result CardはMMP候補の入れ子を持たず、coverageと専用Skillへのpointerだけを保持します。
 
-RuntimeはInterpretation対象、canonical scope、Result Card、比較batch、未確認範囲、人間focusを固定します。Interpreterは個別確認後にGlobal／Cluster、兄弟Cluster、独立Description family、Operator間、Round間、矛盾、反証、negative resultを比較します。RuntimeがInsight ID、scope、sample factsを確定して固定templateからJSON／Markdown／HTMLを生成します。
+RuntimeはResult Card v2をcomparison familyへ登録し、Global、Global–Local、sibling ClusterのReview Bundleを決定論的に作ります。InterpreterはOperator固有anchorで0～3の複数絶対軸を評価し、Runtimeが信頼性とCandidate classを確定して`runtime/result_assessment_index.jsonl`へcommitします。合計点は作りません。正式Synthesisでは`design_lead`と`contextual_anomaly`から最大50 Resultだけを渡し、支持・反証・negative resultは主候補を限定するために使います。RuntimeがInsight ID、scope、sample factsを確定して固定templateからJSON／Markdown／HTMLを生成します。
 
-InterpretationとFull Auditが合格しない限りRoundをhandoffしません。
+`screening` RoundはScreening summaryとFull Audit、`full` RoundはさらにInterpretationが合格しない限りhandoffしません。

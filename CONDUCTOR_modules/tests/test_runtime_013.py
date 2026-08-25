@@ -95,20 +95,61 @@ class Runtime013Tests(unittest.TestCase):
         }
         created_at = "2026-08-20T00:00:00+00:00"
         card = {
-            "schema_version": "1.0.0",
+            "schema_version": "2.0.0",
             "result_ref": "N000002@ATT0001",
             "node_id": "N000002",
             "capability_id": "A001",
             "round_id": "RND0001",
             "analysis_subject": subject,
-            "endpoint": {"name": "pIC50"},
+            "endpoint": {"column": "pIC50", "higher_is_better": True, "unit": None, "transform": None},
             "metric": None,
             "headline": "offline validation",
-            "key_metrics": {},
+            "result_role": "activity_signal",
+            "interpretation_profile_id": "IP-A001-1.0.0",
+            "comparison_family_id": "CFM0123456789abcdef",
+            "favorable_payload": {
+                "applicable": True, "normalization": "higher_is_better",
+                "source_metric": "endpoint_median", "raw_value": 5.0,
+                "favorable_value": 5.0, "favorable_effect": None,
+                "direction_confidence": "derived",
+            },
+            "comparison_metrics": [{
+                "name": "endpoint_median", "value": 5.0,
+                "normalized_favorable_value": 5.0, "unit": "endpoint",
+                "direction": "favorable", "comparison_scope": "all",
+            }],
+            "operator_details": {},
+            "quality": {
+                "population_count": 2, "endpoint_valid_count": 2,
+                "analyzed_count": 2, "excluded_count": 0,
+                "sample_fraction": 1.0, "minimum_support_met": False,
+            },
             "validation_passed": True,
             "eligible_for_downstream": True,
             "quality_flags": [],
+            "limitations": ["sample support is below the profile threshold"],
             "artifact_links": {},
+            "created_at": created_at,
+        }
+        bundle = {
+            "schema_version": "1.0.0", "bundle_id": "RVB0123456789abcdef",
+            "bundle_type": "global", "round_id": "RND0001", "capability_id": "A001",
+            "interpretation_profile_id": "IP-A001-1.0.0",
+            "comparison_family_id": "CFM0123456789abcdef",
+            "target_result_refs": [card["result_ref"]], "comparator_result_refs": [],
+            "all_result_refs": [card["result_ref"]], "cluster_ids": [],
+            "comparison_status": "ready", "applicable_axes": ["favorable_signal", "follow_up_leverage"],
+            "comparison_table": [],
+            "runtime_facts": {"sample_support": "insufficient", "comparator_validity": "none", "overlap_status": "not_applicable", "minimum_support_met": False},
+            "source_hash": "0" * 64, "created_at": created_at,
+        }
+        review_manifest = {
+            "schema_version": "2.0.0", "round_id": "RND0001",
+            "selected_bundle_ids": [bundle["bundle_id"]], "detailed_result_refs": [card["result_ref"]],
+            "unselected_bundles": [],
+            "candidate_class_counts": {"design_lead": 1}, "bundle_type_counts": {"global": 1},
+            "operator_counts": {"A001": 1},
+            "selection_method": "candidate_class_reliability_actionability_diversity",
             "created_at": created_at,
         }
         analysis_result = {
@@ -123,7 +164,7 @@ class Runtime013Tests(unittest.TestCase):
             "created_at": created_at,
         }
         interpretation = {
-            "schema_version": "3.0.0",
+            "schema_version": "4.0.0",
             "run_id": "run-013",
             "round_id": "RND0001",
             "node_id": "N000003",
@@ -140,17 +181,7 @@ class Runtime013Tests(unittest.TestCase):
             "coverage_summary": "Coverage",
             "insights": [],
             "result_catalog": [card],
-            "review_manifest": {
-                "schema_version": "1.0.0",
-                "round_id": "RND0001",
-                "detailed_result_refs": ["N000002@ATT0001"],
-                "aggregate_result_refs": [],
-                "unreviewed_results": [],
-                "scope_counts": {"global": 1},
-                "operator_counts": {"A001": 1},
-                "description_counts": {"N000001": 1},
-                "created_at": created_at,
-            },
+            "review_manifest": review_manifest,
             "created_at": created_at,
         }
 
@@ -158,6 +189,7 @@ class Runtime013Tests(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=AssertionError("HTTP retrieval attempted")):
             RUNTIME.validate(analysis_result, "analysis_result.schema.json")
             RUNTIME.validate(card, "result_card.schema.json")
+            RUNTIME.validate(bundle, "review_bundle.schema.json")
             RUNTIME.validate(interpretation, "interpretation.schema.json")
         from referencing.exceptions import NoSuchResource
 
@@ -190,7 +222,8 @@ class Runtime013Tests(unittest.TestCase):
                 interpretation_module.validate_context_schemas(
                     {
                         "result_cards": [card],
-                        "review_manifest": interpretation["review_manifest"],
+                        "review_bundles": [bundle],
+                        "review_manifest": review_manifest,
                     }
                 ),
             )
@@ -198,7 +231,8 @@ class Runtime013Tests(unittest.TestCase):
             context_issues = interpretation_module.validate_context_schemas(
                 {
                     "result_cards": [invalid_card],
-                    "review_manifest": interpretation["review_manifest"],
+                    "review_bundles": [bundle],
+                    "review_manifest": review_manifest,
                 }
             )
             self.assertTrue(any("result_cards[1] schema error" in issue for issue in context_issues))
@@ -211,20 +245,21 @@ class Runtime013Tests(unittest.TestCase):
                 "observation": "Global解析においてEndpoint分布の偏りが観察された。",
                 "interpretation": "観察された偏りは次の比較対象を選ぶ手掛かりとなる。",
                 "supporting_results": ["N000002@ATT0001"],
+                "review_bundle_ids": [bundle["bundle_id"]],
                 "comparison_results": [],
                 "counter_results": [],
                 "limitations": "単一のOperator Resultに基づく。",
             }],
         }
         draft_issues = interpretation_module.validate_draft(
-            {"allowed_result_refs": ["N000002@ATT0001"]}, draft
+            {"allowed_result_refs": ["N000002@ATT0001"], "review_manifest": review_manifest}, draft
         )
         self.assertTrue(any("JSON array" in issue for issue in draft_issues))
         draft["insights"][0]["limitations"] = ["単一のOperator Resultに基づく。"]
         self.assertEqual(
             [],
             interpretation_module.validate_draft(
-                {"allowed_result_refs": ["N000002@ATT0001"]}, draft
+                {"allowed_result_refs": ["N000002@ATT0001"], "review_manifest": review_manifest}, draft
             ),
         )
 
@@ -277,7 +312,7 @@ class Runtime013Tests(unittest.TestCase):
             "pointers": {"working_set": "runtime/working_set.json"},
         }
         response = RUNTIME._compact_response(control, detail_pointer="runtime/logs")
-        self.assertEqual("0.1.6", response["protocol_version"])
+        self.assertEqual("0.2.0", response["protocol_version"])
         self.assertNotIn("control", response)
         self.assertLessEqual(len(RUNTIME.canonical_bytes(response)), RUNTIME.MAX_COMPACT_RESPONSE_BYTES)
 
@@ -285,7 +320,7 @@ class Runtime013Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_root, lease = self.active_basic_round(Path(temporary))
             response = json.loads(self.command("prepare-execution-packet", "--run-root", str(run_root), "--lease-token", lease, "--timeout-minutes", "5").stdout)
-            self.assertEqual("0.1.6", response["protocol_version"])
+            self.assertEqual("0.2.0", response["protocol_version"])
             self.assertNotIn("lease_token", response)
             packet_path = Path(response["packet_path"])
             packet = json.loads(packet_path.read_text(encoding="utf-8"))
@@ -1050,10 +1085,11 @@ class Runtime013Tests(unittest.TestCase):
         round_id = "RND0001"
         snapshot = {
             "nodes": [
-                {"kind": "analysis", "created_in_round": round_id, "assigned_round": round_id}
+                {"kind": "analysis", "status": "succeeded", "created_in_round": round_id, "assigned_round": round_id}
                 for _ in range(200)
             ],
             "rounds": {round_id: {}},
+            "plans": {round_id: {"basic_compute": True}},
         }
         control = {"active_round_id": round_id}
         allowed, reason = RUNTIME._finalize_allowed(Path("."), control, snapshot)
@@ -1069,7 +1105,10 @@ class Runtime013Tests(unittest.TestCase):
             "closure": {"interpretation_ready": False, "audit_ready": False},
         }
         snapshot = {"nodes": [], "rounds": {"RND0001": {"state": "FINALIZING"}}, "plans": {}}
-        action = RUNTIME._required_action(Path("."), control, snapshot)
+        with mock.patch.object(RUNTIME, "_pending_screening_bundles", return_value=[]), mock.patch.object(
+            RUNTIME, "_screening_summary_fresh", return_value=(True, "rounds/RND0001/screening_summary.json")
+        ), mock.patch.object(RUNTIME, "_round_report_mode", return_value="full"):
+            action = RUNTIME._required_action(Path("."), control, snapshot)
         self.assertEqual("INTERPRETATION_BLOCKED", action["code"])
 
     @unittest.skip("Adaptive command recovery was removed in 0.1.6")

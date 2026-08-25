@@ -407,6 +407,7 @@ def cluster_profile(property_table: pd.DataFrame, clusters: dict[str, set[str]],
             "threshold_quantile_method": "pandas_linear",
         })
     result = pd.DataFrame(rows)
+    selected_row = result.iloc[0].to_dict() if args.target_cluster and len(result) == 1 else {}
     return result, {
         "cluster_count": len(result),
         "high_threshold": high,
@@ -425,6 +426,10 @@ def cluster_profile(property_table: pd.DataFrame, clusters: dict[str, set[str]],
         "global_favorable_fraction": float(global_favorable.mean()),
         "global_unfavorable_count": int(global_unfavorable.sum()),
         "global_unfavorable_fraction": float(global_unfavorable.mean()),
+        "selected_cluster_id": selected_row.get("cluster_id"),
+        "selected_favorable_fraction": selected_row.get("favorable_fraction"),
+        "selected_property_median": selected_row.get("property_median"),
+        "selected_property_iqr": selected_row.get("property_iqr"),
     }
 
 
@@ -818,7 +823,7 @@ def run() -> int:
         "clustering_representation": args.clustering_representation, "created_at": utc_now(),
     }
     config = {key: value for key, value in vars(args).items()}
-    manifest = {"schema_version": "2.0.0", "conductor_version": "0.1.6", "artifact_stage": "analysis", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "value_semantics": "operator_result", "natural_metric": summary.get("metric"), "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now(), "configuration": config}
+    manifest = {"schema_version": "2.0.0", "conductor_version": "0.2.0", "artifact_stage": "analysis", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "value_semantics": "operator_result", "natural_metric": summary.get("metric"), "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now(), "configuration": config}
     if args.conductor:
         report_path = outdir / "operator_report.html"
         report_path.write_text(

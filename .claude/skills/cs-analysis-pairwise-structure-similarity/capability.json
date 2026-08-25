@@ -3,7 +3,7 @@
   "capability_id": "A006",
   "skill_name": "cs-analysis-pairwise-structure-similarity",
   "display_name": "Pairwise structure similarity",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "feature_space",
   "description": "Use when Claude Code needs to run Pairwise structure similarity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -49,6 +49,22 @@
   "default_parameters": {
     "max_pairs": 200000,
     "random_seed": 61453
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A006-1.0.0", "result_role": "context",
+    "allowed_axes": ["context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [
+      {"name": "mean_similarity", "source": "mean_similarity", "unit": null, "direction": "higher", "comparison_scope": "all"},
+      {"name": "p90_similarity", "source": "p90_similarity", "unit": null, "direction": "higher", "comparison_scope": "all"}
+    ],
+    "primary_favorable_metric": null, "global_comparator": "optional", "sibling_comparison": "supported", "standalone_insight": "supporting_only",
+    "minimum_support": {"global": 5, "local": 5}, "null_result": "background",
+    "anchors": {
+      "context_deviation": ["構造context差なし", "軽度の差", "Globalまたはsiblingとの差が明確", "比較成立性を変える大きな差"],
+      "chemical_actionability": ["構造要素不明", "広い類似性", "限定seriesに接続", "具体的coreまたは近傍に接続"],
+      "independent_support": ["支持なし", "同一fingerprintのみ", "異なる構造表現で支持", "独立解析が支持"],
+      "follow_up_leverage": ["確認価値なし", "構造確認可能", "比較対象の追加が明確", "少数比較で仮説検証可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

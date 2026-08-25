@@ -3,7 +3,7 @@
   "capability_id": "A004",
   "skill_name": "cs-analysis-projection-umap",
   "display_name": "UMAP projection",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "projection",
   "description": "Use when Claude Code needs to run UMAP projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -52,6 +52,18 @@
     "n_neighbors": 15,
     "min_dist": 0.1,
     "stability_seeds": 3
+  },
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A004-1.0.0", "result_role": "context",
+    "allowed_axes": ["context_deviation", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [{"name": "trustworthiness", "source": "trustworthiness", "unit": "fraction", "direction": "higher", "comparison_scope": "all"}],
+    "primary_favorable_metric": null, "global_comparator": "optional", "sibling_comparison": "supported", "standalone_insight": "supporting_only",
+    "minimum_support": {"global": 5, "local": 5}, "null_result": "background",
+    "anchors": {
+      "context_deviation": ["局在差なし", "軽度の局在", "Cluster局在が明確", "Global解釈を変える分離・反転"],
+      "independent_support": ["支持なし", "単一投影のみ", "異なるseedまたは表現で支持", "複数の独立解析で支持"],
+      "follow_up_leverage": ["確認価値なし", "可視確認のみ", "特定Clusterの追加解析が明確", "少数解析で仮説を反証可能"]
+    }
   },
   "conductor_request": {
     "schema_version": "1.0.0",

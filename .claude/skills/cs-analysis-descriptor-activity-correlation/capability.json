@@ -3,7 +3,7 @@
   "capability_id": "A002",
   "skill_name": "cs-analysis-descriptor-activity-correlation",
   "display_name": "Descriptor-activity correlation",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "stage": "analysis",
   "family": "interpretable_association",
   "description": "Use when Claude Code needs to run Descriptor-activity correlation from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -42,6 +42,24 @@
     "global",
     "within-cluster"
   ],
+  "interpretation_profile": {
+    "schema_version": "1.0.0", "profile_id": "IP-A002-1.0.0", "result_role": "activity_signal",
+    "allowed_axes": ["favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "comparison_metrics": [
+      {"name": "strongest_association", "source": "max_abs_association", "unit": null, "direction": "absolute", "comparison_scope": "all"},
+      {"name": "signed_association", "source": "top_signed_association", "unit": null, "direction": "favorable", "comparison_scope": "all"},
+      {"name": "association_pvalue", "source": "top_association_pvalue", "unit": null, "direction": "lower", "comparison_scope": "all"}
+    ],
+    "primary_favorable_metric": "signed_association", "global_comparator": "required_for_local", "sibling_comparison": "supported", "standalone_insight": "conditional",
+    "minimum_support": {"global": 10, "local": 5}, "null_result": "background",
+    "anchors": {
+      "favorable_signal": ["方向情報なし", "弱い単変量傾向", "限定scopeで明確な方向", "方向が明確で反証にも耐える"],
+      "context_deviation": ["差なし", "係数の軽度変化", "GlobalとLocalで明確な変化", "方向反転または局所化"],
+      "chemical_actionability": ["feature不明", "広い物性", "特定featureに接続", "操作可能な構造要素へ接続"],
+      "independent_support": ["支持なし", "同系統表現のみ", "異系統表現が支持", "複数の独立Operatorが支持"],
+      "follow_up_leverage": ["確認価値なし", "追加相関確認", "局所・反証解析が明確", "少数検証で設計判断可能"]
+    }
+  },
   "conductor_request": {
     "schema_version": "1.0.0",
     "adapter": "standard_operator",

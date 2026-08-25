@@ -629,7 +629,14 @@ def cluster_structural_diversity(property_table: pd.DataFrame, clusters: dict[st
         warnings.extend(f"{cluster_id}: {warning}" for warning in pair_warnings)
         rows.append({"cluster_id": cluster_id, "sample_count": len(cluster_table), "pair_count": len(pairs), "mean_tanimoto": pairs["similarity"].mean() if len(pairs) else np.nan, "median_tanimoto": pairs["similarity"].median() if len(pairs) else np.nan, "p90_tanimoto": pairs["similarity"].quantile(0.9) if len(pairs) else np.nan, "structural_diversity_score": 1.0 - pairs["similarity"].mean() if len(pairs) else np.nan})
     result = pd.DataFrame(rows)
-    return result, {"cluster_count": len(result), "pair_sampling_by_cluster": sampling_by_cluster}, warnings
+    selected_row = result.iloc[0].to_dict() if args.target_cluster and len(result) == 1 else {}
+    return result, {
+        "cluster_count": len(result),
+        "pair_sampling_by_cluster": sampling_by_cluster,
+        "selected_cluster_id": selected_row.get("cluster_id"),
+        "selected_mean_tanimoto": selected_row.get("mean_tanimoto"),
+        "selected_structural_diversity_score": selected_row.get("structural_diversity_score"),
+    }, warnings
 
 
 def execute(
@@ -755,7 +762,7 @@ def run() -> int:
         "clustering_representation": args.clustering_representation, "created_at": utc_now(),
     }
     config = {key: value for key, value in vars(args).items()}
-    manifest = {"schema_version": "2.0.0", "conductor_version": "0.1.6", "artifact_stage": "analysis", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "value_semantics": "operator_result", "natural_metric": summary.get("metric"), "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now(), "configuration": config}
+    manifest = {"schema_version": "2.0.0", "conductor_version": "0.2.0", "artifact_stage": "analysis", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "operator_id": CAPABILITY["operator_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": args.input, "input_hash": input_hash, "value_semantics": "operator_result", "natural_metric": summary.get("metric"), "id_column": id_column, "property_column": args.property_column, "higher_is_better": args.higher_is_better, "description": args.description, "membership": args.membership, "scope": scope, "output": result_path.name, "warnings": warnings, "created_at": utc_now(), "configuration": config}
     if args.conductor:
         report_path = outdir / "operator_report.html"
         report_path.write_text(

@@ -12,7 +12,7 @@
 
 探索段階は`exploration`一種類です。初期探索と追加探索を別FSMや別commandとして扱いません。
 
-Runtimeは次の単純な規則で最大50 Analysis Nodeを選びます。通常InterpretationのResult Card読込も同じ上限50です。「当該Roundの全結果を必ず読む」という追加規則は置きません。
+Runtimeは人間指定のOperator予算内で、次の単純な規則により最大25 Analysis Nodeずつ選びます。成功ResultをGlobal、Global–Local、sibling ClusterのReview Bundleへまとめ、最大8 Bundleずつ絶対評価してから次のSliceへ進みます。Wall Timeだけでは予算を増やしません。
 
 1. 成功済み同一signatureを除外する。
 2. Globalを優先し、概ね`Global, Global, Local`の比率にする。
@@ -22,7 +22,7 @@ Runtimeは次の単純な規則で最大50 Analysis Nodeを選びます。通常
 
 これは機械的に科学結論を決める規則ではありません。`SCIENTIFIC_DECISION`では人間priority、Insight、反証候補に基づき、同一Clusterの別Operator、sibling Cluster、Global比較、別Description上の同一Cluster等をMainが選びます。
 
-Wall Timeは実行余裕でありNode上限を増やしません。Description／Clusteringの基本計算はAnalysis 50件の外です。
+一次評価は`favorable_signal`、`context_deviation`、`chemical_actionability`、`independent_support`、`follow_up_leverage`の0～3絶対軸です。合計点を作らず、sample support、comparator validity、effect stability、independenceを分離します。Localで必須Global comparatorがなければ採点しません。Description／Clusteringの基本計算はOperator予算の外です。
 
 ## MMP
 
@@ -38,6 +38,6 @@ Vector Clusteringは手法別calibrationを使います。binary fingerprintはT
 
 ## 複数Roundと終端
 
-過去結果は削除せず、短いResult Cardと可変attentionで取捨選択します。Roundを跨いで全Artifactや長文Reportを読み直しません。人間意見は次のRound contractへ添付します。Orchestratorは新Roundを自発的に作りません。
+過去結果は削除せず、短いResult Card、Review Bundle、可変Candidate class／attentionで取捨選択します。Roundを跨いで全Artifactや長文Reportを読み直しません。人間意見は次のRound contractへ添付します。Orchestratorは新Roundを自発的に作りません。
 
-RoundはInterpretationとFull Auditまでが一単位です。ゼロInsightでもReportを作ります。許可済み作業が残る間は理由なく終了せず、50 Analysis Nodeへ達した場合は残候補を次Roundへ送り、当該RoundのInterpretationへ進みます。read-only MMP Interpretationは人間起動の補助成果物であり、Round gateには含めません。
+Roundは人間が`screening`または`full`を開始時に選びます。`screening`は評価索引、Round CSV、compact summary、Full Auditまで、`full`はさらに選抜Resultからの正式Interpretationまでが一単位です。ゼロInsightでもfull Reportを作ります。許可済み作業が残る間は理由なく終了せず、予算へ達したら未実行候補を次Roundへ送ります。read-only MMP Interpretationは人間起動の補助成果物であり、Round gateには含めません。

@@ -6,7 +6,9 @@ Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`
 
 `parallel_limit`は同時Node数、Available CPU Coresは科学計算へ割り当てる総数です。MCS、Mordred 3D、xTB、ChemBERTa、Global MMPは単独packetで実行し、Skill内部並列と他Nodeを競合させません。
 
-高コスト基本計算は最初に一括承認できます。MCSは基本計算で個別承認不要です。Description／Clustering基本計算後、Operator探索を最大50 Analysis Node計画します。通常Interpretationも最大50 Result Cardを読み込みます。探索は初期／追加に分けず、成功済み計算を除外し、GlobalをLocalより優先して履歴バランスを取ります。Wall Timeを長くしても50件は増えません。
+高コスト基本計算は最初に一括承認できます。MCSは基本計算で個別承認不要です。Description／Clustering基本計算後、Operator探索数を`max_additional_nodes`で指定します（既定50、安全上限500）。Runtimeは最大25 Nodeずつ計画し、成功Resultを最大8 Review Bundleずつ絶対評価してから次へ進みます。探索は初期／追加に分けず、成功済み計算を除外し、GlobalをLocalより優先して履歴バランスを取ります。Wall Timeだけでは件数を増やしません。
+
+探索を広く続けるRoundは`report_mode=screening`、人間向けの正式なInsight Reportが必要なRoundは`report_mode=full`を選びます。screeningではReview Bundle単位の`result_assessments.csv`とcompact summary、fullではCandidate class、信頼性、多様性から選抜した最大50 Result参照に対応するBundleの`interpretation.html`まで作成します。
 
 endpointの変換はRun開始前に人間が行います。`endpoint_transform`は実施済み変換の記録で、Runtimeが値を変換する指定ではありません。
 
@@ -32,7 +34,7 @@ A014の定型フローはGlobal MMP Databaseを一度だけ構築します。通
 
 ## Round終了後
 
-`AWAITING_HUMAN_REVIEW`で`interpretation.html`を読み、次のいずれかを明示します。
+`AWAITING_HUMAN_REVIEW`で、screening Roundは`screening_summary.json`／`result_assessments.csv`、full Roundは`interpretation.html`を読み、次のいずれかを明示します。
 
 - 同じRoundで残作業を継続する。
 - 同じRoundのInterpretationを改訂する。

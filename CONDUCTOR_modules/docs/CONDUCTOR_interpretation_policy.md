@@ -2,54 +2,57 @@
 
 ## 目的
 
-Interpretationは作業記録ではなく、Operatorが生成した固定結果を多角的に比較し、人間が次の判断に使える解釈を提示する終端処理である。Interpreterは計算NodeやStateを変更せず、Runtimeが用意したbounded contextだけを読み、draftを返す。
+Interpretationは作業記録ではない。Endpointをfavorableな方向へ改善する設計候補、またはその候補へ接続し得るGlobal–Local・Cluster間の違和感を、人間が検討できる形へ整理する。InterpreterはStateや計算Nodeを変更せず、Runtimeが用意したbounded contextだけを読む。
+
+## Review Bundle一次評価
+
+- 評価単位は単独Result Cardではなく、Runtimeが作るReview Bundleである。
+- Bundleは`global`、`global_local`、`sibling_cluster`、将来の`cross_evidence`のいずれかである。
+- 活性関連のLocal Resultは、Interpretation Profileが要求するGlobal comparatorなしに評価しない。`awaiting_comparator`は低評価ではなく未評価である。
+- 一回に最大8 Bundleだけを読み、Operator固有Profileの絶対anchorに従う。他Bundleの得点分布を基準にしない。
+- `favorable_signal`、`context_deviation`、`chemical_actionability`、`independent_support`、`follow_up_leverage`を0～3または`not_applicable`で記録する。単純合計点は作らない。
+- sample support、comparator validity、Cluster overlapはRuntimeが決定する。Interpreterはeffect stabilityとevidence independenceだけを判断する。
+- 長文Insight、正式ID、Candidate class、Markdown／HTMLは一次評価段階で作らない。
+
+## Candidate classと掲載原則
+
+Runtimeは固定決定表で`design_lead`、`contextual_anomaly`、`supporting_evidence`、`background`、`not_scorable`、`awaiting_comparator`へ分類する。
+
+- `design_lead`: favorable方向と操作可能な化学要素が接続する候補。
+- `contextual_anomaly`: Global–Localまたはsibling間で解釈が変化し、活性改善候補へ接続し得る違和感。
+- `supporting_evidence`: 他候補を支持・制限・反証する結果。単独Insightにはしない。
+- `background`: 実行済みだが人間の視線を誘導しない結果。索引には残す。
+
+正式Reportは原則として`design_lead`と`contextual_anomaly`だけを掲載する。相関がない、Cluster差がない、投影が分離しないなどのnegative resultを単独Insightにしない。ただし、掲載候補の反証や限界として必要なら参照する。
 
 ## 基本姿勢
 
-- GlobalとCluster-localの変化を最優先で比較する。
-- 同一Clustering内のCluster間、同一Clusterの異Description間、同一表現の異Operator間を横断する。
-- 類似Description同士の一致を過大評価せず、原理の異なるDescriptionで再現した傾向を重視する。
-- 一致した説明へ収束させることを目的にしない。矛盾、例外、negative resultも保持する。
-- 注目候補を見つけたら、必ず反証または不一致を探索する。見つからなかった場合も、その探索範囲を限界として記載する。
-- 多重探索による偶然の候補を許容するが、確認済み事実と説明仮説を文章中で区別する。
+- GlobalとCluster-localの変化、同一Clustering内のsibling Cluster差を優先する。
+- Cluster-localを単独でGlobal相当と解釈しない。
+- 類似Description同士の一致を独立支持として過大評価しない。
+- 注目候補には必ず反証・例外・不一致を探索し、見つからない場合も探索範囲を限界として記す。
+- 観察事実と説明仮説を分離し、因果やSAR機序を断定しない。
+- 重複Clusterは独立再現ではない。5化合物未満はClusterとして登録しない。
 
-## Clusterの扱い
+## 正式Synthesis
 
-- 5化合物未満の集合はClusterとして登録されない。
-- 統計的比較では大きいClusterを優先する。ただし全体の50%超はGlobalに近いことを明記する。
-- 小さくても構造凝集性が高いClusterは、人間の構造解釈へ接続しやすいため候補に残せる。
-- 重複Clusterは独立した再現ではない。membershipの重複と由来を確認する。
+1. Runtime shortlistのReview Bundle、canonical scope、Cluster ID、sample、Operator、Description、comparison metric、信頼性を確認する。
+2. `design_lead`を先に、`contextual_anomaly`を次に検討する。
+3. comparative claimにはBundle内のcomparator Resultを必ず参照する。
+4. 支持、反証、Cluster overlap、sample制約を同じInsightに結び付ける。
+5. 「どの解析の、どのscopeで、Globalまたはsiblingから何が変わり、活性改善へどう接続し得るか」を日本語で具体的に記す。
+6. Insightがなければ無用なnegative resultを列挙せず、その旨を短く報告する。
 
-## MMPの扱い
+各Insightは内容固有の日本語表題、`review_bundle_ids`、支持・比較・反証Result、観察、解釈、完全な文の限界配列を持つ。主要数値の大量展開は行わず、詳細は個別Operator report、Artifact、Conciergeへ委ねる。Cluster-local結果をGlobalと記載したReport、根拠のない比較、日本語本文のないReportはcommitしない。
 
-- 通常InterpreterはA014のcompactなGlobal Result CardからDatabaseの存在、coverage、negative resultだけを認識し、MMP Reference Cardを詳細展開しない。
-- Transform、Exact Core、Environment、ClusteringによるGlobal–Local変化は、Round終了後に人間がread-only `cs-analysis-interpret-mmp`を起動して確認する。
-- 専用Skillの補助Reportは正式Insight、Node、Stateを作らない。次Roundへ反映する場合は、人間がReportの視点をRound依頼へ添付する。
+## MMP
 
-## 出力単位
-
-永続entityは`Insight`だけである。観察、解釈、支持result、比較result、反証・不一致result、限界を一体で記録する。注目度は`pinned`、`active`、`watch`、`background`で可変とし、`pinned`への変更は人間だけが行う。
-
-Insightを無理に作る必要はない。明確な変化、矛盾、例外がなければゼロ件を許容し、その事実をexecutive summaryへ書く。追加解析案はInsight内の`recommended_followups`として提案できるが、IDや状態を持つ独立entityではなく、将来の人間承認Roundへ自動登録しない。
-
-## 比較手順
-
-1. context内のResult Cardから、Runtimeが確定した`analysis_subject`、sample count、Description、Clustering、metric、主要統計、制約を確認する。
-2. RuntimeがOperator、scope、representationを分散させたbounded review setを、許容された反復回数内で順に探索する。
-3. 注目候補ごとに原数値artifactまたは個別Operator HTMLを確認する。summaryだけから保持Insightを確定しない。
-4. 支持resultと反証・不一致resultを明記する。同一計算signatureの反復を新しい反証として数えない。
-5. 人間向けに「どの解析の、どのscopeで、何がどう変わったか」を日本語で具体的に記す。
-
-正式Reportの品質ゲートは文章量だけでなく、参照Result Cardから再計算したscope mode、Cluster ID集合、sample count、Operator、Result別sample数との完全一致を検査する。Cluster-local結果をGlobalと記載したReport、根拠ResultのないGlobal比較、日本語の説明本文を欠くReportはcommitしない。
-
-人間向け`interpretation.md`／`interpretation.html`には、Insightごとの`key_metrics`を全展開しない。主要数値は検証可能性のため構造化`interpretation.json`に保持し、詳細確認は個別Operator report、元Artifact、またはConciergeを利用する。人間向けReportは観察・解釈・scope・由来・参照Resultの理解を優先する。
-6. 次の解析候補は必要最小限とし、同一signatureの再実行を要求しない。
+A014の通常Round InterpretationではcompactなGlobal Result CardからDatabaseの存在、coverage、negative resultだけを認識する。Transform、Exact Core、Environment、ClusteringによるGlobal–Local変化は、人間がread-only `cs-analysis-interpret-mmp`を明示起動して確認する。専用Reportを次Roundへ反映する場合は、人間がその視点を依頼へ添付する。
 
 ## 境界
 
-- InterpreterはControl、DAG、Cluster索引、Operator result索引を更新しない。
-- ID、scope、sample countを自分で発行・上書きしない。Runtimeがcommit時に`INS######`を割り当て、参照Resultからscope factを確定する。
+- InterpreterはControl、DAG、Cluster索引、Result索引、Assessment索引を更新しない。
+- 正式ID、scope、sample、Candidate classはRuntimeだけが確定する。
 - 新規Description、Clustering、Operatorを実行しない。
-- 因果やSAR機序を断定しない。
 - 解析結果を削除・上書きしない。
-- Insightがゼロ件でも固定レポートを作る。Interpretationとその後のFull Auditを省略してRoundを閉じない。
+- full RoundはInsightがゼロ件でも固定Reportを作る。screening Roundは評価索引、compact summary、Full Auditを必須とする。

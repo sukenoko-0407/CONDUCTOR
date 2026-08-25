@@ -32,6 +32,17 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
     jsonschema.validate(value, schema)
     if value["skill_name"] != expected_name:
         raise ValueError(f"{expected_name}: metadata skill_name mismatch")
+    if value["stage"] == "analysis":
+        profile = value.get("interpretation_profile")
+        if not isinstance(profile, dict):
+            raise ValueError(f"{expected_name}: analysis capability requires interpretation_profile")
+        profile_schema = json.loads(
+            (find_workspace() / "CONDUCTOR_modules" / "schemas" / "operator_interpretation_profile.schema.json").read_text(encoding="utf-8")
+        )
+        jsonschema.validate(profile, profile_schema)
+        expected_profile_prefix = f"IP-{value['capability_id']}-"
+        if not str(profile["profile_id"]).startswith(expected_profile_prefix):
+            raise ValueError(f"{expected_name}: interpretation profile ID does not match capability_id")
     approval_policy = value.get("approval_policy", "standard")
     high_cost = value["cost"].get("class") in {"high", "very_high"}
     approval_required = bool(value["cost"].get("human_approval_required"))

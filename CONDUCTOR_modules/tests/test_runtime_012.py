@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -62,10 +63,13 @@ class Runtime012Tests(unittest.TestCase):
     def test_required_action_enforces_interpretation_gate(self) -> None:
         control = {"active_round_id": "RND0001", "round_state": "FINALIZING", "lease": {}, "closure": {"interpretation_ready": False, "audit_ready": False}}
         snapshot = {"nodes": [], "rounds": {"RND0001": {"state": "FINALIZING"}}, "plans": {}}
-        action = RUNTIME._required_action(Path("."), control, snapshot)
-        self.assertEqual(action["code"], "PLAN_INTERPRETATION")
-        snapshot["nodes"].append({"node_id": "N000001", "kind": "interpretation", "assigned_round": "RND0001", "status": "pending"})
-        self.assertEqual(RUNTIME._required_action(Path("."), control, snapshot)["code"], "WRITE_INTERPRETATION")
+        with mock.patch.object(RUNTIME, "_pending_screening_bundles", return_value=[]), mock.patch.object(
+            RUNTIME, "_screening_summary_fresh", return_value=(True, "rounds/RND0001/screening_summary.json")
+        ), mock.patch.object(RUNTIME, "_round_report_mode", return_value="full"):
+            action = RUNTIME._required_action(Path("."), control, snapshot)
+            self.assertEqual(action["code"], "PLAN_INTERPRETATION")
+            snapshot["nodes"].append({"node_id": "N000001", "kind": "interpretation", "assigned_round": "RND0001", "status": "pending"})
+            self.assertEqual(RUNTIME._required_action(Path("."), control, snapshot)["code"], "WRITE_INTERPRETATION")
 
     def test_writer_lock_recovers_dead_owner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -100,25 +104,29 @@ class Runtime012Tests(unittest.TestCase):
         self.assertEqual(RUNTIME.MAX_CANDIDATES, 20)
         self.assertLessEqual(RUNTIME.MAX_WORKING_SET_BYTES, 64 * 1024)
 
-    def test_interpretation_review_is_bounded_and_balanced(self) -> None:
-        cards = []
-        for index in range(12):
-            cards.append({
-                "result_ref": f"N{index + 1:06d}@ATT0001",
-                "capability_id": "A001" if index < 8 else "A008",
-                "analysis_subject": {
-                    "scope_mode": "global" if index % 2 == 0 else "single_cluster",
-                    "analysis_description_nodes": ["N000001"],
-                },
-            })
-        manifest = RUNTIME._review_manifest("RND0001", cards, 4)
-        self.assertEqual(len(manifest["detailed_result_refs"]), 4)
-        self.assertEqual(len(manifest["unreviewed_results"]), 8)
-        self.assertFalse(manifest["aggregate_result_refs"])
-        selected = {item for item in manifest["detailed_result_refs"]}
-        selected_cards = [card for card in cards if card["result_ref"] in selected]
-        self.assertEqual({card["capability_id"] for card in selected_cards}, {"A001", "A008"})
-        self.assertEqual({card["analysis_subject"]["scope_mode"] for card in selected_cards}, {"global", "single_cluster"})
+    def test_interpretation_review_selects_only_reportable_bundle_classes(self) -> None:
+        bundles = []
+        assessments = {}
+        for index, candidate_class in enumerate(("design_lead", "contextual_anomaly", "supporting_evidence"), 1):
+            bundle_id = f"RVB{index:016x}"
+            bundle = {
+                "bundle_id": bundle_id,
+                "bundle_type": "global" if index == 1 else "global_local",
+                "capability_id": "A001",
+                "all_result_refs": [f"N{index:06d}@ATT0001"],
+            }
+            bundles.append(bundle)
+            assessments[bundle_id] = {
+                "bundle_id": bundle_id,
+                "capability_id": "A001",
+                "candidate_class": candidate_class,
+                "scores": {"chemical_actionability": 2},
+                "reliability": {"sample_support": "moderate"},
+            }
+        manifest = RUNTIME._assessment_review_manifest("RND0001", bundles, assessments, 4)
+        self.assertEqual(2, len(manifest["selected_bundle_ids"]))
+        self.assertEqual(2, len(manifest["detailed_result_refs"]))
+        self.assertEqual("supporting_evidence", manifest["unselected_bundles"][0]["candidate_class"])
 
     def test_reconcile_running_is_a_public_runtime_command(self) -> None:
         parsed = RUNTIME.build_parser().parse_args(["reconcile-running", "--run-root", "run", "--lease-token", "lease"])

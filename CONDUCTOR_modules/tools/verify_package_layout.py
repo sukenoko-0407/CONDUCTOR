@@ -8,8 +8,11 @@ from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = MODULE_ROOT.parent
-VERSION = "0.1.6"
-SUPPORTED_COMPONENT_VERSIONS = {VERSION}
+VERSION = "0.2.0"
+# Skill implementation versions are independent from the Run artifact
+# contract.  Older scientific kernels remain supported, but all newly emitted
+# CONDUCTOR artifacts must declare VERSION.
+SUPPORTED_COMPONENT_VERSIONS = {"0.1.6", "0.1.7", VERSION}
 COMMON_SCIENTIFIC_OPTIONS = {
     "--conductor", "--project", "--run-id", "--round-id", "--node-id",
     "--attempt-id", "--output-dir", "--input",
@@ -38,7 +41,10 @@ def main() -> int:
         "schemas/conductor_control.schema.json", "schemas/runtime_event.schema.json",
         "schemas/node_record.schema.json", "schemas/round_contract.schema.json",
         "schemas/round_outcome.schema.json", "schemas/analysis_subject.schema.json",
-        "schemas/result_card.schema.json", "schemas/working_set.schema.json",
+        "schemas/result_card.schema.json", "schemas/operator_interpretation_profile.schema.json",
+        "schemas/review_bundle.schema.json", "schemas/working_set.schema.json",
+        "schemas/result_assessment.schema.json", "schemas/screening_batch.schema.json",
+        "schemas/screening_draft.schema.json", "schemas/screening_summary.schema.json",
         "schemas/interpretation.schema.json", "tools/runtime_controller.py",
         "schemas/execution_packet.schema.json", "schemas/failure_packet.schema.json",
         "schemas/runtime_worker_status.schema.json",
@@ -100,6 +106,8 @@ def main() -> int:
             if capability.get("skill_name") != name or capability.get("version") not in SUPPORTED_COMPONENT_VERSIONS:
                 errors.append(f"{name}: metadata identity/version mismatch")
             stage = capability.get("stage")
+            if stage == "analysis" and not isinstance(capability.get("interpretation_profile"), dict):
+                errors.append(f"{name}: analysis capability lacks an Interpretation Profile")
             if stage in {"description", "clustering", "analysis"}:
                 run_text = (root / "scripts" / "run.py").read_text(encoding="utf-8")
                 skill_text = (root / "SKILL.md").read_text(encoding="utf-8")
@@ -119,6 +127,8 @@ def main() -> int:
                 for token in ("--conductor", "--round-id", "--node-id", "--attempt-id"):
                     if token not in run_text:
                         errors.append(f"{name}: scientific kernel lacks internal CONDUCTOR context ({token})")
+                if f'"conductor_version": "{VERSION}"' not in run_text and f'"conductor_version":"{VERSION}"' not in run_text:
+                    errors.append(f"{name}: CONDUCTOR artifact manifest version is not {VERSION}")
                 expected_options = COMMON_SCIENTIFIC_OPTIONS | ADAPTER_REQUIRED_OPTIONS.get(str(adapter_name), set())
                 for option in sorted(expected_options):
                     if option not in run_text:
@@ -132,7 +142,10 @@ def main() -> int:
             if stage == "interpretation":
                 if (root / "schemas" / "state.schema.json").exists():
                     errors.append(f"{name}: obsolete State schema remains")
-                for relative in ("schemas/result_card.schema.json", "schemas/analysis_subject.schema.json", "scripts/render.py"):
+                required_interpretation_files = ["schemas/result_card.schema.json", "schemas/analysis_subject.schema.json", "scripts/render.py"]
+                if capability.get("capability_id") == "I001":
+                    required_interpretation_files.extend(["schemas/review_bundle.schema.json", "schemas/operator_interpretation_profile.schema.json"])
+                for relative in required_interpretation_files:
                     if not (root / relative).is_file():
                         errors.append(f"{name}: missing {relative}")
         if len(capability_ids) != len(set(capability_ids)):
@@ -145,8 +158,12 @@ def main() -> int:
         expected_operators = {f"A{i:03d}" for i in range(1, 15)}
         if set(exploration.get("global_operator_capabilities", [])) != expected_operators:
             errors.append("Global exploration must contain every Operator")
-        if profile.get("runtime_planning", {}).get("max_new_analysis_nodes_per_round") != 50:
-            errors.append("Round Analysis limit must be 50")
+        if profile.get("runtime_planning", {}).get("max_new_analysis_nodes_per_round") != 500:
+            errors.append("Round Analysis safety limit must be 500")
+        if profile.get("runtime_planning", {}).get("analysis_activation_batch_size") != 25:
+            errors.append("Analysis activation batch size must be 25")
+        if profile.get("runtime_planning", {}).get("screening_batch_size") != 8:
+            errors.append("Result Screening batch size must be 8")
         if profile.get("runtime_planning", {}).get("max_interpretation_result_cards") != 50:
             errors.append("Interpretation Result Card limit must be 50")
         mmp = profile.get("matched_molecular_pairs", {})
@@ -227,7 +244,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print("CONDUCTOR 0.1.6 package layout is valid")
+    print("CONDUCTOR 0.2.0 package layout is valid")
     return 0
 
 
