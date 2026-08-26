@@ -113,10 +113,14 @@ def validate_screening_draft(context: dict[str, Any], draft: dict[str, Any]) -> 
         issues.append("every target Review Bundle must be assessed exactly once")
     allowed = set(context.get("allowed_result_refs") or [])
     bundles = {bundle.get("bundle_id"): bundle for bundle in context.get("review_bundles") or []}
+    seen_content: dict[str, str] = {}
+    seen_reasons: dict[str, str] = {}
     for index, row in enumerate(rows, 1):
         status = row.get("assessment_status")
         scores = row.get("scores")
         related = set([*(row.get("supporting_result_refs") or []), *(row.get("counter_result_refs") or [])])
+        if not related:
+            issues.append(f"assessments[{index}]: at least one Bundle Result reference is required as the evidence basis")
         if related - allowed:
             issues.append(f"assessments[{index}]: Result reference outside context")
         bundle_refs = set((bundles.get(row.get("bundle_id")) or {}).get("all_result_refs") or [])
@@ -133,6 +137,25 @@ def validate_screening_draft(context: dict[str, Any], draft: dict[str, Any]) -> 
                     issues.append(f"assessments[{index}]: non-applicable axis {axis} must be not_applicable")
         if status == "not_scorable" and any(value is not None for value in (scores, row.get("effect_stability"), row.get("independence"))):
             issues.append(f"assessments[{index}]: not_scorable requires null scores and reliability judgments")
+        fingerprint = json.dumps({
+            "assessment_status": status,
+            "scores": scores,
+            "effect_stability": row.get("effect_stability"),
+            "independence": row.get("independence"),
+            "reason": " ".join(str(row.get("reason") or "").split()).casefold(),
+        }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        previous = seen_content.get(fingerprint)
+        if previous and previous != row.get("bundle_id"):
+            issues.append(
+                f"assessments[{index}]: template-like content duplicates {previous}; "
+                "write a Bundle-specific reason grounded in its metric/value or quality facts"
+            )
+        seen_content[fingerprint] = str(row.get("bundle_id") or "")
+        reason_key = " ".join(str(row.get("reason") or "").split()).casefold()
+        previous_reason = seen_reasons.get(reason_key)
+        if previous_reason and previous_reason != row.get("bundle_id"):
+            issues.append(f"assessments[{index}]: reason duplicates {previous_reason}; every reason must be Bundle-specific")
+        seen_reasons[reason_key] = str(row.get("bundle_id") or "")
     return issues
 
 

@@ -24,9 +24,11 @@ Runtimeが比較可能なResult Cardから作ったReview Bundle評価draft、�
 
 ## Algorithm-specific options
 
-`screening`ではOperator Interpretation Profileの固定anchorを使い、各Review Bundleを0～3の複数絶対軸で評価する。軸を合計せず、信頼性と分離する。長文Insight、Markdown／HTML、正式ID、Candidate classを作らない。`synthesis`では`references/interpretation_policy.md`を完全に読み、`design_lead`と`contextual_anomaly`だけを主候補にする。各Insightには`review_bundle_ids`、内容を表す日本語表題、完全な文の`limitations`配列を付ける。
+`screening`では各Review Bundle内へRuntimeが配置したOperator固有`evaluation_anchors`を使い、0～3の複数絶対軸で個別評価する。軸を合計せず、信頼性と分離する。各評価はBundle内のResultを最低1件引用し、実際のmetric/value、比較またはquality factに基づく固有理由を記載する。異なるBundleへ同一内容を複製しない。長文Insight、Markdown／HTML、正式ID、Candidate classを作らない。`synthesis`では`references/interpretation_policy.md`を完全に読み、`design_lead`と`contextual_anomaly`だけを主候補にする。各Insightには`review_bundle_ids`、内容を表す日本語表題、完全な文の`limitations`配列を付ける。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
+
+`interpretation_scope=cumulative_unreported`では、Runtimeが指定した過去のCLOSED Roundにある各Bundleの最新一次評価だけを対象とする。過去の正式Insightで使用済みのBundleはRuntimeが除外する。`prior_reported_insights`は重複表現を避けるためだけに参照し、同じ知見を新規Insightとして言い換えない。
 
 ## Mode selection
 

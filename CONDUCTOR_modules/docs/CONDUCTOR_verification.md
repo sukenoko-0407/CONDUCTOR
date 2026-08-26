@@ -10,10 +10,13 @@
 - metric、Description、Operator parameterが異なるResultを誤って同じcomparison familyへ入れない。
 - sibling Clusterの重複を独立supportとして扱わない。
 - 一次評価は0～3の絶対複数軸と信頼性を分離し、合計点を持たない。
+- 一次評価は各Review Bundle内のResultを最低1件引用し、Bundle固有の数値・比較・品質事実を理由に含める。同一内容または同一理由を複数Bundleへ複製したdraftはcommitされない。
+- Review BundleにOperator固有の評価anchorが同梱され、既定4 Bundleの小batchで評価される。
 - Candidate classはRuntimeの固定決定表だけが確定する。
 - 正式Interpretationは`design_lead`と`contextual_anomaly`だけを単独Insight候補にする。
 - Cluster-local ResultをGlobalと表示せず、比較claimがReview Bundle内のcomparatorを参照する。
 - Insightがゼロ件でも日本語Markdown／HTMLを作り、negative resultを長く列挙しない。
+- 累積Interpretationは人間承認した報告専用Full Roundとして実行され、指定したCLOSED Roundの最新一次評価だけを参照する。過去の正式Insightに使用済みのReview Bundleは候補から除外され、Description、Clustering、Operator Nodeを追加しない。
 - Result Card、Review Bundle、Assessment、Interpretationの全参照先がRun Root内に存在する。
 - Main session中断、Packet再投入、Lease期限、Worker再接続で科学processを二重起動しない。
 

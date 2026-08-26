@@ -1570,6 +1570,32 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
             raise ValueError("parallel_limit must be at least one")
         if args.available_cpu_cores is not None and args.available_cpu_cores < 1:
             raise ValueError("available_cpu_cores must be at least one")
+        cumulative = bool(getattr(args, "cumulative_interpretation", False))
+        requested_source_rounds = sorted(set(getattr(args, "source_round_id", None) or []))
+        if requested_source_rounds and not cumulative:
+            raise ValueError("--source-round-id requires --cumulative-interpretation")
+        if cumulative:
+            if args.report_mode != "full":
+                raise ValueError("Cumulative Interpretation requires --report-mode full")
+            if args.required_deliverables_json:
+                raise ValueError("Cumulative Interpretation uses its fixed report-only deliverable")
+            source_rounds = requested_source_rounds or sorted(
+                round_id for round_id, record in snapshot.get("rounds", {}).items()
+                if record.get("state") == "CLOSED"
+            )
+            unknown = sorted(set(source_rounds) - set(snapshot.get("rounds", {})))
+            not_closed = sorted(
+                round_id for round_id in source_rounds
+                if round_id in snapshot.get("rounds", {}) and snapshot["rounds"][round_id].get("state") != "CLOSED"
+            )
+            if unknown:
+                raise ValueError(f"Unknown cumulative source Round: {unknown}")
+            if not_closed:
+                raise ValueError(f"Cumulative source Rounds must be CLOSED: {not_closed}")
+            if not source_rounds:
+                raise ValueError("Cumulative Interpretation requires at least one CLOSED source Round")
+        else:
+            source_rounds = []
         round_id = f"RND{control['next_round_number']:04d}"
         request_payload = {
             "objective": args.objective,
@@ -1580,14 +1606,23 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
                 "walltime_minutes": args.walltime_minutes,
                 "parallel_limit": args.parallel_limit or control["run"]["parallel_limit"],
                 "available_cpu_cores": args.available_cpu_cores or _available_cpu_cores(control),
-                "max_additional_nodes": args.max_additional_nodes,
+                "max_additional_nodes": 0 if cumulative else args.max_additional_nodes,
                 "interpretation_iterations": args.interpretation_iterations,
             },
             "omissions": args.omission or [],
             "high_cost_bundle_approved": bool(args.approve_high_cost),
         }
+        if cumulative:
+            request_payload.update({
+                "interpretation_scope": "cumulative_unreported",
+                "source_round_ids": source_rounds,
+            })
         request_hash = value_hash(request_payload)
-        contract = {"schema_version": "1.0.0", "round_id": round_id, **request_payload, "required_deliverables": _default_deliverables(snapshot, args.report_mode), "request_hash": request_hash, "created_at": utc_now()}
+        required_deliverables = (
+            [{"deliverable_id": "DELIV_INTERPRETATION", "type": "interpretation_completed", "description": "既報Bundleを除外した累積Interpretationを生成する。", "parameters": {"source_round_ids": source_rounds}, "human_acceptance_required": False}]
+            if cumulative else _default_deliverables(snapshot, args.report_mode)
+        )
+        contract = {"schema_version": "1.0.0", "round_id": round_id, **request_payload, "required_deliverables": required_deliverables, "request_hash": request_hash, "created_at": utc_now()}
         if args.required_deliverables_json:
             contract["required_deliverables"] = json.loads(Path(args.required_deliverables_json).read_text(encoding="utf-8") if Path(args.required_deliverables_json).is_file() else args.required_deliverables_json)
         validate(contract, "round_contract.schema.json")
@@ -1627,7 +1662,8 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         total_minutes = contract["budgets"]["walltime_minutes"]
         reserve = min(90, max(5, total_minutes // 5), max(1, total_minutes - 1))
         deadline = started + timedelta(minutes=contract["budgets"]["walltime_minutes"])
-        snapshot["rounds"][round_id] = {"state": "ACTIVE", "runtime_version": VERSION, "report_mode": contract.get("report_mode", "full"), "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": False, "latest_audit": None, "current_interpretation_node": None, "current_screening_batch": None, "screening_summary_ref": None, "no_progress_returns": 0}
+        cumulative = contract.get("interpretation_scope") == "cumulative_unreported"
+        snapshot["rounds"][round_id] = {"state": "ACTIVE", "runtime_version": VERSION, "report_mode": contract.get("report_mode", "full"), "interpretation_scope": contract.get("interpretation_scope", "current_round"), "source_round_ids": list(contract.get("source_round_ids") or []), "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": cumulative, "latest_audit": None, "current_interpretation_node": None, "current_screening_batch": None, "screening_summary_ref": None, "no_progress_returns": 0}
         maximum_analysis_nodes = min(_analysis_planning_limits()[0], int(contract["budgets"]["max_additional_nodes"]))
         snapshot["plans"][round_id] = {
             "basic_compute": False,
@@ -3881,20 +3917,28 @@ def _make_review_bundle(
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 comparable_value_counts[str(metric_name)] += 1
     has_comparable_metric = any(count >= 2 for count in comparable_value_counts.values())
+    applicable_axes = sorted(
+        axis for axis in capability_profile["allowed_axes"]
+        if not (
+            (axis in {"context_deviation", "independent_support"} and bundle_type == "global")
+            or (axis == "context_deviation" and comparison_status != "ready")
+            or (axis == "context_deviation" and not has_comparable_metric)
+            or (axis == "favorable_signal" and not has_favorable_value)
+        )
+    )
     bundle = {
         "schema_version": "1.0.0", "bundle_id": bundle_id, "bundle_type": bundle_type, "round_id": round_id,
         "capability_id": first["capability_id"], "interpretation_profile_id": first["interpretation_profile_id"], "comparison_family_id": first["comparison_family_id"],
         "target_result_refs": sorted(card["result_ref"] for card in target_cards), "comparator_result_refs": sorted(card["result_ref"] for card in comparator_cards), "all_result_refs": refs,
         "cluster_ids": cluster_ids, "comparison_status": comparison_status,
-        "applicable_axes": sorted(
-            axis for axis in capability_profile["allowed_axes"]
-            if not (
-                (axis in {"context_deviation", "independent_support"} and bundle_type == "global")
-                or (axis == "context_deviation" and comparison_status != "ready")
-                or (axis == "context_deviation" and not has_comparable_metric)
-                or (axis == "favorable_signal" and not has_favorable_value)
-            )
-        ),
+        "applicable_axes": applicable_axes,
+        # Flatten the capability-specific anchors into the Bundle.  A short-lived
+        # local Interpreter must not infer which separate Profile applies to a
+        # row or fall back to the example draft as a scoring template.
+        "evaluation_anchors": {
+            axis: list(capability_profile.get("anchors", {}).get(axis) or [])
+            for axis in applicable_axes
+        },
         "comparison_table": comparison_table,
         "runtime_facts": {
             "sample_support": _sample_support(min_count, minimum),
@@ -3969,8 +4013,17 @@ def _current_round_bundles(root: Path, snapshot: dict[str, Any], round_id: str) 
 def _pending_screening_bundles(root: Path, snapshot: dict[str, Any], round_id: str) -> list[dict[str, Any]]:
     latest = _latest_assessments(root)
     bundles = _current_round_bundles(root, snapshot, round_id)
+    rescreening = snapshot.get("rounds", {}).get(round_id, {}).get("result_rescreening") or {}
+    forced_ids = set(rescreening.get("target_bundle_ids") or []) if rescreening.get("status") == "active" else set()
     return sorted(
-        [bundle for bundle in bundles if bundle["comparison_status"] != "awaiting_comparator" and not _assessment_is_current(bundle, latest.get(bundle["bundle_id"]))],
+        [
+            bundle for bundle in bundles
+            if bundle["comparison_status"] != "awaiting_comparator"
+            and (
+                bundle["bundle_id"] in forced_ids
+                or not _assessment_is_current(bundle, latest.get(bundle["bundle_id"]))
+            )
+        ],
         key=lambda bundle: (bundle["capability_id"], bundle["bundle_type"], bundle["bundle_id"]),
     )
 
@@ -4106,6 +4159,58 @@ def _candidate_class(profile_value: dict[str, Any], bundle: dict[str, Any], stat
     return "background"
 
 
+def _assessment_content_fingerprint(value: dict[str, Any]) -> str:
+    """Fingerprint scientific assessment content while deliberately ignoring IDs."""
+    reason = " ".join(str(value.get("reason") or "").split()).casefold()
+    reliability = value.get("reliability") if isinstance(value.get("reliability"), dict) else {}
+    return value_hash({
+        "assessment_status": value.get("assessment_status"),
+        "scores": value.get("scores"),
+        # Draft rows keep these fields at the top level; committed rows place
+        # them below reliability.  Normalize both layouts so the append-only
+        # history participates in the same duplicate-content guard.
+        "effect_stability": value.get("effect_stability", reliability.get("effect_stability")),
+        "independence": value.get("independence", reliability.get("independence")),
+        "reason": reason,
+    })
+
+
+def _reject_ungrounded_or_duplicated_assessments(
+    rows: list[dict[str, Any]],
+    latest: dict[str, dict[str, Any]],
+) -> None:
+    """Reject copy-filled drafts without trying to replace scientific judgment."""
+    known: dict[str, set[str]] = defaultdict(set)
+    known_reasons: dict[str, set[str]] = defaultdict(set)
+    for bundle_id, row in latest.items():
+        known[_assessment_content_fingerprint(row)].add(bundle_id)
+        known_reasons[" ".join(str(row.get("reason") or "").split()).casefold()].add(bundle_id)
+    current: dict[str, set[str]] = defaultdict(set)
+    current_reasons: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        bundle_id = str(row.get("bundle_id") or "")
+        evidence_refs = [*(row.get("supporting_result_refs") or []), *(row.get("counter_result_refs") or [])]
+        if not evidence_refs:
+            raise ValueError(f"Assessment must cite at least one Bundle Result as its evidence basis: {bundle_id}")
+        fingerprint = _assessment_content_fingerprint(row)
+        duplicated = (known.get(fingerprint, set()) | current.get(fingerprint, set())) - {bundle_id}
+        if duplicated:
+            raise ValueError(
+                "Template-like duplicate assessment content is not allowed: "
+                f"{bundle_id} duplicates {sorted(duplicated)[:5]}. "
+                "Write a Bundle-specific reason grounded in its metric/value or quality facts."
+            )
+        reason_key = " ".join(str(row.get("reason") or "").split()).casefold()
+        duplicated_reason = (known_reasons.get(reason_key, set()) | current_reasons.get(reason_key, set())) - {bundle_id}
+        if duplicated_reason:
+            raise ValueError(
+                "Assessment reason must be Bundle-specific: "
+                f"{bundle_id} repeats the reason used by {sorted(duplicated_reason)[:5]}."
+            )
+        current[fingerprint].add(bundle_id)
+        current_reasons[reason_key].add(bundle_id)
+
+
 def _persist_review_bundles(root: Path, bundles: list[dict[str, Any]]) -> None:
     path = _bundle_index_path(root)
     known = {(row["bundle_id"], row.get("source_hash")) for row in read_jsonl(path)}
@@ -4145,7 +4250,12 @@ def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
             raise ValueError("No ready Review Bundle requires Screening")
         _persist_review_bundles(root, _current_round_bundles(root, snapshot, round_id))
         settings = profile().get("runtime_planning") or {}
-        batch_size = int(settings.get("screening_batch_size", DEFAULT_SCREENING_BATCH_SIZE))
+        rescreening = snapshot["rounds"][round_id].get("result_rescreening") or {}
+        requested_batch_size = rescreening.get("batch_size") if rescreening.get("status") == "active" else None
+        batch_size = min(
+            DEFAULT_SCREENING_BATCH_SIZE,
+            max(1, int(requested_batch_size or settings.get("screening_batch_size", DEFAULT_SCREENING_BATCH_SIZE))),
+        )
         byte_limit = int(settings.get("max_screening_context_bytes", DEFAULT_SCREENING_CONTEXT_BYTES))
         targets = pending[:batch_size]
         usable_cards = {card["result_ref"]: card for card in _usable_result_cards(root, snapshot)}
@@ -4156,6 +4266,7 @@ def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
             batch_id = "SCR" + value_hash({
                 "round_id": round_id,
                 "rubric_version": SCREENING_RUBRIC_VERSION,
+                "rescreen_request_id": rescreening.get("request_id"),
                 "targets": [(bundle["bundle_id"], bundle["source_hash"]) for bundle in selected],
             })[:16]
             return {
@@ -4255,6 +4366,7 @@ def cmd_commit_result_screening(args: argparse.Namespace) -> int:
             bundles = {bundle["bundle_id"]: bundle for bundle in context["review_bundles"]}
             cards = {card["result_ref"]: card for card in context["result_cards"]}
             latest = _latest_assessments(root)
+            _reject_ungrounded_or_duplicated_assessments(list(draft["assessments"]), latest)
             existing_ids = {row["assessment_id"] for row in read_jsonl(_assessment_index_path(root))}
             committed: list[dict[str, Any]] = []
             for bundle_id in targets:
@@ -4318,6 +4430,15 @@ def cmd_commit_result_screening(args: argparse.Namespace) -> int:
             return 1
         record["current_screening_batch"] = None
         record["screening_summary_ref"] = None
+        rescreening = record.get("result_rescreening") or {}
+        if rescreening.get("status") == "active":
+            committed_ids = {row["bundle_id"] for row in committed}
+            rescreening["target_bundle_ids"] = [
+                bundle_id for bundle_id in rescreening.get("target_bundle_ids") or []
+                if bundle_id not in committed_ids
+            ]
+            if not rescreening["target_bundle_ids"]:
+                rescreening.update({"status": "completed", "completed_at": utc_now()})
         if (control.get("blocker") or {}).get("code") == "RESULT_SCREENING_RETRY_EXHAUSTED":
             control["blocker"] = None
         csv_path = _write_round_assessment_csv(root, snapshot, round_id)
@@ -4329,6 +4450,90 @@ def cmd_commit_result_screening(args: argparse.Namespace) -> int:
         _write_working_set(root, control, snapshot)
         remaining = len(_pending_screening_bundles(root, snapshot, round_id))
     _print_compact(control, batch_id=batch["batch_id"], screening_status="pass", assessed_count=len(committed), unassessed_count=remaining)
+    return 0
+
+
+def cmd_request_result_rescreening(args: argparse.Namespace) -> int:
+    """Human-authorized append-only reassessment of current-Round Review Bundles."""
+    root = resolve_root(args.run_root)
+    _require_control_authority(root, args.control_key)
+    with writer_lock(root):
+        _recover_transaction(root)
+        control, snapshot = _read_state(root)
+        if control.get("round_state") not in {"ACTIVE", "AWAITING_HUMAN_REVIEW"}:
+            raise ValueError("Result re-Screening requires an ACTIVE or AWAITING_HUMAN_REVIEW Round")
+        round_id = control.get("active_round_id")
+        if not round_id:
+            raise ValueError("No active Round is available for Result re-Screening")
+        record = snapshot["rounds"][round_id]
+        if record.get("current_screening_batch"):
+            raise ValueError("Finish or repair the current Screening batch before requesting re-Screening")
+        running = [node["node_id"] for node in snapshot["nodes"] if node.get("status") == "running"]
+        if running:
+            raise ValueError(f"Result re-Screening requires no running Nodes: {running[:20]}")
+        if (record.get("result_rescreening") or {}).get("status") == "active":
+            raise ValueError("A Result re-Screening request is already active")
+        bundles = [
+            bundle for bundle in _current_round_bundles(root, snapshot, round_id)
+            if bundle.get("comparison_status") != "awaiting_comparator"
+        ]
+        by_id = {bundle["bundle_id"]: bundle for bundle in bundles}
+        requested_ids = sorted(set(args.bundle_id or []))
+        if args.all_current:
+            requested_ids = sorted(by_id)
+        unknown = sorted(set(requested_ids) - set(by_id))
+        if unknown:
+            raise ValueError(f"Review Bundles are not eligible in {round_id}: {unknown[:20]}")
+        if not requested_ids:
+            raise ValueError("No eligible Review Bundle was selected for re-Screening")
+        if not 1 <= args.batch_size <= DEFAULT_SCREENING_BATCH_SIZE:
+            raise ValueError(f"batch-size must be between 1 and {DEFAULT_SCREENING_BATCH_SIZE}")
+        serial = int(record.get("result_rescreening_serial", 0)) + 1
+        request_id = f"RSCR{serial:04d}"
+        record["result_rescreening_serial"] = serial
+        record["result_rescreening"] = {
+            "request_id": request_id,
+            "status": "active",
+            "reason": args.reason,
+            "batch_size": args.batch_size,
+            "target_bundle_ids": requested_ids,
+            "initial_target_count": len(requested_ids),
+            "requested_at": utc_now(),
+            "completed_at": None,
+        }
+        # Re-Screening is a bounded human-requested maintenance pass.  Keep the
+        # normal Screening gate, then deterministically return to finalization
+        # instead of letting the scientific planner add unrelated work.
+        record.update({"screening_summary_ref": None, "latest_audit": None, "human_checkpoint_requested": True})
+        if _round_report_mode(root, control, snapshot) == "full":
+            record.update({
+                "interpretation_revision_required": True,
+                "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1,
+                "report_revision_reason": f"Result re-Screening {request_id}: {args.reason}",
+            })
+        if control["round_state"] == "AWAITING_HUMAN_REVIEW":
+            if args.additional_walltime_minutes is None or args.additional_walltime_minutes < 1:
+                raise ValueError("Reopening an AWAITING_HUMAN_REVIEW Round requires --additional-walltime-minutes")
+            now = datetime.now(timezone.utc)
+            minutes = args.additional_walltime_minutes
+            reserve = min(90, max(5, minutes // 5), max(1, minutes - 1))
+            record.update({
+                "state": "ACTIVE",
+                "deadline_at": (now + timedelta(minutes=minutes)).isoformat(),
+                "soft_stop_at": (now + timedelta(minutes=minutes - reserve)).isoformat(),
+                "scientific_finish_requested": False,
+                "finish_reason": None,
+            })
+        control.update({"round_state": "ACTIVE", "blocker": None})
+        control["closure"] = {"contract_satisfied": False, "interpretation_ready": False, "audit_ready": False, "outcome": "undetermined"}
+        _commit(root, control, snapshot, "result_rescreening_requested", {
+            "request_id": request_id,
+            "target_count": len(requested_ids),
+            "batch_size": args.batch_size,
+            "reason": args.reason,
+        }, round_id=round_id)
+        _write_working_set(root, control, snapshot)
+    _print_compact(control, result_rescreening_requested=True, request_id=request_id, target_count=len(requested_ids), batch_size=args.batch_size)
     return 0
 
 
@@ -4400,6 +4605,70 @@ def cmd_write_screening_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cumulative_interpretation_evidence(
+    root: Path,
+    snapshot: dict[str, Any],
+    source_round_ids: list[str],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    """Resolve current, unreported assessment evidence without reopening source Rounds."""
+    source_set = set(source_round_ids)
+    latest_assessments = _latest_assessments(root)
+    bundle_versions = {
+        (row.get("bundle_id"), row.get("source_hash")): row
+        for row in read_jsonl(_bundle_index_path(root))
+    }
+    insight_rows = read_jsonl(root / "runtime" / "insight_index.jsonl")
+    reported_bundle_ids = {
+        bundle_id
+        for row in insight_rows
+        for bundle_id in (row.get("review_bundle_ids") or [])
+    }
+    latest_insights: dict[str, dict[str, Any]] = {}
+    for row in insight_rows:
+        previous = latest_insights.get(str(row.get("insight_id")))
+        if previous is None or int(row.get("revision", 0)) >= int(previous.get("revision", 0)):
+            latest_insights[str(row.get("insight_id"))] = row
+    prior_summaries = [
+        {
+            "insight_id": row.get("insight_id"),
+            "title": row.get("title"),
+            "review_bundle_ids": row.get("review_bundle_ids") or [],
+        }
+        for row in sorted(latest_insights.values(), key=lambda item: str(item.get("insight_id")))
+    ]
+    usable_refs = {card["result_ref"] for card in _usable_result_cards(root, snapshot)}
+    selected_bundles: list[dict[str, Any]] = []
+    selected_assessments: dict[str, dict[str, Any]] = {}
+    excluded_reported: list[str] = []
+    source_assessment_count = 0
+    unavailable_count = 0
+    for bundle_id, assessment in sorted(latest_assessments.items()):
+        if assessment.get("round_id") not in source_set:
+            continue
+        bundle = bundle_versions.get((bundle_id, assessment.get("source_hash")))
+        if not bundle or not _assessment_is_current(bundle, assessment):
+            unavailable_count += 1
+            continue
+        source_assessment_count += 1
+        if bundle_id in reported_bundle_ids:
+            excluded_reported.append(bundle_id)
+            continue
+        if set(bundle.get("all_result_refs") or []) - usable_refs:
+            unavailable_count += 1
+            continue
+        selected_bundles.append(bundle)
+        selected_assessments[bundle_id] = assessment
+    metadata = {
+        "interpretation_scope": "cumulative_unreported",
+        "source_round_ids": sorted(source_set),
+        "source_assessment_count": source_assessment_count,
+        "previously_reported_count": len(excluded_reported),
+        "excluded_previously_reported_bundle_ids": sorted(excluded_reported),
+        "unavailable_or_stale_count": unavailable_count,
+    }
+    return selected_bundles, selected_assessments, metadata, prior_summaries
+
+
 def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
     with writer_lock(root):
@@ -4407,10 +4676,31 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         control, snapshot = _read_state(root)
         _require_action(control, args.lease_token, {"PLAN_INTERPRETATION"})
         round_id = control["active_round_id"]
-        bundles = _current_round_bundles(root, snapshot, round_id)
+        record = snapshot["rounds"][round_id]
+        interpretation_scope = record.get("interpretation_scope", "current_round")
         rereview = set(args.rereview_result_ref or [])
         all_cards = {card["result_ref"]: card for card in _usable_result_cards(root, snapshot)}
-        latest_assessments = _latest_assessments(root)
+        prior_reported_insights: list[dict[str, Any]] = []
+        manifest_metadata: dict[str, Any] = {
+            "interpretation_scope": "current_round",
+            "source_round_ids": [round_id],
+            "source_assessment_count": 0,
+            "previously_reported_count": 0,
+            "excluded_previously_reported_bundle_ids": [],
+        }
+        if interpretation_scope == "cumulative_unreported":
+            if rereview:
+                raise ValueError("Cumulative Interpretation does not combine with --rereview-result-ref")
+            source_round_ids = list(record.get("source_round_ids") or [])
+            bundles, latest_assessments, manifest_metadata, prior_reported_insights = _cumulative_interpretation_evidence(
+                root, snapshot, source_round_ids
+            )
+        else:
+            bundles = _current_round_bundles(root, snapshot, round_id)
+            latest_assessments = _latest_assessments(root)
+            manifest_metadata["source_assessment_count"] = len(
+                [bundle for bundle in bundles if bundle["bundle_id"] in latest_assessments]
+            )
         if rereview:
             historical = {row["bundle_id"]: row for row in read_jsonl(_bundle_index_path(root))}
             for bundle in historical.values():
@@ -4419,6 +4709,8 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         configured_limit = int((profile().get("runtime_planning") or {}).get("max_interpretation_result_cards", 50))
         detailed_limit = min(args.detailed_limit, configured_limit)
         review = _assessment_review_manifest(round_id, bundles, latest_assessments, detailed_limit)
+        review.update(manifest_metadata)
+        validate(review, "interpretation_review_manifest.schema.json")
         selected_refs = set(review["detailed_result_refs"])
         selected_cards = [card for ref, card in all_cards.items() if ref in selected_refs]
         selected_cards.sort(key=lambda card: review["detailed_result_refs"].index(card["result_ref"]))
@@ -4426,16 +4718,18 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         selected_bundles = [bundle for bundle in bundles if bundle["bundle_id"] in selected_bundle_ids]
         selected_bundles.sort(key=lambda bundle: review["selected_bundle_ids"].index(bundle["bundle_id"]))
         analysis_nodes = sorted({card["node_id"] for card in selected_cards})
-        previous = snapshot["rounds"][round_id].get("current_interpretation_node")
-        record = snapshot["rounds"][round_id]
+        previous = record.get("current_interpretation_node")
         effective_focus = args.focus or record.get("report_revision_reason")
+        if interpretation_scope == "cumulative_unreported" and not effective_focus:
+            effective_focus = "過去Roundの最新一次評価から、既報Insightに使用済みのBundleを除外し、新規の活性改善候補または注目すべき違和感を抽出する。"
         revision_serial = int(record.get("interpretation_revision_serial", 0))
-        node, _created = _add_node(snapshot, control, "I001", analysis_nodes, "round_commit", {"mode": "multi_scope"}, {"reviewed_bundle_ids": review["selected_bundle_ids"], "reviewed_result_refs": review["detailed_result_refs"], "focus": effective_focus, "revision_serial": revision_serial}, supersedes=previous)
+        node, _created = _add_node(snapshot, control, "I001", analysis_nodes, "round_commit", {"mode": "multi_scope"}, {"reviewed_bundle_ids": review["selected_bundle_ids"], "reviewed_result_refs": review["detailed_result_refs"], "focus": effective_focus, "revision_serial": revision_serial, "interpretation_scope": interpretation_scope, "source_round_ids": review.get("source_round_ids") or [round_id]}, supersedes=previous)
         scratch = root / "runtime" / "scratch" / round_id / node["node_id"] / "interpretation"
         scratch.mkdir(parents=True, exist_ok=True)
         selected_assessments = {bundle_id: latest_assessments[bundle_id] for bundle_id in review["selected_bundle_ids"] if bundle_id in latest_assessments}
-        context = {"schema_version": "2.0.0", "mode": "synthesis", "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "interpretation_policy": str((module_root() / "docs" / "CONDUCTOR_interpretation_policy.md").resolve()), "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_bundles": selected_bundles, "result_assessments": selected_assessments, "review_manifest": review, "comparison_batches": [review["selected_bundle_ids"][index:index + 10] for index in range(0, len(review["selected_bundle_ids"]), 10)], "role_contract": {"read_only_evidence_space": True, "scientific_computation_allowed": False, "node_creation_allowed": False, "followups_are_recommendations_only": True, "absolute_axes_not_total_score": True, "reportable_classes": ["design_lead", "contextual_anomaly"]}, "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "candidate_class_is_runtime_verified": True, "comparison_claim_requires_comparison_results": True, "japanese_human_report": True}, "created_at": utc_now()}
-        draft = {"title": "CONDUCTOR解析結果の解釈", "executive_summary": "", "coverage_summary": "", "insights": []}
+        context = {"schema_version": "2.0.0", "mode": "synthesis", "interpretation_scope": interpretation_scope, "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "interpretation_policy": str((module_root() / "docs" / "CONDUCTOR_interpretation_policy.md").resolve()), "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_bundles": selected_bundles, "result_assessments": selected_assessments, "review_manifest": review, "prior_reported_insights": prior_reported_insights, "comparison_batches": [review["selected_bundle_ids"][index:index + 10] for index in range(0, len(review["selected_bundle_ids"]), 10)], "role_contract": {"read_only_evidence_space": True, "scientific_computation_allowed": False, "node_creation_allowed": False, "followups_are_recommendations_only": True, "absolute_axes_not_total_score": True, "reportable_classes": ["design_lead", "contextual_anomaly"], "exclude_previously_reported_bundles": interpretation_scope == "cumulative_unreported"}, "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "candidate_class_is_runtime_verified": True, "comparison_claim_requires_comparison_results": True, "japanese_human_report": True}, "created_at": utc_now()}
+        title = "CONDUCTOR累積解析結果の解釈" if interpretation_scope == "cumulative_unreported" else "CONDUCTOR解析結果の解釈"
+        draft = {"title": title, "executive_summary": "", "coverage_summary": "", "insights": []}
         write_json(scratch / "context.json", context)
         write_json(scratch / "draft.json", draft)
         node["parameters"].update({"context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json"), "review_manifest": review})
@@ -5034,6 +5328,8 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--available-cpu-cores", type=int)
     item.add_argument("--max-additional-nodes", type=int, default=50)
     item.add_argument("--report-mode", choices=["screening", "full"], default="screening")
+    item.add_argument("--cumulative-interpretation", action="store_true", help="Create a report-only full Round from unreported assessments in prior CLOSED Rounds")
+    item.add_argument("--source-round-id", action="append", help="CLOSED source Round for cumulative Interpretation; repeatable, default all CLOSED Rounds")
     item.add_argument("--interpretation-iterations", type=int, default=3)
     item.add_argument("--approve-high-cost", action="store_true")
     item.add_argument("--required-deliverables-json")
@@ -5172,6 +5468,17 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--control-key", required=True)
     item.add_argument("--reason", required=True)
     item.set_defaults(func=cmd_reset_result_screening)
+
+    item = commands.add_parser("request-result-rescreening")
+    item.add_argument("--run-root", required=True)
+    item.add_argument("--control-key", required=True)
+    selection = item.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--all-current", action="store_true")
+    selection.add_argument("--bundle-id", action="append")
+    item.add_argument("--batch-size", type=int, default=4)
+    item.add_argument("--additional-walltime-minutes", type=int)
+    item.add_argument("--reason", required=True)
+    item.set_defaults(func=cmd_request_result_rescreening)
 
     item = commands.add_parser("write-screening-summary")
     _action_args(item)

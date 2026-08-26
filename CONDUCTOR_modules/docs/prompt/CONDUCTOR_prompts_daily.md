@@ -15,6 +15,7 @@
 - [Interpretationだけを改訂](#daily-revise)
 - [Roundを受理して閉じる](#daily-accept)
 - [Round 2以降を開始](#daily-next-round)
+- [複数Screening Roundから累積Interpretationを作成](#daily-cumulative-interpretation)
 - [新しいClaude Code sessionへの引継ぎ](#daily-handoff)
 - [Result Conciergeによる既存結果の確認](#daily-concierge)
 - [MMP Global–Local専用解釈](#daily-mmp-interpretation)
@@ -209,6 +210,32 @@ Roundの目的:
 Active Roundがなく、前RoundがCLOSEDであることを確認してください。契約案をこの依頼と照合し、人間が明示した新Roundだけを開始してください。過去の成功Nodeは再計算せず再利用参照として扱い、全artifactを読み直さず、Control、bounded Working Set、必要なResult Card／Review Bundleだけから判断してください。
 
 最後に全新規Resultから成立するReview Bundleの評価を完了し、screeningならcompact summary、fullなら選抜BundleのInterpretationを作成してください。Full Audit後にAWAITING_HUMAN_REVIEWで停止し、さらに次のRoundを開始したり、このRoundを自動受理したりしないでください。
+```
+
+<a id="daily-cumulative-interpretation"></a>
+## 複数Screening Roundから累積Interpretationを作成
+
+複数のScreening Roundを人間が受理してCLOSEDにした後、既報Insightを除く最新一次評価から正式Reportを作る。科学計算は追加しない。
+
+```text
+/cs-conductor-orchestrator
+
+操作: 累積Interpretation専用の新Roundを開始
+Run Root: <absolute path>
+対象Source Round: <RND0001, RND0002, ...。省略時は全CLOSED Round>
+Wall Time: <minutes>
+Interpretation iterations: <通常3>
+
+重視する視点（任意）:
+<活性改善候補、Global–Localの違和感、特定Operator／Clusterなど>
+
+Active Roundがなく、対象Source RoundがすべてCLOSEDであることを確認してください。人間が指定した新Roundについて、通常のprepare／authorize手順を使い、`prepare-round --report-mode full --cumulative-interpretation`を指定してください。対象を限定する場合だけ各Roundを`--source-round-id`で渡してください。
+
+これは報告専用Roundです。Description、Clustering、Operatorを計画・実行せず、Operator Node予算を追加しないでください。Runtimeが全Source Roundの各Bundleの最新一次評価を走査し、過去の正式Insightで使用済みのBundleを除外し、未報告候補をbounded shortlistへ選抜します。
+
+`PLAN_INTERPRETATION`ではRuntime指定contextだけをcs-conductor-interpreterへsynthesis modeで一回渡してください。過去Report全文や全Result Cardを追加読込しないでください。既報Insightを言い換えて新規Insightにせず、未報告のdesign lead／contextual anomalyだけを正式Reportへ整理してください。
+
+Interpretation commit後にFull Auditを完了し、AWAITING_HUMAN_REVIEWで停止してください。このRoundを自動受理せず、さらに次Roundを開始しないでください。最後にSource Round、一次評価総数、既報除外数、選抜Bundle数、非選抜数、生成Report、Audit結果を報告してください。
 ```
 
 <a id="daily-handoff"></a>

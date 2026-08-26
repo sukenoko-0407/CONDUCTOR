@@ -12,6 +12,7 @@
 - [修正済みFailed Nodeを同一Roundで再実行](#special-failure-retry)
 - [既知のOperator契約不一致を修復して再開](#special-operator-contract)
 - [A010を同一Run内で再実行](#special-a010)
+- [現在のRoundの一次評価を全件再Screening](#special-result-rescreening)
 - [Interpretation日本語HTMLの追加作成](#special-translation)
 - [同一Runを使用せず新Runを選ぶ条件](#special-new-run)
 
@@ -161,6 +162,38 @@ A010以外の科学Nodeをこの依頼だけを理由に追加しないでくだ
 ```
 
 `disable-result`は旧成果物を削除しないが、旧A010を参照するInterpretationを失効させることがある。新結果commit後にInterpretationを再作成する。
+
+<a id="special-result-rescreening"></a>
+## 現在のRoundの一次評価を全件再Screening
+
+Interpreterによる一次評価が欠落、不完全、または信頼できないと人間が判断した場合に、現在のRoundのReview Bundleを小バッチで再評価する。旧評価は削除せず、同じBundleへ新しいrevisionをappendする。
+
+```text
+/cs-conductor-orchestrator
+
+操作: 現在のRoundの一次評価を全件再Screening
+Run Root: <absolute run_root>
+対象Round: <RND####>
+再Screening理由: <一次評価が機能していなかったと判断した根拠>
+Screening batch size: 4
+追加Wall Time: <AWAITING_HUMAN_REVIEWから同じRoundを再開する場合のminutes>
+
+最初にconductor_control.jsonだけを読み、Run ID、対象Round、round_state、running Node、current Screening batchを確認してください。対象は現在のactive_round_idと一致するRoundに限定します。CLOSED Roundは再開せず、新Roundも作らず、人間へ制約を報告してください。
+
+running Nodeがある場合は新しい処理を開始せず、安全にterminalとなるまで待ってください。current Screening batchがある場合は、そのbatchを先に正常完了または正式なretry処理で解消してください。
+
+Control Authorityを使用し、Runtimeの公開コマンド`request-result-rescreening`を`--all-current --batch-size 4`で一回だけ実行してください。対象RoundがAWAITING_HUMAN_REVIEWの場合は、上記の追加Wall Timeを`--additional-walltime-minutes`へ渡し、同じRoundだけを再開してください。ACTIVEなら新しいRound操作や暗黙のWall Time変更をしないでください。
+
+その後は通常の単一required_actionループへ戻ってください。`PREPARE_RESULT_SCREENING`ごとにRuntimeが作成する最大4 Review Bundleのcontextだけを、短命のcs-conductor-interpreterへscreening modeで渡してください。Interpreterは各Bundleを一回だけ絶対評価し、Mainへ評価本文を展開しないでください。`WRITE_RESULT_SCREENING`でbatchをcommitし、残数を確認して次の小batchへ進む処理を、対象がゼロになるまで逐次Loopしてください。同時に複数Interpreterや複数Screening batchを起動しないでください。
+
+既存のresult_assessment_index.jsonl、Round CSV、State、DAGを直接編集せず、旧Assessmentを削除・上書きしないでください。新AssessmentはRuntimeにrevisionを付与させてappendしてください。再Screening中は新しいDescription、Clustering、Operator Nodeを追加しないでください。
+
+Runtimeは再Screening依頼時に同じRoundのhuman checkpointも予約するため、全対象の再Screening完了後は追加科学計算へ戻らずfinalizingへ進みます。report_mode=screeningならScreening Summaryを再生成し、report_mode=fullなら新しい一次評価に基づいてInterpretationを再生成してください。その後Full Auditを実行し、AWAITING_HUMAN_REVIEWで停止してください。Roundをacceptせず、次Roundを開始しないでください。
+
+最後に、再評価Request ID、対象Bundle総数、batch数、成功／失敗数、各Bundleの旧revision→新revision、残存未評価数、再生成したSummaryまたはInterpretation、Audit結果を簡潔に報告してください。
+```
+
+一度に複数Roundを処理しない。すでに`CLOSED`となった過去Roundは不変履歴であり、この操作では再Screeningしない。過去Roundの再評価が必要な場合は、対象Resultを現在のRoundへ正式に再利用する専用設計が必要なので、State編集で代用しない。
 
 <a id="special-translation"></a>
 ## Interpretation日本語HTMLの追加作成

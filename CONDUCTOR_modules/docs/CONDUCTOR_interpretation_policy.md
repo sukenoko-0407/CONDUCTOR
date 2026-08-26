@@ -9,8 +9,9 @@ Interpretationは作業記録ではない。Endpointをfavorableな方向へ改�
 - 評価単位は単独Result Cardではなく、Runtimeが作るReview Bundleである。
 - Bundleは`global`、`global_local`、`sibling_cluster`、将来の`cross_evidence`のいずれかである。
 - 活性関連のLocal Resultは、Interpretation Profileが要求するGlobal comparatorなしに評価しない。`awaiting_comparator`は低評価ではなく未評価である。
-- 一回に最大8 Bundleだけを読み、Operator固有Profileの絶対anchorに従う。他Bundleの得点分布を基準にしない。
+- 一回に既定4 Bundleだけを読み、Bundle内のOperator固有`evaluation_anchors`に従う。他Bundleの得点分布を基準にしない。
 - `favorable_signal`、`context_deviation`、`chemical_actionability`、`independent_support`、`follow_up_leverage`を0～3または`not_applicable`で記録する。単純合計点は作らない。
+- 各評価はBundle内のResultを最低1件引用し、実際のmetric/value、比較またはquality factに基づく固有理由を持つ。異なるBundleへの同一評価内容の複製はcommitしない。
 - sample support、comparator validity、Cluster overlapはRuntimeが決定する。Interpreterはeffect stabilityとevidence independenceだけを判断する。
 - 長文Insight、正式ID、Candidate class、Markdown／HTMLは一次評価段階で作らない。
 
@@ -44,6 +45,10 @@ Runtimeは固定決定表で`design_lead`、`contextual_anomaly`、`supporting_e
 6. Insightがなければ無用なnegative resultを列挙せず、その旨を短く報告する。
 
 各Insightは内容固有の日本語表題、`review_bundle_ids`、支持・比較・反証Result、観察、解釈、完全な文の限界配列を持つ。主要数値の大量展開は行わず、詳細は個別Operator report、Artifact、Conciergeへ委ねる。Cluster-local結果をGlobalと記載したReport、根拠のない比較、日本語本文のないReportはcommitしない。
+
+## 累積Synthesis
+
+複数のScreening Roundを終えた後、人間が明示的に累積Interpretation Roundを開始できる。これは科学計算を行わない報告専用Roundである。Runtimeは指定されたCLOSED Roundの各Bundleについて最新かつcurrentな一次評価を走査し、過去の正式Insightで使用済みのBundleを除外する。全一次評価を一括でLLMへ渡さず、固定Candidate class、信頼性、actionabilityによりbounded shortlistを作る。Interpreterは既報Insightを言い換えて新規Insightにせず、未報告の`design_lead`と`contextual_anomaly`だけを検討する。対象総数、既報除外数、選抜・非選抜範囲はreview manifestへ残す。
 
 ## MMP
 

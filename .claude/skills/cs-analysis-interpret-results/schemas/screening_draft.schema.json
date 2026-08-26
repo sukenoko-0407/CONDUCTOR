@@ -25,7 +25,7 @@
           }},
           "effect_stability": {"type": ["string", "null"], "enum": ["unknown", "unstable", "mixed", "stable", null]},
           "independence": {"type": ["string", "null"], "enum": ["unknown", "overlapping", "partially_independent", "independent", null]},
-          "reason": {"type": "string", "minLength": 1, "maxLength": 1200},
+          "reason": {"type": "string", "minLength": 12, "maxLength": 1200},
           "supporting_result_refs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
           "counter_result_refs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
         }

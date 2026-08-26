@@ -13,7 +13,7 @@ allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 
 1. 新規Runなら、人間指定のCSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、出力先でRuntime `init`を一回だけ実行する。CPU未指定時は8。SMILES列が一意でない場合だけ`--smiles-column`を要求する。
 2. 既存Runでは、最初に`conductor_control.json`だけを読む。全DAG、Ledger、過去Reportを先読みしない。
-3. 人間依頼を`inspect`、`start new Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
+3. 人間依頼を`inspect`、`start new Round`、`start cumulative Interpretation Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
 4. `ACTIVE`または`FINALIZING`は同じRoundを`resume-round`する。live leaseがあれば二重起動しない。`AWAITING_HUMAN_REVIEW`では人間の`continue-round`、`revise-report`、`accept-round`以外を行わない。
 
 Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。JSON／JSONLを直接編集せず、Runtime Controllerを別Pythonで直接起動しない。
@@ -22,7 +22,11 @@ Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。JSON／JSONL�
 python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --run-root <RUN_ROOT> --lease-token <LEASE> <COMMAND固有引数>
 ```
 
-`init`、`prepare-round`、`authorize-round`、`resume-round`、read-only queryは例外である。Round authorization tokenはRound開始承認専用であり、通常ループでは使わない。
+`init`、`prepare-round`、`authorize-round`、`resume-round`、`request-result-rescreening`、read-only queryは例外である。Round authorization tokenはRound開始承認専用であり、通常ループでは使わない。
+
+人間が現在のRoundの一次評価を明示的にやり直す場合だけ、Control Authorityを付けて`request-result-rescreening`を一回実行できる。既定4、最大8 Review Bundleずつ、通常の`PREPARE_RESULT_SCREENING`／`WRITE_RESULT_SCREENING`ループで処理する。旧評価を削除せずrevisionを追加する。`CLOSED` Roundを再開したり、別RoundのBundleを混在させたりしない。
+
+人間が複数の完了済みScreening Roundから正式Reportを求めた場合は、通常解析Roundへ混ぜず、`prepare-round --report-mode full --cumulative-interpretation`で新しい報告専用Roundを提案し、通常どおり一回限りのauthorizationを受ける。必要なら`--source-round-id`を繰り返す。RuntimeがOperator予算0、既報Bundle除外、過去Round最新Assessmentの選抜を固定するため、Mainは過去Reportや全Resultを列挙しない。このRoundでDescription、Clustering、Operatorを計画しない。
 
 ## 固定ループ
 
@@ -80,7 +84,7 @@ Runtime compact responseの`protocol_version=0.2.0`と、一つの`required_acti
 
 基本計算後のOperator探索は`exploration`一種類だけである。Runtimeが履歴を除外し、Capability、入力Description／Clustering、scopeの偏りを抑えたseed付き選択を行う。Globalを優先し、人間が`max_additional_nodes`で承認した件数まで同一Round内で25 Node以下ずつ計画する。Wall Timeは件数上限を暗黙に増やさない。
 
-成功Result Cardが発生すると、RuntimeはGlobal、Global–Local、sibling ClusterのReview Bundleを決定論的に作り、次の科学計算前に最大8件の一次評価を要求する。Mainはshort-lived Interpreterへ一batchだけ渡し、評価本文を会話へ転載せずcommit成否だけを受け取る。評価軸は0～3の絶対基準で、合計点を作らない。
+成功Result Cardが発生すると、RuntimeはGlobal、Global–Local、sibling ClusterのReview Bundleを決定論的に作り、次の科学計算前に既定4件の一次評価を要求する。Mainはshort-lived Interpreterへ一batchだけ渡し、評価本文を会話へ転載せずcommit成否だけを受け取る。評価軸は0～3の絶対基準で、合計点を作らない。
 
 Round開始時の`report_mode`は`screening`または`full`である。`screening`はBundle評価索引、Round CSV、compact summary、Auditだけで終了する。`full`はさらに`design_lead`と`contextual_anomaly`から選抜した最大50 Resultで正式Interpretationを作る。0.1.x Runは継続せず、0.2.0では新規Runを開始する。
 

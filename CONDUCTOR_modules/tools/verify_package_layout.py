@@ -211,8 +211,8 @@ def main() -> int:
             errors.append("Round Analysis safety limit must be 500")
         if profile.get("runtime_planning", {}).get("analysis_activation_batch_size") != 25:
             errors.append("Analysis activation batch size must be 25")
-        if profile.get("runtime_planning", {}).get("screening_batch_size") != 8:
-            errors.append("Result Screening batch size must be 8")
+        if profile.get("runtime_planning", {}).get("screening_batch_size") != 4:
+            errors.append("Result Screening batch size must be 4")
         if profile.get("runtime_planning", {}).get("max_interpretation_result_cards") != 50:
             errors.append("Interpretation Result Card limit must be 50")
         mmp = profile.get("matched_molecular_pairs", {})

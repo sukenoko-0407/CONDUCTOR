@@ -6,7 +6,7 @@ Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`
 
 `parallel_limit`は同時Node数、Available CPU Coresは科学計算へ割り当てる総数です。MCS、Mordred 3D、xTB、ChemBERTa、Global MMPは単独packetで実行し、Skill内部並列と他Nodeを競合させません。
 
-高コスト基本計算は最初に一括承認できます。MCSは基本計算で個別承認不要です。Description／Clustering基本計算後、Operator探索数を`max_additional_nodes`で指定します（既定50、安全上限500）。Runtimeは最大25 Nodeずつ計画し、成功Resultを最大8 Review Bundleずつ絶対評価してから次へ進みます。探索は初期／追加に分けず、成功済み計算を除外し、GlobalをLocalより優先して履歴バランスを取ります。Wall Timeだけでは件数を増やしません。
+高コスト基本計算は最初に一括承認できます。MCSは基本計算で個別承認不要です。Description／Clustering基本計算後、Operator探索数を`max_additional_nodes`で指定します（既定50、安全上限500）。Runtimeは最大25 Nodeずつ計画し、成功Resultを既定4 Review Bundleずつ絶対評価してから次へ進みます。探索は初期／追加に分けず、成功済み計算を除外し、GlobalをLocalより優先して履歴バランスを取ります。Wall Timeだけでは件数を増やしません。
 
 探索を広く続けるRoundは`report_mode=screening`、人間向けの正式なInsight Reportが必要なRoundは`report_mode=full`を選びます。screeningではReview Bundle単位の`result_assessments.csv`とcompact summary、fullではCandidate class、信頼性、多様性から選抜した最大50 Result参照に対応するBundleの`interpretation.html`まで作成します。
 
@@ -47,5 +47,6 @@ A014の定型フローはGlobal MMP Databaseを一度だけ構築します。通
 
 - `cs-conductor-state-report`: 指定RunのDAGをHTML／SVG化する。
 - `cs-conductor-assessment-report`: 既存の一次評価正本を変更せず、評価軸、Candidate class、信頼性、Round／Operator内訳、Full Interpretation収載状況、有望候補を`run_root/assessment_reports/<timestamp>/`のHTML／CSVに集約する。5軸の合計点は作らない。
+- 累積Interpretation: 複数のScreening Roundを受理してCLOSEDにした後、日常プロンプト集の「複数Screening Roundから累積Interpretationを作成」を使用する。新しい報告専用Full RoundがOperator予算0で作られ、各Bundleの最新一次評価から既報Insight使用済みBundleを除いた候補だけを正式Reportへ統合する。
 - `cs-conductor-result-concierge`: 凍結Runを変更せず、既存結果の説明、追加集計、比較、Figure化を`run_root/concierge/REQ######/`内で行う。
 - `cs-conductor-run-audit`: Quick／Full整合性監査を行う。

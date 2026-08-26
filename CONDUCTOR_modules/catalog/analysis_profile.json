@@ -24,7 +24,7 @@
     "max_new_analysis_nodes_per_round": 500,
     "analysis_activation_batch_size": 25,
     "max_interpretation_result_cards": 50,
-    "screening_batch_size": 8,
+    "screening_batch_size": 4,
     "max_screening_context_bytes": 65536
   },
   "modeling": {

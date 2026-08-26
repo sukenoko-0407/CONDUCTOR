@@ -35,6 +35,8 @@ python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context 
 - scope・Insight正式ID付与、State更新、Operator実行、approval判断、新規SMILES生成は行わない。
 - 新しい科学計算が必要な場合は提案だけを記録し、Main AgentとRuntimeへ判断を戻す。
 - 評価軸を合計点へ変換しない。機能しない解析は保存するが、単独Insightにはしない。
+- 一次評価ではBundle固有の根拠Resultと理由を必須とし、Templateの一律複製を受け付けない。
+- 累積Synthesisでは指定済みCLOSED Roundの最新一次評価を使い、正式Insightで使用済みBundleを除外する。
 
 ## 変更履歴
 
@@ -43,3 +45,4 @@ python .claude/skills/cs-analysis-interpret-results/scripts/launch.py --context 
 | 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
 | 1.1.0 | 0.1.7の少数Result逐次Screeningと選抜型Synthesis draft検証を追加。 |
 | 2.0.0 | Review Bundle、絶対複数軸評価、design lead／contextual anomaly中心のSynthesisへ変更。 |
+| 2.1.0 | Bundle固有根拠とTemplate複製防止、既報Bundleを除外する累積Synthesisへ対応。 |

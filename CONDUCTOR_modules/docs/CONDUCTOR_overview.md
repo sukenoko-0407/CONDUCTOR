@@ -20,7 +20,7 @@ CONDUCTOR 0.2.0は、SARデータを単一の説明へ早急に収束させず�
 - 科学計算は決定論的なRuntime Worker、既存結果の解釈は専用Interpreterへ分離する。
 - 全科学Skillを共通`execution_request.json`で起動し、Runtime WorkerはSkill別の長いCLIを組み立てない。
 - 署名済packetはRun、Round、Control revision、lease、Request hashへ固定され、最初のclaimだけが科学processを起動する。再投入は既存Workerへ接続する。
-- Operator予算は人間が指定し、Runtimeが最大25 Nodeずつ計画する。成功Resultは最大8 Review Bundleずつ評価するため、一括読込量を増やさず広い探索ができる。
+- Operator予算は人間が指定し、Runtimeが最大25 Nodeずつ計画する。成功Resultは既定4 Review Bundleずつ評価するため、一括読込量を増やさず広い探索ができる。
 - `screening` Roundは評価索引とcompact summary、`full` Roundは`design_lead`と`contextual_anomaly`から選抜した最大50 Resultの正式Interpretationで終了する。
 - 過去Roundの成功Nodeは再計算せず、現在Roundから再利用参照する。
 - `screening`ではScreening summary、`full`ではInterpretation JSON／Markdown／HTMLを要求し、いずれもFull Auditが揃うまで人間レビュー状態へ進めない。

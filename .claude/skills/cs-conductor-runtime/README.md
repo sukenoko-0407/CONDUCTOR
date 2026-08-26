@@ -6,7 +6,7 @@ CONDUCTORの小さなControl、5状態Node、DAG、単一Writer lease、署名�
 
 CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_limit`で別々に管理します。RuntimeはC002 MCS、D016 Mordred 3D、D019 xTB、D020 ChemBERTa、A014 Global MMPを単独実行し、Skill内部並列と全体CPU予算の競合を防ぎます。C002とD016は最大8個、A014 fragmentも最大8個の単一thread workerを使います。
 
-Operator予算は人間指定の`max_additional_nodes`（既定50、安全上限500）で、Runtimeは最大25 Nodeずつ計画します。成功Result Cardは最大8件ずつ評価し、Run-wide JSONLとRound CSVへ0～10点の確認優先度を保存します。`screening` Roundはcompact summaryで、`full` Roundは評価上位と多様性から最大50件を選抜したInterpretationで終了します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの予算の対象外です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
+Operator予算は人間指定の`max_additional_nodes`（既定50、安全上限500）で、Runtimeは最大25 Nodeずつ計画します。成功Result Cardは既定4件ずつ絶対評価し、Run-wide JSONLとRound CSVへ複数軸の得点と独立した信頼性を保存します。`screening` Roundはcompact summaryで、`full` Roundは評価上位と多様性から最大50件を選抜したInterpretationで終了します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの予算の対象外です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
 
 ## 想定利用シーン
 

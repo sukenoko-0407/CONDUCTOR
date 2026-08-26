@@ -12,7 +12,7 @@
 
 探索段階は`exploration`一種類です。初期探索と追加探索を別FSMや別commandとして扱いません。
 
-Runtimeは人間指定のOperator予算内で、次の単純な規則により最大25 Analysis Nodeずつ選びます。成功ResultをGlobal、Global–Local、sibling ClusterのReview Bundleへまとめ、最大8 Bundleずつ絶対評価してから次のSliceへ進みます。Wall Timeだけでは予算を増やしません。
+Runtimeは人間指定のOperator予算内で、次の単純な規則により最大25 Analysis Nodeずつ選びます。成功ResultをGlobal、Global–Local、sibling ClusterのReview Bundleへまとめ、既定4 Bundleずつ絶対評価してから次のSliceへ進みます。Wall Timeだけでは予算を増やしません。
 
 1. 成功済み同一signatureを除外する。
 2. Globalを優先し、概ね`Global, Global, Local`の比率にする。

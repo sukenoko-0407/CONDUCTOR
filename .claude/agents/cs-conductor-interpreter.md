@@ -20,10 +20,12 @@ When `context.mode=screening`, do not write Insights or a narrative report. Eval
 - Use `not_scorable` only when the bounded Bundle cannot support a defensible assessment. Then use null scores, null stability, and null independence.
 - Treat `missing_comparison_metrics` and `missing_primary_favorable_metric` as explicit quality warnings. Do not invent a score for an axis omitted from `applicable_axes`; if no remaining axis can be defended, use `not_scorable`.
 - Cite only Results in that Bundle through `supporting_result_refs` and `counter_result_refs`.
+- Every assessment, including `not_scorable`, must cite at least one Result from that Bundle as its evidence basis. In `reason`, name the Bundle-specific metric/value, comparison, or quality fact that determined the assessment.
+- Assess one Bundle completely before moving to the next. Never copy scores, reliability judgments, or reason prose from another Bundle. Exact duplicate assessment content is rejected by the Skill and Runtime even when Bundle IDs differ.
 - A non-functional Description, Clustering, or Operator is background evidence, not an activity-improvement candidate.
 - Do not open the DAG, State, previous reports, or unrelated artifacts. Open one allowed Operator artifact only when the Result Card is insufficient.
 
-Required draft shape:
+Required fields are shown below. The angle-bracket values are deliberately invalid placeholders and must be replaced from the current Bundle; this is not a scoring template.
 
 ```json
 {
@@ -32,13 +34,19 @@ Required draft shape:
   "assessments": [
     {
       "bundle_id": "RVB...",
-      "assessment_status": "evaluated",
-      "scores": {"favorable_signal": 0, "context_deviation": 0, "chemical_actionability": 0, "independent_support": 0, "follow_up_leverage": 0},
-      "effect_stability": "unknown",
-      "independence": "unknown",
-      "reason": "一文の評価理由。",
-      "supporting_result_refs": [],
-      "counter_result_refs": []
+      "assessment_status": "<evaluated or not_scorable>",
+      "scores": {
+        "favorable_signal": "<0-3 or not_applicable; Bundleのanchorから判断>",
+        "context_deviation": "<0-3 or not_applicable; Bundleのanchorから判断>",
+        "chemical_actionability": "<0-3 or not_applicable; Bundleのanchorから判断>",
+        "independent_support": "<0-3 or not_applicable; Bundleのanchorから判断>",
+        "follow_up_leverage": "<0-3 or not_applicable; Bundleのanchorから判断>"
+      },
+      "effect_stability": "<Bundle固有の判断>",
+      "independence": "<Bundle固有の判断>",
+      "reason": "<実際のmetric/value、比較またはquality factを含むBundle固有の一文>",
+      "supporting_result_refs": ["<このBundle内の根拠Result ref>"],
+      "counter_result_refs": ["<存在する場合だけ、このBundle内の反証Result ref>"]
     }
   ]
 }
@@ -49,6 +57,8 @@ Validate the draft with `cs-analysis-interpret-results`, report only batch ID, p
 ## Synthesis mode
 
 When `context.mode=synthesis`, read the complete Interpretation Policy once, then only the Runtime-selected Review Bundles, their Result Cards and assessments, and artifacts explicitly linked from the context. There is no total score: Candidate class and reliability determine the shortlist.
+
+If `context.interpretation_scope=cumulative_unreported`, this is a report-only synthesis across the CLOSED Rounds listed in `review_manifest.source_round_ids`. Runtime has already excluded every Review Bundle used by a prior formal Insight. Do not restate or paraphrase entries in `prior_reported_insights` as new Insights. Use them only as a compact duplicate check. Report the source assessment count, previously reported exclusion count, selected coverage, and unselected coverage without implying that excluded prior knowledge was re-evaluated.
 
 ### Fixed review phases
 

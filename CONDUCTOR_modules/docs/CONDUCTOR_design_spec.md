@@ -52,7 +52,7 @@ Attempt rootはRuntime管理file、`skill_output/`は科学成果物へ分離し
 
 ## 探索Planner
 
-基本計算はDescription／Clusteringを揃える決定論的段階です。Operator探索は`exploration`一種類です。人間指定予算を最大25 NodeのSliceへ分け、各Sliceの成功Resultを最大8件ずつScreeningしてから次へ進みます。profile安全上限は500、既定予算は50です。
+基本計算はDescription／Clusteringを揃える決定論的段階です。Operator探索は`exploration`一種類です。人間指定予算を最大25 NodeのSliceへ分け、各Sliceの成功Resultを既定4 Review BundleずつScreeningしてから次へ進みます。profile安全上限は500、既定予算は50です。
 
 Plannerは成功済みsignatureを除外し、過去のCapability、Global／Local scope、入力Description／Clusteringの成功数が少ない候補を優先します。Failed Nodeは成功履歴へ数えません。同点は固定seed hashで決めます。Globalを優先し、概ね`Global, Global, Local`の比率で選びます。全候補queueをStateへ保存せず、次Roundで同じ規則から再構成します。
 

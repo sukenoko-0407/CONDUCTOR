@@ -15,6 +15,12 @@
     "bundle_type_counts": {"type": "object"},
     "operator_counts": {"type": "object"},
     "selection_method": {"const": "candidate_class_reliability_actionability_diversity"},
+    "interpretation_scope": {"enum": ["current_round", "cumulative_unreported"]},
+    "source_round_ids": {"type": "array", "items": {"type": "string", "pattern": "^RND[0-9]{4}$"}, "uniqueItems": true},
+    "source_assessment_count": {"type": "integer", "minimum": 0},
+    "previously_reported_count": {"type": "integer", "minimum": 0},
+    "unavailable_or_stale_count": {"type": "integer", "minimum": 0},
+    "excluded_previously_reported_bundle_ids": {"type": "array", "items": {"type": "string", "pattern": "^RVB[0-9a-f]{16}$"}, "uniqueItems": true},
     "created_at": {"type": "string", "format": "date-time"}
   }
 }

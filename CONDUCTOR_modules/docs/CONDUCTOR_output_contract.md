@@ -63,6 +63,8 @@ Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clusteri
 
 人間が`cs-conductor-assessment-report`を明示した場合だけ、一次評価の読み取り専用snapshotを`assessment_reports/<timestamp>/`へ作成します。HTMLは5つの絶対評価軸、Candidate class、信頼性、Round／Operator内訳、Full Interpretation収載状況、有望候補を可視化します。評価軸の合計点は作らず、DAG、Round、State、Result／Assessment／Insight正本へ登録・更新しません。
 
+複数のScreening Roundから正式Reportを作る場合は、人間承認の`cumulative_unreported` Full Roundを使用します。Runtimeは指定されたCLOSED RoundのAssessment最新revisionを走査し、`insight_index.jsonl`ですでに正式Insightへ収載されたReview Bundleを除外します。新しい科学計算は行わず、選抜Bundleを入力とするInterpretation Node、`interpretation.json`、`interpretation.md`、`interpretation.html`、`review_manifest.json`だけを通常のRound成果物として追加します。review manifestにはSource Round、一次評価総数、既報除外数、選抜・非選抜範囲を記録します。
+
 ## MMP A014
 
 Global buildの正本は次です。
