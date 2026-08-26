@@ -59,11 +59,67 @@ def prepare_args(root: Path) -> argparse.Namespace:
         max_additional_nodes=50, interpretation_iterations=3,
         approve_high_cost=False, required_deliverables_json=None,
         cumulative_interpretation=False, historical_rescreening=True,
-        source_round_id=["RND0001"],
+        source_round_id=["RND0001"], screening_parallelism=3,
     )
 
 
 class HistoricalRescreeningTests(unittest.TestCase):
+    def test_rescreening_prepares_a_bounded_parallel_wave(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "runtime").mkdir()
+            (root / "conductor_control.json").write_text("{}\n", encoding="utf-8")
+            selected = []
+            cards = []
+            for index in range(7):
+                item = bundle()
+                item["bundle_id"] = f"RVB{index + 1:016x}"
+                item["target_result_refs"] = [f"N{index + 1:06d}@ATT0001"]
+                item["all_result_refs"] = list(item["target_result_refs"])
+                item["source_hash"] = f"{index + 1:064x}"
+                selected.append(item)
+                cards.append({"result_ref": item["all_result_refs"][0]})
+            control = {
+                "active_round_id": "RND0002",
+                "round_state": "ACTIVE",
+                "run": {"run_id": "RUN1"},
+            }
+            snapshot = {
+                "nodes": [],
+                "rounds": {"RND0002": {
+                    "current_screening_batch": None,
+                    "current_screening_batches": [],
+                    "result_rescreening": {
+                        "request_id": "HRSCR-RND0002", "status": "active",
+                        "batch_size": 2, "screening_parallelism": 3,
+                    },
+                }},
+            }
+            args = argparse.Namespace(run_root=str(root), lease_token="lease")
+            with mock.patch.object(RUNTIME, "_recover_transaction"), mock.patch.object(
+                RUNTIME, "_read_state", return_value=(control, snapshot)
+            ), mock.patch.object(RUNTIME, "_require_action"), mock.patch.object(
+                RUNTIME, "_pending_screening_bundles", return_value=selected
+            ), mock.patch.object(RUNTIME, "_screening_bundles", return_value=selected), mock.patch.object(
+                RUNTIME, "_persist_review_bundles"
+            ), mock.patch.object(RUNTIME, "_usable_result_cards", return_value=cards), mock.patch.object(
+                RUNTIME, "validate"
+            ), mock.patch.object(RUNTIME, "_commit"), mock.patch.object(
+                RUNTIME, "_write_working_set"
+            ), mock.patch.object(RUNTIME, "_print_compact"):
+                self.assertEqual(0, RUNTIME.cmd_prepare_result_screening(args))
+
+            prepared = snapshot["rounds"]["RND0002"]["current_screening_batches"]
+            self.assertEqual(3, len(prepared))
+            self.assertEqual([2, 2, 2], [len(row["target_bundle_ids"]) for row in prepared])
+            flattened = [bundle_id for row in prepared for bundle_id in row["target_bundle_ids"]]
+            self.assertEqual(6, len(flattened))
+            self.assertEqual(6, len(set(flattened)))
+            action = RUNTIME._required_action(root, control, snapshot)
+            self.assertEqual("WRITE_RESULT_SCREENING", action["code"])
+            self.assertEqual(3, action["parallel_batch_count"])
+            self.assertEqual(3, len(action["batches"]))
+
     def test_historical_bundle_loader_uses_frozen_results_and_current_anchors(self) -> None:
         stored = bundle()
         stored.pop("evaluation_anchors")
@@ -109,6 +165,7 @@ class HistoricalRescreeningTests(unittest.TestCase):
             self.assertEqual(["RND0001"], contract["source_round_ids"])
             self.assertEqual([selected[0]["bundle_id"]], contract["target_bundle_ids"])
             self.assertEqual(0, contract["budgets"]["max_additional_nodes"])
+            self.assertEqual(3, contract["budgets"]["screening_parallelism"])
             self.assertEqual(["screening_completed"], [row["type"] for row in contract["required_deliverables"]])
 
             authorize = argparse.Namespace(
@@ -126,6 +183,7 @@ class HistoricalRescreeningTests(unittest.TestCase):
             self.assertEqual("historical_closed_rounds", record["screening_scope"])
             self.assertTrue(record["human_checkpoint_requested"])
             self.assertEqual("active", record["result_rescreening"]["status"])
+            self.assertEqual(3, record["result_rescreening"]["screening_parallelism"])
             self.assertEqual([selected[0]["bundle_id"]], record["result_rescreening"]["target_bundle_ids"])
             self.assertEqual([], snapshot["nodes"])
             self.assertEqual(0, snapshot["plans"]["RND0002"]["analysis_node_limit"])
@@ -211,12 +269,18 @@ class HistoricalRescreeningTests(unittest.TestCase):
             context_path.write_text(json.dumps(context), encoding="utf-8")
             draft_path.write_text(json.dumps(draft), encoding="utf-8")
             control = {"active_round_id": "RND0002", "round_state": "ACTIVE", "blocker": None}
+            other_batch = {
+                "batch_id": "SCRffffffffffffffff", "context_path": str(scratch / "other_context.json"),
+                "draft_path": str(scratch / "other_draft.json"), "attempts": 0,
+            }
+            selected_batch = {
+                "batch_id": draft["batch_id"], "context_path": str(context_path),
+                "draft_path": str(draft_path), "attempts": 0,
+            }
             snapshot = {
                 "rounds": {"RND0002": {
-                    "current_screening_batch": {
-                        "batch_id": draft["batch_id"], "context_path": str(context_path),
-                        "draft_path": str(draft_path), "attempts": 0,
-                    },
+                    "current_screening_batch": other_batch,
+                    "current_screening_batches": [other_batch, selected_batch],
                     "result_rescreening": {"status": "active", "target_bundle_ids": [selected["bundle_id"]]},
                     "screening_summary_ref": None,
                 }}
@@ -246,15 +310,19 @@ class HistoricalRescreeningTests(unittest.TestCase):
             self.assertEqual("RND0002", rows[0]["round_id"])
             self.assertEqual("RND0001", rows[0]["source_round_id"])
             self.assertEqual(2, rows[0]["revision"])
+            self.assertEqual([other_batch], snapshot["rounds"]["RND0002"]["current_screening_batches"])
+            self.assertEqual(other_batch, snapshot["rounds"]["RND0002"]["current_screening_batch"])
 
     def test_parser_requires_explicit_historical_mode(self) -> None:
         args = RUNTIME.build_parser().parse_args([
             "prepare-round", "--run-root", "run", "--objective", "rescreen",
             "--historical-rescreening", "--source-round-id", "RND0001",
+            "--source-round-id", "RND0003", "--screening-parallelism", "4",
         ])
         self.assertTrue(args.historical_rescreening)
         self.assertFalse(args.cumulative_interpretation)
-        self.assertEqual(["RND0001"], args.source_round_id)
+        self.assertEqual(["RND0001", "RND0003"], args.source_round_id)
+        self.assertEqual(4, args.screening_parallelism)
 
 
 if __name__ == "__main__":

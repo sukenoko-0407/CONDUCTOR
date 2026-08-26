@@ -177,15 +177,18 @@ Run Root: <absolute run_root>
 対象Round: <RND####>
 再Screening理由: <一次評価が機能していなかったと判断した根拠>
 Screening batch size: 4
-追加Wall Time: <AWAITING_HUMAN_REVIEWから同じRoundを再開する場合のminutes>
+Interpreter並列数: 4（推奨。必要なら1～3へ変更）
+追加Wall Time: <FINALIZINGまたはAWAITING_HUMAN_REVIEWから同じRoundを再開する場合のminutes>
 
-最初にconductor_control.jsonだけを読み、Run ID、対象Round、round_state、running Node、current Screening batchを確認してください。対象は現在のactive_round_idと一致するRoundに限定します。CLOSED Roundは再開せず、新Roundも作らず、人間へ制約を報告してください。
+最初にconductor_control.jsonだけを読み、Run ID、対象Round、round_state、running Node、current Screening waveを確認してください。対象は現在のactive_round_idと一致するRoundに限定します。CLOSED Roundは再開せず、新Roundも作らず、人間へhistorical re-Screeningを案内してください。
 
-running Nodeがある場合は新しい処理を開始せず、安全にterminalとなるまで待ってください。current Screening batchがある場合は、そのbatchを先に正常完了または正式なretry処理で解消してください。
+running Nodeがある場合は新しい処理を開始せず、安全にterminalとなるまで待ってください。current Screening waveがある場合は、そのwaveを先に正常完了または正式なretry処理で解消してください。
 
-Control Authorityを使用し、Runtimeの公開コマンド`request-result-rescreening`を`--all-current --batch-size 4`で一回だけ実行してください。対象RoundがAWAITING_HUMAN_REVIEWの場合は、上記の追加Wall Timeを`--additional-walltime-minutes`へ渡し、同じRoundだけを再開してください。ACTIVEなら新しいRound操作や暗黙のWall Time変更をしないでください。
+Control Authorityを使用し、Runtimeの公開コマンド`request-result-rescreening`を`--all-current --batch-size 4 --screening-parallelism <1-4>`で一回だけ実行してください。対象RoundがFINALIZINGまたはAWAITING_HUMAN_REVIEWの場合は、上記の追加Wall Timeを`--additional-walltime-minutes`へ渡し、同じRoundだけを再開してください。ACTIVEなら新しいRound操作や暗黙のWall Time変更をしないでください。
 
-その後は通常の単一required_actionループへ戻ってください。`PREPARE_RESULT_SCREENING`ごとにRuntimeが作成する最大4 Review Bundleのcontextだけを、短命のcs-conductor-interpreterへscreening modeで渡してください。Interpreterは各Bundleを一回だけ絶対評価し、Mainへ評価本文を展開しないでください。`WRITE_RESULT_SCREENING`でbatchをcommitし、残数を確認して次の小batchへ進む処理を、対象がゼロになるまで逐次Loopしてください。同時に複数Interpreterや複数Screening batchを起動しないでください。
+その後は通常の単一required_actionループへ戻ってください。`PREPARE_RESULT_SCREENING`が一waveに複数の`batches`を返した場合、それぞれのcontextとdraftだけを別々の短命cs-conductor-interpreterへ渡し、一回の並列Agent呼出しで同時評価してください。各Interpreterは自分のBundleだけを一回ずつ絶対評価し、Mainへ評価本文を展開しません。
+
+全Interpreterの終了を待ってから、成功draftを`commit-result-screening`で一件ずつ直列commitしてください。Runtime commitを並列化しないでください。一部が失敗した場合は成功分を先にcommitし、失敗batchだけを同じcontextで再評価してください。現在waveが空になる前に次waveを準備しないでください。この小wave Loopを対象がゼロになるまで続けます。
 
 既存のresult_assessment_index.jsonl、Round CSV、State、DAGを直接編集せず、旧Assessmentを削除・上書きしないでください。新AssessmentはRuntimeにrevisionを付与させてappendしてください。再Screening中は新しいDescription、Clustering、Operator Nodeを追加しないでください。
 
@@ -194,7 +197,7 @@ Runtimeは再Screening依頼時に同じRoundのhuman checkpointも予約する�
 最後に、再評価Request ID、対象Bundle総数、batch数、成功／失敗数、各Bundleの旧revision→新revision、残存未評価数、再生成したSummaryまたはInterpretation、Audit結果を簡潔に報告してください。
 ```
 
-一度に複数Roundを処理しない。すでに`CLOSED`となった過去Roundは不変履歴であり、この操作では再Screeningしない。過去Roundには次のhistorical re-Screening専用Roundを使用し、State編集で代用しない。
+現在Roundの再Screeningへ別RoundのBundleを混在させない。すでに`CLOSED`となった過去Roundは不変履歴であり、この操作では再Screeningしない。複数の過去Roundは次のhistorical re-Screening専用RoundへSourceとしてまとめて指定し、State編集で代用しない。
 
 <a id="special-historical-rescreening"></a>
 ## CLOSED Roundの一次評価を新Roundで再Screening
@@ -210,12 +213,13 @@ Run Root: <absolute run_root>
 - <RND####>
 - <必要な場合だけ別のRND####>
 Wall Time: <minutes>
+Interpreter並列数: 4（推奨。必要なら1～3へ変更）
 
 Active Roundがないこと、対象Source RoundがすべてCLOSEDであることを確認してください。元のCLOSED Roundは再開・変更しないでください。
 
-人間が明示した新Roundについて、`prepare-round --report-mode screening --historical-rescreening`を使い、各対象Roundを`--source-round-id`で一回ずつ渡してください。契約のOperator予算が0で、対象Review Bundle集合がhash固定され、required deliverableがScreeningだけであることを確認してから通常の一回限りauthorizationを行ってください。
+人間が明示した新Roundについて、`prepare-round --report-mode screening --historical-rescreening --screening-parallelism <1-4>`を使い、各対象Roundを`--source-round-id`で一回ずつ渡してください。契約のOperator予算が0で、対象Review Bundle集合がhash固定され、required deliverableがScreeningだけであることを確認してから通常の一回限りauthorizationを行ってください。
 
-通常の単一required_actionループに従い、Runtimeが指定する既定4 Review Bundleだけをcs-conductor-interpreterへscreening modeで渡してください。Description、Clustering、Operator、Interpretation Nodeを計画・実行しないでください。旧Assessmentを削除・上書きせず、Runtimeに新revisionをappendさせてください。Agentへ旧revision本文を渡さないでください。
+通常の単一required_actionループに従います。Runtimeが一waveに複数の`batches`を返したときだけ、batchごとに短命cs-conductor-interpreterを並列起動してください。各Subagentへは割り当てられた既定4 Review Bundleのcontextとdraftだけを渡します。全Subagent終了後に成功batchを一件ずつ直列commitし、失敗batchだけを再評価してください。Description、Clustering、Operator、Interpretation Nodeを計画・実行しないでください。旧Assessmentを削除・上書きせず、Runtimeに新revisionをappendさせてください。Agentへ旧revision本文を渡さないでください。
 
 全対象の再Screening後にscreening_summary.jsonとresult_assessments.csvを生成し、Full Auditを実行してください。AWAITING_HUMAN_REVIEWで停止し、Roundを自動受理せず、次Roundや累積Interpretationを自動開始しないでください。
 

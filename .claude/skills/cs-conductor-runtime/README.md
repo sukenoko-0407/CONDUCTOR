@@ -8,7 +8,7 @@ CPU資源は`available_cpu_cores`（既定8）で、同時Node数は`parallel_li
 
 Operator予算は人間指定の`max_additional_nodes`（既定50、安全上限500）で、Runtimeは最大25 Nodeずつ計画します。成功Result Cardは既定4件ずつ絶対評価し、Run-wide JSONLとRound CSVへ複数軸の得点と独立した信頼性を保存します。`screening` Roundはcompact summaryで、`full` Roundは評価上位と多様性から最大50件を選抜したInterpretationで終了します。全候補はDAGへ保存せず、次の人間承認Roundで再構成します。基本Description／Clusteringはこの予算の対象外です。A014はGlobal DBだけを定型計画し、Global–Local比較は人間起動のread-only専用Skillへ分離します。
 
-人間承認のhistorical re-Screening Roundでは、CLOSED Source RoundのReview Bundleだけを再評価します。元Roundと旧Assessmentを変更せず、Operator Nodeを作らず、最新revision、Summary、Auditだけを新Roundへ追加します。
+人間承認のhistorical re-Screening Roundでは、複数のCLOSED Source Roundを指定できます。元Roundと旧Assessmentを変更せず、Operator Nodeを作らず、最新revision、Summary、Auditだけを新Roundへ追加します。Interpreter評価は最大4小batchを並列化できますが、Runtimeへのcommitは常に直列です。
 
 ## 想定利用シーン
 
@@ -46,3 +46,4 @@ RequestはSkill起動直前に入力・上流成果物のSHA-256を再照合し�
 | 2.1.0 | 科学process所有権をLLM Executorから冪等なOS Runtime Workerへ移し、WAITとreconcileを分離 |
 | 2.2.0 | 0.1.7の逐次Result Screening、可変Operator予算、screening／full Roundを追加 |
 | 2.3.0 | 一次評価guard、累積Interpretation、CLOSED Roundのhistorical re-Screeningを追加 |
+| 2.3.1 | 再Screening限定のbounded parallel waveと直列commitを追加 |

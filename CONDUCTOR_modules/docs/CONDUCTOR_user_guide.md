@@ -45,7 +45,7 @@ A014の定型フローはGlobal MMP Databaseを一度だけ構築します。通
 
 ### CLOSED Roundの一次評価をやり直す
 
-一次評価に欠落や一律Template適用が後から見つかった場合、元のCLOSED Roundを開き直しません。特別対応プロンプト集のhistorical re-Screeningを使い、対象Source Roundを明示した新しいscreening Roundを人間承認します。このRoundは保存済みReview Bundleだけを既定4件ずつ再評価し、Operator Nodeを一切作りません。
+一次評価に欠落や一律Template適用が後から見つかった場合、元のCLOSED Roundを開き直しません。特別対応プロンプト集のhistorical re-Screeningを使い、一つ以上のSource Roundを明示した新しいscreening Roundを人間承認します。このRoundは保存済みReview Bundleだけを既定4件の小batchへ分けます。最大4 batchの短命Interpreter評価は並列化できますが、Runtime commitは直列で、Operator Nodeを一切作りません。
 
 旧Assessment revisionは監査履歴として残りますが、Interpreter、Round CSV、Summary、累積Interpretationが使用するのはBundleごとの最新revisionだけです。新Assessmentには再評価を実行したRoundと元Source Roundを別々に記録します。
 

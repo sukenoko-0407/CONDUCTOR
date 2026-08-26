@@ -24,9 +24,9 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --ru
 
 `init`、`prepare-round`、`authorize-round`、`resume-round`、`request-result-rescreening`、read-only queryは例外である。Round authorization tokenはRound開始承認専用であり、通常ループでは使わない。
 
-人間が現在のRoundの一次評価を明示的にやり直す場合だけ、Control Authorityを付けて`request-result-rescreening`を一回実行できる。既定4、最大8 Review Bundleずつ、通常の`PREPARE_RESULT_SCREENING`／`WRITE_RESULT_SCREENING`ループで処理する。旧評価を削除せずrevisionを追加する。`CLOSED` Roundを再開したり、別RoundのBundleを混在させたりしない。
+人間が現在の`ACTIVE`、`FINALIZING`、`AWAITING_HUMAN_REVIEW` Roundの一次評価を明示的にやり直す場合だけ、Control Authorityを付けて`request-result-rescreening --screening-parallelism <1-4>`を一回実行できる。`FINALIZING`または`AWAITING_HUMAN_REVIEW`から戻す場合は追加Wall Timeを必須とする。各batchは既定4、最大8 Review Bundleで、Runtimeは最大4 batchを一つのwaveとして準備できる。旧評価を削除せずrevisionを追加する。`CLOSED` Roundを再開したり、別RoundのBundleを現在Roundへ混在させたりしない。
 
-人間がCLOSED Roundの一次評価をやり直す場合は、元Roundを再開せず、`prepare-round --report-mode screening --historical-rescreening --source-round-id <RND####>`で再Screening専用の新Roundを開始する。Source Roundは一つ以上を明示し、すべてCLOSEDでなければならない。Runtimeが当時のReview BundleとResult参照を凍結し、Operator予算0、既定4 Bundleの逐次Screening、Summary、Auditだけを許可する。新Assessmentの`round_id`は再評価Round、`source_round_id`は元Roundである。旧revisionはInterpreter contextへ渡さない。
+人間が一つ以上のCLOSED Roundの一次評価をやり直す場合は、元Roundを再開せず、`prepare-round --report-mode screening --historical-rescreening --source-round-id <RND####> --screening-parallelism <1-4>`で再Screening専用の新Roundを開始する。`--source-round-id`は対象ごとに繰り返し、すべてCLOSEDでなければならない。Runtimeが当時のReview BundleとResult参照を凍結し、Operator予算0、並列評価可能な小batch wave、Summary、Auditだけを許可する。新Assessmentの`round_id`は再評価Round、`source_round_id`は元Roundである。旧revisionはInterpreter contextへ渡さない。
 
 人間が複数の完了済みScreening Roundから正式Reportを求めた場合は、通常解析Roundへ混ぜず、`prepare-round --report-mode full --cumulative-interpretation`で新しい報告専用Roundを提案し、通常どおり一回限りのauthorizationを受ける。必要なら`--source-round-id`を繰り返す。RuntimeがOperator予算0、既報Bundle除外、過去Round最新Assessmentの選抜を固定するため、Mainは過去Reportや全Resultを列挙しない。このRoundでDescription、Clustering、Operatorを計画しない。
 
@@ -46,7 +46,7 @@ Runtime compact responseの`protocol_version=0.2.0`と、一つの`required_acti
 | `SCIENTIFIC_DECISION` | bounded Working Setから候補を選び`scientific-decision` |
 | `ENTER_FINALIZING` | `enter-finalizing` |
 | `PREPARE_RESULT_SCREENING` | `prepare-result-screening` |
-| `WRITE_RESULT_SCREENING` | Runtime指定contextをInterpreterの`screening` modeへ一度渡し、`commit-result-screening` |
+| `WRITE_RESULT_SCREENING` | 通常Screeningは指定1 batchをInterpreterへ渡す。再Screeningで`batches`が複数なら各contextへ短命Interpreterを同時起動し、全終了後に`commit-result-screening`を1 batchずつ直列実行 |
 | `WRITE_SCREENING_SUMMARY` | `write-screening-summary` |
 | `PLAN_INTERPRETATION` | `prepare-interpretation` |
 | `WRITE_INTERPRETATION` | Interpreterを一つ起動し、`commit-interpretation` |
@@ -79,6 +79,8 @@ Runtime compact responseの`protocol_version=0.2.0`と、一つの`required_acti
 - InterpreterはMainが必要なときだけ直接起動する短命の専用Subagentである。通常の科学計算を所有するのはSubagentではなくRuntime Workerである。
 - Runtimeが返す`context_path`、`draft_path`、mode、必要な場合だけ`node_id`と人間focusを渡す。
 - `screening`では一回のbounded Review Bundle batchだけを絶対評価させ、Mainへ個別評価本文を展開しない。`synthesis`ではRuntime shortlistだけを横断比較させる。
+- 再Screeningの一waveに複数batchがある場合だけ、Mainはbatch数と同数のInterpreterを一回の並列Agent呼出しで起動する。各Interpreterは自分の`context_path`と`draft_path`だけを扱う。全Subagent終了後、成功draftをRuntimeへ一件ずつ直列commitする。Runtime mutationを並列実行しない。
+- 一部のInterpreterが失敗した場合は、成功draftを先に直列commitし、失敗batchだけを同じcontextで再起動する。成功済みbatchを評価し直さず、次waveも先に準備しない。
 - historical re-Screeningでは`context.round_id`が再評価Round、各Review Bundleの`round_id`が元のCLOSED Roundである。この差をエラーとして補正せず、RuntimeがAssessment帰属を記録する。
 - Interpreterは科学計算、Node作成、State更新、評価索引更新をしない。
 - draft拒否時は同じInterpretation Nodeを有限回修正する。別Roundや別Nodeを作らない。

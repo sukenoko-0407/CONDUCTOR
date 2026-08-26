@@ -126,8 +126,45 @@ class ResultRescreeningTests(unittest.TestCase):
             with mock.patch.object(RUNTIME, "_require_control_authority"), mock.patch.object(
                 RUNTIME, "_recover_transaction"
             ), mock.patch.object(RUNTIME, "_read_state", return_value=(control, snapshot)):
-                with self.assertRaisesRegex(ValueError, "ACTIVE or AWAITING_HUMAN_REVIEW"):
+                with self.assertRaisesRegex(ValueError, "historical re-Screening Round"):
                     RUNTIME.cmd_request_result_rescreening(args)
+
+    def test_request_can_reopen_finalizing_for_rescreening_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "runtime").mkdir()
+            (root / "conductor_control.json").write_text("{}\n", encoding="utf-8")
+            item = review_bundle()
+            control = {
+                "active_round_id": "RND0001", "round_state": "FINALIZING",
+                "blocker": None, "closure": {"contract_satisfied": False},
+            }
+            snapshot = {
+                "nodes": [],
+                "rounds": {"RND0001": {
+                    "state": "FINALIZING", "report_mode": "screening",
+                    "current_screening_batch": None, "current_screening_batches": [],
+                    "result_rescreening_serial": 0,
+                }},
+            }
+            args = argparse.Namespace(
+                run_root=str(root), control_key="human-key", all_current=True,
+                bundle_id=None, batch_size=4, screening_parallelism=2,
+                additional_walltime_minutes=45, reason="repair screening",
+            )
+            with mock.patch.object(RUNTIME, "_require_control_authority"), mock.patch.object(
+                RUNTIME, "_recover_transaction"
+            ), mock.patch.object(RUNTIME, "_read_state", return_value=(control, snapshot)), mock.patch.object(
+                RUNTIME, "_current_round_bundles", return_value=[item]
+            ), mock.patch.object(RUNTIME, "_round_report_mode", return_value="screening"), mock.patch.object(
+                RUNTIME, "_commit"
+            ), mock.patch.object(RUNTIME, "_write_working_set"), mock.patch.object(
+                RUNTIME, "_print_compact"
+            ):
+                self.assertEqual(0, RUNTIME.cmd_request_result_rescreening(args))
+            self.assertEqual("ACTIVE", control["round_state"])
+            self.assertEqual("ACTIVE", snapshot["rounds"]["RND0001"]["state"])
+            self.assertEqual(2, snapshot["rounds"]["RND0001"]["result_rescreening"]["screening_parallelism"])
 
     def test_parser_exposes_bounded_human_authorized_command(self) -> None:
         args = RUNTIME.build_parser().parse_args([
@@ -139,6 +176,7 @@ class ResultRescreeningTests(unittest.TestCase):
         ])
         self.assertIs(args.func, RUNTIME.cmd_request_result_rescreening)
         self.assertEqual(4, args.batch_size)
+        self.assertEqual(1, args.screening_parallelism)
         self.assertTrue(args.all_current)
 
 

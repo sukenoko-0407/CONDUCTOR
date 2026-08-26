@@ -43,6 +43,7 @@ MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
 SCREENING_RUBRIC_VERSION = "2.0.0"
 DEFAULT_SCREENING_BATCH_SIZE = 8
+MAX_PARALLEL_SCREENING_BATCHES = 4
 DEFAULT_SCREENING_CONTEXT_BYTES = 64 * 1024
 MAX_SIBLING_BUNDLE_CARDS = 16
 RUNTIME_PYTHON_TOKEN = "<CONDUCTOR_RUNTIME_PYTHON>"
@@ -626,6 +627,21 @@ def _screening_enabled(root: Path, control: dict[str, Any], snapshot: dict[str, 
     return bool(round_id and str(round_id) in snapshot.get("rounds", {}))
 
 
+def _prepared_screening_batches(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the prepared Screening wave, including legacy single-batch State."""
+    batches = record.get("current_screening_batches")
+    if isinstance(batches, list):
+        return batches
+    legacy = record.get("current_screening_batch")
+    return [legacy] if isinstance(legacy, dict) and legacy else []
+
+
+def _set_prepared_screening_batches(record: dict[str, Any], batches: list[dict[str, Any]]) -> None:
+    """Store one bounded wave while keeping the old single-batch pointer readable."""
+    record["current_screening_batches"] = batches
+    record["current_screening_batch"] = batches[0] if batches else None
+
+
 def _round_analysis_limit(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> int:
     safety_limit, _batch_size = _analysis_planning_limits()
     contract = _active_contract(root, control)
@@ -1088,15 +1104,26 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
                 "batch_id": blocker.get("batch_id"),
                 "failure_pointer": blocker.get("failure_pointer"),
             }
-        current_batch = snapshot.get("rounds", {}).get(round_id, {}).get("current_screening_batch")
-        if current_batch:
-            return {
+        prepared_batches = _prepared_screening_batches(snapshot.get("rounds", {}).get(round_id, {}))
+        if prepared_batches:
+            batch_refs = [
+                {
+                    "batch_id": batch.get("batch_id"),
+                    "context_path": batch.get("context_path"),
+                    "draft_path": batch.get("draft_path"),
+                }
+                for batch in prepared_batches
+            ]
+            action = {
                 "code": "WRITE_RESULT_SCREENING",
-                "reason": "A bounded Result Screening draft is required before more scientific work is scheduled.",
-                "batch_id": current_batch.get("batch_id"),
-                "context_path": current_batch.get("context_path"),
-                "draft_path": current_batch.get("draft_path"),
+                "reason": "One bounded Screening wave must be evaluated before more work is scheduled. Re-Screening batches may be evaluated in parallel, but Runtime commits remain serial.",
+                "batches": batch_refs,
+                "parallel_batch_count": len(batch_refs),
             }
+            # Preserve the compact single-batch fields for ordinary Screening
+            # and old Main-agent integrations.
+            action.update(batch_refs[0])
+            return action
         pending_screening = _pending_screening_bundles(root, snapshot, round_id)
         if pending_screening:
             return {
@@ -1572,6 +1599,13 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
             raise ValueError("available_cpu_cores must be at least one")
         cumulative = bool(getattr(args, "cumulative_interpretation", False))
         historical_rescreening = bool(getattr(args, "historical_rescreening", False))
+        screening_parallelism = int(getattr(args, "screening_parallelism", 1) or 1)
+        if not 1 <= screening_parallelism <= MAX_PARALLEL_SCREENING_BATCHES:
+            raise ValueError(
+                f"screening_parallelism must be between 1 and {MAX_PARALLEL_SCREENING_BATCHES}"
+            )
+        if screening_parallelism > 1 and not historical_rescreening:
+            raise ValueError("Parallel Screening is restricted to explicit re-Screening operations")
         if cumulative and historical_rescreening:
             raise ValueError("Cumulative Interpretation and historical re-Screening are separate Round types")
         requested_source_rounds = sorted(set(getattr(args, "source_round_id", None) or []))
@@ -1620,6 +1654,7 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
                 "available_cpu_cores": args.available_cpu_cores or _available_cpu_cores(control),
                 "max_additional_nodes": 0 if (cumulative or historical_rescreening) else args.max_additional_nodes,
                 "interpretation_iterations": args.interpretation_iterations,
+                "screening_parallelism": screening_parallelism,
             },
             "omissions": args.omission or [],
             "high_cost_bundle_approved": bool(args.approve_high_cost),
@@ -1689,13 +1724,14 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         total_minutes = contract["budgets"]["walltime_minutes"]
         reserve = min(90, max(5, total_minutes // 5), max(1, total_minutes - 1))
         deadline = started + timedelta(minutes=contract["budgets"]["walltime_minutes"])
-        snapshot["rounds"][round_id] = {"state": "ACTIVE", "runtime_version": VERSION, "report_mode": contract.get("report_mode", "full"), "interpretation_scope": contract.get("interpretation_scope", "current_round"), "screening_scope": contract.get("screening_scope", "current_round"), "source_round_ids": list(contract.get("source_round_ids") or []), "target_bundle_ids": list(contract.get("target_bundle_ids") or []), "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": cumulative or historical_rescreening, "latest_audit": None, "current_interpretation_node": None, "current_screening_batch": None, "screening_summary_ref": None, "no_progress_returns": 0}
+        snapshot["rounds"][round_id] = {"state": "ACTIVE", "runtime_version": VERSION, "report_mode": contract.get("report_mode", "full"), "interpretation_scope": contract.get("interpretation_scope", "current_round"), "screening_scope": contract.get("screening_scope", "current_round"), "source_round_ids": list(contract.get("source_round_ids") or []), "target_bundle_ids": list(contract.get("target_bundle_ids") or []), "started_at": started.isoformat(), "deadline_at": deadline.isoformat(), "soft_stop_at": (deadline - timedelta(minutes=reserve)).isoformat(), "scientific_finish_requested": False, "finish_reason": None, "human_checkpoint_requested": cumulative or historical_rescreening, "latest_audit": None, "current_interpretation_node": None, "current_screening_batch": None, "current_screening_batches": [], "screening_summary_ref": None, "no_progress_returns": 0}
         if historical_rescreening:
             snapshot["rounds"][round_id]["result_rescreening"] = {
                 "request_id": f"HRSCR-{round_id}",
                 "status": "active",
                 "reason": "Human-authorized historical re-Screening Round",
                 "batch_size": int((profile().get("runtime_planning") or {}).get("screening_batch_size", 4)),
+                "screening_parallelism": int(contract.get("budgets", {}).get("screening_parallelism", 1)),
                 "source_round_ids": list(contract.get("source_round_ids") or []),
                 "target_bundle_ids": list(contract.get("target_bundle_ids") or []),
                 "initial_target_count": len(contract.get("target_bundle_ids") or []),
@@ -4346,20 +4382,31 @@ def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
         control, snapshot = _read_state(root)
         _require_action(control, args.lease_token, {"PREPARE_RESULT_SCREENING"})
         round_id = control["active_round_id"]
+        record = snapshot["rounds"][round_id]
+        if _prepared_screening_batches(record):
+            raise ValueError("The current Screening wave must be committed or repaired before preparing another wave")
         pending = _pending_screening_bundles(root, snapshot, round_id)
         if not pending:
             raise ValueError("No ready Review Bundle requires Screening")
         _persist_review_bundles(root, _screening_bundles(root, snapshot, round_id))
         settings = profile().get("runtime_planning") or {}
-        rescreening = snapshot["rounds"][round_id].get("result_rescreening") or {}
+        rescreening = record.get("result_rescreening") or {}
         requested_batch_size = rescreening.get("batch_size") if rescreening.get("status") == "active" else None
         batch_size = min(
             DEFAULT_SCREENING_BATCH_SIZE,
             max(1, int(requested_batch_size or settings.get("screening_batch_size", DEFAULT_SCREENING_BATCH_SIZE))),
         )
+        parallelism = (
+            min(
+                MAX_PARALLEL_SCREENING_BATCHES,
+                max(1, int(rescreening.get("screening_parallelism", 1))),
+            )
+            if rescreening.get("status") == "active"
+            else 1
+        )
         byte_limit = int(settings.get("max_screening_context_bytes", DEFAULT_SCREENING_CONTEXT_BYTES))
-        targets = pending[:batch_size]
         usable_cards = {card["result_ref"]: card for card in _usable_result_cards(root, snapshot)}
+
         def make_context(selected: list[dict[str, Any]]) -> dict[str, Any]:
             refs = list(dict.fromkeys(ref for bundle in selected for ref in bundle["all_result_refs"]))
             selected_cards = [usable_cards[ref] for ref in refs if ref in usable_cards]
@@ -4398,43 +4445,56 @@ def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
                 "created_at": utc_now(),
             }
 
-        context = make_context(targets)
-        while len(targets) > 1 and len(canonical_bytes(context)) > byte_limit:
-            targets.pop()
+        prepared: list[dict[str, Any]] = []
+        cursor = 0
+        while cursor < len(pending) and len(prepared) < parallelism:
+            targets = list(pending[cursor:cursor + batch_size])
             context = make_context(targets)
-        if len(canonical_bytes(context)) > byte_limit:
-            raise ValueError("A single Review Bundle exceeds the bounded Screening context limit")
-        validate(context, "screening_batch.schema.json")
-        batch_id = context["batch_id"]
-        scratch = root / "runtime" / "scratch" / round_id / "screening" / batch_id
-        scratch.mkdir(parents=True, exist_ok=True)
-        context_path = scratch / "context.json"
-        draft_path = scratch / "draft.json"
-        write_json(context_path, context)
-        write_json(draft_path, {"schema_version": "2.0.0", "batch_id": batch_id, "assessments": []})
-        snapshot["rounds"][round_id]["current_screening_batch"] = {
-            "batch_id": batch_id,
-            "context_path": str(context_path),
-            "draft_path": str(draft_path),
-            "target_bundle_ids": context["target_bundle_ids"],
-            "attempts": 0,
-            "prepared_at": utc_now(),
-        }
+            while len(targets) > 1 and len(canonical_bytes(context)) > byte_limit:
+                targets.pop()
+                context = make_context(targets)
+            if len(canonical_bytes(context)) > byte_limit:
+                raise ValueError("A single Review Bundle exceeds the bounded Screening context limit")
+            validate(context, "screening_batch.schema.json")
+            batch_id = context["batch_id"]
+            scratch = root / "runtime" / "scratch" / round_id / "screening" / batch_id
+            scratch.mkdir(parents=True, exist_ok=True)
+            context_path = scratch / "context.json"
+            draft_path = scratch / "draft.json"
+            write_json(context_path, context)
+            write_json(draft_path, {"schema_version": "2.0.0", "batch_id": batch_id, "assessments": []})
+            prepared.append({
+                "batch_id": batch_id,
+                "context_path": str(context_path),
+                "draft_path": str(draft_path),
+                "target_bundle_ids": context["target_bundle_ids"],
+                "attempts": 0,
+                "prepared_at": utc_now(),
+            })
+            cursor += len(targets)
+        _set_prepared_screening_batches(record, prepared)
         _commit(root, control, snapshot, "result_screening_prepared", {
-            "batch_id": batch_id,
-            "target_bundle_ids": context["target_bundle_ids"],
-            "context_path": str(context_path.relative_to(root)),
-            "draft_path": str(draft_path.relative_to(root)),
+            "batch_ids": [batch["batch_id"] for batch in prepared],
+            "target_bundle_ids": [bundle_id for batch in prepared for bundle_id in batch["target_bundle_ids"]],
+            "parallel_batch_count": len(prepared),
         }, round_id=round_id)
         _write_working_set(root, control, snapshot)
+    batch_refs = [
+        {
+            "batch_id": batch["batch_id"],
+            "target_count": len(batch["target_bundle_ids"]),
+            "context_path": batch["context_path"],
+            "draft_path": batch["draft_path"],
+        }
+        for batch in prepared
+    ]
     _print_compact(
         control,
-        batch_id=batch_id,
-        target_count=len(targets),
-        context_path=str(context_path),
-        draft_path=str(draft_path),
+        screening_batches=batch_refs,
+        parallel_batch_count=len(batch_refs),
         interpreter_agent="cs-conductor-interpreter",
         interpreter_mode="screening",
+        commit_mode="serial",
     )
     return 0
 
@@ -4447,9 +4507,10 @@ def cmd_commit_result_screening(args: argparse.Namespace) -> int:
         _require_action(control, args.lease_token, {"WRITE_RESULT_SCREENING"})
         round_id = control["active_round_id"]
         record = snapshot["rounds"][round_id]
-        batch = record.get("current_screening_batch") or {}
-        if batch.get("batch_id") != args.batch_id:
-            raise ValueError("Screening batch is not current")
+        prepared = _prepared_screening_batches(record)
+        batch = next((row for row in prepared if row.get("batch_id") == args.batch_id), None)
+        if batch is None:
+            raise ValueError("Screening batch is not part of the current prepared wave")
         draft_path = Path(args.draft).resolve() if args.draft else Path(batch["draft_path"]).resolve()
         if draft_path != Path(batch["draft_path"]).resolve():
             raise ValueError("Draft path does not match the Runtime-prepared Screening workspace")
@@ -4529,7 +4590,8 @@ def cmd_commit_result_screening(args: argparse.Namespace) -> int:
             _write_working_set(root, control, snapshot)
             _print_compact(control, batch_id=batch.get("batch_id"), screening_status="fail", retry_exhausted=exhausted, failure_pointer=str(failure_path.relative_to(root)))
             return 1
-        record["current_screening_batch"] = None
+        remaining_prepared = [row for row in prepared if row.get("batch_id") != batch["batch_id"]]
+        _set_prepared_screening_batches(record, remaining_prepared)
         record["screening_summary_ref"] = None
         rescreening = record.get("result_rescreening") or {}
         if rescreening.get("status") == "active":
@@ -4551,7 +4613,14 @@ def cmd_commit_result_screening(args: argparse.Namespace) -> int:
         }, round_id=round_id)
         _write_working_set(root, control, snapshot)
         remaining = len(_pending_screening_bundles(root, snapshot, round_id))
-    _print_compact(control, batch_id=batch["batch_id"], screening_status="pass", assessed_count=len(committed), unassessed_count=remaining)
+    _print_compact(
+        control,
+        batch_id=batch["batch_id"],
+        screening_status="pass",
+        assessed_count=len(committed),
+        unassessed_count=remaining,
+        prepared_batches_remaining=len(remaining_prepared),
+    )
     return 0
 
 
@@ -4562,14 +4631,14 @@ def cmd_request_result_rescreening(args: argparse.Namespace) -> int:
     with writer_lock(root):
         _recover_transaction(root)
         control, snapshot = _read_state(root)
-        if control.get("round_state") not in {"ACTIVE", "AWAITING_HUMAN_REVIEW"}:
-            raise ValueError("Result re-Screening requires an ACTIVE or AWAITING_HUMAN_REVIEW Round")
+        if control.get("round_state") not in {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW"}:
+            raise ValueError("Current-Round re-Screening requires ACTIVE, FINALIZING, or AWAITING_HUMAN_REVIEW; use a historical re-Screening Round for CLOSED sources")
         round_id = control.get("active_round_id")
         if not round_id:
             raise ValueError("No active Round is available for Result re-Screening")
         record = snapshot["rounds"][round_id]
-        if record.get("current_screening_batch"):
-            raise ValueError("Finish or repair the current Screening batch before requesting re-Screening")
+        if _prepared_screening_batches(record):
+            raise ValueError("Finish or repair the current Screening wave before requesting re-Screening")
         running = [node["node_id"] for node in snapshot["nodes"] if node.get("status") == "running"]
         if running:
             raise ValueError(f"Result re-Screening requires no running Nodes: {running[:20]}")
@@ -4590,6 +4659,11 @@ def cmd_request_result_rescreening(args: argparse.Namespace) -> int:
             raise ValueError("No eligible Review Bundle was selected for re-Screening")
         if not 1 <= args.batch_size <= DEFAULT_SCREENING_BATCH_SIZE:
             raise ValueError(f"batch-size must be between 1 and {DEFAULT_SCREENING_BATCH_SIZE}")
+        screening_parallelism = int(getattr(args, "screening_parallelism", 1) or 1)
+        if not 1 <= screening_parallelism <= MAX_PARALLEL_SCREENING_BATCHES:
+            raise ValueError(
+                f"screening-parallelism must be between 1 and {MAX_PARALLEL_SCREENING_BATCHES}"
+            )
         serial = int(record.get("result_rescreening_serial", 0)) + 1
         request_id = f"RSCR{serial:04d}"
         record["result_rescreening_serial"] = serial
@@ -4598,6 +4672,7 @@ def cmd_request_result_rescreening(args: argparse.Namespace) -> int:
             "status": "active",
             "reason": args.reason,
             "batch_size": args.batch_size,
+            "screening_parallelism": screening_parallelism,
             "target_bundle_ids": requested_ids,
             "initial_target_count": len(requested_ids),
             "requested_at": utc_now(),
@@ -4613,9 +4688,9 @@ def cmd_request_result_rescreening(args: argparse.Namespace) -> int:
                 "interpretation_revision_serial": int(record.get("interpretation_revision_serial", 0)) + 1,
                 "report_revision_reason": f"Result re-Screening {request_id}: {args.reason}",
             })
-        if control["round_state"] == "AWAITING_HUMAN_REVIEW":
+        if control["round_state"] in {"FINALIZING", "AWAITING_HUMAN_REVIEW"}:
             if args.additional_walltime_minutes is None or args.additional_walltime_minutes < 1:
-                raise ValueError("Reopening an AWAITING_HUMAN_REVIEW Round requires --additional-walltime-minutes")
+                raise ValueError("Reopening a FINALIZING or AWAITING_HUMAN_REVIEW Round requires --additional-walltime-minutes")
             now = datetime.now(timezone.utc)
             minutes = args.additional_walltime_minutes
             reserve = min(90, max(5, minutes // 5), max(1, minutes - 1))
@@ -4632,10 +4707,18 @@ def cmd_request_result_rescreening(args: argparse.Namespace) -> int:
             "request_id": request_id,
             "target_count": len(requested_ids),
             "batch_size": args.batch_size,
+            "screening_parallelism": screening_parallelism,
             "reason": args.reason,
         }, round_id=round_id)
         _write_working_set(root, control, snapshot)
-    _print_compact(control, result_rescreening_requested=True, request_id=request_id, target_count=len(requested_ids), batch_size=args.batch_size)
+    _print_compact(
+        control,
+        result_rescreening_requested=True,
+        request_id=request_id,
+        target_count=len(requested_ids),
+        batch_size=args.batch_size,
+        screening_parallelism=screening_parallelism,
+    )
     return 0
 
 
@@ -4648,7 +4731,11 @@ def cmd_reset_result_screening(args: argparse.Namespace) -> int:
         if (control.get("blocker") or {}).get("code") != "RESULT_SCREENING_RETRY_EXHAUSTED":
             raise ValueError("Result Screening is not blocked")
         round_id = control["active_round_id"]
-        batch = snapshot["rounds"][round_id].get("current_screening_batch") or {}
+        prepared = _prepared_screening_batches(snapshot["rounds"][round_id])
+        blocker_batch_id = (control.get("blocker") or {}).get("batch_id")
+        batch = next((row for row in prepared if row.get("batch_id") == blocker_batch_id), None)
+        if batch is None:
+            raise ValueError("Blocked Screening batch is not present in the current prepared wave")
         batch["attempts"] = 0
         control["blocker"] = None
         _commit(root, control, snapshot, "result_screening_retry_authorized", {"batch_id": batch.get("batch_id"), "reason": args.reason}, round_id=round_id)
@@ -5439,6 +5526,7 @@ def build_parser() -> argparse.ArgumentParser:
     item.add_argument("--cumulative-interpretation", action="store_true", help="Create a report-only full Round from unreported assessments in prior CLOSED Rounds")
     item.add_argument("--historical-rescreening", action="store_true", help="Create a Screening-only Round over Review Bundles from explicitly selected CLOSED Rounds")
     item.add_argument("--source-round-id", action="append", help="CLOSED source Round for cumulative Interpretation or historical re-Screening; repeatable")
+    item.add_argument("--screening-parallelism", type=int, default=1, help="Concurrent short-lived Interpreter batches for historical re-Screening (1-4)")
     item.add_argument("--interpretation-iterations", type=int, default=3)
     item.add_argument("--approve-high-cost", action="store_true")
     item.add_argument("--required-deliverables-json")
@@ -5585,6 +5673,7 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("--all-current", action="store_true")
     selection.add_argument("--bundle-id", action="append")
     item.add_argument("--batch-size", type=int, default=4)
+    item.add_argument("--screening-parallelism", type=int, default=1, help="Concurrent short-lived Interpreter batches for this re-Screening request (1-4)")
     item.add_argument("--additional-walltime-minutes", type=int)
     item.add_argument("--reason", required=True)
     item.set_defaults(func=cmd_request_result_rescreening)

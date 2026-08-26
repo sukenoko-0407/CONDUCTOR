@@ -65,7 +65,7 @@ Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clusteri
 
 複数のScreening Roundから正式Reportを作る場合は、人間承認の`cumulative_unreported` Full Roundを使用します。Runtimeは指定されたCLOSED RoundのAssessment最新revisionを走査し、`insight_index.jsonl`ですでに正式Insightへ収載されたReview Bundleを除外します。新しい科学計算は行わず、選抜Bundleを入力とするInterpretation Node、`interpretation.json`、`interpretation.md`、`interpretation.html`、`review_manifest.json`だけを通常のRound成果物として追加します。review manifestにはSource Round、一次評価総数、既報除外数、選抜・非選抜範囲を記録します。
 
-CLOSED Roundを再Screeningする場合は、人間承認の`historical_closed_rounds` screening Roundを新設します。Round contractはSource Round、対象Bundle ID集合とそのhashを固定し、Operator予算を0にします。元Round、Result Card、Review Bundle、旧Assessmentを変更せず、新Assessment revision、`result_assessments.csv`、`screening_summary.json`、Auditだけを新Roundへ追加します。
+CLOSED Roundを再Screeningする場合は、人間承認の`historical_closed_rounds` screening Roundを新設します。Round contractは複数指定可能なSource Round、対象Bundle ID集合とそのhashを固定し、Operator予算を0にします。元Round、Result Card、Review Bundle、旧Assessmentを変更せず、新Assessment revision、`result_assessments.csv`、`screening_summary.json`、Auditだけを新Roundへ追加します。並列化されるのはRuntimeが分離した最大4個のread-only Interpreter batchだけで、永続成果物のcommitは単一Writerが直列化します。
 
 ## MMP A014
 

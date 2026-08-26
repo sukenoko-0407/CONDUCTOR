@@ -12,6 +12,7 @@
 - 一次評価は0～3の絶対複数軸と信頼性を分離し、合計点を持たない。
 - 一次評価は各Review Bundle内のResultを最低1件引用し、Bundle固有の数値・比較・品質事実を理由に含める。同一内容または同一理由を複数Bundleへ複製したdraftはcommitされない。
 - Review BundleにOperator固有の評価anchorが同梱され、既定4 Bundleの小batchで評価される。
+- 明示的な再Screeningでは最大4小batchを独立contextで並列評価でき、順不同完了でもRuntime commitは直列となる。
 - Candidate classはRuntimeの固定決定表だけが確定する。
 - 正式Interpretationは`design_lead`と`contextual_anomaly`だけを単独Insight候補にする。
 - Cluster-local ResultをGlobalと表示せず、比較claimがReview Bundle内のcomparatorを参照する。
