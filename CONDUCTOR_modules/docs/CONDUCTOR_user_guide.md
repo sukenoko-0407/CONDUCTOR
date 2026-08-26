@@ -46,5 +46,6 @@ A014の定型フローはGlobal MMP Databaseを一度だけ構築します。通
 ## 読み取り専用支援
 
 - `cs-conductor-state-report`: 指定RunのDAGをHTML／SVG化する。
+- `cs-conductor-assessment-report`: 既存の一次評価正本を変更せず、評価軸、Candidate class、信頼性、Round／Operator内訳、Full Interpretation収載状況、有望候補を`run_root/assessment_reports/<timestamp>/`のHTML／CSVに集約する。5軸の合計点は作らない。
 - `cs-conductor-result-concierge`: 凍結Runを変更せず、既存結果の説明、追加集計、比較、Figure化を`run_root/concierge/REQ######/`内で行う。
 - `cs-conductor-run-audit`: Quick／Full整合性監査を行う。

@@ -28,6 +28,7 @@
 ├── interpretation/N######/{interpretation.json,interpretation.md,interpretation.html,quality_report.json}
 ├── audit/<timestamp>/
 ├── state/<timestamp>/
+├── assessment_reports/<timestamp>/
 ├── concierge/REQ######/
 └── mmp_interpretation/MMPREQ######/
 ```
@@ -59,6 +60,8 @@ Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clusteri
 `runtime/result_assessment_index.jsonl`はBundleごとの0～3絶対評価軸、分離した信頼性、Runtime確定Candidate class、短い理由、支持・反証Resultを保持します。軸の単純合計は保存しません。`rounds/RND####/result_assessments.csv`は再生成可能な人間向けviewです。
 
 `screening_summary.json`はBundle件数、Candidate class、Operator構成、掲載候補pointerだけを持つcompact handoffです。`report_mode=screening`ではこれが正式Interpretationの代わりとなり、`report_mode=full`では`design_lead`と`contextual_anomaly`から最大50 Resultを選抜します。
+
+人間が`cs-conductor-assessment-report`を明示した場合だけ、一次評価の読み取り専用snapshotを`assessment_reports/<timestamp>/`へ作成します。HTMLは5つの絶対評価軸、Candidate class、信頼性、Round／Operator内訳、Full Interpretation収載状況、有望候補を可視化します。評価軸の合計点は作らず、DAG、Round、State、Result／Assessment／Insight正本へ登録・更新しません。
 
 ## MMP A014
 

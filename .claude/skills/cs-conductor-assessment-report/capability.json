@@ -1,0 +1,30 @@
+{
+  "schema_version": "2.0.0",
+  "capability_id": "O007",
+  "skill_name": "cs-conductor-assessment-report",
+  "display_name": "CONDUCTOR Assessment Report",
+  "version": "0.2.0",
+  "stage": "orchestration",
+  "family": "assessment_reporting",
+  "description": "Explicit, read-only visualization of canonical Result Assessments, Full Interpretation uptake, and promising candidates without DAG, Round, State, or scientific artifact mutation.",
+  "cost": {"class": "low", "human_approval_required": false, "hpc_profile": "cpu64"},
+  "applicability": {"status": "stable", "platforms": ["linux-64", "win-64"]},
+  "dependencies": ["analysis"],
+  "input_contract": ["explicit_conductor_020_run_root", "canonical_result_assessment_index"],
+  "output": {
+    "html": "assessment_reports/<timestamp>/assessment_summary.html",
+    "assessments": "assessment_reports/<timestamp>/assessment_latest.csv",
+    "top_candidates": "assessment_reports/<timestamp>/top_candidates.csv",
+    "manifest": "assessment_reports/<timestamp>/report_manifest.json"
+  },
+  "implementation": {
+    "purpose": "read_only_primary_assessment_visualization",
+    "state_access": "read_only",
+    "invocation": "explicit_human_request_only",
+    "dag_registration": "forbidden",
+    "round_participation": "forbidden",
+    "write_scope": "run_root/assessment_reports/<timestamp>",
+    "overall_assessment": "candidate_class_distribution_without_axis_sum"
+  }
+}
+

@@ -59,6 +59,43 @@ def main() -> int:
     if version != VERSION:
         errors.append(f"unexpected package version: {version}")
 
+    def schema(relative: str) -> dict:
+        return json.loads((MODULE_ROOT / "schemas" / relative).read_text(encoding="utf-8"))
+
+    protocol_schemas = (
+        "compact_runtime_response.schema.json",
+        "execution_packet.schema.json",
+        "runtime_worker_status.schema.json",
+        "failure_packet.schema.json",
+    )
+    for name in protocol_schemas:
+        path = MODULE_ROOT / "schemas" / name
+        if path.is_file() and schema(name).get("properties", {}).get("protocol_version", {}).get("const") != VERSION:
+            errors.append(f"Protocol version mismatch: schemas/{name}")
+    control_path = MODULE_ROOT / "schemas" / "conductor_control.schema.json"
+    if control_path.is_file() and schema("conductor_control.schema.json").get("properties", {}).get("conductor_version", {}).get("const") != VERSION:
+        errors.append("Control schema CONDUCTOR version mismatch")
+
+    mirror_contracts = {
+        ".claude/skills/cs-conductor-runtime/schemas/capability.schema.json": "capability.schema.json",
+        ".claude/skills/cs-conductor-runtime/schemas/analysis_profile.schema.json": "analysis_profile.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/result_card.schema.json": "result_card.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/analysis_subject.schema.json": "analysis_subject.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/interpretation.schema.json": "interpretation.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/interpretation_review_manifest.schema.json": "interpretation_review_manifest.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/review_bundle.schema.json": "review_bundle.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/result_assessment.schema.json": "result_assessment.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/screening_batch.schema.json": "screening_batch.schema.json",
+        ".claude/skills/cs-analysis-interpret-results/schemas/screening_draft.schema.json": "screening_draft.schema.json",
+        ".claude/skills/cs-analysis-interpret-mmp/schemas/result_card.schema.json": "result_card.schema.json",
+        ".claude/skills/cs-analysis-interpret-mmp/schemas/analysis_subject.schema.json": "analysis_subject.schema.json",
+    }
+    for relative, canonical_name in mirror_contracts.items():
+        path = PROJECT_ROOT / relative
+        canonical = MODULE_ROOT / "schemas" / canonical_name
+        if path.is_file() and canonical.is_file() and json.loads(path.read_text(encoding="utf-8")) != json.loads(canonical.read_text(encoding="utf-8")):
+            errors.append(f"Schema mirror mismatch: {relative} != CONDUCTOR_modules/schemas/{canonical_name}")
+
     for name in ("cs-conductor-executor.md", "cs-conductor-interpreter.md"):
         if not (PROJECT_ROOT / ".claude" / "agents" / name).is_file():
             errors.append(f"missing Agent: {name}")
@@ -119,6 +156,18 @@ def main() -> int:
                     adapter_name = capability["conductor_request"].get("adapter")
                 if not (root / "scripts" / "conductor_request_adapter.py").is_file():
                     errors.append(f"{name}: missing common Execution Request adapter")
+                else:
+                    adapter_text = (root / "scripts" / "conductor_request_adapter.py").read_text(encoding="utf-8")
+                    if 'REQUEST_SCHEMA_VERSION = "1.0.0"' not in adapter_text:
+                        errors.append(f"{name}: Execution Request schema version mismatch")
+                artifact_schema_path = root / "schemas" / "artifact_manifest.schema.json"
+                if not artifact_schema_path.is_file():
+                    errors.append(f"{name}: missing Artifact Manifest schema")
+                else:
+                    artifact_schema = json.loads(artifact_schema_path.read_text(encoding="utf-8"))
+                    artifact_properties = artifact_schema.get("properties", {})
+                    if artifact_properties.get("schema_version", {}).get("const") != "2.0.0" or artifact_properties.get("conductor_version", {}).get("const") != VERSION:
+                        errors.append(f"{name}: Artifact Manifest producer/consumer version mismatch")
                 if "--conductor-request" not in launcher_text:
                     errors.append(f"{name}: launcher has no common Execution Request entry")
                 for token in (".bootstrap.lock", ".environment-ready", '"--locked"', "owner.json", "environment_fingerprint", "manifest.read_bytes()"):

@@ -53,5 +53,5 @@
     "cs-conductor-state-report"
   ],
   "maintenance_skills": [],
-  "support_skills": ["cs-conductor-result-concierge", "cs-conductor-orchestrator", "cs-conductor-node-review"]
+  "support_skills": ["cs-conductor-result-concierge", "cs-conductor-assessment-report", "cs-conductor-orchestrator", "cs-conductor-node-review"]
 }

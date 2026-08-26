@@ -18,6 +18,7 @@
 - [新しいClaude Code sessionへの引継ぎ](#daily-handoff)
 - [Result Conciergeによる既存結果の確認](#daily-concierge)
 - [MMP Global–Local専用解釈](#daily-mmp-interpretation)
+- [既存一次評価をHTMLで俯瞰する](#daily-assessment-summary)
 
 <a id="daily-common"></a>
 ## 共通原則
@@ -294,4 +295,19 @@ prepareでrun_root/mmp_interpretation/MMPREQ######/を新規作成し、最初�
 Global、Local（pair両化合物が対象Cluster内）、Outside（pair両化合物が対象Cluster外）を区別し、Transform効果の中央値、IQR／MAD、方向整合性、pair数、独立化合物数、Exact Core支持を比較してください。特に、非重複Clusteringにおける分散縮小、Cluster特異的な増幅、方向反転を候補化してください。Boundary pairは混ぜず別に数えてください。
 
 出力は割り当てられたMMPREQ directory内だけに保存し、DAG、State、Result Index、Insight Index、Event Ledger、通常Interpretationを変更しないでください。既定では対象Roundに新たな成功済みGlobal A014がなければ計算を開始せず、その旨を報告してください。過去RoundのDatabaseは、人間が上記でGlobal A014 Node IDを明示した場合だけ再利用してください。
+```
+<a id="daily-assessment-summary"></a>
+## 既存一次評価をHTMLで俯瞰する
+
+```text
+/cs-conductor-assessment-report
+
+次のCONDUCTOR Run Rootについて、既存の一次評価を読み取り専用で集約してください。
+
+- Run Root: <RUN_ROOT>
+- 対象Round: 全Round
+- Top候補数: 10
+
+DAG、Round、State、科学artifact、Interpretationには一切変更を加えず、
+`assessment_reports/<timestamp>/assessment_summary.html`を作成してください。
 ```
