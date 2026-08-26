@@ -10,6 +10,8 @@
     "run_id": {"type": "string"},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
     "report_mode": {"enum": ["screening", "full"]},
+    "screening_scope": {"enum": ["current_round", "historical_closed_rounds"]},
+    "source_round_ids": {"type": "array", "items": {"type": "string", "pattern": "^RND[0-9]{4}$"}, "uniqueItems": true},
     "bundle_count": {"type": "integer", "minimum": 0},
     "evaluated_count": {"type": "integer", "minimum": 0},
     "not_scorable_count": {"type": "integer", "minimum": 0},

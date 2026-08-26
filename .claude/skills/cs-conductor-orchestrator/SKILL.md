@@ -13,7 +13,7 @@ allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 
 1. 新規Runなら、人間指定のCSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、出力先でRuntime `init`を一回だけ実行する。CPU未指定時は8。SMILES列が一意でない場合だけ`--smiles-column`を要求する。
 2. 既存Runでは、最初に`conductor_control.json`だけを読む。全DAG、Ledger、過去Reportを先読みしない。
-3. 人間依頼を`inspect`、`start new Round`、`start cumulative Interpretation Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
+3. 人間依頼を`inspect`、`start new Round`、`start historical re-Screening Round`、`start cumulative Interpretation Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
 4. `ACTIVE`または`FINALIZING`は同じRoundを`resume-round`する。live leaseがあれば二重起動しない。`AWAITING_HUMAN_REVIEW`では人間の`continue-round`、`revise-report`、`accept-round`以外を行わない。
 
 Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。JSON／JSONLを直接編集せず、Runtime Controllerを別Pythonで直接起動しない。
@@ -25,6 +25,8 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --ru
 `init`、`prepare-round`、`authorize-round`、`resume-round`、`request-result-rescreening`、read-only queryは例外である。Round authorization tokenはRound開始承認専用であり、通常ループでは使わない。
 
 人間が現在のRoundの一次評価を明示的にやり直す場合だけ、Control Authorityを付けて`request-result-rescreening`を一回実行できる。既定4、最大8 Review Bundleずつ、通常の`PREPARE_RESULT_SCREENING`／`WRITE_RESULT_SCREENING`ループで処理する。旧評価を削除せずrevisionを追加する。`CLOSED` Roundを再開したり、別RoundのBundleを混在させたりしない。
+
+人間がCLOSED Roundの一次評価をやり直す場合は、元Roundを再開せず、`prepare-round --report-mode screening --historical-rescreening --source-round-id <RND####>`で再Screening専用の新Roundを開始する。Source Roundは一つ以上を明示し、すべてCLOSEDでなければならない。Runtimeが当時のReview BundleとResult参照を凍結し、Operator予算0、既定4 Bundleの逐次Screening、Summary、Auditだけを許可する。新Assessmentの`round_id`は再評価Round、`source_round_id`は元Roundである。旧revisionはInterpreter contextへ渡さない。
 
 人間が複数の完了済みScreening Roundから正式Reportを求めた場合は、通常解析Roundへ混ぜず、`prepare-round --report-mode full --cumulative-interpretation`で新しい報告専用Roundを提案し、通常どおり一回限りのauthorizationを受ける。必要なら`--source-round-id`を繰り返す。RuntimeがOperator予算0、既報Bundle除外、過去Round最新Assessmentの選抜を固定するため、Mainは過去Reportや全Resultを列挙しない。このRoundでDescription、Clustering、Operatorを計画しない。
 
@@ -77,6 +79,7 @@ Runtime compact responseの`protocol_version=0.2.0`と、一つの`required_acti
 - InterpreterはMainが必要なときだけ直接起動する短命の専用Subagentである。通常の科学計算を所有するのはSubagentではなくRuntime Workerである。
 - Runtimeが返す`context_path`、`draft_path`、mode、必要な場合だけ`node_id`と人間focusを渡す。
 - `screening`では一回のbounded Review Bundle batchだけを絶対評価させ、Mainへ個別評価本文を展開しない。`synthesis`ではRuntime shortlistだけを横断比較させる。
+- historical re-Screeningでは`context.round_id`が再評価Round、各Review Bundleの`round_id`が元のCLOSED Roundである。この差をエラーとして補正せず、RuntimeがAssessment帰属を記録する。
 - Interpreterは科学計算、Node作成、State更新、評価索引更新をしない。
 - draft拒否時は同じInterpretation Nodeを有限回修正する。別Roundや別Nodeを作らない。
 

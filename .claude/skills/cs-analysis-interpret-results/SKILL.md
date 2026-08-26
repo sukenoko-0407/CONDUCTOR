@@ -30,6 +30,8 @@ Runtimeが比較可能なResult Cardから作ったReview Bundle評価draft、�
 
 `interpretation_scope=cumulative_unreported`では、Runtimeが指定した過去のCLOSED Roundにある各Bundleの最新一次評価だけを対象とする。過去の正式Insightで使用済みのBundleはRuntimeが除外する。`prior_reported_insights`は重複表現を避けるためだけに参照し、同じ知見を新規Insightとして言い換えない。
 
+historical re-Screeningでは、Runtimeが新しいscreening Roundへ固定した過去のReview Bundleだけを評価する。`context.round_id`とBundleの`round_id`が異なるのは正常であり、元CLOSED RoundやResultを変更しない。旧Assessment revisionを参照せず、現在のResult factsと評価anchorから独立にdraftを作る。
+
 ## Mode selection
 
 このSkillはID未付与draftの検査専用で、`--conductor`を受け付けない。正式なCONDUCTOR InterpretationはRuntimeがscopeとIDを確定してcommitする。一般利用でも既存の解析結果を読むだけでStateは作らない。

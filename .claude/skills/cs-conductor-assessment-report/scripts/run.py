@@ -157,6 +157,7 @@ def display_row(assessment: dict[str, Any], bundles: dict[str, dict[str, Any]], 
         "bundle_id": bundle_id,
         "bundle_type": assessment.get("bundle_type") or bundle.get("bundle_type"),
         "round_id": assessment.get("round_id"),
+        "source_round_id": assessment.get("source_round_id", assessment.get("round_id")),
         "capability_id": assessment.get("capability_id"),
         "capability_name": names.get(str(assessment.get("capability_id")), ""),
         "candidate_class": assessment.get("candidate_class"),
@@ -243,7 +244,7 @@ def render_html(rows: list[dict[str, Any]], top: list[dict[str, Any]], overlooke
         reliability_panels.append(f'<article class="chart compact"><h3>{e(label)}</h3>{bar_rows(counts, order)}</article>')
     round_stats: dict[str, Counter[str]] = defaultdict(Counter)
     for row in current_rows:
-        bucket = round_stats[str(row["round_id"])]
+        bucket = round_stats[str(row["source_round_id"])]
         bucket["assessed"] += 1
         if row["candidate_class"] in REPORTABLE:
             bucket["reportable"] += 1
@@ -353,14 +354,17 @@ def main() -> int:
     invalid_count = sum(not row.get("bundle_id") for row in assessments_raw)
     assessments = latest_by(assessments_raw, "bundle_id")
     if selected_rounds:
-        assessments = {key: value for key, value in assessments.items() if value.get("round_id") in selected_rounds}
+        assessments = {
+            key: value for key, value in assessments.items()
+            if value.get("source_round_id", value.get("round_id")) in selected_rounds
+        }
     picked: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for insight in insights.values():
         for bundle_id in insight.get("review_bundle_ids") or []:
             picked[str(bundle_id)].append(insight)
     names = find_catalog(root)
     rows = [display_row(value, bundles, picked, names) for value in assessments.values()]
-    rows.sort(key=lambda row: (str(row["round_id"]), candidate_sort_key(row)))
+    rows.sort(key=lambda row: (str(row["source_round_id"]), str(row["round_id"]), candidate_sort_key(row)))
     stale_count = sum(not row["current_assessment"] for row in rows)
     candidates = sorted(
         (row for row in rows if row["current_assessment"] and row["candidate_class"] in REPORTABLE),
@@ -384,7 +388,7 @@ def main() -> int:
     output.mkdir(parents=False, exist_ok=False)
 
     assessment_fields = [
-        "assessment_id", "bundle_id", "bundle_type", "round_id", "capability_id", "capability_name", "candidate_class",
+        "assessment_id", "bundle_id", "bundle_type", "round_id", "source_round_id", "capability_id", "capability_name", "candidate_class",
         "assessment_status", "sample_support", "comparator_validity", "effect_stability", "independence",
         *[key for key, _ in AXES], "cluster_ids", "target_result_refs", "reason", "current_assessment",
         "included_in_full_report", "insight_ids", "interpretation_rounds", "revision",
@@ -403,7 +407,7 @@ def main() -> int:
         "conductor_version": "0.2.0",
         "created_at": created_at,
         "run_root": str(root),
-        "filters": {"round_ids": selected_rounds or "all", "latest_revision_per_bundle": True},
+        "filters": {"source_round_ids": selected_rounds or "all", "latest_revision_per_bundle": True},
         "scientific_axis_sum_used": False,
         "overall_assessment_display": "candidate_class_distribution",
         "candidate_selection": "reportable_class_then_sample_support_then_actionability_then_follow_up_then_favorable",

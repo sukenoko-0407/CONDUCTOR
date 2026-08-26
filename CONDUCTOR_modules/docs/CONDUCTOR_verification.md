@@ -17,6 +17,7 @@
 - Cluster-local ResultをGlobalと表示せず、比較claimがReview Bundle内のcomparatorを参照する。
 - Insightがゼロ件でも日本語Markdown／HTMLを作り、negative resultを長く列挙しない。
 - 累積Interpretationは人間承認した報告専用Full Roundとして実行され、指定したCLOSED Roundの最新一次評価だけを参照する。過去の正式Insightに使用済みのReview Bundleは候補から除外され、Description、Clustering、Operator Nodeを追加しない。
+- historical re-Screeningは明示されたCLOSED Roundの保存済みReview Bundleだけを対象にし、対象集合をRound contractでhash固定する。Operator Nodeを追加せず、Assessmentに実行RoundとSource Roundを記録し、元Roundを変更しない。
 - Result Card、Review Bundle、Assessment、Interpretationの全参照先がRun Root内に存在する。
 - Main session中断、Packet再投入、Lease期限、Worker再接続で科学processを二重起動しない。
 

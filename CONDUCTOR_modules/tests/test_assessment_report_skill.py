@@ -81,9 +81,11 @@ class AssessmentReportSkillTest(unittest.TestCase):
         append_jsonl(runtime / "review_bundle_index.jsonl", [bundle(1), bundle(2), bundle(3, "RND0002")])
         old = assessment(1, "supporting_evidence")
         current = assessment(1, "design_lead", revision=2)
+        historical_revision = assessment(3, "background", round_id="RND0003")
+        historical_revision["source_round_id"] = "RND0002"
         append_jsonl(
             runtime / "result_assessment_index.jsonl",
-            [old, current, assessment(2, "contextual_anomaly"), assessment(3, "background", round_id="RND0002")],
+            [old, current, assessment(2, "contextual_anomaly"), historical_revision],
         )
         append_jsonl(runtime / "insight_index.jsonl", [{
             "insight_id": "INS000001",
@@ -137,7 +139,8 @@ class AssessmentReportSkillTest(unittest.TestCase):
             output = next((root / "assessment_reports").iterdir())
             with (output / "assessment_latest.csv").open("r", encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle))
-            self.assertEqual(["RND0002"], [row["round_id"] for row in rows])
+            self.assertEqual(["RND0003"], [row["round_id"] for row in rows])
+            self.assertEqual(["RND0002"], [row["source_round_id"] for row in rows])
 
     def test_legacy_run_is_rejected_without_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -150,4 +153,3 @@ class AssessmentReportSkillTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

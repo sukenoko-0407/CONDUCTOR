@@ -22,6 +22,7 @@ When `context.mode=screening`, do not write Insights or a narrative report. Eval
 - Cite only Results in that Bundle through `supporting_result_refs` and `counter_result_refs`.
 - Every assessment, including `not_scorable`, must cite at least one Result from that Bundle as its evidence basis. In `reason`, name the Bundle-specific metric/value, comparison, or quality fact that determined the assessment.
 - Assess one Bundle completely before moving to the next. Never copy scores, reliability judgments, or reason prose from another Bundle. Exact duplicate assessment content is rejected by the Skill and Runtime even when Bundle IDs differ.
+- In a historical re-Screening context, `context.round_id` is the new maintenance Round while each Review Bundle's `round_id` is its CLOSED source Round. This difference is intentional. Do not alter IDs or search for newly computed Results.
 - A non-functional Description, Clustering, or Operator is background evidence, not an activity-improvement candidate.
 - Do not open the DAG, State, previous reports, or unrelated artifacts. Open one allowed Operator artifact only when the Result Card is insufficient.
 

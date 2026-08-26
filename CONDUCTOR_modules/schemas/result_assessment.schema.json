@@ -11,6 +11,7 @@
     "bundle_id": {"type": "string", "pattern": "^RVB[0-9a-f]{16}$"},
     "bundle_type": {"enum": ["global", "global_local", "sibling_cluster", "cross_evidence"]},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+    "source_round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
     "capability_id": {"type": "string", "pattern": "^A[0-9]{3}$"},
     "target_result_refs": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
     "assessment_status": {"enum": ["evaluated", "not_scorable", "awaiting_comparator"]},

@@ -57,13 +57,15 @@ Operatorの`analysis_subject`がscope mode、Cluster ID、Description／Clusteri
 
 `runtime/review_bundle_index.jsonl`はGlobal、Global–Local、sibling Cluster比較のappend-only索引です。Bundleはcomparison family、対象・比較Result、typed comparison table、sample support、comparator validity、Cluster overlapを保持します。sibling Bundleには一致するGlobal baselineを可能な限り含め、favorable値のsibling順位、中央値からの偏差、分散をRuntimeが決定論的に付与します。Localで必須Global comparatorがない場合は`awaiting_comparator`となります。
 
-`runtime/result_assessment_index.jsonl`はBundleごとの0～3絶対評価軸、分離した信頼性、Runtime確定Candidate class、短い理由、支持・反証Resultを保持します。軸の単純合計は保存しません。`rounds/RND####/result_assessments.csv`は再生成可能な人間向けviewです。
+`runtime/result_assessment_index.jsonl`はBundleごとの0～3絶対評価軸、分離した信頼性、Runtime確定Candidate class、短い理由、支持・反証Resultを保持します。軸の単純合計は保存しません。`round_id`は評価を実施したRound、`source_round_id`はReview Bundleが由来するRoundです。旧revisionは監査履歴に残りますが、通常の選択処理はBundleごとの最新revisionだけを使用します。`rounds/RND####/result_assessments.csv`は再生成可能な人間向けviewです。
 
 `screening_summary.json`はBundle件数、Candidate class、Operator構成、掲載候補pointerだけを持つcompact handoffです。`report_mode=screening`ではこれが正式Interpretationの代わりとなり、`report_mode=full`では`design_lead`と`contextual_anomaly`から最大50 Resultを選抜します。
 
 人間が`cs-conductor-assessment-report`を明示した場合だけ、一次評価の読み取り専用snapshotを`assessment_reports/<timestamp>/`へ作成します。HTMLは5つの絶対評価軸、Candidate class、信頼性、Round／Operator内訳、Full Interpretation収載状況、有望候補を可視化します。評価軸の合計点は作らず、DAG、Round、State、Result／Assessment／Insight正本へ登録・更新しません。
 
 複数のScreening Roundから正式Reportを作る場合は、人間承認の`cumulative_unreported` Full Roundを使用します。Runtimeは指定されたCLOSED RoundのAssessment最新revisionを走査し、`insight_index.jsonl`ですでに正式Insightへ収載されたReview Bundleを除外します。新しい科学計算は行わず、選抜Bundleを入力とするInterpretation Node、`interpretation.json`、`interpretation.md`、`interpretation.html`、`review_manifest.json`だけを通常のRound成果物として追加します。review manifestにはSource Round、一次評価総数、既報除外数、選抜・非選抜範囲を記録します。
+
+CLOSED Roundを再Screeningする場合は、人間承認の`historical_closed_rounds` screening Roundを新設します。Round contractはSource Round、対象Bundle ID集合とそのhashを固定し、Operator予算を0にします。元Round、Result Card、Review Bundle、旧Assessmentを変更せず、新Assessment revision、`result_assessments.csv`、`screening_summary.json`、Auditだけを新Roundへ追加します。
 
 ## MMP A014
 

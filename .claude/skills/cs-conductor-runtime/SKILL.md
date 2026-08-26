@@ -68,4 +68,6 @@ Operator探索は`exploration`一種類である。人間指定の`max_additiona
 
 正式Interpretationは`design_lead`、次いで`contextual_anomaly`と判定されたReview Bundleから最大50 Resultを選抜してSynthesisする。機能しない解析は索引へ残すが単独Insightにしない。Local活性Resultで必須Global comparatorがなければ`awaiting_comparator`とし、採点しない。`report_mode=screening`では正式Interpretationを省略できる。0.1.x成果物は受理しない。A014はGlobal正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。通常Result CardからMMP reference candidateの入れ子を除き、Global–Local比較は人間起動のread-only `cs-analysis-interpret-mmp`へ分離する。
 
+`screening_scope=historical_closed_rounds`は人間が明示したSource Roundの保存済みReview Bundle集合をhash固定し、Operator予算0で再評価する。元Roundは変更せず、Assessmentの`round_id`へ再評価Round、`source_round_id`へ元Roundを記録する。索引はappend-onlyだが、Agent context、Round CSV、Summary、累積InterpretationにはBundleごとの最新revisionだけを供給する。
+
 異常Nodeの人間操作は`cs-conductor-node-review`、read-only確認は`query`を使う。JSONを手修正しない。

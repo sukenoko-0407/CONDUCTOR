@@ -48,7 +48,7 @@ Runtimeは固定決定表で`design_lead`、`contextual_anomaly`、`supporting_e
 
 ## 累積Synthesis
 
-複数のScreening Roundを終えた後、人間が明示的に累積Interpretation Roundを開始できる。これは科学計算を行わない報告専用Roundである。Runtimeは指定されたCLOSED Roundの各Bundleについて最新かつcurrentな一次評価を走査し、過去の正式Insightで使用済みのBundleを除外する。全一次評価を一括でLLMへ渡さず、固定Candidate class、信頼性、actionabilityによりbounded shortlistを作る。Interpreterは既報Insightを言い換えて新規Insightにせず、未報告の`design_lead`と`contextual_anomaly`だけを検討する。対象総数、既報除外数、選抜・非選抜範囲はreview manifestへ残す。
+複数のScreening Roundを終えた後、人間が明示的に累積Interpretation Roundを開始できる。これは科学計算を行わない報告専用Roundである。Runtimeは指定されたCLOSED Roundに`source_round_id`で属する各Bundleについて最新かつcurrentな一次評価を走査し、historical re-Screening前の旧revisionと過去の正式Insightで使用済みのBundleを除外する。全一次評価を一括でLLMへ渡さず、固定Candidate class、信頼性、actionabilityによりbounded shortlistを作る。Interpreterは既報Insightを言い換えて新規Insightにせず、未報告の`design_lead`と`contextual_anomaly`だけを検討する。対象総数、既報除外数、選抜・非選抜範囲はreview manifestへ残す。
 
 ## MMP
 

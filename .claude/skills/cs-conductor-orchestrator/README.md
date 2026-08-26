@@ -34,6 +34,8 @@ Active Roundの再開では、同じ`run_root`と「同じRoundを再開」を�
 
 複数のScreening RoundをCLOSEDにした後は、人間の明示指示で累積Interpretation専用のFull Roundを開始できます。このRoundはOperator予算0で、過去の最新一次評価から既報Insight使用済みBundleを除外し、正式ReportとAuditだけを作成します。
 
+CLOSED Roundの一次評価に問題があった場合は、元Roundを変更せず、再Screening専用の新Roundを開始できます。Source Roundの既存Review Bundleだけを小batchで再評価し、最新revision、Summary、Auditを生成します。Operator計算は行いません。
+
 ## 制約事項
 
 人間の明示指示なしに新Roundを開始しません。Main Agentは専門計算Skillを直接実行せず、Runtime Stateを直接編集しません。長時間Roundは専用Claude Code sessionでの実行を推奨します。
@@ -54,3 +56,4 @@ Failed Nodeは新しいNodeへ置換しません。Runtimeが`RETRY_FAILED_NODE`
 | 2.1.0 | 通常経路からLLM Executorを外し、冪等なRuntime Workerへの直接投入へ変更 |
 | 2.2.0 | 0.1.7の逐次Result Screening、可変Operator予算、screening／full Roundを追加 |
 | 2.3.0 | 一次評価Template防止と、科学計算を伴わない累積Interpretation Roundを追加 |
+| 2.3.1 | CLOSED Roundを変更せず再評価するhistorical re-Screening Roundを追加 |

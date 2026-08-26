@@ -13,6 +13,7 @@
 - [既知のOperator契約不一致を修復して再開](#special-operator-contract)
 - [A010を同一Run内で再実行](#special-a010)
 - [現在のRoundの一次評価を全件再Screening](#special-result-rescreening)
+- [CLOSED Roundの一次評価を新Roundで再Screening](#special-historical-rescreening)
 - [Interpretation日本語HTMLの追加作成](#special-translation)
 - [同一Runを使用せず新Runを選ぶ条件](#special-new-run)
 
@@ -193,7 +194,35 @@ Runtimeは再Screening依頼時に同じRoundのhuman checkpointも予約する�
 最後に、再評価Request ID、対象Bundle総数、batch数、成功／失敗数、各Bundleの旧revision→新revision、残存未評価数、再生成したSummaryまたはInterpretation、Audit結果を簡潔に報告してください。
 ```
 
-一度に複数Roundを処理しない。すでに`CLOSED`となった過去Roundは不変履歴であり、この操作では再Screeningしない。過去Roundの再評価が必要な場合は、対象Resultを現在のRoundへ正式に再利用する専用設計が必要なので、State編集で代用しない。
+一度に複数Roundを処理しない。すでに`CLOSED`となった過去Roundは不変履歴であり、この操作では再Screeningしない。過去Roundには次のhistorical re-Screening専用Roundを使用し、State編集で代用しない。
+
+<a id="special-historical-rescreening"></a>
+## CLOSED Roundの一次評価を新Roundで再Screening
+
+過去のCLOSED Roundを変更せず、そのRoundで保存済みのReview Bundleだけを再評価する。Operator計算や正式Interpretationは実施しない。
+
+```text
+/cs-conductor-orchestrator
+
+操作: CLOSED Roundの一次評価を再Screeningする専用Roundを開始
+Run Root: <absolute run_root>
+対象Source Round:
+- <RND####>
+- <必要な場合だけ別のRND####>
+Wall Time: <minutes>
+
+Active Roundがないこと、対象Source RoundがすべてCLOSEDであることを確認してください。元のCLOSED Roundは再開・変更しないでください。
+
+人間が明示した新Roundについて、`prepare-round --report-mode screening --historical-rescreening`を使い、各対象Roundを`--source-round-id`で一回ずつ渡してください。契約のOperator予算が0で、対象Review Bundle集合がhash固定され、required deliverableがScreeningだけであることを確認してから通常の一回限りauthorizationを行ってください。
+
+通常の単一required_actionループに従い、Runtimeが指定する既定4 Review Bundleだけをcs-conductor-interpreterへscreening modeで渡してください。Description、Clustering、Operator、Interpretation Nodeを計画・実行しないでください。旧Assessmentを削除・上書きせず、Runtimeに新revisionをappendさせてください。Agentへ旧revision本文を渡さないでください。
+
+全対象の再Screening後にscreening_summary.jsonとresult_assessments.csvを生成し、Full Auditを実行してください。AWAITING_HUMAN_REVIEWで停止し、Roundを自動受理せず、次Roundや累積Interpretationを自動開始しないでください。
+
+最後に、再評価Round、Source Round、対象Bundle数、成功した新revision数、not_scorable数、Summary、Audit結果を簡潔に報告してください。
+```
+
+新Assessmentでは`round_id`が再評価専用Round、`source_round_id`が元のCLOSED Roundになる。累積Interpretationは`source_round_id`に基づいて最新revisionを選ぶ。
 
 <a id="special-translation"></a>
 ## Interpretation日本語HTMLの追加作成

@@ -43,6 +43,12 @@ A014の定型フローはGlobal MMP Databaseを一度だけ構築します。通
 
 意見は人間承認Round contractを介してStateへ反映します。Orchestratorは新Roundを自発的に始めません。
 
+### CLOSED Roundの一次評価をやり直す
+
+一次評価に欠落や一律Template適用が後から見つかった場合、元のCLOSED Roundを開き直しません。特別対応プロンプト集のhistorical re-Screeningを使い、対象Source Roundを明示した新しいscreening Roundを人間承認します。このRoundは保存済みReview Bundleだけを既定4件ずつ再評価し、Operator Nodeを一切作りません。
+
+旧Assessment revisionは監査履歴として残りますが、Interpreter、Round CSV、Summary、累積Interpretationが使用するのはBundleごとの最新revisionだけです。新Assessmentには再評価を実行したRoundと元Source Roundを別々に記録します。
+
 ## 読み取り専用支援
 
 - `cs-conductor-state-report`: 指定RunのDAGをHTML／SVG化する。

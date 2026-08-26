@@ -233,6 +233,8 @@ Active Roundがなく、対象Source RoundがすべてCLOSEDであることを�
 
 これは報告専用Roundです。Description、Clustering、Operatorを計画・実行せず、Operator Node予算を追加しないでください。Runtimeが全Source Roundの各Bundleの最新一次評価を走査し、過去の正式Insightで使用済みのBundleを除外し、未報告候補をbounded shortlistへ選抜します。
 
+historical re-Screening済みのBundleでは、評価を実施したRoundではなく`source_round_id`に基づいて最新revisionをSource Roundへ帰属させてください。旧revision本文を追加で読み込まないでください。
+
 `PLAN_INTERPRETATION`ではRuntime指定contextだけをcs-conductor-interpreterへsynthesis modeで一回渡してください。過去Report全文や全Result Cardを追加読込しないでください。既報Insightを言い換えて新規Insightにせず、未報告のdesign lead／contextual anomalyだけを正式Reportへ整理してください。
 
 Interpretation commit後にFull Auditを完了し、AWAITING_HUMAN_REVIEWで停止してください。このRoundを自動受理せず、さらに次Roundを開始しないでください。最後にSource Round、一次評価総数、既報除外数、選抜Bundle数、非選抜数、生成Report、Audit結果を報告してください。

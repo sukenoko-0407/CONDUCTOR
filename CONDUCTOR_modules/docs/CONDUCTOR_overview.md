@@ -24,6 +24,7 @@ CONDUCTOR 0.2.0は、SARデータを単一の説明へ早急に収束させず�
 - `screening` Roundは評価索引とcompact summary、`full` Roundは`design_lead`と`contextual_anomaly`から選抜した最大50 Resultの正式Interpretationで終了する。
 - 過去Roundの成功Nodeは再計算せず、現在Roundから再利用参照する。
 - `screening`ではScreening summary、`full`ではInterpretation JSON／Markdown／HTMLを要求し、いずれもFull Auditが揃うまで人間レビュー状態へ進めない。
+- CLOSED Roundの一次評価は元Roundを変更せず、Operator計算を伴わない人間承認の再Screening専用Roundで更新できる。旧revisionは監査用に保持し、Agentは最新revisionだけを見る。
 - Main sessionやTool callが中断してもRuntime Workerは継続し、同じRound、Packet、Nodeを再開する。人間の明示なしに次Roundを作らない。
 
 DAGは計算の向きと依存関係を保持する詳細表現です。循環を許さないため、どの入力と上流結果からNodeが生じたか、何が実行可能か、どの結果が再利用可能かを追跡できます。ただしLLMはDAGを直接編集せず、通常の再開時に全DAGを読む必要もありません。

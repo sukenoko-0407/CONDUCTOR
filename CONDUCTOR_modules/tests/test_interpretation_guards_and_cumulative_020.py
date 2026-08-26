@@ -100,6 +100,10 @@ class InterpretationGuardAndCumulativeTests(unittest.TestCase):
             bundle_one["bundle_id"]: assessment(bundle_one["bundle_id"], hash_one, "RND0001", "first specific reason"),
             bundle_two["bundle_id"]: assessment(bundle_two["bundle_id"], hash_two, "RND0002", "second specific reason"),
         }
+        # A historical re-Screening revision is executed in a later maintenance
+        # Round but remains scientifically attributed to its original source.
+        assessments[bundle_two["bundle_id"]]["round_id"] = "RND0003"
+        assessments[bundle_two["bundle_id"]]["source_round_id"] = "RND0002"
         insight = {
             "insight_id": "INS000001", "revision": 1, "title": "既報知見",
             "review_bundle_ids": [bundle_one["bundle_id"]],

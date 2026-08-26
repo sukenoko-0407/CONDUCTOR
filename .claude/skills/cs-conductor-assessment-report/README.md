@@ -27,6 +27,8 @@ python .claude/skills/cs-conductor-assessment-report/scripts/launch.py \
 
 出力は`assessment_reports/<UTC timestamp>/`へ保存される。
 
+historical re-Screening後も各Bundleの最新revisionだけを表示する。Round絞り込みは元の`source_round_id`を基準とし、CSVには評価実行RoundとSource Roundの両方を出力する。
+
 ## 制約事項
 
 - CONDUCTOR 0.2.0の一次評価形式を対象とする。
@@ -39,4 +41,3 @@ python .claude/skills/cs-conductor-assessment-report/scripts/launch.py \
 | Version | 変更内容 |
 |---|---|
 | 1.0.0 | 初版。一次評価の分布、信頼性、Round推移、Operator内訳、Top候補、Fullレポート収載状況をHTML／CSV化。 |
-

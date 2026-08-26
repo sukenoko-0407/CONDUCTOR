@@ -67,3 +67,5 @@ A014 Globalは全詳細CSV、正規化SQLite、集約CSV、reference card、HTML
 RuntimeはResult Card v2をcomparison familyへ登録し、Global、Global–Local、sibling ClusterのReview Bundleを決定論的に作ります。InterpreterはOperator固有anchorで0～3の複数絶対軸を評価し、Runtimeが信頼性とCandidate classを確定して`runtime/result_assessment_index.jsonl`へcommitします。合計点は作りません。正式Synthesisでは`design_lead`と`contextual_anomaly`から最大50 Resultだけを渡し、支持・反証・negative resultは主候補を限定するために使います。RuntimeがInsight ID、scope、sample factsを確定して固定templateからJSON／Markdown／HTMLを生成します。
 
 `screening` RoundはScreening summaryとFull Audit、`full` RoundはさらにInterpretationが合格しない限りhandoffしません。
+
+CLOSED Roundの一次評価を修正する場合も元Roundは再開しません。人間承認されたhistorical re-Screening Roundが、保存済みReview Bundle集合をhash固定し、Operator予算0で小batch評価、Summary、Auditだけを実行します。Assessmentの実行RoundとSource Roundを分離して記録し、通常Contextには最新revisionだけを載せます。
