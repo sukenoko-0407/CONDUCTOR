@@ -6,10 +6,10 @@
   "additionalProperties": false,
   "required": ["schema_version", "profile_id", "result_role", "allowed_axes", "comparison_metrics", "primary_favorable_metric", "global_comparator", "sibling_comparison", "standalone_insight", "minimum_support", "null_result", "anchors"],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "profile_id": {"type": "string", "pattern": "^IP-A[0-9]{3}-[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "schema_version": {"const": "2.0.0"},
+    "profile_id": {"type": "string", "pattern": "^IP-A[0-9]{3}-2\\.0\\.0$"},
     "result_role": {"enum": ["activity_signal", "landscape", "model", "context", "quality", "specialized"]},
-    "allowed_axes": {"type": "array", "items": {"enum": ["favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"]}, "uniqueItems": true},
+    "allowed_axes": {"type": "array", "items": {"enum": ["favorable_evidence", "context_contrast", "evidence_specificity"]}, "uniqueItems": true},
     "comparison_metrics": {
       "type": "array",
       "items": {

@@ -107,7 +107,7 @@ class Runtime012Tests(unittest.TestCase):
     def test_interpretation_review_selects_only_reportable_bundle_classes(self) -> None:
         bundles = []
         assessments = {}
-        for index, candidate_class in enumerate(("design_lead", "contextual_anomaly", "supporting_evidence"), 1):
+        for index, candidate_class in enumerate(("favorable_clue", "contextual_clue", "supporting_evidence"), 1):
             bundle_id = f"RVB{index:016x}"
             bundle = {
                 "bundle_id": bundle_id,
@@ -120,7 +120,7 @@ class Runtime012Tests(unittest.TestCase):
                 "bundle_id": bundle_id,
                 "capability_id": "A001",
                 "candidate_class": candidate_class,
-                "scores": {"chemical_actionability": 2},
+                "scores": {"favorable_evidence": 2, "context_contrast": 2, "evidence_specificity": 2},
                 "reliability": {"sample_support": "moderate"},
             }
         manifest = RUNTIME._assessment_review_manifest("RND0001", bundles, assessments, 4)

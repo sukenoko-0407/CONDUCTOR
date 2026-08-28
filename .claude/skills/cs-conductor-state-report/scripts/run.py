@@ -72,7 +72,7 @@ def svg_dag(nodes: list[dict[str, Any]]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Render a read-only CONDUCTOR 0.1.6/0.1.7 DAG report")
+    parser = argparse.ArgumentParser(description="Render a read-only CONDUCTOR 0.1.8 DAG report")
     parser.add_argument("--run-root", required=True)
     parser.add_argument("--explicit-request", action="store_true")
     args = parser.parse_args()

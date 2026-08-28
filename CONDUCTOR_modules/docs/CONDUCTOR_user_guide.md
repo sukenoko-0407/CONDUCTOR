@@ -10,6 +10,8 @@ Main Agentで`/cs-conductor-orchestrator`を明示し、入力CSV、endpoint、`
 
 探索を広く続けるRoundは`report_mode=screening`、人間向けの正式なInsight Reportが必要なRoundは`report_mode=full`を選びます。screeningではReview Bundle単位の`result_assessments.csv`とcompact summary、fullではCandidate class、信頼性、多様性から選抜した最大50 Result参照に対応するBundleの`interpretation.html`まで作成します。
 
+3つの評価軸、Candidate class、一次評価の対象条件、Assessment SummaryとFull Interpretationの選抜差は、[CONDUCTOR 一次評価ガイド](CONDUCTOR_assessment_guide.md)を参照してください。
+
 endpointの変換はRun開始前に人間が行います。`endpoint_transform`は実施済み変換の記録で、Runtimeが値を変換する指定ではありません。
 
 RuntimeはRun初期化時にSMILES列を確定し、共通Execution Requestで必要Skillへ引き渡します。候補列が複数なら依頼時にSMILES列名を明示してください。
@@ -20,7 +22,7 @@ Main Orchestratorは`conductor_control.json`の一つの`required_action`へ従�
 
 `WAIT_RUNNING`はWorkerまたは科学processが生存している正常な待機です。別Workerやreconcileを開始しません。`RECONCILE_RUNNING`の場合だけ、Worker消失後の成果物または失敗状態を一回回収します。同じPacketの`execute-packet`再呼出しは既存Workerへの再接続であり、二重計算にはなりません。
 
-Node失敗時は同じNode IDへ最大3 Attemptまで再試行できます。即席の引数修正や置換Nodeは作りません。実装契約の欠陥であれば、Roundを安全に停止し、packageを修正して同じNodeを再試行します。
+Node失敗時は同じNode IDへ最大3 Attemptまで再試行できます。Failure Packetと`required_action`には`diagnostic_code`、具体的な`diagnostic_message`、`remediation`、`retry_mode`が入り、同一コマンド再試行、入力修正、環境修正、package修正、人間判断を区別します。即席の引数修正や置換Nodeは作りません。実装契約の欠陥であれば、Roundを安全に停止し、packageを修正して同じNodeを再試行します。`UNKNOWN_FAILURE`でなければ、通常は長いAttempt logを先に読む必要はありません。
 
 ## MMP解析
 
@@ -52,7 +54,7 @@ A014の定型フローはGlobal MMP Databaseを一度だけ構築します。通
 ## 読み取り専用支援
 
 - `cs-conductor-state-report`: 指定RunのDAGをHTML／SVG化する。
-- `cs-conductor-assessment-report`: 既存の一次評価正本を変更せず、評価軸、Candidate class、信頼性、Round／Operator内訳、Full Interpretation収載状況、有望候補を`run_root/assessment_reports/<timestamp>/`のHTML／CSVに集約する。5軸の合計点は作らない。
+- `cs-conductor-assessment-report`: 既存の一次評価正本を変更せず、評価軸、Candidate class、信頼性、Round／Operator内訳、Full Interpretation収載状況、有望候補を`run_root/assessment_reports/<timestamp>/`のHTML／CSVに集約する。3軸の合計点は作らない。
 - 累積Interpretation: 複数のScreening Roundを受理してCLOSEDにした後、日常プロンプト集の「複数Screening Roundから累積Interpretationを作成」を使用する。新しい報告専用Full RoundがOperator予算0で作られ、各Bundleの最新一次評価から既報Insight使用済みBundleを除いた候補だけを正式Reportへ統合する。
 - `cs-conductor-result-concierge`: 凍結Runを変更せず、既存結果の説明、追加集計、比較、Figure化を`run_root/concierge/REQ######/`内で行う。
 - `cs-conductor-run-audit`: Quick／Full整合性監査を行う。

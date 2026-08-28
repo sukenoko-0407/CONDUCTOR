@@ -4,9 +4,9 @@
   "title": "CONDUCTOR Review Bundle",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "bundle_id", "bundle_type", "round_id", "capability_id", "interpretation_profile_id", "comparison_family_id", "target_result_refs", "comparator_result_refs", "all_result_refs", "cluster_ids", "comparison_status", "applicable_axes", "comparison_table", "runtime_facts", "source_hash", "created_at"],
+  "required": ["schema_version", "bundle_id", "bundle_type", "round_id", "capability_id", "interpretation_profile_id", "comparison_family_id", "target_result_refs", "comparator_result_refs", "all_result_refs", "cluster_ids", "comparison_status", "applicable_axes", "evaluation_anchors", "comparison_table", "runtime_facts", "source_hash", "created_at"],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
+    "schema_version": {"const": "2.0.0"},
     "bundle_id": {"type": "string", "pattern": "^RVB[0-9a-f]{16}$"},
     "bundle_type": {"enum": ["global", "global_local", "sibling_cluster", "cross_evidence"]},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
@@ -18,7 +18,7 @@
     "all_result_refs": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
     "cluster_ids": {"type": "array", "items": {"type": "string", "pattern": "^C[0-9]{6}$"}, "uniqueItems": true},
     "comparison_status": {"enum": ["ready", "awaiting_comparator", "not_applicable"]},
-    "applicable_axes": {"type": "array", "items": {"enum": ["favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"]}, "uniqueItems": true},
+    "applicable_axes": {"type": "array", "items": {"enum": ["favorable_evidence", "context_contrast", "evidence_specificity"]}, "uniqueItems": true},
     "comparison_table": {"type": "array", "items": {"type": "object"}},
     "evaluation_anchors": {
       "type": "object",

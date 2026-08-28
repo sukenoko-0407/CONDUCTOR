@@ -418,7 +418,7 @@ def conductor_contract(args: argparse.Namespace, outdir: Path, result: dict[str,
     write_json(outdir / "operator_summary.json", operator_summary)
     all_artifacts = list(dict.fromkeys(result["artifacts"] + ["operator_report.html", "operator_summary.json", "mmp_result.json"]))
     manifest = {
-        "schema_version": "2.0.0", "conductor_version": "0.2.0", "artifact_stage": "analysis",
+        "schema_version": "2.0.0", "conductor_version": "0.1.8", "artifact_stage": "analysis",
         "run_id": args.run_id, "node_id": args.node_id, "attempt_id": args.attempt_id,
         "capability_id": "A014", "operator_id": "A014", "skill_name": CAPABILITY["skill_name"],
         "skill_version": CAPABILITY["version"], "input": result["input"], "input_hash": result["input_hash"],

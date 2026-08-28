@@ -76,12 +76,22 @@ def validate_context_schemas(context: dict[str, Any]) -> list[str]:
         except jsonschema.ValidationError as exc:
             location = ".".join(str(item) for item in exc.absolute_path) or "<root>"
             issues.append(f"review_bundles[{index}] schema error at {location}: {exc.message}")
+        applicable = set(bundle.get("applicable_axes") or [])
+        anchored = set((bundle.get("evaluation_anchors") or {}).keys())
+        if anchored != applicable:
+            issues.append(
+                f"review_bundles[{index}] evaluation_anchors must match applicable_axes exactly"
+            )
     for index, profile in enumerate(context.get("interpretation_profiles") or [], 1):
         try:
             validate_schema(profile, "operator_interpretation_profile.schema.json")
         except jsonschema.ValidationError as exc:
             location = ".".join(str(item) for item in exc.absolute_path) or "<root>"
             issues.append(f"interpretation_profiles[{index}] schema error at {location}: {exc.message}")
+        if set((profile.get("anchors") or {}).keys()) != set(profile.get("allowed_axes") or []):
+            issues.append(
+                f"interpretation_profiles[{index}] anchors must match allowed_axes exactly"
+            )
     review_manifest = context.get("review_manifest")
     if review_manifest is not None:
         try:
@@ -198,11 +208,34 @@ def validate_draft(context: dict[str, Any], draft: dict[str, Any]) -> list[str]:
         for key in ("title", "observation", "interpretation"):
             if not str(item.get(key) or "").strip():
                 issues.append(f"{prefix}: {key} is required")
+    selected_bundle_ids = set((context.get("review_manifest") or {}).get("selected_bundle_ids") or [])
+    dispositions = list(draft.get("bundle_dispositions") or [])
+    disposition_ids = [str(item.get("bundle_id") or "") for item in dispositions]
+    if len(disposition_ids) != len(set(disposition_ids)) or set(disposition_ids) != selected_bundle_ids:
+        issues.append("bundle_dispositions must cover every selected Review Bundle exactly once")
+    used_bundle_ids = {
+        str(bundle_id)
+        for item in draft.get("insights") or []
+        for bundle_id in item.get("review_bundle_ids") or []
+    }
+    used_dispositions = {"reported_as_insight", "merged_into_insight"}
+    omitted_dispositions = {"rejected_by_counterevidence", "redundant_evidence", "deferred_by_detail_limit", "not_reportable"}
+    for index, item in enumerate(dispositions, 1):
+        bundle_id = str(item.get("bundle_id") or "")
+        disposition = str(item.get("disposition") or "")
+        if disposition not in used_dispositions | omitted_dispositions:
+            issues.append(f"bundle_dispositions[{index}]: invalid disposition")
+        if not str(item.get("reason") or "").strip():
+            issues.append(f"bundle_dispositions[{index}]: reason is required")
+        if bundle_id in used_bundle_ids and disposition not in used_dispositions:
+            issues.append(f"bundle_dispositions[{index}]: an Insight-used Bundle requires a reported/merged disposition")
+        if bundle_id not in used_bundle_ids and disposition not in omitted_dispositions:
+            issues.append(f"bundle_dispositions[{index}]: an omitted Bundle requires an omission disposition")
     return issues
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate a CONDUCTOR 0.2.0 Review Bundle assessment or ID-free Interpretation draft.")
+    parser = argparse.ArgumentParser(description="Validate a CONDUCTOR 0.1.8 Review Bundle assessment or ID-free Interpretation draft.")
     parser.add_argument("--context", required=True)
     parser.add_argument("--draft", required=True)
     parser.add_argument("--output-dir", required=True)

@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/screening_summary.schema.json",
-  "title": "CONDUCTOR Round Review Summary v2",
+  "title": "CONDUCTOR Round Review Summary v3",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "round_id", "report_mode", "bundle_count", "evaluated_count", "not_scorable_count", "awaiting_comparator_count", "unassessed_count", "candidate_class_counts", "operator_counts", "bundle_type_counts", "reportable_candidates", "assessment_index_ref", "assessment_csv_ref", "bundle_index_ref", "stop_reason", "created_at"],
   "properties": {
-    "schema_version": {"const": "2.0.0"},
+    "schema_version": {"const": "3.0.0"},
     "run_id": {"type": "string"},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
     "report_mode": {"enum": ["screening", "full"]},

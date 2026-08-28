@@ -3,7 +3,7 @@
   "capability_id": "A005",
   "skill_name": "cs-analysis-multidescription-feature-model",
   "display_name": "Multi-Description feature model",
-  "version": "0.2.0",
+  "version": "0.1.8",
   "stage": "analysis",
   "family": "feature_model",
   "description": "Use when Claude Code needs to run Multi-Description feature model from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -60,8 +60,8 @@
     "min_local_samples": 30
   },
   "interpretation_profile": {
-    "schema_version": "1.0.0", "profile_id": "IP-A005-1.0.0", "result_role": "model",
-    "allowed_axes": ["favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage"],
+    "schema_version": "2.0.0", "profile_id": "IP-A005-2.0.0", "result_role": "model",
+    "allowed_axes": ["favorable_evidence", "context_contrast", "evidence_specificity"],
     "comparison_metrics": [
       {"name": "oof_rmse", "source": "best_rmse", "unit": "endpoint", "direction": "lower", "comparison_scope": "all"},
       {"name": "oof_r2", "source": "best_r2", "unit": null, "direction": "higher", "comparison_scope": "all"},
@@ -70,11 +70,9 @@
     "primary_favorable_metric": null, "global_comparator": "required_for_local", "sibling_comparison": "supported", "standalone_insight": "conditional",
     "minimum_support": {"global": 30, "local": 30}, "null_result": "background",
     "anchors": {
-      "favorable_signal": ["活性方向を示さない", "弱いfeature方向候補", "安定したfeature方向候補", "操作可能なfeatureと方向が明確"],
-      "context_deviation": ["性能差なし", "軽度のLocal差", "GlobalとLocalで性能差が明確", "Localで予測可能性が質的に変化"],
-      "chemical_actionability": ["feature不明", "広いfeature block", "少数の具体feature", "構造操作へ接続可能"],
-      "independent_support": ["支持なし", "単一modelのみ", "foldまたは別表現で支持", "独立Operatorでも支持"],
-      "follow_up_leverage": ["確認価値なし", "再CV可能", "外れ値・Local検証が明確", "少数の追加化合物で判断可能"]
+      "favorable_evidence": ["活性方向を示さない", "弱いfeature方向候補", "安定したfeature方向候補", "具体的featureと方向が明確"],
+      "context_contrast": ["性能差なし", "軽度のLocal差", "GlobalとLocalで性能差が明確", "Localで予測可能性が質的に変化"],
+      "evidence_specificity": ["feature不明", "広いfeature block", "少数の具体feature", "少数の具体featureと構造対応が明確"]
     }
   },
   "conductor_request": {

@@ -11,7 +11,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
-    "runtime_controller_interpretation_guards_020",
+    "runtime_controller_interpretation_guards_018",
     ROOT / "CONDUCTOR_modules" / "tools" / "runtime_controller.py",
 )
 assert SPEC and SPEC.loader
@@ -27,13 +27,11 @@ def assessment(bundle_id: str, source_hash: str, round_id: str, reason: str) -> 
         "round_id": round_id,
         "rubric_version": RUNTIME.SCREENING_RUBRIC_VERSION,
         "assessment_status": "evaluated",
-        "candidate_class": "design_lead",
+        "candidate_class": "favorable_clue",
         "scores": {
-            "favorable_signal": 2,
-            "context_deviation": "not_applicable",
-            "chemical_actionability": 2,
-            "independent_support": "not_applicable",
-            "follow_up_leverage": 1,
+            "favorable_evidence": 2,
+            "context_contrast": "not_applicable",
+            "evidence_specificity": 2,
         },
         "reliability": {"sample_support": "moderate"},
         "effect_stability": "stable",
@@ -50,11 +48,9 @@ def draft_row(bundle_id: str, result_ref: str, reason: str) -> dict:
         "bundle_id": bundle_id,
         "assessment_status": "evaluated",
         "scores": {
-            "favorable_signal": 2,
-            "context_deviation": "not_applicable",
-            "chemical_actionability": 2,
-            "independent_support": "not_applicable",
-            "follow_up_leverage": 1,
+            "favorable_evidence": 2,
+            "context_contrast": "not_applicable",
+            "evidence_specificity": 2,
         },
         "effect_stability": "stable",
         "independence": "unknown",

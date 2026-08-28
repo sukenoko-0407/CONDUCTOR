@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -23,11 +25,21 @@ SPEC.loader.exec_module(MMP)
 
 
 class ReadOnlyMmpInterpretation(unittest.TestCase):
+    def test_help_is_safe_under_windows_legacy_output_encoding(self) -> None:
+        environment = os.environ.copy()
+        environment["PYTHONIOENCODING"] = "cp932"
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT_DIR / "run.py"), "--help"],
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr.decode("ascii", errors="replace"))
+
     def build_run(self, root: Path) -> None:
         (root / "runtime").mkdir(parents=True)
         (root / "analysis" / "N000001").mkdir(parents=True)
         control = {
-            "conductor_version": "0.1.6",
+            "conductor_version": "0.1.8",
             "round_state": "AWAITING_HUMAN_REVIEW",
             "active_round_id": "RND0001",
             "lease": {"owner_id": None, "expires_at": None},

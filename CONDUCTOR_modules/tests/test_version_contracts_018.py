@@ -35,7 +35,7 @@ def refs(value: Any) -> Iterator[str]:
             yield from refs(item)
 
 
-class VersionContracts020(unittest.TestCase):
+class VersionContracts018(unittest.TestCase):
     def test_package_runtime_and_protocol_versions_are_aligned(self) -> None:
         package_version = (MODULES / "VERSION").read_text(encoding="utf-8").strip()
         project = tomllib.loads((MODULES / "pyproject.toml").read_text(encoding="utf-8"))
@@ -46,7 +46,7 @@ class VersionContracts020(unittest.TestCase):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         assignments[target.id] = node.value.value
-        self.assertEqual("0.2.0", package_version)
+        self.assertEqual("0.1.8", package_version)
         self.assertEqual(package_version, project["project"]["version"])
         self.assertEqual(package_version, assignments["VERSION"])
         self.assertEqual(package_version, assignments["PROTOCOL_VERSION"])
@@ -171,6 +171,29 @@ class VersionContracts020(unittest.TestCase):
         ):
             schema = load_json(directory / name)
             self.assertTrue(str(schema["$id"]).endswith("/" + name), name)
+
+    def test_read_only_helpers_that_gate_run_version_use_current_package_version(self) -> None:
+        package_version = (MODULES / "VERSION").read_text(encoding="utf-8").strip()
+        for skill_name in ("cs-analysis-interpret-mmp", "cs-conductor-result-concierge"):
+            directory = SKILLS / skill_name
+            capability = load_json(directory / "capability.json")
+            tree = ast.parse((directory / "scripts" / "run.py").read_text(encoding="utf-8"))
+            assignments = {
+                target.id: node.value.value
+                for node in tree.body
+                if isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            }
+            self.assertEqual(package_version, capability["version"], skill_name)
+            self.assertEqual(package_version, assignments["VERSION"], skill_name)
+
+    def test_adapter_sync_tool_reads_current_package_version(self) -> None:
+        text = (MODULES / "tools" / "sync_execution_request_adapters.py").read_text(encoding="utf-8")
+        self.assertIn('MODULES / "VERSION"', text)
+        self.assertNotIn('"0.1.6"', text)
 
 
 if __name__ == "__main__":

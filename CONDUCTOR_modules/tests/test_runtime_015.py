@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import ast
 import importlib.util
 import hashlib
 import json
@@ -132,6 +133,34 @@ class ExecutionRequest015(unittest.TestCase):
             request.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "capability_id"):
                 ADAPTER.request_to_cli(request, capability)
+
+    def test_every_adapter_default_parameter_is_accepted_by_its_skill_cli(self) -> None:
+        """Guard the deterministic Runtime-to-Skill argument boundary."""
+        for capability_path in sorted((ROOT / ".claude" / "skills").glob("*/capability.json")):
+            capability = json.loads(capability_path.read_text(encoding="utf-8"))
+            if not capability.get("conductor_request", {}).get("adapter"):
+                continue
+            run_path = capability_path.parent / "scripts" / "run.py"
+            tree = ast.parse(run_path.read_text(encoding="utf-8"), filename=str(run_path))
+            options = {
+                argument.value
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_argument"
+                for argument in node.args
+                if isinstance(argument, ast.Constant)
+                and isinstance(argument.value, str)
+                and argument.value.startswith("--")
+            }
+            for name in capability.get("default_parameters", {}):
+                if name == "role":  # A014 uses a required subcommand, not an option.
+                    continue
+                option = "--" + name.replace("_", "-")
+                self.assertIn(option, options, f"{capability['capability_id']}: {option}")
+
+            for option in ("--conductor", "--project", "--run-id", "--round-id", "--node-id", "--attempt-id", "--output-dir"):
+                self.assertIn(option, options, f"{capability['capability_id']}: {option}")
 
 
 class RuntimeControl015(unittest.TestCase):
@@ -350,7 +379,7 @@ class RuntimeControl015(unittest.TestCase):
             "lease": {"expires_at": "2026-01-01T00:00:00+00:00"},
         }
         response = RUNTIME._compact_response(control)
-        self.assertEqual("0.2.0", response["protocol_version"])
+        self.assertEqual("0.1.8", response["protocol_version"])
         self.assertNotIn("action_token", response)
         self.assertNotIn("executor_token", response)
 
@@ -409,6 +438,87 @@ class RuntimeControl015(unittest.TestCase):
             self.assertEqual("argument_contract_mismatch", classification)
             self.assertFalse(recoverable)
 
+    def test_failure_diagnostic_names_missing_argument_and_remediation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "attempt.log"
+            log.write_text(
+                "usage: run.py [-h] --input INPUT --property-column COLUMN\n"
+                "run.py: error: the following arguments are required: --property-column\n",
+                encoding="utf-8",
+            )
+            diagnostic = RUNTIME._execution_failure_diagnostic(
+                log, {"returncode": 2, "timed_out": False}, RuntimeError("Skill failed")
+            )
+            self.assertEqual("MISSING_REQUIRED_ARGUMENT", diagnostic["diagnostic_code"])
+            self.assertIn("--property-column", diagnostic["diagnostic_message"])
+            self.assertEqual("after_request_fix", diagnostic["retry_mode"])
+            self.assertFalse(diagnostic["recoverable"])
+
+    def test_transient_failure_is_the_only_same_command_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "attempt.log"
+            log.write_text("PROCESS_START_OR_WAIT_FAILURE: temporary launcher failure\n", encoding="utf-8")
+            diagnostic = RUNTIME._execution_failure_diagnostic(
+                log, {"returncode": 125, "timed_out": False}, RuntimeError("launcher failed")
+            )
+            self.assertEqual("same_command", diagnostic["retry_mode"])
+            self.assertTrue(diagnostic["recoverable"])
+
+    def test_invalid_argument_value_and_resource_exhaustion_are_actionable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "attempt.log"
+            log.write_text("run.py: error: argument --workers: invalid int value: 'many'\n", encoding="utf-8")
+            invalid = RUNTIME._execution_failure_diagnostic(
+                log, {"returncode": 2, "timed_out": False}, RuntimeError("Skill failed")
+            )
+            self.assertEqual("INVALID_ARGUMENT_VALUE", invalid["diagnostic_code"])
+            self.assertEqual("after_request_fix", invalid["retry_mode"])
+            log.write_text("fatal: out of memory\n", encoding="utf-8")
+            exhausted = RUNTIME._execution_failure_diagnostic(
+                log, {"returncode": 137, "timed_out": False}, RuntimeError("Skill killed")
+            )
+            self.assertEqual("RESOURCE_EXHAUSTED", exhausted["diagnostic_code"])
+            self.assertEqual("human_decision", exhausted["retry_mode"])
+            self.assertFalse(exhausted["recoverable"])
+
+    def test_candidate_class_and_priority_use_three_axis_absolute_rubric(self) -> None:
+        profile = {"standalone_insight": "allowed"}
+        bundle = {
+            "bundle_type": "global",
+            "comparison_status": "ready",
+            "runtime_facts": {"minimum_support_met": True, "comparator_validity": "none"},
+        }
+        favorable = {"favorable_evidence": 2, "context_contrast": "not_applicable", "evidence_specificity": 1}
+        self.assertEqual("favorable_clue", RUNTIME._candidate_class(profile, bundle, "evaluated", favorable))
+        contextual_bundle = {
+            **bundle,
+            "bundle_type": "global_local",
+            "runtime_facts": {"minimum_support_met": True, "comparator_validity": "matched"},
+        }
+        contextual = {"favorable_evidence": 1, "context_contrast": 2, "evidence_specificity": 1}
+        self.assertEqual("contextual_clue", RUNTIME._candidate_class(profile, contextual_bundle, "evaluated", contextual))
+        nondirectional = {"favorable_evidence": "not_applicable", "context_contrast": 2, "evidence_specificity": 1}
+        contextual_bundle["applicable_axes"] = ["context_contrast", "evidence_specificity"]
+        self.assertEqual("contextual_clue", RUNTIME._candidate_class(profile, contextual_bundle, "evaluated", nondirectional))
+        rows = [
+            {"candidate_class": "contextual_clue", "scores": contextual, "reliability": {"sample_support": "adequate"}, "capability_id": "A002", "bundle_id": "RVB2"},
+            {"candidate_class": "favorable_clue", "scores": favorable, "reliability": {"sample_support": "adequate"}, "capability_id": "A001", "bundle_id": "RVB1"},
+        ]
+        self.assertEqual("RVB1", sorted(rows, key=RUNTIME._candidate_priority_key)[0]["bundle_id"])
+
+    def test_synthesis_dispositions_cover_selected_bundles_exactly(self) -> None:
+        manifest = {"selected_bundle_ids": ["RVB1", "RVB2"]}
+        insights = [{"review_bundle_ids": ["RVB1"]}]
+        draft = {"bundle_dispositions": [
+            {"bundle_id": "RVB1", "disposition": "reported_as_insight", "reason": "主要候補"},
+            {"bundle_id": "RVB2", "disposition": "rejected_by_counterevidence", "reason": "反証あり"},
+        ]}
+        rows = RUNTIME._formalize_synthesis_dispositions(draft, manifest, insights)
+        self.assertEqual(2, len(rows))
+        draft["bundle_dispositions"][1]["disposition"] = "reported_as_insight"
+        with self.assertRaisesRegex(ValueError, "Omitted Bundle"):
+            RUNTIME._formalize_synthesis_dispositions(draft, manifest, insights)
+
     def test_process_output_is_streamed_to_attempt_log(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -422,6 +532,19 @@ class RuntimeControl015(unittest.TestCase):
             self.assertGreater(log.stat().st_size, 200000)
             process = json.loads(process_record.read_text(encoding="utf-8"))
             self.assertEqual(process["pid"], process["process_group_id"])
+
+    def test_child_process_output_is_utf8_when_parent_requests_cp932(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            log = root / "attempt.log"
+            process_record = root / "process.json"
+            with mock.patch.dict(os.environ, {"PYTHONIOENCODING": "cp932"}):
+                outcome = RUNTIME._run_one(
+                    [sys.executable, "-c", "print('Global\\u2013Local')"],
+                    log, process_record, 30, "0" * 64,
+                )
+            self.assertEqual(0, outcome["returncode"])
+            self.assertEqual("Global–Local", log.read_text(encoding="utf-8").strip())
 
     def test_global_deliverable_cannot_be_satisfied_by_local_result(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

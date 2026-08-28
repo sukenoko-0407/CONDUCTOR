@@ -31,9 +31,10 @@ historical re-Screening後も各Bundleの最新revisionだけを表示する。R
 
 ## 制約事項
 
-- CONDUCTOR 0.2.0の一次評価形式を対象とする。
+- CONDUCTOR 0.1.8の一次評価形式を対象とする。
 - DAG、Round、State、科学artifact、Interpretationを変更しない。
-- 5つの評価軸は単純合計しない。Candidate classを総合評価区分として表示する。
+- 3つの評価軸は単純合計しない。Candidate classを総合評価区分として表示する。
+- 化学的実行可能性は採点せず、Medicinal Chemistの判断対象とする。
 - 実行中に正本ファイルが変化した場合は、不整合なsnapshotを出力せず終了する。
 
 ## 変更履歴

@@ -8,6 +8,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import secrets
 import signal
 import shutil
@@ -23,8 +24,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 
-VERSION = "0.2.0"
-PROTOCOL_VERSION = "0.2.0"
+VERSION = "0.1.8"
+PROTOCOL_VERSION = "0.1.8"
 CONTROL_SCHEMA = "3.0.0"
 MAX_CONTROL_BYTES = 32 * 1024
 MAX_WORKING_SET_BYTES = 64 * 1024
@@ -41,7 +42,7 @@ MMP_MAX_FRAGMENT_JOBS = 8
 EXECUTION_LEASE_GRACE_MINUTES = 10
 MAX_EXECUTION_ATTEMPTS = 3
 MAX_INTERPRETER_ATTEMPTS = 3
-SCREENING_RUBRIC_VERSION = "2.0.0"
+SCREENING_RUBRIC_VERSION = "3.0.0"
 DEFAULT_SCREENING_BATCH_SIZE = 8
 MAX_PARALLEL_SCREENING_BATCHES = 4
 DEFAULT_SCREENING_CONTEXT_BYTES = 64 * 1024
@@ -61,9 +62,17 @@ MMP_PAYLOAD_NAMES = {
 ROUND_STATES = {"ACTIVE", "FINALIZING", "AWAITING_HUMAN_REVIEW", "CLOSED"}
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
 ASSESSMENT_AXES = (
-    "favorable_signal", "context_deviation", "chemical_actionability",
-    "independent_support", "follow_up_leverage",
+    "favorable_evidence", "context_contrast", "evidence_specificity",
 )
+CANDIDATE_CLASS_ORDER = {
+    "favorable_clue": 0,
+    "contextual_clue": 1,
+    "supporting_evidence": 2,
+    "background": 3,
+    "not_scorable": 4,
+    "awaiting_comparator": 5,
+}
+SAMPLE_SUPPORT_ORDER = {"strong": 0, "moderate": 1, "limited": 2, "insufficient": 3}
 COMPARISON_PARAMETER_EXCLUSIONS = {
     "target_cluster", "comparison_cluster", "scope_mode", "scope_compound_set_hash",
     "clustering_node_id", "clustering_representation", "membership", "role",
@@ -181,6 +190,20 @@ def _compact_response(
 
 def _print_compact(control: dict[str, Any], **payload: Any) -> None:
     print(json.dumps(_compact_response(control, **payload), ensure_ascii=False, indent=2))
+
+
+def _configure_cli_streams() -> None:
+    """Keep the JSON CLI boundary UTF-8 on Windows as well as Linux.
+
+    Windows terminals can expose a legacy code page (for example CP932).  A
+    human comment or scientific label containing a character outside that code
+    page must not make a Runtime mutation appear to fail while printing its
+    compact response.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
 
 def _available_cpu_cores(control: dict[str, Any]) -> int:
@@ -622,7 +645,7 @@ def _round_report_mode(root: Path, control: dict[str, Any], snapshot: dict[str, 
 
 
 def _screening_enabled(root: Path, control: dict[str, Any], snapshot: dict[str, Any]) -> bool:
-    """0.2.0 requires Bundle assessment for every active Round."""
+    """0.1.8 requires Bundle assessment for every active Round."""
     round_id = control.get("active_round_id")
     return bool(round_id and str(round_id) in snapshot.get("rounds", {}))
 
@@ -1180,6 +1203,7 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
             "code": "RETRY_FAILED_NODE",
             "reason": "A failed scientific Node has a bounded same-Node retry available. Retry never creates a replacement Node.",
             "node_id": retryable[0]["node_id"],
+            "retry_mode": "same_command",
         }
     if failed_nodes:
         failed_nodes.sort(key=lambda node: node["node_id"])
@@ -1190,6 +1214,10 @@ def _required_action(root: Path, control: dict[str, Any], snapshot: dict[str, An
             "reason": "A deterministic failure or exhausted retry requires human repair before same-Node retry. If the Round budget ends first, Runtime may hand off a partial Round for human review.",
             "node_id": blocked["node_id"],
             "classification": packet.get("classification", "unknown_failure"),
+            "diagnostic_code": packet.get("diagnostic_code", "UNKNOWN_FAILURE"),
+            "diagnostic_message": packet.get("diagnostic_message", packet.get("error", "Failure details are available in the referenced log.")),
+            "remediation": packet.get("remediation", "Inspect the referenced Attempt log before retrying the same Node."),
+            "retry_mode": packet.get("retry_mode", "human_decision"),
             "failure_pointer": next((item.get("failure_packet") for item in reversed(blocked.get("attempts") or []) if item.get("failure_packet")), None),
         }
     if _has_high_cost_waiting(root, control, snapshot):
@@ -3170,6 +3198,10 @@ def _run_one(
         attempt_tmp = process_path.parent / "tmp"
         attempt_tmp.mkdir(parents=True, exist_ok=True)
         process_env = os.environ.copy()
+        # Skill logs and JSON are protocol artifacts.  Force their process
+        # boundary to UTF-8 even when the Windows parent console uses CP932.
+        process_env["PYTHONUTF8"] = "1"
+        process_env["PYTHONIOENCODING"] = "utf-8"
         process_env["CONDUCTOR_ATTEMPT_TMP"] = str(attempt_tmp.resolve())
         process_env["CONDUCTOR_NODE_CPU_CORES"] = str(cpu_cores)
         process_env["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores or cpu_cores)
@@ -3215,29 +3247,128 @@ def _run_one(
         return {"returncode": 125, "timed_out": False, "started_at": started, "finished_at": finished, "runner_error": str(exc)}
 
 
-def _classify_execution_failure(log_path: Path, outcome: dict[str, Any], error: Exception) -> tuple[str, bool]:
+def _execution_failure_text(log_path: Path, outcome: dict[str, Any], error: Exception) -> tuple[str, str]:
     text = ""
     if log_path.is_file():
         with log_path.open("rb") as handle:
             handle.seek(max(0, log_path.stat().st_size - 12000))
-            text = handle.read(12000).decode("utf-8", errors="replace").lower()
-    message = f"{error} {outcome.get('runner_error') or ''}".lower()
-    combined = f"{message}\n{text}"
+            text = handle.read(12000).decode("utf-8", errors="replace")
+    message = " ".join(value for value in (str(error), str(outcome.get("runner_error") or "")) if value).strip()
+    return text, f"{message}\n{text}".lower()
+
+
+def _concise_failure_message(log_text: str, error: Exception) -> str:
+    """Extract the last actionable CLI/Skill diagnostic without hiding the full log."""
+    lines = [line.strip() for line in log_text.splitlines() if line.strip()]
+    diagnostic_tokens = (
+        "missing column", "missing columns", "column not found", "required column",
+        "no such file", "file not found", "cannot find the path", "schema",
+        "pixi", "environment", "out of memory", "resource exhausted",
+        "invalid choice", "invalid int value", "invalid float value", "out of range",
+    )
+    candidates = [
+        line for line in lines
+        if re.search(r"(?:^|\s)(?:error|fatal):", line, flags=re.IGNORECASE)
+        or "the following arguments are required" in line.lower()
+        or "execution request is missing required input role" in line.lower()
+        or any(token in line.lower() for token in diagnostic_tokens)
+    ]
+    message = candidates[-1] if candidates else str(error).strip()
+    return (message or "Scientific process failed without a concise diagnostic.")[:2000]
+
+
+def _execution_failure_diagnostic(log_path: Path, outcome: dict[str, Any], error: Exception) -> dict[str, Any]:
+    log_text, combined = _execution_failure_text(log_path, outcome, error)
+    diagnostic_message = _concise_failure_message(log_text, error)
     if outcome.get("timed_out"):
-        return "transient_process_failure", True
+        return {
+            "classification": "transient_process_failure", "recoverable": True,
+            "diagnostic_code": "PROCESS_TIMEOUT", "diagnostic_message": diagnostic_message,
+            "remediation": "Retry the same Node once with the unchanged validated request; request more time only if the timeout repeats.",
+            "retry_mode": "same_command",
+        }
+    if "the following arguments are required" in combined:
+        return {
+            "classification": "argument_contract_mismatch", "recoverable": False,
+            "diagnostic_code": "MISSING_REQUIRED_ARGUMENT", "diagnostic_message": diagnostic_message,
+            "remediation": "Correct the Execution Request or adapter so the named required option is supplied, then retry the same Node.",
+            "retry_mode": "after_request_fix",
+        }
     if any(token in combined for token in ("unrecognized arguments", "unknown option", "no such option", "argument contract")):
-        return "argument_contract_mismatch", False
+        return {
+            "classification": "argument_contract_mismatch", "recoverable": False,
+            "diagnostic_code": "UNKNOWN_OR_INVALID_ARGUMENT", "diagnostic_message": diagnostic_message,
+            "remediation": "Align the Execution Request adapter with the Skill CLI, then retry the same Node.",
+            "retry_mode": "after_request_fix",
+        }
+    if any(token in combined for token in ("invalid choice", "invalid int value", "invalid float value", "must be between", "out of range")):
+        return {
+            "classification": "argument_contract_mismatch", "recoverable": False,
+            "diagnostic_code": "INVALID_ARGUMENT_VALUE", "diagnostic_message": diagnostic_message,
+            "remediation": "Correct the named option value in the Execution Request so it satisfies the Skill CLI range or type, then retry the same Node.",
+            "retry_mode": "after_request_fix",
+        }
+    if "execution request is missing required input role" in combined:
+        return {
+            "classification": "argument_contract_mismatch", "recoverable": False,
+            "diagnostic_code": "MISSING_REQUIRED_INPUT_ROLE", "diagnostic_message": diagnostic_message,
+            "remediation": "Add the named input role to the Execution Request, then retry the same Node.",
+            "retry_mode": "after_request_fix",
+        }
+    if any(token in combined for token in ("out of memory", "resource exhausted", "oom-kill", "oom kill")) or outcome.get("returncode") in {-9, 137}:
+        return {
+            "classification": "transient_process_failure", "recoverable": False,
+            "diagnostic_code": "RESOURCE_EXHAUSTED", "diagnostic_message": diagnostic_message,
+            "remediation": "Inspect host memory and scheduler limits; obtain a human decision before retrying with a smaller workload or revised resource allocation.",
+            "retry_mode": "human_decision",
+        }
     if any(token in combined for token in ("pixi", "environment", "conda", "uv cache")) and outcome.get("returncode") in {1, 125, 127}:
-        return "environment_initialization_failure", True
+        return {
+            "classification": "environment_initialization_failure", "recoverable": False,
+            "diagnostic_code": "ENVIRONMENT_INITIALIZATION_FAILED", "diagnostic_message": diagnostic_message,
+            "remediation": "Repair or rebuild the Skill-local Pixi environment and cache, then retry the same Node.",
+            "retry_mode": "after_environment_fix",
+        }
     if any(token in combined for token in ("working directory", "no such file", "cannot find the path", "file not found")):
-        return "path_or_working_directory_mismatch", False
-    if any(token in combined for token in ("missing column", "column not found", "required column", "csv")):
-        return "input_format_or_column_mismatch", False
+        return {
+            "classification": "path_or_working_directory_mismatch", "recoverable": False,
+            "diagnostic_code": "INPUT_PATH_NOT_FOUND", "diagnostic_message": diagnostic_message,
+            "remediation": "Correct the input path or working-directory reference, then retry the same Node.",
+            "retry_mode": "after_input_fix",
+        }
+    if any(token in combined for token in ("missing column", "missing columns", "column not found", "required column", "smiles column is required", "csv column")):
+        return {
+            "classification": "input_format_or_column_mismatch", "recoverable": False,
+            "diagnostic_code": "INPUT_COLUMN_MISMATCH", "diagnostic_message": diagnostic_message,
+            "remediation": "Correct the declared CSV column mapping or input header, then retry the same Node.",
+            "retry_mode": "after_input_fix",
+        }
     if any(token in combined for token in ("schema", "identity or status mismatch", "missing or invalid skill artifact")):
-        return "payload_validation_failure", False
+        return {
+            "classification": "payload_validation_failure", "recoverable": False,
+            "diagnostic_code": "PAYLOAD_OR_SCHEMA_MISMATCH", "diagnostic_message": diagnostic_message,
+            "remediation": "Align the producing and consuming package contracts before retrying the same Node.",
+            "retry_mode": "after_package_fix",
+        }
     if outcome.get("returncode") in {125}:
-        return "transient_process_failure", True
-    return "non_recoverable_implementation_failure", False
+        return {
+            "classification": "transient_process_failure", "recoverable": True,
+            "diagnostic_code": "PROCESS_LAUNCH_OR_WAIT_FAILED", "diagnostic_message": diagnostic_message,
+            "remediation": "Retry the unchanged Node once; inspect the process record if the failure repeats.",
+            "retry_mode": "same_command",
+        }
+    return {
+        "classification": "non_recoverable_implementation_failure", "recoverable": False,
+        "diagnostic_code": "UNKNOWN_FAILURE", "diagnostic_message": diagnostic_message,
+        "remediation": "Inspect the referenced Attempt log and obtain a human decision before changing the request or package.",
+        "retry_mode": "human_decision",
+    }
+
+
+def _classify_execution_failure(log_path: Path, outcome: dict[str, Any], error: Exception) -> tuple[str, bool]:
+    """Compatibility wrapper for callers that need only the legacy classification."""
+    diagnostic = _execution_failure_diagnostic(log_path, outcome, error)
+    return str(diagnostic["classification"]), bool(diagnostic["recoverable"])
 
 
 def _write_failure_packet(
@@ -3248,16 +3379,20 @@ def _write_failure_packet(
     error: Exception,
 ) -> Path:
     log_path = root / attempt["log"]
-    classification, recoverable = _classify_execution_failure(log_path, outcome, error)
+    diagnostic = _execution_failure_diagnostic(log_path, outcome, error)
     packet = {
-        "schema_version": "1.0.0",
+        "schema_version": "2.0.0",
         "protocol_version": PROTOCOL_VERSION,
         "node_id": node["node_id"],
         "attempt_id": attempt["attempt_id"],
         "round_id": node["assigned_round"],
         "capability_id": node["capability_id"],
-        "classification": classification,
-        "recoverable": recoverable,
+        "classification": diagnostic["classification"],
+        "recoverable": diagnostic["recoverable"],
+        "diagnostic_code": diagnostic["diagnostic_code"],
+        "diagnostic_message": diagnostic["diagnostic_message"],
+        "remediation": diagnostic["remediation"],
+        "retry_mode": diagnostic["retry_mode"],
         "attempt_count": len(node.get("attempts") or []),
         "attempt_limit": MAX_EXECUTION_ATTEMPTS,
         "error": str(error)[:2000],
@@ -3516,7 +3651,13 @@ def _spawn_runtime_worker(root: Path, packet_path: Path) -> dict[str, Any]:
         _write_packet_status(packet_path, status)
         worker_log = packet_path.parent / "worker.log"
         command = [sys.executable, str(Path(__file__).resolve()), "_worker-execute-packet", "--run-root", str(root), "--packet", str(packet_path)]
-        popen_options: dict[str, Any] = {"cwd": project_root(), "stdin": subprocess.DEVNULL, "close_fds": True}
+        worker_env = os.environ.copy()
+        worker_env["PYTHONUTF8"] = "1"
+        worker_env["PYTHONIOENCODING"] = "utf-8"
+        popen_options: dict[str, Any] = {
+            "cwd": project_root(), "stdin": subprocess.DEVNULL,
+            "close_fds": True, "env": worker_env,
+        }
         if os.name == "posix":
             popen_options["start_new_session"] = True
         elif os.name == "nt":
@@ -3987,7 +4128,16 @@ def _comparison_row(card: dict[str, Any], global_card: dict[str, Any] | None = N
         "analyzed_count": int(card["analysis_subject"]["analyzed_count"]),
         "favorable_value": value,
         "favorable_effect_vs_global": effect,
-        "metrics": {item["name"]: {"value": item.get("value"), "normalized_favorable_value": item.get("normalized_favorable_value"), "unit": item.get("unit")} for item in card.get("comparison_metrics") or []},
+        "metrics": {
+            item["name"]: {
+                "value": item.get("value"),
+                "normalized_favorable_value": item.get("normalized_favorable_value"),
+                "unit": item.get("unit"),
+                "direction": item.get("direction"),
+                "comparison_scope": item.get("comparison_scope"),
+            }
+            for item in card.get("comparison_metrics") or []
+        },
         "minimum_support_met": bool((card.get("quality") or {}).get("minimum_support_met")),
     }
 
@@ -4047,24 +4197,35 @@ def _make_review_bundle(
         and not isinstance(card.get("favorable_payload", {}).get("favorable_value"), bool)
         for card in target_cards
     )
+    comparison_scope = {
+        "global": "global",
+        "global_local": "global_local",
+        "sibling_cluster": "sibling",
+        "cross_evidence": "all",
+    }[bundle_type]
     comparable_value_counts: dict[str, int] = defaultdict(int)
     for row in comparison_table:
         for metric_name, metric in (row.get("metrics") or {}).items():
             value = metric.get("value")
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
+            metric_scope = metric.get("comparison_scope")
+            if (
+                metric_scope in {"all", comparison_scope}
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            ):
                 comparable_value_counts[str(metric_name)] += 1
     has_comparable_metric = any(count >= 2 for count in comparable_value_counts.values())
     applicable_axes = sorted(
         axis for axis in capability_profile["allowed_axes"]
         if not (
-            (axis in {"context_deviation", "independent_support"} and bundle_type == "global")
-            or (axis == "context_deviation" and comparison_status != "ready")
-            or (axis == "context_deviation" and not has_comparable_metric)
-            or (axis == "favorable_signal" and not has_favorable_value)
+            (axis == "context_contrast" and bundle_type == "global")
+            or (axis == "context_contrast" and comparison_status != "ready")
+            or (axis == "context_contrast" and not has_comparable_metric)
+            or (axis == "favorable_evidence" and not has_favorable_value)
         )
     )
     bundle = {
-        "schema_version": "1.0.0", "bundle_id": bundle_id, "bundle_type": bundle_type, "round_id": round_id,
+        "schema_version": "2.0.0", "bundle_id": bundle_id, "bundle_type": bundle_type, "round_id": round_id,
         "capability_id": first["capability_id"], "interpretation_profile_id": first["interpretation_profile_id"], "comparison_family_id": first["comparison_family_id"],
         "target_result_refs": sorted(card["result_ref"] for card in target_cards), "comparator_result_refs": sorted(card["result_ref"] for card in comparator_cards), "all_result_refs": refs,
         "cluster_ids": cluster_ids, "comparison_status": comparison_status,
@@ -4172,8 +4333,7 @@ def _round_current_assessments(root: Path, snapshot: dict[str, Any], round_id: s
         row = latest.get(bundle["bundle_id"])
         if _assessment_is_current(bundle, row):
             rows.append(row)
-    class_order = {"design_lead": 0, "contextual_anomaly": 1, "supporting_evidence": 2, "background": 3, "not_scorable": 4, "awaiting_comparator": 5}
-    return sorted(rows, key=lambda row: (class_order.get(row["candidate_class"], 9), row["bundle_id"]))
+    return sorted(rows, key=_candidate_priority_key)
 
 
 def _write_round_assessment_csv(root: Path, snapshot: dict[str, Any], round_id: str) -> Path:
@@ -4181,7 +4341,7 @@ def _write_round_assessment_csv(root: Path, snapshot: dict[str, Any], round_id: 
     headers = [
         "assessment_id", "bundle_id", "bundle_type", "round_id", "source_round_id", "capability_id", "target_result_refs",
         "assessment_status", "candidate_class", "sample_support", "comparator_validity", "effect_stability", "independence",
-        "favorable_signal", "context_deviation", "chemical_actionability", "independent_support", "follow_up_leverage", "reason",
+        "favorable_evidence", "context_contrast", "evidence_specificity", "reason",
         "supporting_result_refs", "counter_result_refs", "rubric_version", "source_hash", "revision", "created_at",
     ]
     rows = []
@@ -4237,18 +4397,11 @@ def _assessment_review_manifest(
     """Select reportable Bundle classes without collapsing scientific axes to a total score."""
     bundle_map = {bundle["bundle_id"]: bundle for bundle in bundles}
     rows = [row for bundle_id, row in assessments.items() if bundle_id in bundle_map]
-    class_rank = {"design_lead": 0, "contextual_anomaly": 1, "supporting_evidence": 2, "background": 3, "not_scorable": 4, "awaiting_comparator": 5}
-    support_rank = {"strong": 0, "moderate": 1, "limited": 2, "insufficient": 3}
-    rows.sort(key=lambda row: (
-        class_rank.get(row["candidate_class"], 9),
-        support_rank.get((row.get("reliability") or {}).get("sample_support"), 9),
-        -int(((row.get("scores") or {}).get("chemical_actionability")) if isinstance((row.get("scores") or {}).get("chemical_actionability"), int) else -1),
-        row["capability_id"], row["bundle_id"],
-    ))
+    rows.sort(key=_candidate_priority_key)
     selected_bundles: list[str] = []
     selected_refs: list[str] = []
     for row in rows:
-        if row["candidate_class"] not in {"design_lead", "contextual_anomaly"}:
+        if row["candidate_class"] not in {"favorable_clue", "contextual_clue"}:
             continue
         refs = bundle_map[row["bundle_id"]]["all_result_refs"]
         new_refs = [ref for ref in refs if ref not in selected_refs]
@@ -4260,7 +4413,7 @@ def _assessment_review_manifest(
             break
     selected_set = set(selected_bundles)
     manifest = {
-        "schema_version": "2.0.0",
+        "schema_version": "3.0.0",
         "round_id": round_id,
         "selected_bundle_ids": selected_bundles,
         "detailed_result_refs": selected_refs,
@@ -4268,11 +4421,29 @@ def _assessment_review_manifest(
         "candidate_class_counts": dict(Counter(row["candidate_class"] for row in rows)),
         "bundle_type_counts": dict(Counter(bundle["bundle_type"] for bundle in bundles)),
         "operator_counts": dict(Counter(bundle["capability_id"] for bundle in bundles)),
-        "selection_method": "candidate_class_reliability_actionability_diversity",
+        "selection_method": "candidate_priority_v3",
         "created_at": utc_now(),
     }
     validate(manifest, "interpretation_review_manifest.schema.json")
     return manifest
+
+
+def _candidate_priority_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    scores = row.get("scores") or {}
+
+    def descending(name: str) -> int:
+        value = scores.get(name)
+        return -int(value) if isinstance(value, int) and not isinstance(value, bool) else 1
+
+    return (
+        CANDIDATE_CLASS_ORDER.get(str(row.get("candidate_class")), 9),
+        SAMPLE_SUPPORT_ORDER.get(str((row.get("reliability") or {}).get("sample_support")), 9),
+        descending("favorable_evidence"),
+        descending("context_contrast"),
+        descending("evidence_specificity"),
+        str(row.get("capability_id") or ""),
+        str(row.get("bundle_id") or ""),
+    )
 
 
 def _candidate_class(profile_value: dict[str, Any], bundle: dict[str, Any], status: str, scores: dict[str, Any] | None) -> str:
@@ -4286,12 +4457,19 @@ def _candidate_class(profile_value: dict[str, Any], bundle: dict[str, Any], stat
         value = scores.get(name)
         return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
     standalone = profile_value["standalone_insight"]
-    if standalone in {"allowed", "conditional"} and score("favorable_signal") >= 2 and score("chemical_actionability") >= 2:
-        return "design_lead"
+    if standalone in {"allowed", "conditional"} and score("favorable_evidence") >= 2 and score("evidence_specificity") >= 1:
+        return "favorable_clue"
     comparison_is_valid = bundle["bundle_type"] not in {"global_local", "sibling_cluster"} or bundle["runtime_facts"]["comparator_validity"] in {"partial", "matched"}
-    if standalone in {"allowed", "conditional"} and comparison_is_valid and score("context_deviation") >= 2 and score("follow_up_leverage") >= 1:
-        return "contextual_anomaly"
-    if standalone == "supporting_only" or score("independent_support") >= 1 or score("context_deviation") >= 1:
+    favorable_axis_applicable = "favorable_evidence" in set(bundle.get("applicable_axes") or [])
+    if (
+        standalone in {"allowed", "conditional"}
+        and comparison_is_valid
+        and score("context_contrast") >= 2
+        and score("evidence_specificity") >= 1
+        and (not favorable_axis_applicable or score("favorable_evidence") >= 1)
+    ):
+        return "contextual_clue"
+    if standalone in {"supporting_only", "specialized_only"} or any(score(axis) >= 1 for axis in ASSESSMENT_AXES):
         return "supporting_evidence"
     return "background"
 
@@ -4418,7 +4596,7 @@ def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
                 "targets": [(bundle["bundle_id"], bundle["source_hash"]) for bundle in selected],
             })[:16]
             return {
-                "schema_version": "2.0.0",
+                "schema_version": "3.0.0",
                 "mode": "screening",
                 "run_id": control["run"]["run_id"],
                 "round_id": round_id,
@@ -4432,11 +4610,9 @@ def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
                 "rubric": {
                     "score_meaning": "Absolute axis ratings; score only each Bundle's applicable_axes and never sum or rank them against other Bundles.",
                     "axes": {
-                        "favorable_signal": "0-3 or not_applicable: evidence for movement in the Runtime-normalized favorable direction",
-                        "context_deviation": "0-3 or not_applicable: Global-Local or sibling change that alters interpretation",
-                        "chemical_actionability": "0-3 or not_applicable: connection to a manipulable feature, core, region, or transformation",
-                        "independent_support": "0-3 or not_applicable: support from meaningfully independent evidence",
-                        "follow_up_leverage": "0-3 or not_applicable: ability of a small follow-up to change a decision",
+                        "favorable_evidence": "0-3 or not_applicable: evidence for movement in the Runtime-normalized favorable direction",
+                        "context_contrast": "0-3 or not_applicable: a valid Global-Local or sibling contrast that changes interpretation",
+                        "evidence_specificity": "0-3 or not_applicable: how specifically the evidence identifies a Cluster, feature, Transform, Core, or compound pair; never judge synthesis feasibility",
                     },
                     "reliability": "Runtime owns sample_support and comparator_validity. Assess only effect_stability and independence.",
                     "candidate_class": "Runtime derives the fixed candidate class; the Interpreter must not invent one.",
@@ -4462,7 +4638,7 @@ def cmd_prepare_result_screening(args: argparse.Namespace) -> int:
             context_path = scratch / "context.json"
             draft_path = scratch / "draft.json"
             write_json(context_path, context)
-            write_json(draft_path, {"schema_version": "2.0.0", "batch_id": batch_id, "assessments": []})
+            write_json(draft_path, {"schema_version": "3.0.0", "batch_id": batch_id, "assessments": []})
             prepared.append({
                 "batch_id": batch_id,
                 "context_path": str(context_path),
@@ -4565,7 +4741,7 @@ def cmd_commit_result_screening(args: argparse.Namespace) -> int:
                 quality_flags = sorted({flag for ref in bundle["all_result_refs"] for flag in (cards.get(ref, {}).get("quality_flags") or [])})
                 candidate_class = _candidate_class(profile_value, bundle, status, scores)
                 row = {
-                    "schema_version": "2.0.0", "assessment_id": assessment_id, "bundle_id": bundle_id, "bundle_type": bundle["bundle_type"],
+                    "schema_version": "3.0.0", "assessment_id": assessment_id, "bundle_id": bundle_id, "bundle_type": bundle["bundle_type"],
                     "round_id": round_id, "source_round_id": bundle.get("round_id", round_id), "capability_id": bundle["capability_id"], "target_result_refs": bundle["target_result_refs"],
                     "assessment_status": status, "candidate_class": candidate_class, "scores": scores,
                     "reliability": {"sample_support": bundle["runtime_facts"]["sample_support"], "comparator_validity": bundle["runtime_facts"]["comparator_validity"], "effect_stability": stability or "unknown", "independence": independence or "unknown", "quality_flags": quality_flags},
@@ -4763,10 +4939,10 @@ def cmd_write_screening_summary(args: argparse.Namespace) -> int:
         candidate_counts["awaiting_comparator"] += len(awaiting)
         operator_counts = Counter(bundle["capability_id"] for bundle in bundles)
         bundle_type_counts = Counter(bundle["bundle_type"] for bundle in bundles)
-        reportable = [{key: row.get(key) for key in ("assessment_id", "bundle_id", "bundle_type", "capability_id", "target_result_refs", "candidate_class", "scores", "reliability", "reason")} for row in assessments if row["candidate_class"] in {"design_lead", "contextual_anomaly"}][:20]
+        reportable = [{key: row.get(key) for key in ("assessment_id", "bundle_id", "bundle_type", "capability_id", "target_result_refs", "candidate_class", "scores", "reliability", "reason")} for row in assessments if row["candidate_class"] in {"favorable_clue", "contextual_clue"}][:20]
         relative = Path("rounds") / round_id / "screening_summary.json"
         summary = {
-            "schema_version": "2.0.0",
+            "schema_version": "3.0.0",
             "run_id": control["run"]["run_id"],
             "round_id": round_id,
             "report_mode": _round_report_mode(root, control, snapshot),
@@ -4918,9 +5094,9 @@ def cmd_prepare_interpretation(args: argparse.Namespace) -> int:
         scratch = root / "runtime" / "scratch" / round_id / node["node_id"] / "interpretation"
         scratch.mkdir(parents=True, exist_ok=True)
         selected_assessments = {bundle_id: latest_assessments[bundle_id] for bundle_id in review["selected_bundle_ids"] if bundle_id in latest_assessments}
-        context = {"schema_version": "2.0.0", "mode": "synthesis", "interpretation_scope": interpretation_scope, "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "interpretation_policy": str((module_root() / "docs" / "CONDUCTOR_interpretation_policy.md").resolve()), "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_bundles": selected_bundles, "result_assessments": selected_assessments, "review_manifest": review, "prior_reported_insights": prior_reported_insights, "comparison_batches": [review["selected_bundle_ids"][index:index + 10] for index in range(0, len(review["selected_bundle_ids"]), 10)], "role_contract": {"read_only_evidence_space": True, "scientific_computation_allowed": False, "node_creation_allowed": False, "followups_are_recommendations_only": True, "absolute_axes_not_total_score": True, "reportable_classes": ["design_lead", "contextual_anomaly"], "exclude_previously_reported_bundles": interpretation_scope == "cumulative_unreported"}, "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "candidate_class_is_runtime_verified": True, "comparison_claim_requires_comparison_results": True, "japanese_human_report": True}, "created_at": utc_now()}
+        context = {"schema_version": "3.0.0", "mode": "synthesis", "interpretation_scope": interpretation_scope, "run": control["run"], "round_id": round_id, "node_id": node["node_id"], "focus": effective_focus, "interpretation_policy": str((module_root() / "docs" / "CONDUCTOR_interpretation_policy.md").resolve()), "allowed_result_refs": review["detailed_result_refs"], "result_cards": selected_cards, "review_bundles": selected_bundles, "result_assessments": selected_assessments, "review_manifest": review, "prior_reported_insights": prior_reported_insights, "comparison_batches": [review["selected_bundle_ids"][index:index + 10] for index in range(0, len(review["selected_bundle_ids"]), 10)], "role_contract": {"read_only_evidence_space": True, "scientific_computation_allowed": False, "node_creation_allowed": False, "followups_are_recommendations_only": True, "absolute_axes_not_total_score": True, "reportable_classes": ["favorable_clue", "contextual_clue"], "exclude_previously_reported_bundles": interpretation_scope == "cumulative_unreported"}, "draft_contract": {"scope_is_runtime_derived": True, "formal_ids_are_runtime_assigned": True, "candidate_class_is_runtime_verified": True, "comparison_claim_requires_comparison_results": True, "japanese_human_report": True}, "created_at": utc_now()}
         title = "CONDUCTOR累積解析結果の解釈" if interpretation_scope == "cumulative_unreported" else "CONDUCTOR解析結果の解釈"
-        draft = {"title": title, "executive_summary": "", "coverage_summary": "", "insights": []}
+        draft = {"title": title, "executive_summary": "", "coverage_summary": "", "insights": [], "bundle_dispositions": []}
         write_json(scratch / "context.json", context)
         write_json(scratch / "draft.json", draft)
         node["parameters"].update({"context_path": str(scratch / "context.json"), "draft_path": str(scratch / "draft.json"), "review_manifest": review})
@@ -5002,15 +5178,18 @@ def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, A
         if not bundle_ids or set(bundle_ids) - set(bundles):
             raise ValueError("Every Insight requires valid review_bundle_ids")
         classes = {(assessments.get(bundle_id) or {}).get("candidate_class") for bundle_id in bundle_ids}
-        if not classes or classes - {"design_lead", "contextual_anomaly"}:
+        if not classes or classes - {"favorable_clue", "contextual_clue"}:
             raise ValueError("Insight may use only reportable Review Bundle classes")
-        candidate_class = "design_lead" if "design_lead" in classes else "contextual_anomaly"
+        candidate_class = "favorable_clue" if "favorable_clue" in classes else "contextual_clue"
         supporting = list(dict.fromkeys(value.get("supporting_results") or []))
         comparisons = list(dict.fromkeys(value.get("comparison_results") or []))
         counter = list(dict.fromkeys(value.get("counter_results") or []))
         refs = list(dict.fromkeys([*supporting, *comparisons, *counter]))
         if not supporting:
             raise ValueError("Every Insight requires supporting_results")
+        claim_kind = value.get("claim_kind", "single_scope_observation")
+        if claim_kind in {"difference", "agreement", "contradiction"} and not comparisons:
+            raise ValueError("A comparison claim requires comparison_results")
         if set(refs) - set(cards):
             raise ValueError(f"Insight references Results outside the Interpretation context: {sorted(set(refs)-set(cards))}")
         bundle_refs = {ref for bundle_id in bundle_ids for ref in bundles[bundle_id]["all_result_refs"]}
@@ -5037,7 +5216,31 @@ def _formalize_insights(root: Path, snapshot: dict[str, Any], draft: dict[str, A
         source_caps = sorted({_node_lookup(snapshot)[node_id]["capability_id"] for node_id in subject["cluster_source_description_nodes"] if node_id in _node_lookup(snapshot)})
         fact_panel = {"operators": sorted({card["capability_id"] for card in selected_cards}), "metrics": sorted({str(card.get("metric")) for card in selected_cards if card.get("metric")}), "analysis_descriptions": description_caps, "cluster_source_descriptions": source_caps, "clustering_method": ", ".join(clustering_caps) if clustering_caps else None, "result_samples": {card["result_ref"]: card["analysis_subject"]["analyzed_count"] for card in selected_cards}, "comparison_families": sorted({card["comparison_family_id"] for card in selected_cards}), "interpretation_profiles": sorted({card["interpretation_profile_id"] for card in selected_cards})}
         title = str(value.get("title") or "").strip() or _fallback_insight_title(subject, fact_panel)
-        formal.append({"insight_id": insight_id, "revision": revision, "attention": attention, "candidate_class": candidate_class, "claim_kind": value.get("claim_kind", "single_scope_observation"), "title": title, "analysis_subject": subject, "review_bundle_ids": bundle_ids, "supporting_results": supporting, "comparison_results": comparisons, "counter_results": counter, "observation": str(value.get("observation") or "").strip(), "interpretation": str(value.get("interpretation") or "").strip(), "limitations": _normalise_insight_limitations(value.get("limitations")), "recommended_followups": [{"title": str(item.get("title") or "追加確認").strip(), "rationale": str(item.get("rationale") or "").strip()} for item in value.get("recommended_followups") or []], "fact_panel": fact_panel})
+        formal.append({"insight_id": insight_id, "revision": revision, "attention": attention, "candidate_class": candidate_class, "claim_kind": claim_kind, "title": title, "analysis_subject": subject, "review_bundle_ids": bundle_ids, "supporting_results": supporting, "comparison_results": comparisons, "counter_results": counter, "observation": str(value.get("observation") or "").strip(), "interpretation": str(value.get("interpretation") or "").strip(), "limitations": _normalise_insight_limitations(value.get("limitations")), "recommended_followups": [{"title": str(item.get("title") or "追加確認").strip(), "rationale": str(item.get("rationale") or "").strip()} for item in value.get("recommended_followups") or []], "fact_panel": fact_panel})
+    return formal
+
+
+def _formalize_synthesis_dispositions(draft: dict[str, Any], review_manifest: dict[str, Any], insights: list[dict[str, Any]]) -> list[dict[str, str]]:
+    selected = set(review_manifest.get("selected_bundle_ids") or [])
+    rows = list(draft.get("bundle_dispositions") or [])
+    by_bundle = {str(row.get("bundle_id") or ""): row for row in rows}
+    if len(by_bundle) != len(rows) or set(by_bundle) != selected:
+        raise ValueError("bundle_dispositions must cover every selected Review Bundle exactly once")
+    used = {str(bundle_id) for insight in insights for bundle_id in insight.get("review_bundle_ids") or []}
+    used_dispositions = {"reported_as_insight", "merged_into_insight"}
+    omitted_dispositions = {"rejected_by_counterevidence", "redundant_evidence", "deferred_by_detail_limit", "not_reportable"}
+    formal: list[dict[str, str]] = []
+    for bundle_id in review_manifest.get("selected_bundle_ids") or []:
+        row = by_bundle[bundle_id]
+        disposition = str(row.get("disposition") or "")
+        reason = str(row.get("reason") or "").strip()
+        if not reason:
+            raise ValueError(f"Synthesis disposition reason is required: {bundle_id}")
+        if bundle_id in used and disposition not in used_dispositions:
+            raise ValueError(f"Insight-used Bundle requires a reported/merged disposition: {bundle_id}")
+        if bundle_id not in used and disposition not in omitted_dispositions:
+            raise ValueError(f"Omitted Bundle requires an omission disposition: {bundle_id}")
+        formal.append({"bundle_id": bundle_id, "disposition": disposition, "reason": reason})
     return formal
 
 
@@ -5068,8 +5271,10 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
             bundles = {bundle["bundle_id"]: bundle for bundle in context.get("review_bundles") or []}
             assessments = dict(context.get("result_assessments") or {})
             insights = _formalize_insights(root, candidate_snapshot, draft, cards, bundles, assessments, control["active_round_id"], node["node_id"])
+            review_manifest = dict(context["review_manifest"])
+            review_manifest["synthesis_dispositions"] = _formalize_synthesis_dispositions(draft, review_manifest, insights)
             outcome = _anticipated_outcome(root, control, snapshot)
-            report = {"schema_version": "4.0.0", "run_id": control["run"]["run_id"], "round_id": control["active_round_id"], "node_id": node["node_id"], "supersedes": node.get("supersedes"), "title": str(draft.get("title") or "CONDUCTOR解析結果の解釈"), "report_header": {"project": control["run"]["project"], "endpoint": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "endpoint_unit": control["run"].get("endpoint_unit"), "endpoint_transform": control["run"].get("endpoint_transform"), "completion": outcome}, "executive_summary": str(draft.get("executive_summary") or ("今回の範囲では、防御可能なdesign leadまたはcontextual anomalyは得られませんでした。" if not insights else "活性改善に接続し得る主要候補を示します。")), "coverage_summary": str(draft.get("coverage_summary") or f"Runtimeが選択したReview Bundle {len(bundles)}件を確認しました。未選択Bundleとcomparator不足はreview manifestに記録しています。"), "insights": insights, "result_catalog": list(cards.values()), "review_manifest": context["review_manifest"], "created_at": utc_now()}
+            report = {"schema_version": "5.0.0", "run_id": control["run"]["run_id"], "round_id": control["active_round_id"], "node_id": node["node_id"], "supersedes": node.get("supersedes"), "title": str(draft.get("title") or "CONDUCTOR解析結果の解釈"), "report_header": {"project": control["run"]["project"], "endpoint": control["run"]["endpoint"], "higher_is_better": control["run"]["higher_is_better"], "endpoint_unit": control["run"].get("endpoint_unit"), "endpoint_transform": control["run"].get("endpoint_transform"), "completion": outcome}, "executive_summary": str(draft.get("executive_summary") or ("今回の範囲では、防御可能なfavorable clueまたはcontextual clueは得られませんでした。" if not insights else "活性改善に接続し得る主要候補を示します。")), "coverage_summary": str(draft.get("coverage_summary") or f"Runtimeが選択したReview Bundle {len(bundles)}件を確認しました。未選択Bundleとcomparator不足はreview manifestに記録しています。"), "insights": insights, "result_catalog": list(cards.values()), "review_manifest": review_manifest, "created_at": utc_now()}
             validate(report, "interpretation.schema.json")
             renderer = _renderer_module()
             issues = renderer.quality_issues(report)
@@ -5103,7 +5308,7 @@ def cmd_commit_interpretation(args: argparse.Namespace) -> int:
             shutil.rmtree(temporary)
         temporary.mkdir(parents=True)
         write_json(temporary / "interpretation.json", report)
-        write_json(temporary / "review_manifest.json", context["review_manifest"])
+        write_json(temporary / "review_manifest.json", report["review_manifest"])
         atomic_bytes(temporary / "interpretation.md", renderer.render_markdown(report, final, root).encode("utf-8"))
         atomic_bytes(temporary / "interpretation.html", renderer.render_html(report, temporary, root).encode("utf-8"))
         quality = {"schema_version": "1.0.0", "status": "pass", "issues": [], "report_hash": file_hash(temporary / "interpretation.json"), "created_at": utc_now()}
@@ -5495,7 +5700,7 @@ def _action_args(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.2.0 deterministic Runtime Controller")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.8 deterministic Runtime Controller")
     commands = parser.add_subparsers(dest="command", required=True)
 
     item = commands.add_parser("init")
@@ -5743,6 +5948,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    _configure_cli_streams()
     args = build_parser().parse_args()
     return args.func(args)
 

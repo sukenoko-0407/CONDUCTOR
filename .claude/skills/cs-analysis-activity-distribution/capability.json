@@ -3,7 +3,7 @@
   "capability_id": "A001",
   "skill_name": "cs-analysis-activity-distribution",
   "display_name": "Activity distribution",
-  "version": "0.2.0",
+  "version": "0.1.8",
   "stage": "analysis",
   "family": "property_profile",
   "description": "Use when Claude Code needs to run Activity distribution from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -40,16 +40,15 @@
     "within-cluster"
   ],
   "interpretation_profile": {
-    "schema_version": "1.0.0", "profile_id": "IP-A001-1.0.0", "result_role": "activity_signal",
-    "allowed_axes": ["favorable_signal", "context_deviation", "independent_support", "follow_up_leverage"],
+    "schema_version": "2.0.0", "profile_id": "IP-A001-2.0.0", "result_role": "activity_signal",
+    "allowed_axes": ["favorable_evidence", "context_contrast", "evidence_specificity"],
     "comparison_metrics": [{"name": "endpoint_median", "source": "global_median", "unit": "endpoint", "direction": "favorable", "comparison_scope": "all"}],
     "primary_favorable_metric": "endpoint_median", "global_comparator": "required_for_local", "sibling_comparison": "supported", "standalone_insight": "supporting_only",
     "minimum_support": {"global": 5, "local": 5}, "null_result": "background",
     "anchors": {
-      "favorable_signal": ["方向情報なし", "小さく不安定な移動", "限定scopeで明確な移動", "方向と大きさが一貫した移動"],
-      "context_deviation": ["Globalとの差なし", "軽度の差", "Globalまたはsiblingとの差が明確", "分布解釈を変える反転または局在"],
-      "independent_support": ["支持なし", "同一結果内のみ", "異なる表現またはOperatorが支持", "複数の独立結果が支持"],
-      "follow_up_leverage": ["有用な確認なし", "追加確認可能", "明確な反証手順あり", "少数の確認で意思決定が変わる"]
+      "favorable_evidence": ["方向情報なし", "小さく不安定な移動", "限定scopeで明確な移動", "方向と大きさが一貫した移動"],
+      "context_contrast": ["Globalとの差なし", "軽度の差", "Globalまたはsiblingとの差が明確", "分布解釈を変える反転または局在"],
+      "evidence_specificity": ["対象不明", "全体分布のみ", "特定scopeまたは分布成分", "特定Clusterと分布変化が明確"]
     }
   },
   "conductor_request": {

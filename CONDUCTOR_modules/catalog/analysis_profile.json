@@ -1,6 +1,6 @@
 {
   "schema_version": "3.0.0",
-  "profile_id": "balanced-global-first-0.2.0",
+  "profile_id": "balanced-global-first-0.1.8",
   "managed_by": "human",
   "description": "全Descriptionと代表Clusteringを基本計算で揃え、各RoundでGlobalを優先しながら履歴横断で重複しないOperator探索を行う。",
   "basic_compute": {

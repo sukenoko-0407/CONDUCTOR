@@ -46,11 +46,9 @@ def assessment(index: int, candidate_class: str, *, revision: int = 1, round_id:
         "assessment_status": "evaluated",
         "candidate_class": candidate_class,
         "scores": {
-            "favorable_signal": 3 if index == 1 else 2,
-            "context_deviation": "not_applicable" if index == 1 else 3,
-            "chemical_actionability": 2,
-            "independent_support": 1,
-            "follow_up_leverage": 3,
+            "favorable_evidence": 3 if index == 1 else 2,
+            "context_contrast": "not_applicable" if index == 1 else 3,
+            "evidence_specificity": 2,
         },
         "reliability": {
             "sample_support": "strong" if index == 1 else "moderate",
@@ -62,7 +60,7 @@ def assessment(index: int, candidate_class: str, *, revision: int = 1, round_id:
         "reason": f"Candidate {index} has a bounded favorable signal.",
         "supporting_result_refs": [f"N{index:06d}@ATT0001"],
         "counter_result_refs": [],
-        "rubric_version": "2.0.0",
+        "rubric_version": "3.0.0",
         "source_hash": str(index) * 64,
         "revision": revision,
         "created_at": f"2026-08-{revision:02d}T00:00:00+00:00",
@@ -75,17 +73,17 @@ class AssessmentReportSkillTest(unittest.TestCase):
         runtime = root / "runtime"
         runtime.mkdir(parents=True)
         (root / "conductor_control.json").write_text(
-            json.dumps({"conductor_version": "0.2.0", "run": {"run_id": "RUN-DEMO"}}) + "\n",
+            json.dumps({"conductor_version": "0.1.8", "run": {"run_id": "RUN-DEMO"}}) + "\n",
             encoding="utf-8",
         )
         append_jsonl(runtime / "review_bundle_index.jsonl", [bundle(1), bundle(2), bundle(3, "RND0002")])
         old = assessment(1, "supporting_evidence")
-        current = assessment(1, "design_lead", revision=2)
+        current = assessment(1, "favorable_clue", revision=2)
         historical_revision = assessment(3, "background", round_id="RND0003")
         historical_revision["source_round_id"] = "RND0002"
         append_jsonl(
             runtime / "result_assessment_index.jsonl",
-            [old, current, assessment(2, "contextual_anomaly"), historical_revision],
+            [old, current, assessment(2, "contextual_clue"), historical_revision],
         )
         append_jsonl(runtime / "insight_index.jsonl", [{
             "insight_id": "INS000001",

@@ -3,7 +3,7 @@
   "capability_id": "I002",
   "skill_name": "cs-analysis-interpret-mmp",
   "display_name": "Read-only MMP Global–Local interpretation",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "stage": "interpretation",
   "family": "mmp_cluster_interpretation",
   "description": "Human-triggered read-only interpretation of an existing Global A014 MMP database against canonical CONDUCTOR Cluster memberships, without DAG or State mutation.",

@@ -22,7 +22,7 @@ Runtimeは人間指定のOperator予算内で、次の単純な規則により�
 
 これは機械的に科学結論を決める規則ではありません。`SCIENTIFIC_DECISION`では人間priority、Insight、反証候補に基づき、同一Clusterの別Operator、sibling Cluster、Global比較、別Description上の同一Cluster等をMainが選びます。
 
-一次評価は`favorable_signal`、`context_deviation`、`chemical_actionability`、`independent_support`、`follow_up_leverage`の0～3絶対軸です。合計点を作らず、sample support、comparator validity、effect stability、independenceを分離します。Localで必須Global comparatorがなければ採点しません。Description／Clusteringの基本計算はOperator予算の外です。
+一次評価は`favorable_evidence`、`context_contrast`、`evidence_specificity`の0～3絶対軸です。合計点を作らず、sample support、comparator validity、effect stability、independenceを分離します。化学的実行可能性はMedicinal Chemistが判断します。Localで必須Global comparatorがなければ採点しません。Description／Clusteringの基本計算はOperator予算の外です。
 
 ## MMP
 

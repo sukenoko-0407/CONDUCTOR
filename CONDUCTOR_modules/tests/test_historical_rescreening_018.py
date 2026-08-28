@@ -11,7 +11,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
-    "runtime_controller_historical_rescreening_020",
+    "runtime_controller_historical_rescreening_018",
     ROOT / "CONDUCTOR_modules" / "tools" / "runtime_controller.py",
 )
 assert SPEC and SPEC.loader
@@ -21,23 +21,22 @@ SPEC.loader.exec_module(RUNTIME)
 
 def bundle() -> dict:
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "2.0.0",
         "bundle_id": "RVB0000000000000001",
         "bundle_type": "global",
         "round_id": "RND0001",
         "capability_id": "A001",
-        "interpretation_profile_id": "IP-A001",
+        "interpretation_profile_id": "IP-A001-2.0.0",
         "comparison_family_id": "CFM0000000000000001",
         "target_result_refs": ["N000001@ATT0001"],
         "comparator_result_refs": [],
         "all_result_refs": ["N000001@ATT0001"],
         "cluster_ids": [],
         "comparison_status": "ready",
-        "applicable_axes": ["favorable_signal", "independent_support", "follow_up_leverage"],
+        "applicable_axes": ["favorable_evidence", "evidence_specificity"],
         "evaluation_anchors": {
-            "favorable_signal": ["0", "1", "2", "3"],
-            "independent_support": ["0", "1", "2", "3"],
-            "follow_up_leverage": ["0", "1", "2", "3"],
+            "favorable_evidence": ["0", "1", "2", "3"],
+            "evidence_specificity": ["0", "1", "2", "3"],
         },
         "comparison_table": [],
         "runtime_facts": {
@@ -253,13 +252,12 @@ class HistoricalRescreeningTests(unittest.TestCase):
                 "result_cards": [{"result_ref": "N000001@ATT0001", "quality_flags": []}],
             }
             draft = {
-                "schema_version": "2.0.0", "batch_id": "SCR0000000000000001",
+                "schema_version": "3.0.0", "batch_id": "SCR0000000000000001",
                 "assessments": [{
                     "bundle_id": selected["bundle_id"], "assessment_status": "evaluated",
                     "scores": {
-                        "favorable_signal": 2, "context_deviation": "not_applicable",
-                        "chemical_actionability": "not_applicable", "independent_support": 1,
-                        "follow_up_leverage": 1,
+                        "favorable_evidence": 2, "context_contrast": "not_applicable",
+                        "evidence_specificity": 1,
                     },
                     "effect_stability": "stable", "independence": "unknown",
                     "reason": "A001のfavorable metric 0.62を根拠とする再評価です。",

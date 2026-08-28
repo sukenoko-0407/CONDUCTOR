@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -14,8 +15,8 @@ SKILLS=ROOT/".claude"/"skills"
 
 class BetaContracts(unittest.TestCase):
     def test_catalog_and_ids(self)->None:
-        self.assertEqual("0.2.0",(MODULES/"VERSION").read_text(encoding="utf-8").strip())
-        catalog=json.loads((MODULES/"catalog"/"catalog.json").read_text(encoding="utf-8"));self.assertEqual("0.2.0",catalog["conductor_version"])
+        self.assertEqual("0.1.8",(MODULES/"VERSION").read_text(encoding="utf-8").strip())
+        catalog=json.loads((MODULES/"catalog"/"catalog.json").read_text(encoding="utf-8"));self.assertEqual("0.1.8",catalog["conductor_version"])
         by_id={item["capability_id"]:item for item in catalog["capabilities"]}
         self.assertEqual([f"D{i:03d}" for i in range(1,17)]+["D019","D020"],sorted(k for k in by_id if k.startswith("D")))
         self.assertEqual([f"C{i:03d}" for i in range(1,13)],sorted(k for k in by_id if k.startswith("C")))
@@ -35,6 +36,16 @@ class BetaContracts(unittest.TestCase):
                 self.assertTrue((root/relative).is_file(),f"{name}: {relative}")
             launcher=(root/"scripts"/"launch.py").read_text(encoding="utf-8")
             for token in ("assets_pixi-binary/latest/pixi","PIXI_CACHE_DIR","UV_CACHE_DIR","--manifest-path","--locked"):
+                self.assertIn(token,launcher,f"{name}: {token}")
+
+    def test_all_skill_environments_support_linux_and_keep_temporary_data_local(self)->None:
+        selection=json.loads((MODULES/"catalog"/"included_skills.json").read_text(encoding="utf-8"))
+        for name in [*selection["included_skills"],*selection.get("support_skills",[])]:
+            root=SKILLS/name
+            manifest=tomllib.loads((root/"env"/"pixi.toml").read_text(encoding="utf-8"))
+            self.assertEqual({"linux-64","win-64"},set(manifest["workspace"]["platforms"]),name)
+            launcher=(root/"scripts"/"launch.py").read_text(encoding="utf-8")
+            for token in ("PIXI_CACHE_DIR","UV_CACHE_DIR","TMPDIR","TEMP"):
                 self.assertIn(token,launcher,f"{name}: {token}")
 
     def test_public_contract_uses_cluster_terms(self)->None:

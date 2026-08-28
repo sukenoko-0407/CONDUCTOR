@@ -10,7 +10,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
-    "runtime_controller_result_rescreening_020",
+    "runtime_controller_result_rescreening_018",
     ROOT / "CONDUCTOR_modules" / "tools" / "runtime_controller.py",
 )
 assert SPEC and SPEC.loader
@@ -178,6 +178,11 @@ class ResultRescreeningTests(unittest.TestCase):
         self.assertEqual(4, args.batch_size)
         self.assertEqual(1, args.screening_parallelism)
         self.assertTrue(args.all_current)
+
+    def test_orchestrator_contract_classifies_current_round_rescreening(self) -> None:
+        text = (ROOT / ".claude" / "skills" / "cs-conductor-orchestrator" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("`re-Screen current Round`", text)
+        self.assertIn("明示的な`request-result-rescreening`", text)
 
 
 if __name__ == "__main__":

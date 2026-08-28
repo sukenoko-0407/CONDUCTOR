@@ -65,7 +65,7 @@ def result_card(index: int, scope_mode: str = "global", cluster_id: str | None =
         "metric": "pearson",
         "headline": "test card",
         "result_role": "activity_signal",
-        "interpretation_profile_id": "IP-A001-1.0.0",
+        "interpretation_profile_id": "IP-A001-2.0.0",
         "comparison_family_id": "CFM0123456789abcdef",
         "favorable_payload": {
             "applicable": True,
@@ -114,7 +114,7 @@ class Runtime017(unittest.TestCase):
     def test_assessment_schema_accepts_every_review_bundle_type(self) -> None:
         for bundle_type in ("global", "global_local", "sibling_cluster", "cross_evidence"):
             value = {
-                "schema_version": "2.0.0",
+                "schema_version": "3.0.0",
                 "assessment_id": "ASR0123456789abcdef",
                 "bundle_id": "RVB0123456789abcdef",
                 "bundle_type": bundle_type,
@@ -124,11 +124,9 @@ class Runtime017(unittest.TestCase):
                 "assessment_status": "evaluated",
                 "candidate_class": "supporting_evidence",
                 "scores": {
-                    "favorable_signal": 1,
-                    "context_deviation": "not_applicable" if bundle_type == "global" else 1,
-                    "chemical_actionability": 1,
-                    "independent_support": "not_applicable",
-                    "follow_up_leverage": 1,
+                    "favorable_evidence": 1,
+                    "context_contrast": "not_applicable" if bundle_type == "global" else 1,
+                    "evidence_specificity": 1,
                 },
                 "reliability": {
                     "sample_support": "moderate",
@@ -140,7 +138,7 @@ class Runtime017(unittest.TestCase):
                 "reason": "bounded review priority",
                 "supporting_result_refs": ["N000001@ATT0001"],
                 "counter_result_refs": [],
-                "rubric_version": "2.0.0",
+                "rubric_version": "3.0.0",
                 "source_hash": "0" * 64,
                 "revision": 1,
                 "created_at": "2026-01-01T00:00:00+00:00",
@@ -154,7 +152,7 @@ class Runtime017(unittest.TestCase):
             snapshot = {
                 "nodes": [],
                 "counters": {"node": 0},
-                "rounds": {"RND0001": {"runtime_version": "0.2.0", "reused_node_ids": []}},
+                "rounds": {"RND0001": {"runtime_version": "0.1.8", "reused_node_ids": []}},
                 "plans": {"RND0001": {"basic_compute": True}},
             }
             global_specs = [
@@ -220,8 +218,8 @@ class Runtime017(unittest.TestCase):
         bundle = RUNTIME._make_review_bundle(
             Path("."), "RND0001", "global_local", [local_card], [global_card], "ready"
         )
-        self.assertNotIn("favorable_signal", bundle["applicable_axes"])
-        self.assertNotIn("context_deviation", bundle["applicable_axes"])
+        self.assertNotIn("favorable_evidence", bundle["applicable_axes"])
+        self.assertNotIn("context_contrast", bundle["applicable_axes"])
 
     def test_sibling_bundle_contains_global_baseline_rank_and_variance(self) -> None:
         global_card = result_card(1)
@@ -244,7 +242,7 @@ class Runtime017(unittest.TestCase):
         control = {"active_round_id": "RND0001", "round_state": "FINALIZING", "blocker": None}
         snapshot = {
             "nodes": [],
-            "rounds": {"RND0001": {"runtime_version": "0.2.0", "latest_audit": None}},
+            "rounds": {"RND0001": {"runtime_version": "0.1.8", "latest_audit": None}},
         }
         with mock.patch.object(RUNTIME, "_pending_screening_bundles", return_value=[]), mock.patch.object(
             RUNTIME, "_screening_summary_fresh", return_value=(False, None)
@@ -263,7 +261,7 @@ class Runtime017(unittest.TestCase):
             control = {"active_round_id": "RND0001"}
             snapshot = {
                 "nodes": [*[analysis_node(index, "succeeded") for index in range(1, 50)], analysis_node(50, "pending")],
-                "rounds": {"RND0001": {"runtime_version": "0.2.0"}},
+                "rounds": {"RND0001": {"runtime_version": "0.1.8"}},
                 "plans": {"RND0001": {"basic_compute": True}},
             }
             contract = {"budgets": {"max_additional_nodes": 50}, "required_deliverables": []}
@@ -282,7 +280,7 @@ class Runtime017(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             control = {"active_round_id": "RND0001"}
-            snapshot = {"rounds": {"RND0001": {"runtime_version": "0.2.0"}}}
+            snapshot = {"rounds": {"RND0001": {"runtime_version": "0.1.8"}}}
             self.assertTrue(RUNTIME._screening_enabled(root, control, snapshot))
             self.assertEqual("full", RUNTIME._round_report_mode(root, control, snapshot))
 
@@ -309,7 +307,7 @@ class Runtime017(unittest.TestCase):
                 cwd=ROOT, text=True, capture_output=True, env=os.environ.copy(),
             )
             self.assertNotEqual(0, completed.returncode)
-            self.assertIn("is not compatible with CONDUCTOR 0.2.0", completed.stderr)
+            self.assertIn("is not compatible with CONDUCTOR 0.1.8", completed.stderr)
 
     def test_synthesis_shortlist_retains_an_explicit_related_comparator(self) -> None:
         current = result_card(2, "single_cluster", "C000001")
@@ -318,8 +316,8 @@ class Runtime017(unittest.TestCase):
         assessments = {
             bundle["bundle_id"]: {
                 "bundle_id": bundle["bundle_id"], "capability_id": "A001",
-                "assessment_status": "evaluated", "candidate_class": "design_lead",
-                "scores": {"favorable_signal": 3, "context_deviation": 2, "chemical_actionability": 2, "independent_support": 1, "follow_up_leverage": 2},
+                "assessment_status": "evaluated", "candidate_class": "favorable_clue",
+                "scores": {"favorable_evidence": 3, "context_contrast": 2, "evidence_specificity": 2},
                 "reliability": {"sample_support": "moderate"},
             }
         }
@@ -355,12 +353,12 @@ class Runtime017(unittest.TestCase):
                 "target_result_refs": ["N000001@ATT0001"],
                 "assessment_status": "evaluated",
                 "candidate_class": "supporting_evidence",
-                "scores": {"favorable_signal": 1, "context_deviation": "not_applicable", "chemical_actionability": 1, "independent_support": "not_applicable", "follow_up_leverage": 1},
+                "scores": {"favorable_evidence": 1, "context_contrast": "not_applicable", "evidence_specificity": 1},
                 "reliability": {"sample_support": "moderate", "comparator_validity": "none", "effect_stability": "unknown", "independence": "unknown", "quality_flags": []},
                 "reason": "test",
                 "supporting_result_refs": ["N000001@ATT0001"],
                 "counter_result_refs": [],
-                "rubric_version": "2.0.0",
+                "rubric_version": "3.0.0",
                 "source_hash": "0" * 64,
                 "revision": 1,
                 "created_at": "2026-01-01T00:00:00+00:00",
@@ -369,7 +367,7 @@ class Runtime017(unittest.TestCase):
             with mock.patch.object(RUNTIME, "_round_current_assessments", return_value=[assessment]):
                 path = RUNTIME._write_round_assessment_csv(root, {}, "RND0001")
             header, row = path.read_text(encoding="utf-8").splitlines()[:2]
-            self.assertIn("follow_up_leverage", header)
+            self.assertIn("evidence_specificity", header)
             self.assertNotIn("interest_score", header)
             self.assertEqual(len(header.split(",")), len(row.split(",")))
 
@@ -399,7 +397,7 @@ class Runtime017(unittest.TestCase):
             }
             snapshot = {
                 "nodes": [node],
-                "rounds": {"RND0001": {"runtime_version": "0.2.0", "current_screening_batch": None}},
+                "rounds": {"RND0001": {"runtime_version": "0.1.8", "current_screening_batch": None}},
             }
             with mock.patch.object(RUNTIME, "_read_state", return_value=(control, snapshot)), mock.patch.object(
                 RUNTIME, "_recover_transaction"
@@ -410,12 +408,12 @@ class Runtime017(unittest.TestCase):
                 self.assertEqual(0, result)
                 batch = snapshot["rounds"]["RND0001"]["current_screening_batch"]
                 draft = {
-                    "schema_version": "2.0.0",
+                    "schema_version": "3.0.0",
                     "batch_id": batch["batch_id"],
                     "assessments": [{
                         "bundle_id": json.loads(Path(batch["context_path"]).read_text(encoding="utf-8"))["target_bundle_ids"][0],
                         "assessment_status": "evaluated",
-                        "scores": {"favorable_signal": 2, "context_deviation": "not_applicable", "chemical_actionability": "not_applicable", "independent_support": "not_applicable", "follow_up_leverage": 2},
+                        "scores": {"favorable_evidence": 2, "context_contrast": "not_applicable", "evidence_specificity": 2},
                         "effect_stability": "unknown",
                         "independence": "unknown",
                         "reason": "A bounded result with a useful follow-up candidate.",
@@ -432,7 +430,7 @@ class Runtime017(unittest.TestCase):
             rows = RUNTIME.read_jsonl(root / "runtime" / "result_assessment_index.jsonl")
             self.assertEqual(1, len(rows))
             self.assertEqual("supporting_evidence", rows[0]["candidate_class"])
-            self.assertEqual(2, rows[0]["scores"]["favorable_signal"])
+            self.assertEqual(2, rows[0]["scores"]["favorable_evidence"])
             self.assertIsNone(snapshot["rounds"]["RND0001"]["current_screening_batch"])
             self.assertTrue((root / "rounds" / "RND0001" / "result_assessments.csv").is_file())
 

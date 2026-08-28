@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-runtime
-description: Deterministic CONDUCTOR 0.2.0 Runtime for compact Control, five-state DAG Nodes, idempotent OS Workers, Review Bundle assessment, bounded Interpretation synthesis, and audit.
+description: Deterministic CONDUCTOR 0.1.8 Runtime for compact Control, five-state DAG Nodes, idempotent OS Workers, Review Bundle assessment, bounded Interpretation synthesis, and audit.
 allowed-tools: Read, Bash
 ---
 
@@ -23,8 +23,8 @@ mutationはMain Agentだけがlive lease tokenを付けて実行する。one-use
 - `EXECUTE_RUNNABLE_BATCH` → Mainが`prepare-execution-packet`後に`execute-packet`
 - `WAIT_RUNNING` → live Runtime Workerを再投入・reconcileせず待機
 - `RECONCILE_RUNNING` → `reconcile-running`を一回だけ実行
-- `RETRY_FAILED_NODE` → `retry-node --node-id <required_action.node_id>`
-- `FAILED_NODE_REPAIR_REQUIRED` → 自動再試行せず停止。人間が実装／入力契約を修正した後だけ、同じNodeを`retry-node`
+- `RETRY_FAILED_NODE` → `retry_mode=same_command`を確認し、`retry-node --node-id <required_action.node_id>`
+- `FAILED_NODE_REPAIR_REQUIRED` → 自動再試行せず停止。compact responseの`diagnostic_code`、`diagnostic_message`、`remediation`、`retry_mode`を報告し、人間が実装／入力契約を修正した後だけ同じNodeを`retry-node`。`UNKNOWN_FAILURE`でない限り、通常は長いAttempt logを先に読まない
 - `SCIENTIFIC_DECISION` → `runtime/working_set.json`を読み`scientific-decision`
 - `ENTER_FINALIZING` → `enter-finalizing`
 - `PREPARE_RESULT_SCREENING` → `prepare-result-screening`
@@ -66,7 +66,7 @@ Runtime管理fileはAttempt scratch直下、Skill出力は未作成の`skill_out
 
 Operator探索は`exploration`一種類である。人間指定の`max_additional_nodes`をprofile安全上限500以内で受け、Runtimeは最大25 Nodeずつ計画・実行する。成功Result Card v2はGlobal、Global–Local、sibling ClusterのReview Bundleへ束ね、既定4 Bundleずつ0～3の複数絶対軸で評価する。合計点は作らず、信頼性を別に保存する。Runtimeは成功済signatureを除外し、履歴上少ないCapability、scope、入力familyを優先しながらseed付きで選ぶ。Failed Nodeは成功履歴として数えず、再選択時も同じNode IDを再利用する。Globalを優先し、概ね`Global, Global, Local`の比率にする。全候補queueはStateへ保存せず、次Roundで再構成する。Description／Clusteringの基本計算はこの上限外である。
 
-正式Interpretationは`design_lead`、次いで`contextual_anomaly`と判定されたReview Bundleから最大50 Resultを選抜してSynthesisする。機能しない解析は索引へ残すが単独Insightにしない。Local活性Resultで必須Global comparatorがなければ`awaiting_comparator`とし、採点しない。`report_mode=screening`では正式Interpretationを省略できる。0.1.x成果物は受理しない。A014はGlobal正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。通常Result CardからMMP reference candidateの入れ子を除き、Global–Local比較は人間起動のread-only `cs-analysis-interpret-mmp`へ分離する。
+正式Interpretationは`favorable_clue`、次いで`contextual_clue`と判定されたReview Bundleから最大50 Resultを選抜してSynthesisする。機能しない解析は索引へ残すが単独Insightにしない。Local活性Resultで必須Global comparatorがなければ`awaiting_comparator`とし、採点しない。一次評価は化学的実行可能性を判断せず、具体的な確認対象までを提示する。`report_mode=screening`では正式Interpretationを省略できる。0.1.7以前の成果物は受理しない。A014はGlobal正規化SQLite、全詳細CSV、集約CSVを原子的に昇格し、大容量native work DBは残さない。通常Result CardからMMP reference candidateの入れ子を除き、Global–Local比較は人間起動のread-only `cs-analysis-interpret-mmp`へ分離する。
 
 `screening_scope=historical_closed_rounds`は人間が明示したSource Roundの保存済みReview Bundle集合をhash固定し、Operator予算0で再評価する。元Roundは変更せず、Assessmentの`round_id`へ再評価Round、`source_round_id`へ元Roundを記録する。索引はappend-onlyだが、Agent context、Round CSV、Summary、累積InterpretationにはBundleごとの最新revisionだけを供給する。
 

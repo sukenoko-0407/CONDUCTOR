@@ -16,8 +16,9 @@ Other Interpreter instances may evaluate different re-Screening batches concurre
 When `context.mode=screening`, do not write Insights or a narrative report. Evaluate each `target_bundle_id` exactly once from its Runtime-prepared Review Bundle, Result Cards, Operator Interpretation Profile, and absolute anchors.
 
 - Score only each Bundle's `applicable_axes` from 0 to 3; use `not_applicable` for every other axis. Never add the axes or rank against other Bundles.
-- `favorable_signal` concerns movement in Runtime-normalized favorable direction. Do not reinterpret raw high/low values.
-- `context_deviation` requires an actual Global–Local or sibling comparison; absence of a comparator is not an anomaly.
+- `favorable_evidence` concerns movement in Runtime-normalized favorable direction. Do not reinterpret raw high/low values.
+- `context_contrast` requires an actual Global–Local or sibling comparison; absence of a comparator is not a contrast.
+- `evidence_specificity` measures whether a concrete Cluster, feature, Transform, Core, or compound pair is identified. Never score synthesis feasibility or medicinal-chemistry actionability.
 - Assess `effect_stability` and evidence `independence` separately. Runtime owns sample support, comparator validity, Candidate class, and all permanent IDs.
 - Use `not_scorable` only when the bounded Bundle cannot support a defensible assessment. Then use null scores, null stability, and null independence.
 - Treat `missing_comparison_metrics` and `missing_primary_favorable_metric` as explicit quality warnings. Do not invent a score for an axis omitted from `applicable_axes`; if no remaining axis can be defended, use `not_scorable`.
@@ -32,18 +33,16 @@ Required fields are shown below. The angle-bracket values are deliberately inval
 
 ```json
 {
-  "schema_version": "2.0.0",
+  "schema_version": "3.0.0",
   "batch_id": "SCR...",
   "assessments": [
     {
       "bundle_id": "RVB...",
       "assessment_status": "<evaluated or not_scorable>",
       "scores": {
-        "favorable_signal": "<0-3 or not_applicable; Bundleのanchorから判断>",
-        "context_deviation": "<0-3 or not_applicable; Bundleのanchorから判断>",
-        "chemical_actionability": "<0-3 or not_applicable; Bundleのanchorから判断>",
-        "independent_support": "<0-3 or not_applicable; Bundleのanchorから判断>",
-        "follow_up_leverage": "<0-3 or not_applicable; Bundleのanchorから判断>"
+        "favorable_evidence": "<0-3 or not_applicable; Bundleのanchorから判断>",
+        "context_contrast": "<0-3 or not_applicable; Bundleのanchorから判断>",
+        "evidence_specificity": "<0-3 or not_applicable; Bundleのanchorから判断>"
       },
       "effect_stability": "<Bundle固有の判断>",
       "independence": "<Bundle固有の判断>",
@@ -68,11 +67,11 @@ If `context.interpretation_scope=cumulative_unreported`, this is a report-only s
 1. **Bundle audit** — Verify canonical scope, Cluster IDs, Operator, Description, named comparison metrics, support, and comparator validity.
 2. **Comparison** — Process every `comparison_batches` entry. Preserve Global–Local and sibling Cluster distinctions supplied by Runtime.
 3. **Counterevidence search** — For every candidate Insight, identify exceptions, weak support, overlap, metric incompatibility, and explicit counter-results inside selected Bundles.
-4. **Human-facing synthesis** — Report only defensible `design_lead` and `contextual_anomaly` candidates. Supporting or negative Results may qualify a candidate but never become a stand-alone Insight.
+4. **Human-facing synthesis** — Report only defensible `favorable_clue` and `contextual_clue` candidates. Supporting or negative Results may qualify a candidate but never become a stand-alone Insight. Present a Medicinal Chemist with the concrete target and evidence; do not decide chemical feasibility.
 
 ### Required output
 
-Write an ID-free draft containing `insights` and optional `recommended_followups`. Write the title, executive summary, coverage summary, observation, interpretation, limitations, and follow-up prose in Japanese; retain scientific identifiers and standard metric names in English when appropriate. Runtime alone assigns permanent `INS######` IDs, computes report scope and sample facts, validates references, and renders the formal Japanese JSON/Markdown/HTML report. Do not write formal IDs, scope labels, Node status, or State.
+Write an ID-free draft containing `insights`, optional `recommended_followups`, and one `bundle_dispositions` row for every Runtime-selected Bundle. A Bundle used by one Insight is `reported_as_insight`; one merged with other evidence is `merged_into_insight`. Every omitted Bundle must be classified as `rejected_by_counterevidence`, `redundant_evidence`, `deferred_by_detail_limit`, or `not_reportable`, with a short Bundle-specific reason. Write the title, executive summary, coverage summary, observation, interpretation, limitations, disposition reasons, and follow-up prose in Japanese; retain scientific identifiers and standard metric names in English when appropriate. Runtime alone assigns permanent `INS######` IDs, computes report scope and sample facts, validates references, and renders the formal Japanese JSON/Markdown/HTML report. Do not write formal IDs, scope labels, Node status, or State.
 
 Each Insight must cite one or more `review_bundle_ids`, have a non-empty content-specific Japanese `title`, separate observation from interpretation, cite only `allowed_result_refs`, identify limitations, and include comparison or counterevidence Results when making comparative claims. `limitations` is always an array of complete statements. The executive summary prioritizes favorable design leads, then actionable anomalies, and the strongest limitation. The coverage summary stays short. Review:
 

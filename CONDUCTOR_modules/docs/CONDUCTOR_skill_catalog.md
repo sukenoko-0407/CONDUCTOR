@@ -2,8 +2,8 @@
 
 > この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
 
-Profile: `balanced-global-first-0.2.0`
-Generated: `2026-08-26T11:42:47.076658+00:00`
+Profile: `balanced-global-first-0.1.8`
+Generated: `2026-08-28T12:38:50.716593+00:00`
 
 ## Description
 

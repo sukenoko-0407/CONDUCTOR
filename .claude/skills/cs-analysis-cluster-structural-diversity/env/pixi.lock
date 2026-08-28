@@ -378,7 +378,7 @@ packages:
   sha256: acde70d55f7dbbc043d733427fd6f1ec6ca49db7cbabcf7a656dd29a952b8ad8
   md5: a85c1768af7780d67c6446c17848b76f
   constrains:
-  - eigen >=5.0.1,<5.0.2.0a0
+  - eigen >=5.0.1,<5.0.1.8a0
   license: MPL-2.0
   license_family: MOZILLA
   run_exports: {}
@@ -1958,7 +1958,7 @@ packages:
   - charset-normalizer
   - pillow >=9
   - python >=3.9,<4
-  - rlpycairo >=0.2.0,<1
+  - rlpycairo >=0.1.8,<1
   - freetype-py >=2.3.0,<2.4
   - python
   license: BSD-3-Clause
@@ -2142,7 +2142,7 @@ packages:
   sha256: 2132168c3e862bcbe32d6d889850ac5ef1ef65f0938ca8a61d5437168344d175
   md5: 53919396018421266fa1a78b537394cc
   constrains:
-  - eigen >=5.0.1,<5.0.2.0a0
+  - eigen >=5.0.1,<5.0.1.8a0
   license: MPL-2.0
   license_family: MOZILLA
   run_exports: {}

@@ -1,17 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/failure_packet.schema.json",
-  "title": "CONDUCTOR 0.2.0 bounded execution failure packet",
+  "title": "CONDUCTOR 0.1.8 bounded execution failure packet",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version", "protocol_version", "node_id", "attempt_id", "round_id",
-    "capability_id", "classification", "recoverable", "attempt_count",
+    "capability_id", "classification", "recoverable", "diagnostic_code",
+    "diagnostic_message", "remediation", "retry_mode", "attempt_count",
     "attempt_limit", "error", "log_pointer", "scratch_pointer", "created_at"
   ],
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "protocol_version": {"const": "0.2.0"},
+    "schema_version": {"const": "2.0.0"},
+    "protocol_version": {"const": "0.1.8"},
     "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
     "attempt_id": {"type": "string", "pattern": "^ATT[0-9]{4}$"},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
@@ -25,6 +26,23 @@
       ]
     },
     "recoverable": {"type": "boolean"},
+    "diagnostic_code": {
+      "enum": [
+        "PROCESS_TIMEOUT", "PROCESS_LAUNCH_OR_WAIT_FAILED",
+        "MISSING_REQUIRED_ARGUMENT", "UNKNOWN_OR_INVALID_ARGUMENT", "INVALID_ARGUMENT_VALUE",
+        "MISSING_REQUIRED_INPUT_ROLE", "ENVIRONMENT_INITIALIZATION_FAILED",
+        "INPUT_PATH_NOT_FOUND", "INPUT_COLUMN_MISMATCH",
+        "PAYLOAD_OR_SCHEMA_MISMATCH", "RESOURCE_EXHAUSTED", "UNKNOWN_FAILURE"
+      ]
+    },
+    "diagnostic_message": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "remediation": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "retry_mode": {
+      "enum": [
+        "same_command", "after_environment_fix", "after_request_fix",
+        "after_input_fix", "after_package_fix", "human_decision"
+      ]
+    },
     "attempt_count": {"type": "integer", "minimum": 1},
     "attempt_limit": {"type": "integer", "minimum": 1},
     "error": {"type": "string", "maxLength": 2000},

@@ -16,11 +16,11 @@ def load(path: Path, name: str):
     return module
 
 
-RUNTIME = load(ROOT / "CONDUCTOR_modules" / "tools" / "runtime_controller.py", "runtime_renderer_contract_020")
-RENDERER = load(ROOT / "CONDUCTOR_modules" / "tools" / "templates" / "interpretation_render.py", "interpretation_renderer_contract_020")
+RUNTIME = load(ROOT / "CONDUCTOR_modules" / "tools" / "runtime_controller.py", "runtime_renderer_contract_018")
+RENDERER = load(ROOT / "CONDUCTOR_modules" / "tools" / "templates" / "interpretation_render.py", "interpretation_renderer_contract_018")
 
 
-class InterpretationRendererContract020(unittest.TestCase):
+class InterpretationRendererContract018(unittest.TestCase):
     def test_runtime_manifest_v2_renders_without_legacy_fields(self) -> None:
         selected_id = "RVB0000000000000001"
         unselected_id = "RVB0000000000000002"
@@ -30,12 +30,12 @@ class InterpretationRendererContract020(unittest.TestCase):
         ]
         assessments = {
             selected_id: {
-                "bundle_id": selected_id, "capability_id": "A001", "candidate_class": "design_lead",
-                "scores": {"chemical_actionability": 3}, "reliability": {"sample_support": "strong"},
+                "bundle_id": selected_id, "capability_id": "A001", "candidate_class": "favorable_clue",
+                "scores": {"favorable_evidence": 3, "context_contrast": "not_applicable", "evidence_specificity": 3}, "reliability": {"sample_support": "strong"},
             },
             unselected_id: {
                 "bundle_id": unselected_id, "capability_id": "A002", "candidate_class": "supporting_evidence",
-                "scores": {"chemical_actionability": 2}, "reliability": {"sample_support": "moderate"},
+                "scores": {"favorable_evidence": 0, "context_contrast": 1, "evidence_specificity": 2}, "reliability": {"sample_support": "moderate"},
             },
         }
         manifest = RUNTIME._assessment_review_manifest("RND0001", bundles, assessments, 10)
@@ -66,4 +66,3 @@ class InterpretationRendererContract020(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

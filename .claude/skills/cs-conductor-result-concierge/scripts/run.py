@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
+VERSION = "0.1.8"
 REQUEST_PATTERN = re.compile(r"^REQ(\d{6,})$")
 FOCUS_PATTERN = re.compile(r"^[A-Z][A-Z0-9_-]*\d+$")
 MAX_FOCUS_MATCHES = 100
@@ -101,8 +102,8 @@ def validate_run_root(value: str) -> tuple[Path, Path, Path, dict[str, Any], dic
     if not control_path.is_file() or not snapshot_path.is_file():
         raise FileNotFoundError("conductor_control.json or runtime/dag_snapshot.json is missing")
     control, snapshot = load_json(control_path), load_json(snapshot_path)
-    if control.get("conductor_version") not in {"0.1.6", "0.1.7"} or not isinstance(snapshot.get("nodes"), list):
-        raise ValueError("The supplied directory is not a supported CONDUCTOR 0.1.6/0.1.7 Run Root")
+    if control.get("conductor_version") != VERSION or not isinstance(snapshot.get("nodes"), list):
+        raise ValueError(f"The supplied directory is not a supported CONDUCTOR {VERSION} Run Root")
     errors = frozen_state_errors(control, snapshot)
     if errors:
         raise RuntimeError("Run is not frozen; concierge request refused: " + "; ".join(errors))
@@ -826,7 +827,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description="Explain and visualize frozen CONDUCTOR results without mutating analysis State.")
     subparsers = root.add_subparsers(dest="command", required=True)
     prepare_parser = subparsers.add_parser("prepare", help="Create a frozen concierge request workspace.")
-    prepare_parser.add_argument("--run-root", required=True, help="Explicit path to a completed CONDUCTOR 0.1.6/0.1.7 Run Root.")
+    prepare_parser.add_argument("--run-root", required=True, help=f"Explicit path to a completed CONDUCTOR {VERSION} Run Root.")
     request_group = prepare_parser.add_mutually_exclusive_group(required=True)
     request_group.add_argument("--request", help="Human question or explanation request.")
     request_group.add_argument("--request-file", help="UTF-8 file containing the human request.")

@@ -24,7 +24,7 @@ Runtimeが比較可能なResult Cardから作ったReview Bundle評価draft、�
 
 ## Algorithm-specific options
 
-`screening`では各Review Bundle内へRuntimeが配置したOperator固有`evaluation_anchors`を使い、0～3の複数絶対軸で個別評価する。軸を合計せず、信頼性と分離する。各評価はBundle内のResultを最低1件引用し、実際のmetric/value、比較またはquality factに基づく固有理由を記載する。異なるBundleへ同一内容を複製しない。長文Insight、Markdown／HTML、正式ID、Candidate classを作らない。`synthesis`では`references/interpretation_policy.md`を完全に読み、`design_lead`と`contextual_anomaly`だけを主候補にする。各Insightには`review_bundle_ids`、内容を表す日本語表題、完全な文の`limitations`配列を付ける。
+`screening`では各Review Bundle内へRuntimeが配置したOperator固有`evaluation_anchors`を使い、`favorable_evidence`、`context_contrast`、`evidence_specificity`を0～3で個別評価する。軸を合計せず、信頼性と分離する。合成可能性や化学的実行可能性は採点せず、具体的な確認対象の提示までを担う。各評価はBundle内のResultを最低1件引用し、実際のmetric/value、比較またはquality factに基づく固有理由を記載する。異なるBundleへ同一内容を複製しない。長文Insight、Markdown／HTML、正式ID、Candidate classを作らない。`synthesis`では`references/interpretation_policy.md`を完全に読み、`favorable_clue`と`contextual_clue`だけを主候補にする。各Insightには`review_bundle_ids`、内容を表す日本語表題、完全な文の`limitations`配列を付ける。全選抜Bundleについて`bundle_dispositions`を一件ずつ記録し、正式Insightへ使用したか、統合・反証・重複・上限・非掲載のどれで見送ったかを追跡可能にする。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -39,7 +39,7 @@ historical re-Screeningでは、Runtimeが新しいscreening Roundへ固定し�
 ## Output contract
 
 - 通常モード: `results/interpretation/standalone/<skill>/<run-id>/`へID未付与の検証済みpreview JSON／Markdown／HTMLを生成する。
-- CONDUCTORではInterpreterがBundle assessmentまたはSynthesis draftを事前検査できる。評価索引、Candidate class、正式ID、scope、Markdown／HTML、Ledger commitは0.2.0 Runtimeだけが確定する。
+- CONDUCTORではInterpreterがBundle assessmentまたはSynthesis draftを事前検査できる。評価索引、Candidate class、正式ID、scope、Markdown／HTML、Ledger commitは0.1.8 Runtimeだけが確定する。
 
 構造化JSONではResult Card v2のtyped `comparison_metrics`と、必要最小限の`operator_details`を検証根拠として保持する。人間向けMarkdown／HTMLには数値を全展開せず、詳細は参照Operator report、元Artifact、またはConciergeで確認する。
 

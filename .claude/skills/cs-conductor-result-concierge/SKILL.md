@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-result-concierge
-description: Explain, trace, compare, or re-visualize existing results from an explicit CONDUCTOR 0.1.6/0.1.7 Run without changing Runtime or scientific artifacts.
+description: Explain, trace, compare, or re-visualize existing results from an explicit CONDUCTOR 0.1.8 Run without changing Runtime or scientific artifacts.
 allowed-tools: Read, Write, Glob, Grep, Bash
 ---
 

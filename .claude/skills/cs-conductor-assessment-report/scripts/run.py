@@ -15,15 +15,13 @@ from typing import Any, Iterable
 
 
 AXES = (
-    ("favorable_signal", "良好方向シグナル"),
-    ("context_deviation", "文脈差・Global–Local乖離"),
-    ("chemical_actionability", "化学的実行可能性"),
-    ("independent_support", "独立な支持"),
-    ("follow_up_leverage", "追試・深掘り価値"),
+    ("favorable_evidence", "Favorable方向のEvidence"),
+    ("context_contrast", "文脈差・Global–Local乖離"),
+    ("evidence_specificity", "Evidenceの具体性"),
 )
 CLASS_META = {
-    "design_lead": ("Design lead", "#496f67", 0),
-    "contextual_anomaly": ("Contextual anomaly", "#9a7145", 1),
+    "favorable_clue": ("Favorable clue", "#496f67", 0),
+    "contextual_clue": ("Contextual clue", "#9a7145", 1),
     "supporting_evidence": ("Supporting evidence", "#67788a", 2),
     "background": ("Background", "#9a9b96", 3),
     "not_scorable": ("Not scorable", "#806f79", 4),
@@ -35,7 +33,7 @@ RELIABILITY = (
     ("effect_stability", "効果安定性", ("stable", "mixed", "unstable", "unknown")),
     ("independence", "独立性", ("independent", "partially_independent", "overlapping", "unknown")),
 )
-REPORTABLE = {"design_lead", "contextual_anomaly"}
+REPORTABLE = {"favorable_clue", "contextual_clue"}
 
 
 def utc_now() -> str:
@@ -151,7 +149,7 @@ def display_row(assessment: dict[str, Any], bundles: dict[str, dict[str, Any]], 
     scores = assessment.get("scores") or {}
     reliability = assessment.get("reliability") or {}
     references = picked.get(bundle_id) or []
-    current = bool(bundle) and assessment.get("source_hash") == bundle.get("source_hash") and assessment.get("rubric_version") == "2.0.0"
+    current = bool(bundle) and assessment.get("source_hash") == bundle.get("source_hash") and assessment.get("rubric_version") == "3.0.0"
     return {
         "assessment_id": assessment.get("assessment_id"),
         "bundle_id": bundle_id,
@@ -187,9 +185,9 @@ def candidate_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
     return (
         class_rank.get(str(row.get("candidate_class")), 9),
         support_rank.get(str(row.get("sample_support")), 9),
-        descending("chemical_actionability"),
-        descending("follow_up_leverage"),
-        descending("favorable_signal"),
+        descending("favorable_evidence"),
+        descending("context_contrast"),
+        descending("evidence_specificity"),
         str(row.get("capability_id")),
         str(row.get("bundle_id")),
     )
@@ -212,13 +210,13 @@ def top_table(rows: list[dict[str, Any]], empty_message: str) -> str:
             f"<td><span class=\"pill\" style=\"--pill:{e(color)}\">{e(class_label)}</span></td>"
             f"<td><b>{e(row['capability_id'])}</b><br><small>{e(row['capability_name'])}</small></td>"
             f"<td>{e(row['bundle_type'])}<br><small>{e(row['cluster_ids'] or 'Global')}</small></td>"
-            f"<td class=\"scores\">{e(row['favorable_signal'])} / {e(row['context_deviation'])} / {e(row['chemical_actionability'])} / {e(row['independent_support'])} / {e(row['follow_up_leverage'])}</td>"
+            f"<td class=\"scores\">{e(row['favorable_evidence'])} / {e(row['context_contrast'])} / {e(row['evidence_specificity'])}</td>"
             f"<td>{e(row['sample_support'])}</td><td><span class=\"{picked_class}\">{picked}</span><br><small>{e(row['insight_ids'])}</small></td>"
             f"<td>{e(reason)}</td></tr>"
         )
     return (
         '<div class="table-wrap"><table><thead><tr><th>#</th><th>Bundle</th><th>総合評価区分</th><th>Operator</th>'
-        '<th>比較Scope</th><th>5軸<br><small>Fav / Dev / Act / Sup / Next</small></th><th>Sample</th><th>Full report</th><th>一次評価理由</th>'
+        '<th>比較Scope</th><th>3軸<br><small>Fav / Contrast / Specificity</small></th><th>Sample</th><th>Full report</th><th>一次評価理由</th>'
         "</tr></thead><tbody>" + "".join(body) + "</tbody></table></div>"
     )
 
@@ -263,7 +261,7 @@ def render_html(rows: list[dict[str, Any]], top: list[dict[str, Any]], overlooke
     operator_order = sorted(operator_stats, key=lambda key: (-sum(operator_stats[key].values()), key))
     operator_table = "".join(
         f'<tr><td><b>{e(capability)}</b></td><td>{e(operator_names.get(capability))}</td><td>{sum(operator_stats[capability].values())}</td>'
-        f'<td>{operator_stats[capability]["design_lead"]}</td><td>{operator_stats[capability]["contextual_anomaly"]}</td>'
+        f'<td>{operator_stats[capability]["favorable_clue"]}</td><td>{operator_stats[capability]["contextual_clue"]}</td>'
         f'<td>{operator_stats[capability]["supporting_evidence"]}</td><td>{operator_stats[capability]["background"]}</td></tr>'
         for capability in operator_order
     ) or '<tr><td colspan="7">対象データなし</td></tr>'
@@ -298,21 +296,21 @@ main{{max-width:1500px;margin:auto;padding:34px}} h1{{font:600 32px/1.2 Georgia,
 <header><h1>CONDUCTOR 一次評価サマリー</h1><p class="sub">{e(scope_label)} ｜ Snapshot: {e(created_at)}</p></header>
 {warning_html}
 <section class="facts"><div class="fact">有効な一次評価<br><b>{len(current_rows)}</b></div><div class="fact">有望候補<br><b>{len(reportable)}</b></div><div class="fact">Full report収載<br><b>{picked_count}</b></div><div class="fact">Operator<br><b>{len(operator_stats)}</b></div><div class="fact">Round<br><b>{len(round_stats)}</b></div></section>
-<section><h2>総合評価区分</h2><p class="note">5軸の単純合計ではありません。Runtimeが確定したCandidate classを、一次評価の総合区分として表示しています。</p><div class="chart">{bar_rows(class_counts, class_order, class_labels, class_colors)}</div></section>
+<section><h2>総合評価区分</h2><p class="note">3軸の単純合計ではありません。Runtimeが確定したCandidate classを、一次評価の総合区分として表示しています。化学的実行可能性はMedicinal Chemistが判断します。</p><div class="chart">{bar_rows(class_counts, class_order, class_labels, class_colors)}</div></section>
 <section><h2>評価軸ヒストグラム</h2><p class="sub">各軸は独立した0～3の絶対評価です。N/Aは当該Bundleで適用不能または未採点を示します。</p><div class="charts">{''.join(axis_panels)}</div></section>
 <section><h2>信頼性の内訳</h2><div class="charts">{''.join(reliability_panels)}</div></section>
-<section><h2>有望な知見 Top {len(top)}</h2><p class="sub">Design lead、Contextual anomalyのみ。表示順はclass、sample support、chemical actionability、follow-up leverage等に基づき、合計点は使いません。</p>{top_table(top, '現時点で有望候補に分類された一次評価はありません。')}</section>
+<section><h2>有望な知見 Top {len(top)}</h2><p class="sub">Favorable clue、Contextual clueのみ。表示順はclass、sample support、favorable evidence、context contrast、evidence specificityに基づき、合計点は使いません。</p>{top_table(top, '現時点で有望候補に分類された一次評価はありません。')}</section>
 <section><h2>Full report未収載の有望候補</h2><p class="sub">一次評価では有望だが、最新Insight indexから参照されていない候補です。未収載であること自体は見落としを断定しません。</p>{top_table(overlooked, '未収載の有望候補はありません。')}</section>
 <section><h2>Full report収載率</h2><div class="table-wrap"><table><thead><tr><th>Candidate class</th><th>評価数</th><th>収載数</th><th>収載率</th></tr></thead><tbody>{class_uptake}</tbody></table></div></section>
 <section><h2>Round推移</h2><div class="table-wrap"><table><thead><tr><th>Round</th><th>一次評価</th><th>有望候補</th><th>Full report収載</th><th>候補収載率</th></tr></thead><tbody>{round_table}</tbody></table></div></section>
-<section><h2>Operator別内訳</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Operator</th><th>評価数</th><th>Design lead</th><th>Contextual anomaly</th><th>Supporting</th><th>Background</th></tr></thead><tbody>{operator_table}</tbody></table></div></section>
+<section><h2>Operator別内訳</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Operator</th><th>評価数</th><th>Favorable clue</th><th>Contextual clue</th><th>Supporting</th><th>Background</th></tr></thead><tbody>{operator_table}</tbody></table></div></section>
 <section><h2>データファイル</h2><ul><li><code>assessment_latest.csv</code>: 対象となった各Bundleの最新一次評価</li><li><code>top_candidates.csv</code>: 有望候補の表示順とFull report収載状況</li><li><code>report_manifest.json</code>: 入力hash、filter、件数、出力一覧</li></ul></section>
 <footer>Read-only support report. Run Root: {e(run_root)}</footer>
 </main></body></html>'''
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Render a read-only CONDUCTOR 0.2.0 primary-assessment dashboard")
+    parser = argparse.ArgumentParser(description="Render a read-only CONDUCTOR 0.1.8 primary-assessment dashboard")
     parser.add_argument("--run-root", required=True, help="CONDUCTOR Run Root containing conductor_control.json and runtime/")
     parser.add_argument("--round-id", action="append", default=[], help="Optional RND#### filter; repeatable")
     parser.add_argument("--top-n", type=int, default=10, help="Promising-candidate table size (1-50; default 10)")
@@ -332,8 +330,8 @@ def main() -> int:
     if not control_path.is_file():
         raise FileNotFoundError(f"Not a CONDUCTOR Run Root: {control_path} is missing")
     control = json.loads(control_path.read_text(encoding="utf-8"))
-    if control.get("conductor_version") != "0.2.0":
-        raise ValueError(f"This Skill requires a CONDUCTOR 0.2.0 Run; found {control.get('conductor_version')!r}")
+    if control.get("conductor_version") != "0.1.8":
+        raise ValueError(f"This Skill requires a CONDUCTOR 0.1.8 Run; found {control.get('conductor_version')!r}")
 
     sources = {
         "control": control_path,
@@ -404,13 +402,13 @@ def main() -> int:
         raise RuntimeError("Canonical source files changed before report completion; the report directory is an invalid partial snapshot")
     manifest = {
         "schema_version": "1.0.0",
-        "conductor_version": "0.2.0",
+        "conductor_version": "0.1.8",
         "created_at": created_at,
         "run_root": str(root),
         "filters": {"source_round_ids": selected_rounds or "all", "latest_revision_per_bundle": True},
         "scientific_axis_sum_used": False,
         "overall_assessment_display": "candidate_class_distribution",
-        "candidate_selection": "reportable_class_then_sample_support_then_actionability_then_follow_up_then_favorable",
+        "candidate_selection": "candidate_priority_v3",
         "counts": {
             "latest_assessments": len(rows),
             "current_assessments": len(rows) - stale_count,

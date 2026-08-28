@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://conductor.local/schemas/interpretation.schema.json",
-  "title": "CONDUCTOR 0.2.0 Interpretation",
+  "title": "CONDUCTOR 0.1.8 Interpretation",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "run_id", "round_id", "node_id", "title", "report_header", "executive_summary", "coverage_summary", "insights", "result_catalog", "review_manifest", "created_at"],
   "properties": {
-    "schema_version": {"const": "4.0.0"},
+    "schema_version": {"const": "5.0.0"},
     "run_id": {"type": "string", "minLength": 1},
     "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
     "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
@@ -29,7 +29,7 @@
         "insight_id": {"type": "string", "pattern": "^INS[0-9]{6}$"},
         "revision": {"type": "integer", "minimum": 1},
         "attention": {"enum": ["pinned", "active", "watch", "background"]},
-        "candidate_class": {"enum": ["design_lead", "contextual_anomaly"]},
+        "candidate_class": {"enum": ["favorable_clue", "contextual_clue"]},
         "claim_kind": {"enum": ["single_scope_observation", "difference", "agreement", "contradiction"]},
         "title": {"type": "string", "minLength": 1, "maxLength": 300, "pattern": "\\S"},
         "analysis_subject": {"$ref": "analysis_subject.schema.json"},

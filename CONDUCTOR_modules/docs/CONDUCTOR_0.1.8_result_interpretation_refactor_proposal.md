@@ -1,4 +1,6 @@
-# CONDUCTOR Result Card・比較・Interpretation再設計提案
+# CONDUCTOR Result Card・比較・Interpretation初期再設計提案
+
+> この文書はResult Card／Review Bundle導入時の初期設計記録です。第6章以降の旧評価軸と旧Candidate classは最終実装では採用していません。現行契約は[一次評価ガイド](CONDUCTOR_assessment_guide.md)および[エラー回復・一次評価再設計](CONDUCTOR_error_recovery_and_assessment_refactor_proposal.md)を正本とします。
 
 ## 1. 文書の位置づけ
 
@@ -6,11 +8,11 @@
 
 > Endpointをfavorableな方向へ改善するための知見、またはその候補となるGlobal–Local・Cluster間の「違和感」を見つける。
 
-提案Versionは`0.2.0`とする。0.1.6成果物・Run・Result Cardの後方互換性は保証しない。Description、Clustering、Operatorの科学計算kernelは原則維持し、出力契約、比較単位、一次評価、Interpretation選択を作り直す。
+提案Versionは`0.1.8`とする。0.1.6成果物・Run・Result Cardの後方互換性は保証しない。Description、Clustering、Operatorの科学計算kernelは原則維持し、出力契約、比較単位、一次評価、Interpretation選択を作り直す。
 
-本文書は0.2.0実装の設計基準である。
+本文書は0.1.8実装の設計基準である。
 
-実装状態：0.2.0として実装済み。Runtimeが自動生成するBundleはGlobal、Global–Local、Sibling Clusterの3種類とする。`cross_evidence`はschema上の予約型として保持するが、候補評価を入力にして再び一次評価を作る循環を避けるため自動生成しない。異種Description・Operator間の支持／反証は、正式Synthesisまたは人間指定のread-only深掘りで扱う。
+実装状態：0.1.8として実装済み。Runtimeが自動生成するBundleはGlobal、Global–Local、Sibling Clusterの3種類とする。`cross_evidence`はschema上の予約型として保持するが、候補評価を入力にして再び一次評価を作る循環を避けるため自動生成しない。異種Description・Operator間の支持／反証は、正式Synthesisまたは人間指定のread-only深掘りで扱う。
 
 ## 2. 現状の問題
 
@@ -316,7 +318,7 @@ LLM Executor Subagentを通常フローから外しても、Leaseは次のため
 
 LeaseはCPU並列数や科学process所有権の機構ではない。Packet claim後の科学processは現行同様にRuntime Workerが所有し、Lease期限から独立して完了させる。
 
-0.2.0でLease自体を廃止しない。まず用語を`Orchestration session lease`へ明確化し、通常時はlauncherとRuntimeが管理する。tokenを無理に隠蔽することで所有者識別を弱めない。
+0.1.8でLease自体を廃止しない。まず用語を`Orchestration session lease`へ明確化し、通常時はlauncherとRuntimeが管理する。tokenを無理に隠蔽することで所有者識別を弱めない。
 
 ## 11. 後方互換性と移行方針
 
@@ -326,7 +328,7 @@ LeaseはCPU並列数や科学process所有権の機構ではない。Packet clai
 - 進行中の旧Roundの再開
 - 旧Assessment Indexの自動変換
 - 旧Interpretationの新schemaへの変換
-- 旧Run Rootをそのまま0.2.0で継続すること
+- 旧Run Rootをそのまま0.1.8で継続すること
 
 ### 11.2 維持するもの
 
@@ -339,7 +341,7 @@ LeaseはCPU並列数や科学process所有権の機構ではない。Packet clai
 
 ### 11.3 推奨
 
-0.2.0は新規Runとして開始する。移行patchは作らず、特に高コストなDescriptionの再利用も自動化しない。中途半端な互換層を避け、新Result Cardと比較契約の完全性を優先する。
+0.1.8は新規Runとして開始する。移行patchは作らず、特に高コストなDescriptionの再利用も自動化しない。中途半端な互換層を避け、新Result Cardと比較契約の完全性を優先する。
 
 ## 12. 実装対象
 
@@ -384,7 +386,7 @@ LeaseはCPU並列数や科学process所有権の機構ではない。Packet clai
 
 ## 13. 実装順序
 
-1. 0.2.0のschemaとID契約を固定する。
+1. 0.1.8のschemaとID契約を固定する。
 2. Operator Interpretation Profileの共通契約を作る。
 3. A001～A014ごとにResult role、comparison metric、comparator要件、絶対anchorを定義する。
 4. Operator出力にtyped interpretation payloadを追加する。
@@ -445,12 +447,12 @@ LeaseはCPU並列数や科学process所有権の機構ではない。Packet clai
 | 複数軸で順位づけが複雑になる | Candidate classと固定決定表を用いる |
 | LLMの採点揺れ | Operator固有anchor、少数Bundle、schema、再評価testを用いる |
 | 違和感が偶然である | 信頼性を分離し、必ず反証・追加検証候補を付ける |
-| 古いRunを継続できない | 0.2.0は新規Runに限定し、中途半端な移行層を作らない |
+| 古いRunを継続できない | 0.1.8は新規Runに限定し、中途半端な移行層を作らない |
 | Result Cardが大きくなる | typed metricを最小化し、詳細値はOperator artifactへ残す |
 
 ## 16. 推奨結論
 
-0.1.7の逐次Screeningは認知負荷を抑える基盤として維持する。ただし、一次評価の対象を単独Result CardからReview Bundleへ変え、次の三点を0.2.0の中心とする。
+0.1.7の逐次Screeningは認知負荷を抑える基盤として維持する。ただし、一次評価の対象を単独Result CardからReview Bundleへ変え、次の三点を0.1.8の中心とする。
 
 1. Global–Local・Cluster間の比較をRuntimeの必須契約にする。
 2. 単純合計点を廃止し、活性改善と違和感を別軸で絶対評価する。

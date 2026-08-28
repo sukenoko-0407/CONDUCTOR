@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-node-review
-description: Inspect and apply narrowly defined human-confirmed corrections to a CONDUCTOR 0.1.6/0.1.7 Node. Use only on explicit human request; never expose arbitrary status editing and never include this Skill in the Orchestrator Agent.
+description: Inspect and apply narrowly defined human-confirmed corrections to a CONDUCTOR 0.1.8 Node. Use only on explicit human request; never expose arbitrary status editing and never include this Skill in the Orchestrator Agent.
 allowed-tools: Read, Bash
 ---
 

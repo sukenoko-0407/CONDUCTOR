@@ -1,8 +1,8 @@
 # CONDUCTOR 特別対応プロンプト集
 
-対象Version: `0.2.0`
+対象Version: `0.1.8`
 
-障害修復、実行契約の補正、特定Operatorの再解析、限定的な深掘り、既存Reportの翻訳に使う。通常のRound運用には[日常運用プロンプト集](CONDUCTOR_prompts_daily.md)を使用する。対象は0.2.0で新規作成したRunに限り、0.1.x Runの修復継続には使用しない。
+障害修復、実行契約の補正、特定Operatorの再解析、限定的な深掘り、既存Reportの翻訳に使う。通常のRound運用には[日常運用プロンプト集](CONDUCTOR_prompts_daily.md)を使用する。対象は0.1.8で新規作成したRunに限り、0.1.7以前のRunの修復継続には使用しない。
 
 ## 目次
 
@@ -132,7 +132,7 @@ State、DAG、Ledgerを直接編集せず、RuntimeのExecution Request／Packet
 <a id="special-a010"></a>
 ## A010を同一Run内で再実行
 
-同一0.2.0 RunでPackage修正前に生成したA010を監査履歴として残し、現在の`cs-analysis-cluster-profile`で再実行する。
+同一0.1.8 RunでPackage修正前に生成したA010を監査履歴として残し、現在の`cs-analysis-cluster-profile`で再実行する。
 
 Round操作は状態に合わせて人間が明記する。
 

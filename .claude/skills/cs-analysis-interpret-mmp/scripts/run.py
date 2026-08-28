@@ -20,7 +20,7 @@ import pandas as pd
 from render import clean_json, render_html, render_markdown, report_json
 
 
-VERSION = "0.1.6"
+VERSION = "0.1.8"
 REQUEST_PATTERN = re.compile(r"^MMPREQ(\d{6,})$")
 NODE_PATTERN = re.compile(r"^N\d{6}$")
 CLUSTER_PATTERN = re.compile(r"^C\d{6}$")
@@ -884,7 +884,7 @@ def verify(args: argparse.Namespace) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(description="Read-only MMP Global–Local interpretation for a frozen CONDUCTOR Run")
+    root = argparse.ArgumentParser(description="Read-only MMP Global-Local interpretation for a frozen CONDUCTOR Run")
     commands = root.add_subparsers(dest="command", required=True)
     item = commands.add_parser("prepare")
     item.add_argument("--run-root", required=True)

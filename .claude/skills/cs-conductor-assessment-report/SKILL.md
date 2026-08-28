@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-assessment-report
-description: Summarize existing CONDUCTOR 0.2.0 primary Result Assessments as a read-only, self-contained HTML dashboard. Use only when a human explicitly supplies a Run Root and asks to visualize assessment distributions or promising candidates; never use it as a DAG Node or as part of a Round.
+description: Summarize existing CONDUCTOR 0.1.8 primary Result Assessments as a read-only, self-contained HTML dashboard. Use only when a human explicitly supplies a Run Root and asks to visualize assessment distributions or promising candidates; never use it as a DAG Node or as part of a Round.
 allowed-tools: Read, Bash
 ---
 
@@ -19,6 +19,6 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" \
 
 `--round-id`はAssessmentを実行したRoundではなく、`source_round_id`（未記録の旧行では`round_id`）を選択する。historical re-Screening後も、元Roundを指定すればBundleごとの最新revisionが表示される。
 
-「総合評価」は科学的な合計点ではない。5つの絶対評価軸を加算せず、Runtime確定のCandidate class分布として表示する。有望候補は`design_lead`と`contextual_anomaly`だけを、Candidate class、sample support、chemical actionability等の決定論的な表示順で最大N件示す。この順位を新しい科学評価としてStateへ戻してはならない。
+「総合評価」は科学的な合計点ではない。3つの絶対評価軸を加算せず、Runtime確定のCandidate class分布として表示する。有望候補は`favorable_clue`と`contextual_clue`だけを、Runtimeと共通の`candidate_priority_v3`で最大N件示す。この順位を新しい科学評価としてStateへ戻してはならない。
 
 Full Interpretationへの収載有無は、最新の`runtime/insight_index.jsonl`で各`bundle_id`が`review_bundle_ids`から参照されているかにより判定する。レポートには評価軸ヒストグラム、Candidate class分布、信頼性分布、Round推移、Operator別内訳、Full report収載率、Top候補、未収載候補を含める。

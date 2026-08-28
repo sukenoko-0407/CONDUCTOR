@@ -15,7 +15,7 @@ def project_root() -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Read-only CONDUCTOR 0.1.6/0.1.7 audit")
+    parser = argparse.ArgumentParser(description="Read-only CONDUCTOR 0.1.8 audit")
     parser.add_argument("--run-root", required=True)
     parser.add_argument("--mode", choices=("quick", "full"), default="full")
     args = parser.parse_args()

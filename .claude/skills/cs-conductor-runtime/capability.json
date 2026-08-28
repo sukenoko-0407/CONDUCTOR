@@ -3,7 +3,7 @@
   "capability_id": "O001",
   "skill_name": "cs-conductor-runtime",
   "display_name": "CONDUCTOR deterministic runtime",
-  "version": "0.2.0",
+  "version": "0.1.8",
   "stage": "orchestration",
   "family": "graph_orchestration",
   "description": "Deterministic Runtime owning compact Control, five-state Nodes, idempotent OS Workers, common Execution Requests, incremental Result Screening, bounded synthesis, and Round finalization.",

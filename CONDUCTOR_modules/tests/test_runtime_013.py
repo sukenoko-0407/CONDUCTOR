@@ -105,7 +105,7 @@ class Runtime013Tests(unittest.TestCase):
             "metric": None,
             "headline": "offline validation",
             "result_role": "activity_signal",
-            "interpretation_profile_id": "IP-A001-1.0.0",
+            "interpretation_profile_id": "IP-A001-2.0.0",
             "comparison_family_id": "CFM0123456789abcdef",
             "favorable_payload": {
                 "applicable": True, "normalization": "higher_is_better",
@@ -132,24 +132,28 @@ class Runtime013Tests(unittest.TestCase):
             "created_at": created_at,
         }
         bundle = {
-            "schema_version": "1.0.0", "bundle_id": "RVB0123456789abcdef",
+            "schema_version": "2.0.0", "bundle_id": "RVB0123456789abcdef",
             "bundle_type": "global", "round_id": "RND0001", "capability_id": "A001",
-            "interpretation_profile_id": "IP-A001-1.0.0",
+            "interpretation_profile_id": "IP-A001-2.0.0",
             "comparison_family_id": "CFM0123456789abcdef",
             "target_result_refs": [card["result_ref"]], "comparator_result_refs": [],
             "all_result_refs": [card["result_ref"]], "cluster_ids": [],
-            "comparison_status": "ready", "applicable_axes": ["favorable_signal", "follow_up_leverage"],
+            "comparison_status": "ready", "applicable_axes": ["favorable_evidence", "evidence_specificity"],
+            "evaluation_anchors": {
+                "favorable_evidence": ["0", "1", "2", "3"],
+                "evidence_specificity": ["0", "1", "2", "3"],
+            },
             "comparison_table": [],
             "runtime_facts": {"sample_support": "insufficient", "comparator_validity": "none", "overlap_status": "not_applicable", "minimum_support_met": False},
             "source_hash": "0" * 64, "created_at": created_at,
         }
         review_manifest = {
-            "schema_version": "2.0.0", "round_id": "RND0001",
+            "schema_version": "3.0.0", "round_id": "RND0001",
             "selected_bundle_ids": [bundle["bundle_id"]], "detailed_result_refs": [card["result_ref"]],
             "unselected_bundles": [],
-            "candidate_class_counts": {"design_lead": 1}, "bundle_type_counts": {"global": 1},
+            "candidate_class_counts": {"favorable_clue": 1}, "bundle_type_counts": {"global": 1},
             "operator_counts": {"A001": 1},
-            "selection_method": "candidate_class_reliability_actionability_diversity",
+            "selection_method": "candidate_priority_v3",
             "created_at": created_at,
         }
         analysis_result = {
@@ -164,7 +168,7 @@ class Runtime013Tests(unittest.TestCase):
             "created_at": created_at,
         }
         interpretation = {
-            "schema_version": "4.0.0",
+            "schema_version": "5.0.0",
             "run_id": "run-013",
             "round_id": "RND0001",
             "node_id": "N000003",
@@ -250,6 +254,11 @@ class Runtime013Tests(unittest.TestCase):
                 "counter_results": [],
                 "limitations": "単一のOperator Resultに基づく。",
             }],
+            "bundle_dispositions": [{
+                "bundle_id": bundle["bundle_id"],
+                "disposition": "reported_as_insight",
+                "reason": "主要なGlobal知見として報告する。",
+            }],
         }
         draft_issues = interpretation_module.validate_draft(
             {"allowed_result_refs": ["N000002@ATT0001"], "review_manifest": review_manifest}, draft
@@ -312,7 +321,7 @@ class Runtime013Tests(unittest.TestCase):
             "pointers": {"working_set": "runtime/working_set.json"},
         }
         response = RUNTIME._compact_response(control, detail_pointer="runtime/logs")
-        self.assertEqual("0.2.0", response["protocol_version"])
+        self.assertEqual("0.1.8", response["protocol_version"])
         self.assertNotIn("control", response)
         self.assertLessEqual(len(RUNTIME.canonical_bytes(response)), RUNTIME.MAX_COMPACT_RESPONSE_BYTES)
 
@@ -320,7 +329,7 @@ class Runtime013Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_root, lease = self.active_basic_round(Path(temporary))
             response = json.loads(self.command("prepare-execution-packet", "--run-root", str(run_root), "--lease-token", lease, "--timeout-minutes", "5").stdout)
-            self.assertEqual("0.2.0", response["protocol_version"])
+            self.assertEqual("0.1.8", response["protocol_version"])
             self.assertNotIn("lease_token", response)
             packet_path = Path(response["packet_path"])
             packet = json.loads(packet_path.read_text(encoding="utf-8"))

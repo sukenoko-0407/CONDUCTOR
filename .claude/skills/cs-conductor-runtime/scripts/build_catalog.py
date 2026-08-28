@@ -43,6 +43,13 @@ def validate_capability(value: dict[str, Any], expected_name: str) -> None:
         expected_profile_prefix = f"IP-{value['capability_id']}-"
         if not str(profile["profile_id"]).startswith(expected_profile_prefix):
             raise ValueError(f"{expected_name}: interpretation profile ID does not match capability_id")
+        allowed_axes = set(profile["allowed_axes"])
+        anchor_axes = set(profile["anchors"])
+        if anchor_axes != allowed_axes:
+            raise ValueError(
+                f"{expected_name}: interpretation profile anchors must match allowed_axes exactly; "
+                f"missing={sorted(allowed_axes-anchor_axes)}, unexpected={sorted(anchor_axes-allowed_axes)}"
+            )
     approval_policy = value.get("approval_policy", "standard")
     high_cost = value["cost"].get("class") in {"high", "very_high"}
     approval_required = bool(value["cost"].get("human_approval_required"))

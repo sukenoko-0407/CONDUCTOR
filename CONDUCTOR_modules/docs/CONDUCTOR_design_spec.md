@@ -1,4 +1,4 @@
-# CONDUCTOR 0.2.0 design spec
+# CONDUCTOR 0.1.8 design spec
 
 ## 権限境界
 
@@ -66,7 +66,7 @@ Skill outputはRuntimeがschema、identity、hash、scope、科学的不変条�
 
 A014 Globalは全詳細CSV、正規化SQLite、集約CSV、reference card、HTML、storage profileを一括commitします。native work DBとParquetを正本にしません。通常Result CardはMMP候補の入れ子を持たず、coverageと専用Skillへのpointerだけを保持します。
 
-RuntimeはResult Card v2をcomparison familyへ登録し、Global、Global–Local、sibling ClusterのReview Bundleを決定論的に作ります。InterpreterはOperator固有anchorで0～3の複数絶対軸を評価し、Runtimeが信頼性とCandidate classを確定して`runtime/result_assessment_index.jsonl`へcommitします。合計点は作りません。正式Synthesisでは`design_lead`と`contextual_anomaly`から最大50 Resultだけを渡し、支持・反証・negative resultは主候補を限定するために使います。RuntimeがInsight ID、scope、sample factsを確定して固定templateからJSON／Markdown／HTMLを生成します。
+RuntimeはResult Card v2をcomparison familyへ登録し、Global、Global–Local、sibling ClusterのReview Bundleを決定論的に作ります。InterpreterはOperator固有anchorで`favorable_evidence`、`context_contrast`、`evidence_specificity`を0～3で評価し、Runtimeが信頼性とCandidate classを確定して`runtime/result_assessment_index.jsonl`へcommitします。合計点は作りません。正式Synthesisでは`favorable_clue`と`contextual_clue`から最大50 Resultだけを渡し、支持・反証・negative resultは主候補を限定するために使います。RuntimeがInsight ID、scope、sample factsを確定して固定templateからJSON／Markdown／HTMLを生成します。
 
 `screening` RoundはScreening summaryとFull Audit、`full` RoundはさらにInterpretationが合格しない限りhandoffしません。
 

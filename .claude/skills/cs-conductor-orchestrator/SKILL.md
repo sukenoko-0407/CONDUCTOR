@@ -1,6 +1,6 @@
 ---
 name: cs-conductor-orchestrator
-description: Manually activate the Claude Code Main Agent as the CONDUCTOR 0.2.0 Orchestrator for exactly one human-authorized Round. Use only when the human explicitly requests CONDUCTOR control.
+description: Manually activate the Claude Code Main Agent as the CONDUCTOR 0.1.8 Orchestrator for exactly one human-authorized Round. Use only when the human explicitly requests CONDUCTOR control.
 disable-model-invocation: true
 allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 ---
@@ -13,8 +13,8 @@ allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
 
 1. 新規Runなら、人間指定のCSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、出力先でRuntime `init`を一回だけ実行する。CPU未指定時は8。SMILES列が一意でない場合だけ`--smiles-column`を要求する。
 2. 既存Runでは、最初に`conductor_control.json`だけを読む。全DAG、Ledger、過去Reportを先読みしない。
-3. 人間依頼を`inspect`、`start new Round`、`start historical re-Screening Round`、`start cumulative Interpretation Round`、`resume active Round`、`continue current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
-4. `ACTIVE`または`FINALIZING`は同じRoundを`resume-round`する。live leaseがあれば二重起動しない。`AWAITING_HUMAN_REVIEW`では人間の`continue-round`、`revise-report`、`accept-round`以外を行わない。
+3. 人間依頼を`inspect`、`start new Round`、`start historical re-Screening Round`、`start cumulative Interpretation Round`、`resume active Round`、`continue current Round`、`re-Screen current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
+4. `ACTIVE`または`FINALIZING`は同じRoundを`resume-round`する。live leaseがあれば二重起動しない。`AWAITING_HUMAN_REVIEW`では人間の`continue-round`、明示的な`request-result-rescreening`、`revise-report`、`accept-round`以外を行わない。
 
 Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。JSON／JSONLを直接編集せず、Runtime Controllerを別Pythonで直接起動しない。
 
@@ -32,7 +32,7 @@ python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --ru
 
 ## 固定ループ
 
-Runtime compact responseの`protocol_version=0.2.0`と、一つの`required_action.code`だけを信頼する。
+Runtime compact responseの`protocol_version=0.1.8`と、一つの`required_action.code`だけを信頼する。
 
 | required action | Main Agentの操作 |
 |---|---|
@@ -41,8 +41,8 @@ Runtime compact responseの`protocol_version=0.2.0`と、一つの`required_acti
 | `EXECUTE_RUNNABLE_BATCH` | `prepare-execution-packet`後、MainからRuntime `execute-packet`を一回だけ呼ぶ |
 | `WAIT_RUNNING` | Runtime Workerまたは科学processが生存中。再投入・reconcile・短間隔pollをせず待機 |
 | `RECONCILE_RUNNING` | Worker不在が確定したため`reconcile-running`を一回だけ実行 |
-| `RETRY_FAILED_NODE` | failure pointerを必要最小限確認し、同じNodeを`retry-node` |
-| `FAILED_NODE_REPAIR_REQUIRED` | 自動retryを止め、人間へfailure pointerと修正対象を返す。実装修正で同じ科学的Nodeが成立する場合だけ同じNodeを`retry-node`。Planningしたscope自体が無効なら、人間承認後に`cs-conductor-node-review cancel` |
+| `RETRY_FAILED_NODE` | `retry_mode=same_command`を確認し、同じNodeを`retry-node` |
+| `FAILED_NODE_REPAIR_REQUIRED` | 自動retryを止め、`diagnostic_code`、`diagnostic_message`、`remediation`、`retry_mode`を人間へ返す。通常はAttempt log全文を読まず、`UNKNOWN_FAILURE`または人間が詳細を求めた場合だけ`log_pointer`を確認する。修正後も同じ科学的Nodeが成立する場合だけ同じNodeを`retry-node`。Planningしたscope自体が無効なら、人間承認後に`cs-conductor-node-review cancel` |
 | `SCIENTIFIC_DECISION` | bounded Working Setから候補を選び`scientific-decision` |
 | `ENTER_FINALIZING` | `enter-finalizing` |
 | `PREPARE_RESULT_SCREENING` | `prepare-result-screening` |
@@ -91,7 +91,7 @@ Runtime compact responseの`protocol_version=0.2.0`と、一つの`required_acti
 
 成功Result Cardが発生すると、RuntimeはGlobal、Global–Local、sibling ClusterのReview Bundleを決定論的に作り、次の科学計算前に既定4件の一次評価を要求する。Mainはshort-lived Interpreterへ一batchだけ渡し、評価本文を会話へ転載せずcommit成否だけを受け取る。評価軸は0～3の絶対基準で、合計点を作らない。
 
-Round開始時の`report_mode`は`screening`または`full`である。`screening`はBundle評価索引、Round CSV、compact summary、Auditだけで終了する。`full`はさらに`design_lead`と`contextual_anomaly`から選抜した最大50 Resultで正式Interpretationを作る。0.1.x Runは継続せず、0.2.0では新規Runを開始する。
+Round開始時の`report_mode`は`screening`または`full`である。`screening`はBundle評価索引、Round CSV、compact summary、Auditだけで終了する。`full`はさらに`favorable_clue`と`contextual_clue`から選抜した最大50 Resultで正式Interpretationを作る。0.1.7以前のRunは継続せず、0.1.8では新規Runを開始する。
 
 科学的推論が必要なのは`SCIENTIFIC_DECISION`である。人間priority、Global／Cluster-local変化、兄弟Cluster、独立したDescription family、異なるOperator、反証候補を評価する。Node ID、依存関係、Status、再試行、Round gateはRuntimeへ委ねる。
 

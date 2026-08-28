@@ -3,7 +3,7 @@
   "capability_id": "O007",
   "skill_name": "cs-conductor-assessment-report",
   "display_name": "CONDUCTOR Assessment Report",
-  "version": "0.2.0",
+  "version": "0.1.8",
   "stage": "orchestration",
   "family": "assessment_reporting",
   "description": "Explicit, read-only visualization of canonical Result Assessments, Full Interpretation uptake, and promising candidates without DAG, Round, State, or scientific artifact mutation.",

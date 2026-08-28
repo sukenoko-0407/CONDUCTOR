@@ -567,7 +567,7 @@ packages:
   license_family: APACHE
   run_exports:
     weak:
-    - aws-crt-cpp >=0.40.1,<0.40.2.0a0
+    - aws-crt-cpp >=0.40.1,<0.40.1.8a0
   size: 416399
   timestamp: 1784113232967
 - conda: https://conda.anaconda.org/conda-forge/linux-64/aws-sdk-cpp-1.11.833-hc7390e0_9.conda
@@ -581,7 +581,7 @@ packages:
   - aws-c-event-stream >=0.7.1,<0.7.2.0a0
   - aws-c-common >=0.14.2,<0.14.3.0a0
   - libcurl >=8.21.0,<9.0a0
-  - aws-crt-cpp >=0.40.1,<0.40.2.0a0
+  - aws-crt-cpp >=0.40.1,<0.40.1.8a0
   license: Apache-2.0
   license_family: APACHE
   run_exports:
@@ -795,7 +795,7 @@ packages:
   sha256: acde70d55f7dbbc043d733427fd6f1ec6ca49db7cbabcf7a656dd29a952b8ad8
   md5: a85c1768af7780d67c6446c17848b76f
   constrains:
-  - eigen >=5.0.1,<5.0.2.0a0
+  - eigen >=5.0.1,<5.0.1.8a0
   license: MPL-2.0
   license_family: MOZILLA
   run_exports: {}
@@ -1042,7 +1042,7 @@ packages:
   md5: c344b5608c65a09b341f2e784efb4422
   depends:
   - __glibc >=2.17,<3.0.a0
-  - aws-crt-cpp >=0.40.1,<0.40.2.0a0
+  - aws-crt-cpp >=0.40.1,<0.40.1.8a0
   - aws-sdk-cpp >=1.11.833,<1.11.834.0a0
   - azure-core-cpp >=1.16.3,<1.16.4.0a0
   - azure-identity-cpp >=1.13.3,<1.13.4.0a0
@@ -3016,7 +3016,7 @@ packages:
   - charset-normalizer
   - pillow >=9
   - python >=3.9,<4
-  - rlpycairo >=0.2.0,<1
+  - rlpycairo >=0.1.8,<1
   - freetype-py >=2.3.0,<2.4
   - python
   license: BSD-3-Clause
@@ -3312,7 +3312,7 @@ packages:
   license_family: APACHE
   run_exports:
     weak:
-    - aws-crt-cpp >=0.40.1,<0.40.2.0a0
+    - aws-crt-cpp >=0.40.1,<0.40.1.8a0
   size: 311706
   timestamp: 1784113271301
 - conda: https://conda.anaconda.org/conda-forge/win-64/aws-sdk-cpp-1.11.833-hdf1b151_9.conda
@@ -3325,7 +3325,7 @@ packages:
   - aws-c-common >=0.14.2,<0.14.3.0a0
   - libzlib >=1.3.2,<2.0a0
   - aws-c-event-stream >=0.7.1,<0.7.2.0a0
-  - aws-crt-cpp >=0.40.1,<0.40.2.0a0
+  - aws-crt-cpp >=0.40.1,<0.40.1.8a0
   license: Apache-2.0
   license_family: APACHE
   run_exports:
@@ -3513,7 +3513,7 @@ packages:
   sha256: 2132168c3e862bcbe32d6d889850ac5ef1ef65f0938ca8a61d5437168344d175
   md5: 53919396018421266fa1a78b537394cc
   constrains:
-  - eigen >=5.0.1,<5.0.2.0a0
+  - eigen >=5.0.1,<5.0.1.8a0
   license: MPL-2.0
   license_family: MOZILLA
   run_exports: {}
@@ -3708,7 +3708,7 @@ packages:
   sha256: 84de044b7639d9b5a344015cf064830be75ec4acfc08b7a07ca776f534ea9579
   md5: 082ecab7d62fcf79ce26236b80e76578
   depends:
-  - aws-crt-cpp >=0.40.1,<0.40.2.0a0
+  - aws-crt-cpp >=0.40.1,<0.40.1.8a0
   - aws-sdk-cpp >=1.11.833,<1.11.834.0a0
   - azure-core-cpp >=1.16.3,<1.16.4.0a0
   - azure-identity-cpp >=1.13.3,<1.13.4.0a0

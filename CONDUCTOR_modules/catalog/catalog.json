@@ -1,19 +1,19 @@
 {
   "schema_version": "2.0.0",
-  "conductor_version": "0.2.0",
-  "profile_id": "balanced-global-first-0.2.0",
+  "conductor_version": "0.1.8",
+  "profile_id": "balanced-global-first-0.1.8",
   "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json",
-  "profile_hash": "b2523523f23e3b8f10ffe471e0cb3c0b50dea0dee524aeb83cc386264eaf6671",
+  "profile_hash": "8e1a4799e0dbba727217f6e79eea6d7e1ddf7b90b243e870514674a538277aca",
   "selection_managed_by": "human",
   "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-26T11:42:47.076658+00:00",
+  "generated_at": "2026-08-28T12:38:50.716593+00:00",
   "capabilities": [
     {
       "schema_version": "2.0.0",
       "capability_id": "A001",
       "skill_name": "cs-analysis-activity-distribution",
       "display_name": "Activity distribution",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "property_profile",
       "description": "Use when Claude Code needs to run Activity distribution from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -50,14 +50,13 @@
         "within-cluster"
       ],
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A001-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A001-2.0.0",
         "result_role": "activity_signal",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -78,29 +77,23 @@
         },
         "null_result": "background",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "方向情報なし",
             "小さく不安定な移動",
             "限定scopeで明確な移動",
             "方向と大きさが一貫した移動"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "Globalとの差なし",
             "軽度の差",
             "Globalまたはsiblingとの差が明確",
             "分布解釈を変える反転または局在"
           ],
-          "independent_support": [
-            "支持なし",
-            "同一結果内のみ",
-            "異なる表現またはOperatorが支持",
-            "複数の独立結果が支持"
-          ],
-          "follow_up_leverage": [
-            "有用な確認なし",
-            "追加確認可能",
-            "明確な反証手順あり",
-            "少数の確認で意思決定が変わる"
+          "evidence_specificity": [
+            "対象不明",
+            "全体分布のみ",
+            "特定scopeまたは分布成分",
+            "特定Clusterと分布変化が明確"
           ]
         }
       },
@@ -118,7 +111,7 @@
       "capability_id": "A002",
       "skill_name": "cs-analysis-descriptor-activity-correlation",
       "display_name": "Descriptor-activity correlation",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "interpretable_association",
       "description": "Use when Claude Code needs to run Descriptor-activity correlation from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -158,15 +151,13 @@
         "within-cluster"
       ],
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A002-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A002-2.0.0",
         "result_role": "activity_signal",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -201,35 +192,23 @@
         },
         "null_result": "background",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "方向情報なし",
             "弱い単変量傾向",
             "限定scopeで明確な方向",
             "方向が明確で反証にも耐える"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "差なし",
             "係数の軽度変化",
             "GlobalとLocalで明確な変化",
             "方向反転または局所化"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "feature不明",
             "広い物性",
             "特定featureに接続",
-            "操作可能な構造要素へ接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "同系統表現のみ",
-            "異系統表現が支持",
-            "複数の独立Operatorが支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "追加相関確認",
-            "局所・反証解析が明確",
-            "少数検証で設計判断可能"
+            "特定featureと対応する構造要素が明確"
           ]
         }
       },
@@ -247,7 +226,7 @@
       "capability_id": "A003",
       "skill_name": "cs-analysis-projection-pca",
       "display_name": "PCA projection",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "projection",
       "description": "Use when Claude Code needs to run PCA projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -295,13 +274,12 @@
         "random_seed": 61453
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A003-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A003-2.0.0",
         "result_role": "context",
         "allowed_axes": [
-          "context_deviation",
-          "independent_support",
-          "follow_up_leverage"
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -322,23 +300,17 @@
         },
         "null_result": "background",
         "anchors": {
-          "context_deviation": [
+          "context_contrast": [
             "局在差なし",
             "軽度の局在",
             "Cluster局在が明確",
             "Global解釈を変える分離・反転"
           ],
-          "independent_support": [
-            "支持なし",
-            "単一投影のみ",
-            "異なる表現で再現",
-            "複数の独立解析で再現"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "可視確認のみ",
-            "特定Clusterの追加解析が明確",
-            "少数解析で仮説を反証可能"
+          "evidence_specificity": [
+            "投影全体のみ",
+            "広い領域",
+            "特定Clusterまたは領域",
+            "特定Clusterと分離方向が明確"
           ]
         }
       },
@@ -356,7 +328,7 @@
       "capability_id": "A004",
       "skill_name": "cs-analysis-projection-umap",
       "display_name": "UMAP projection",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "projection",
       "description": "Use when Claude Code needs to run UMAP projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -407,13 +379,12 @@
         "stability_seeds": 3
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A004-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A004-2.0.0",
         "result_role": "context",
         "allowed_axes": [
-          "context_deviation",
-          "independent_support",
-          "follow_up_leverage"
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -434,23 +405,17 @@
         },
         "null_result": "background",
         "anchors": {
-          "context_deviation": [
+          "context_contrast": [
             "局在差なし",
             "軽度の局在",
             "Cluster局在が明確",
             "Global解釈を変える分離・反転"
           ],
-          "independent_support": [
-            "支持なし",
-            "単一投影のみ",
-            "異なるseedまたは表現で支持",
-            "複数の独立解析で支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "可視確認のみ",
-            "特定Clusterの追加解析が明確",
-            "少数解析で仮説を反証可能"
+          "evidence_specificity": [
+            "投影全体のみ",
+            "広い領域",
+            "特定Clusterまたは領域",
+            "特定Clusterと分離方向が明確"
           ]
         }
       },
@@ -468,7 +433,7 @@
       "capability_id": "A005",
       "skill_name": "cs-analysis-multidescription-feature-model",
       "display_name": "Multi-Description feature model",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "feature_model",
       "description": "Use when Claude Code needs to run Multi-Description feature model from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -525,15 +490,13 @@
         "min_local_samples": 30
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A005-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A005-2.0.0",
         "result_role": "model",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -568,35 +531,23 @@
         },
         "null_result": "background",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "活性方向を示さない",
             "弱いfeature方向候補",
             "安定したfeature方向候補",
-            "操作可能なfeatureと方向が明確"
+            "具体的featureと方向が明確"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "性能差なし",
             "軽度のLocal差",
             "GlobalとLocalで性能差が明確",
             "Localで予測可能性が質的に変化"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "feature不明",
             "広いfeature block",
             "少数の具体feature",
-            "構造操作へ接続可能"
-          ],
-          "independent_support": [
-            "支持なし",
-            "単一modelのみ",
-            "foldまたは別表現で支持",
-            "独立Operatorでも支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "再CV可能",
-            "外れ値・Local検証が明確",
-            "少数の追加化合物で判断可能"
+            "少数の具体featureと構造対応が明確"
           ]
         }
       },
@@ -615,7 +566,7 @@
       "capability_id": "A006",
       "skill_name": "cs-analysis-pairwise-structure-similarity",
       "display_name": "Pairwise structure similarity",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "feature_space",
       "description": "Use when Claude Code needs to run Pairwise structure similarity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -663,14 +614,12 @@
         "random_seed": 61453
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A006-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A006-2.0.0",
         "result_role": "context",
         "allowed_axes": [
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -698,29 +647,17 @@
         },
         "null_result": "background",
         "anchors": {
-          "context_deviation": [
+          "context_contrast": [
             "構造context差なし",
             "軽度の差",
             "Globalまたはsiblingとの差が明確",
             "比較成立性を変える大きな差"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "構造要素不明",
             "広い類似性",
             "限定seriesに接続",
             "具体的coreまたは近傍に接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "同一fingerprintのみ",
-            "異なる構造表現で支持",
-            "独立解析が支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "構造確認可能",
-            "比較対象の追加が明確",
-            "少数比較で仮説検証可能"
           ]
         }
       },
@@ -738,7 +675,7 @@
       "capability_id": "A007",
       "skill_name": "cs-analysis-knn-activity-consistency",
       "display_name": "kNN activity consistency",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "feature_space",
       "description": "Use when Claude Code needs to run kNN activity consistency from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -782,15 +719,13 @@
         "k": 10
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A007-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A007-2.0.0",
         "result_role": "landscape",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -818,35 +753,23 @@
         },
         "null_result": "background",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "方向情報なし",
             "局所的な弱い傾向",
             "近傍内で明確な方向候補",
-            "操作可能な近傍と方向が明確"
+            "具体的な近傍と方向が明確"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "整合性差なし",
             "軽度の差",
             "GlobalとLocalで明確な差",
             "局所で平滑性または不整合が反転"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "近傍不明",
             "広い領域",
             "特定近傍に接続",
             "具体的な化合物対・構造変化へ接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "単一表現のみ",
-            "異なる表現が支持",
-            "独立Operatorも支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "近傍確認可能",
-            "反証対象が明確",
-            "少数の化合物確認で判断可能"
           ]
         }
       },
@@ -864,7 +787,7 @@
       "capability_id": "A008",
       "skill_name": "cs-analysis-sali",
       "display_name": "Extended structure-activity landscape index",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "landscape",
       "description": "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI and preserve high-SALI cliff pairs for CONDUCTOR Interpretation.",
@@ -908,14 +831,12 @@
         "k": 10
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A008-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A008-2.0.0",
         "result_role": "landscape",
         "allowed_axes": [
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -950,29 +871,17 @@
         },
         "null_result": "background",
         "anchors": {
-          "context_deviation": [
+          "context_contrast": [
             "地形差なし",
             "軽度の差",
             "GlobalとLocalで平滑性が明確に変化",
             "Cliff性の反転・局在・消失"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "該当対不明",
             "広い領域",
             "特定の化合物対",
             "具体的構造差に接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "同一空間のみ",
-            "異なるDescriptionで支持",
-            "独立Operatorも支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "上位対を確認可能",
-            "明確な反証解析あり",
-            "少数の対で仮説検証可能"
           ]
         }
       },
@@ -990,7 +899,7 @@
       "capability_id": "A009",
       "skill_name": "cs-analysis-activity-cliff",
       "display_name": "Activity cliff detection",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "landscape",
       "description": "Use when Claude Code needs to run Activity cliff detection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -1040,15 +949,13 @@
         "random_seed": 61453
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A009-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A009-2.0.0",
         "result_role": "activity_signal",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -1076,35 +983,23 @@
         },
         "null_result": "background",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "方向づけ不能",
             "単一Cliff対",
             "複数対で方向候補",
             "一貫した構造変換方向"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "Cliff差なし",
             "軽度の密度差",
             "GlobalとLocalで明確な差",
             "Cliffの局在または消失"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "構造差不明",
             "広い差",
             "特定置換に接続",
             "再現した方向付き変換に接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "単一対のみ",
-            "別表現または複数対が支持",
-            "独立Operatorも支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "対の確認可能",
-            "反証用類縁体が明確",
-            "少数合成で設計判断可能"
           ]
         }
       },
@@ -1122,7 +1017,7 @@
       "capability_id": "A010",
       "skill_name": "cs-analysis-cluster-profile",
       "display_name": "Cluster profile",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "cluster_profile",
       "description": "Use when Claude Code needs to run Cluster profile from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -1166,15 +1061,13 @@
         "low_quantile": 0.2
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A010-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A010-2.0.0",
         "result_role": "activity_signal",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -1209,35 +1102,23 @@
         },
         "null_result": "background",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "favorable濃縮なし",
             "弱い濃縮",
             "Localで明確な濃縮",
             "強く一貫した濃縮"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "分布差なし",
             "軽度の差",
             "GlobalとLocalで明確な差",
             "中央値・濃縮・分散が質的に変化"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "Cluster由来不明",
             "広いCluster特性",
             "特定Clusterに接続",
             "解釈可能な構造seriesに接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "単一profileのみ",
-            "異なるDescriptionまたはOperatorが支持",
-            "複数の独立結果が支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "追加profile可能",
-            "兄弟Cluster・別表現で反証可能",
-            "少数追加で設計判断可能"
           ]
         }
       },
@@ -1255,7 +1136,7 @@
       "capability_id": "A011",
       "skill_name": "cs-analysis-cluster-enrichment",
       "display_name": "Cluster activity enrichment",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "cluster_profile",
       "description": "Use when Claude Code needs to run Cluster activity enrichment from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -1299,15 +1180,13 @@
         "low_quantile": 0.2
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A011-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A011-2.0.0",
         "result_role": "activity_signal",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -1349,35 +1228,23 @@
         },
         "null_result": "background",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "濃縮なし",
             "弱い濃縮",
             "統計と効果が限定scopeで明確",
             "強く一貫した濃縮"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "Globalとの差なし",
             "軽度の差",
             "明確なLocal濃縮",
             "兄弟Clusterと反対方向の局在"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "Cluster由来不明",
             "広いCluster特性",
             "特定seriesに接続",
             "具体的な構造要素へ接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "単一検定のみ",
-            "別Operatorまたは表現で支持",
-            "複数の独立結果が支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "追加検定可能",
-            "反証Clusterが明確",
-            "少数追加で意思決定可能"
           ]
         }
       },
@@ -1395,7 +1262,7 @@
       "capability_id": "A012",
       "skill_name": "cs-analysis-cluster-overlap",
       "display_name": "Cluster overlap",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "cluster_quality",
       "description": "Use when Claude Code needs to run Cluster overlap from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -1434,13 +1301,12 @@
         "global"
       ],
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A012-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A012-2.0.0",
         "result_role": "quality",
         "allowed_axes": [
-          "context_deviation",
-          "independent_support",
-          "follow_up_leverage"
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -1461,23 +1327,17 @@
         },
         "null_result": "supporting",
         "anchors": {
-          "context_deviation": [
+          "context_contrast": [
             "比較差なし",
             "軽度の重複差",
             "解釈に影響する重複",
             "独立性判断を反転させる重複"
           ],
-          "independent_support": [
-            "独立性なし",
-            "大きく重複",
-            "部分的に独立",
-            "互いに独立"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "重複確認のみ",
-            "比較の再解釈に有用",
-            "候補の独立性判断を大きく改善"
+          "evidence_specificity": [
+            "対象不明",
+            "全体重複のみ",
+            "特定Cluster対",
+            "特定Cluster対と重複化合物が明確"
           ]
         }
       },
@@ -1495,7 +1355,7 @@
       "capability_id": "A013",
       "skill_name": "cs-analysis-cluster-structural-diversity",
       "display_name": "Cluster structural diversity",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "cluster_quality",
       "description": "Use when Claude Code needs to run Cluster structural diversity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -1545,14 +1405,12 @@
         "random_seed": 61453
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A013-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A013-2.0.0",
         "result_role": "context",
         "allowed_axes": [
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -1580,29 +1438,17 @@
         },
         "null_result": "background",
         "anchors": {
-          "context_deviation": [
+          "context_contrast": [
             "多様性差なし",
             "軽度の差",
             "兄弟Clusterで明確な差",
             "解釈可能性を質的に変える差"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "構造series不明",
             "広い構造群",
             "まとまったseries",
             "具体的core・seriesへ接続"
-          ],
-          "independent_support": [
-            "支持なし",
-            "単一fingerprintのみ",
-            "別構造指標で支持",
-            "独立解析でも支持"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "構造確認可能",
-            "候補Clusterの選別に有用",
-            "少数化合物で解釈検証可能"
           ]
         }
       },
@@ -1620,7 +1466,7 @@
       "capability_id": "A014",
       "skill_name": "cs-analysis-matched-molecular-pairs",
       "display_name": "Matched molecular pair analysis",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "analysis",
       "family": "matched_molecular_pairs",
       "description": "Build and query a reusable exhaustive matched molecular pair evidence database with exact-core and environment-aware Global-to-Cluster comparisons.",
@@ -1679,15 +1525,13 @@
         "max_compounds": 2000
       },
       "interpretation_profile": {
-        "schema_version": "1.0.0",
-        "profile_id": "IP-A014-1.0.0",
+        "schema_version": "2.0.0",
+        "profile_id": "IP-A014-2.0.0",
         "result_role": "specialized",
         "allowed_axes": [
-          "favorable_signal",
-          "context_deviation",
-          "chemical_actionability",
-          "independent_support",
-          "follow_up_leverage"
+          "favorable_evidence",
+          "context_contrast",
+          "evidence_specificity"
         ],
         "comparison_metrics": [
           {
@@ -1715,35 +1559,23 @@
         },
         "null_result": "not_scorable",
         "anchors": {
-          "favorable_signal": [
+          "favorable_evidence": [
             "方向情報なし",
             "低支持のTransform",
             "限定contextで明確",
             "複数coreで一貫した方向"
           ],
-          "context_deviation": [
+          "context_contrast": [
             "context差なし",
             "軽度の差",
             "GlobalとClusterで明確な差",
             "Transform効果の反転・局在"
           ],
-          "chemical_actionability": [
+          "evidence_specificity": [
             "変換不明",
             "広い変換",
             "特定Transform/Core",
             "方向付きTransformと適用contextが明確"
-          ],
-          "independent_support": [
-            "支持なし",
-            "単一pair",
-            "複数pairまたはcore",
-            "独立contextで再現"
-          ],
-          "follow_up_leverage": [
-            "確認価値なし",
-            "追加query可能",
-            "明確な反証Transformあり",
-            "少数合成で設計判断可能"
           ]
         }
       },
@@ -3299,7 +3131,7 @@
       "capability_id": "I001",
       "skill_name": "cs-analysis-interpret-results",
       "display_name": "SAR result interpretation",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "interpretation",
       "family": "result_integration",
       "description": "Use when the dedicated Claude Code Interpreter must screen small Result batches or compare a Runtime-selected shortlist across representations, Clusters, scopes, and Rounds under a read-only Policy.",
@@ -3345,7 +3177,7 @@
       "capability_id": "I002",
       "skill_name": "cs-analysis-interpret-mmp",
       "display_name": "Read-only MMP Global–Local interpretation",
-      "version": "0.1.6",
+      "version": "0.1.8",
       "stage": "interpretation",
       "family": "mmp_cluster_interpretation",
       "description": "Human-triggered read-only interpretation of an existing Global A014 MMP database against canonical CONDUCTOR Cluster memberships, without DAG or State mutation.",
@@ -3393,7 +3225,7 @@
       "capability_id": "O001",
       "skill_name": "cs-conductor-runtime",
       "display_name": "CONDUCTOR deterministic runtime",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "orchestration",
       "family": "graph_orchestration",
       "description": "Deterministic Runtime owning compact Control, five-state Nodes, idempotent OS Workers, common Execution Requests, incremental Result Screening, bounded synthesis, and Round finalization.",
@@ -3440,7 +3272,7 @@
       "capability_id": "O002",
       "skill_name": "cs-conductor-state-report",
       "display_name": "CONDUCTOR State DAG report",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "stage": "orchestration",
       "family": "state_reporting",
       "description": "Use only on an explicit human request with an explicitly supplied Run Root to render a read-only timestamped HTML and SVG execution DAG report.",
@@ -3478,10 +3310,10 @@
       "capability_id": "O003",
       "skill_name": "cs-conductor-run-audit",
       "display_name": "CONDUCTOR Run Audit",
-      "version": "0.2.0",
+      "version": "0.1.8",
       "stage": "orchestration",
       "family": "run_audit",
-      "description": "Read-only Quick/Full audit of a supplied CONDUCTOR 0.1.6/0.1.7 Run Root and referenced artifacts.",
+      "description": "Read-only Quick/Full audit of a supplied CONDUCTOR 0.1.8 Run Root and referenced artifacts.",
       "cost": {
         "class": "low",
         "human_approval_required": false,

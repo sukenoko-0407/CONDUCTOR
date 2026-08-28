@@ -8,7 +8,7 @@ from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = MODULE_ROOT.parent
-VERSION = "0.2.0"
+VERSION = "0.1.8"
 # Skill implementation versions are independent from the Run artifact
 # contract.  Older scientific kernels remain supported, but all newly emitted
 # CONDUCTOR artifacts must declare VERSION.
@@ -293,7 +293,7 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print("CONDUCTOR 0.2.0 package layout is valid")
+    print("CONDUCTOR 0.1.8 package layout is valid")
     return 0
 
 

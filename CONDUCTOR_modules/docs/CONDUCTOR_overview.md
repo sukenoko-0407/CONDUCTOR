@@ -1,6 +1,6 @@
 # CONDUCTOR overview
 
-CONDUCTOR 0.2.0は、SARデータを単一の説明へ早急に収束させず、複数の分子表現、Cluster、Operatorを横断してGlobalとLocalの変化を探すClaude Code向け解析基盤です。同じRunを人間主導で複数Round重ね、解析済み領域と比較単位であるReview Bundleを再利用しながら探索の完全性と解釈の質を高めます。
+CONDUCTOR 0.1.8は、SARデータを単一の説明へ早急に収束させず、複数の分子表現、Cluster、Operatorを横断してGlobalとLocalの変化を探すClaude Code向け解析基盤です。同じRunを人間主導で複数Round重ね、解析済み領域と比較単位であるReview Bundleを再利用しながら探索の完全性と解釈の質を高めます。
 
 ## 解析の流れ
 
@@ -21,7 +21,7 @@ CONDUCTOR 0.2.0は、SARデータを単一の説明へ早急に収束させず�
 - 全科学Skillを共通`execution_request.json`で起動し、Runtime WorkerはSkill別の長いCLIを組み立てない。
 - 署名済packetはRun、Round、Control revision、lease、Request hashへ固定され、最初のclaimだけが科学processを起動する。再投入は既存Workerへ接続する。
 - Operator予算は人間が指定し、Runtimeが最大25 Nodeずつ計画する。成功Resultは既定4 Review Bundleずつ評価するため、一括読込量を増やさず広い探索ができる。
-- `screening` Roundは評価索引とcompact summary、`full` Roundは`design_lead`と`contextual_anomaly`から選抜した最大50 Resultの正式Interpretationで終了する。
+- `screening` Roundは評価索引とcompact summary、`full` Roundは`favorable_clue`と`contextual_clue`から選抜した最大50 Resultの正式Interpretationで終了する。
 - 過去Roundの成功Nodeは再計算せず、現在Roundから再利用参照する。
 - `screening`ではScreening summary、`full`ではInterpretation JSON／Markdown／HTMLを要求し、いずれもFull Auditが揃うまで人間レビュー状態へ進めない。
 - CLOSED Roundの一次評価は元Roundを変更せず、Operator計算を伴わない人間承認の再Screening専用Roundで更新できる。旧revisionは監査用に保持し、Agentは最新revisionだけを見る。

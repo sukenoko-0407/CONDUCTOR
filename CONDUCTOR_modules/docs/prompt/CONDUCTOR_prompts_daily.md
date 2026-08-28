@@ -1,6 +1,6 @@
 # CONDUCTOR 日常運用プロンプト集
 
-対象Version: `0.2.0`
+対象Version: `0.1.8`
 
 通常のRun／Round運用、状態確認、session引継ぎ、既存結果の閲覧に使うプロンプトをまとめた。`<...>`を実際の値へ置き換えて使用する。
 
@@ -56,13 +56,13 @@ Roundの目的・重視点（任意）:
 
 既存のconductor_control.jsonがないことを確認した場合だけ初期化してください。Main Agent自身がOrchestratorとして動作し、Runtimeの単一required_actionに従ってください。専門SkillをMainから直接実行せず、Runtimeが生成した署名付きExecution packetだけをexecute-packetへ一回渡してください。
 
-基本計算、人間指定予算内のexploration、boundedなReview Bundle絶対評価を同じRND0001で進めてください。screening modeではcompact summary、full modeでは`design_lead`と`contextual_anomaly`を中心に選抜したBundleのInterpretationを作り、Full Audit後にAWAITING_HUMAN_REVIEWで停止してください。長いWall Timeを理由にNode予算を拡大せず、Roundを自動受理したりRND0002を開始したりしないでください。
+基本計算、人間指定予算内のexploration、boundedなReview Bundle絶対評価を同じRND0001で進めてください。screening modeではcompact summary、full modeでは`favorable_clue`と`contextual_clue`を中心に選抜したBundleのInterpretationを作り、Full Audit後にAWAITING_HUMAN_REVIEWで停止してください。長いWall Timeを理由にNode予算を拡大せず、Roundを自動受理したりRND0002を開始したりしないでください。
 ```
 
 <a id="daily-long-round1"></a>
 ## 長時間のRound 1（基本計算＋広いOperator探索）
 
-基本計算を省略せず揃えた後、Globalを優先した広いOperator探索と、代表的なLocal／Cluster比較まで同じRoundで進めるためのプロンプト。0.2.0では「初期探索」と「追加探索」を別状態として管理しないため、単一explorationの中で初期探索相当の広さを確保し、そのまま未実施領域へ進む。
+基本計算を省略せず揃えた後、Globalを優先した広いOperator探索と、代表的なLocal／Cluster比較まで同じRoundで進めるためのプロンプト。0.1.8では「初期探索」と「追加探索」を別状態として管理しないため、単一explorationの中で初期探索相当の広さを確保し、そのまま未実施領域へ進む。
 
 ```text
 /cs-conductor-orchestrator
@@ -263,7 +263,7 @@ Main Agent自身がOrchestratorです。通常は全DAG、全Event Ledger、過�
 解析を進める操作では同じRoundのResult Screening、契約済みhandoff成果物、Full Auditを完成させ、AWAITING_HUMAN_REVIEWで停止してください。Roundを自動受理せず、人間の指示なしに次Roundを開始しないでください。
 ```
 
-引継ぎの運用正本は`run_root/conductor_control.json`である。詳細は必要な場合だけDAG snapshot、Event Ledger、Result Card、Review Bundleへ辿る。0.1.x Run Rootを0.2.0で継続しない。
+引継ぎの運用正本は`run_root/conductor_control.json`である。詳細は必要な場合だけDAG snapshot、Event Ledger、Result Card、Review Bundleへ辿る。0.1.7以前のRun Rootを0.1.8で継続しない。
 
 <a id="daily-concierge"></a>
 ## Result Conciergeによる既存結果の確認
