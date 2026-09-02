@@ -101,7 +101,7 @@
 8. source Cluster × Series、edge list、graph diagnosticsを出力する。
 9. isolated Clusterもsingleton Seriesとして保持する。
 10. Series数を目的にparameterを自動調整しない。
-11. Series数24超でhuman gate、24以下で自動進行とする。
+11. 採用Seriesとfallback Clusterを合わせた実解析単位数が24超ならhuman gate、24以下なら自動進行とする。
 
 ## 10. Phase 8: Series Registryとanalysis unit
 
@@ -182,12 +182,13 @@
 
 ### 12.2 Type-I
 
-1. Global Top 5と各analysis unit Top 5を選ぶ。
+1. 各Series／fallback ClusterのTop 1を選ぶ。Globalは自動Targetに含めない。
 2. tieを`compound_id`で解決する。
-3. MMP 0件でもK+1位を補充しない。
+3. MMP 0件でも次順位を補充しない。
 4. 全対象を一つのbatch Nodeで処理する。
 5. Type-IIIなしで実行できるようにする。入力全体のfragmentation／Pair抽出は行うが、包括的Summary群とSQLiteは保存せず、対象接続成果物だけを永続化する。
-6. Summary HTML、対象別HTML、完全CSV、SVG／PNGを生成する。
+6. Summary HTML、対象別HTML、完全CSV、SVG／PNGを生成する。対象別HTMLは2D構造、Target全体SMILESと基本情報、Core／置換詳細、Neighbor全体／置換前／置換後の3構造変換図の固定順とし、完全列を直接展開しない。
+7. HTMLではTargetを常にToへ正規化し、Favorable deltaをNeighbor→Target方向へ揃える。同一Target–Neighborの複数Exact Coreは、最大Coreによる最小変換1件へ表示上だけ縮約する。Database／完全CSVは縮約しない。
 
 ### 12.3 Type-II
 
@@ -216,14 +217,15 @@
 2. Summary HTML 1件とanalysis unit詳細HTML K件を生成する。
 3. Summaryの主表を全FF適格Cluster一覧とする。
 4. Description、Clustering、N、Favorable count／fraction、OR、p、q、Seriesを表示する。
-5. Endpoint overview／histogramを追加する。
-6. Compact Series mapを追加する。
-7. 実行時間と状態件数を簡潔に表示する。
-8. Series詳細へD001、projection、model、landscape、structureを表示する。
-9. MMPをSeries詳細へ含めない。
-10. hit 0件でも決定論的near-missを一文表示する。
-11. HTMLをoffline self-containedとし、画像をbase64埋め込みする。
-12. section順、配色、必須labelをrenderer testで固定する。
+5. 冒頭に全Cluster、選抜Cluster、基準合格Series、fallback Cluster、active解析単位の簡略表を置く。
+6. Endpoint overview／histogramを追加し、Mean、Median、Favorable top-20% cutoff、Unfavorable bottom-20% cutoffを図内へ数値描画する。
+7. Compact Series mapを追加する。
+8. 実行時間と状態件数を簡潔に表示する。
+9. Series詳細へD001、projection、model、landscape、structureを表示する。
+10. MMPをSeries詳細へ含めない。
+11. hit 0件でも決定論的near-missを一文表示する。
+12. HTMLをoffline self-containedとし、画像をbase64埋め込みする。
+13. section順、配色、必須labelをrenderer testで固定する。
 
 ## 14. Phase 12: 軽量Interpretation
 
@@ -297,7 +299,7 @@
 4. Series union、support、再計算FFが再現できる。
 5. FF低下Seriesがsource Clusterへfallbackする。
 6. Series 0件時に自動fallbackする。
-7. Series 24超だけがhuman gateになる。
+7. Series／fallback Clusterを合わせた実解析単位数24超だけがhuman gateになる。
 8. Global 50%超は警告だけで停止しない。
 
 ### 18.3 定型Operator／Report
@@ -317,7 +319,7 @@
 
 1. 全Typeで1-cutだけが生成される。
 2. radius 0～2が保存され、supportを水増ししない。
-3. Type-IがGlobal／各analysis unit Top 5を正しく選ぶ。
+3. Type-Iが各Series／fallback Cluster Top 1を正しく選び、Globalを自動Targetに含めない。
 4. 0件targetを補充せずNegative Resultにする。
 5. Type-IIがrun内compound IDだけを受理する。
 6. near-coreが0.70／0.60条件とtopologyを満たす。
@@ -348,7 +350,7 @@
 | FF偶然濃縮 | N、support、p、BH qを併記し、候補過多時は人間がNを変更する |
 | Series unionでFF低下 | 再計算FF 0.5未満をsource Clusterへ自動fallbackする |
 | Weighted graph過密化 | densityとweight分布を診断するが、初期仕様で自動cutoffを導入しない |
-| Series数過多 | 24超だけhuman gateとし、自動parameter調整を禁止する |
+| 実解析単位数過多 | 採用Seriesとfallback Clusterの合計が24超ならhuman gateとし、自動parameter調整を禁止する |
 | Operator Node爆発 | capability単位のbatch Nodeにする |
 | Endpoint選抜bias | 全Reportへ固定limitationを表示する |
 | 弱い知見でHTMLが肥大化 | 厳格hitと一件のnear-missへ限定する |

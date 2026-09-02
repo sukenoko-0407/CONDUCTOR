@@ -2,9 +2,9 @@
   "schema_version": "1.0.0",
   "conductor_version": "0.1.9",
   "profile_id": "enrichment-series-0.1.9",
-  "profile_hash": "f237782c1e4516513bb65ffc2088f550bcc5ea4bfbcc022d28034791c653f211",
-  "selection_hash": "c38dcaba02f0b1c832ddcad3638b125d6dcb9caee82827d32f9fc5d00ac5619e",
-  "generated_at": "2026-09-02T02:18:53.278575+00:00",
+  "profile_hash": "7daf0bfbf69ae8b707b13b22344b68038f3eb10412ea123e83bf59ac85f73f9b",
+  "selection_hash": "9c59a321107a0c4c5790119c63d77f207804dc29b5525052127b1bf818aecc6e",
+  "generated_at": "2026-09-02T12:14:44.637784+00:00",
   "capabilities": [
     {
       "schema_version": "2.0.0",
@@ -467,7 +467,7 @@
         "cuts": 1,
         "radius_min": 0,
         "radius_max": 2,
-        "top_k": 5,
+        "top_k": 1,
         "near_core_tanimoto": 0.7,
         "near_core_mcs_coverage": 0.6,
         "max_compounds": 2000

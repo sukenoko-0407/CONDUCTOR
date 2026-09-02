@@ -406,17 +406,52 @@ def series_gate(root: Path, control: dict[str, Any], dag: dict[str, Any]) -> dic
     if not summary_path.is_file():
         return None
     summary = read_json(summary_path)
-    # The confirmed 0.1.9 contract gates accepted Series only.  Fallback
-    # Clusters remain visible as analysis units, but do not introduce an
-    # additional approval gate (including the zero-Series fallback case).
-    count = int(summary.get("accepted_series_count", summary.get("series_count", 0)))
-    analysis_unit_count = int(summary.get("analysis_unit_count", count))
+    accepted_series_count = int(
+        summary.get("accepted_series_count", summary.get("series_count", 0))
+    )
+    # Downstream cost follows the actual analysis units, not only accepted
+    # Series. Rejected Series can expand into many fallback Cluster units, so
+    # gating accepted Series alone misses the expensive zero-Series case.
+    analysis_unit_count = int(
+        summary.get("analysis_unit_count", accepted_series_count)
+    )
     limit = int(profile()["basic_compute"]["max_series_for_auto_standard"])
-    if count > limit and control.get("series_gate_revision") != c012["node_id"]:
+    if (
+        analysis_unit_count > limit
+        and control.get("series_gate_revision") != c012["node_id"]
+    ):
         return {
-            "accepted_series_count": count,
+            "selected_cluster_count": int(
+                summary.get("selected_cluster_count", 0)
+            ),
+            "accepted_series_count": accepted_series_count,
+            "rejected_series_count": int(
+                summary.get("rejected_series_count", 0)
+            ),
+            "fallback_cluster_count": int(
+                summary.get("fallback_cluster_count", 0)
+            ),
             "analysis_unit_count": analysis_unit_count,
             "limit": limit,
+            "review_basis": "analysis_unit_count",
+            "current_parameters": {
+                "min_ff_evaluate": int(
+                    control.get("current_parameters", {}).get(
+                        "min_ff_evaluate",
+                        profile()["basic_compute"]["min_ff_evaluate"],
+                    )
+                ),
+                "leiden_resolution": float(
+                    control.get("current_parameters", {}).get(
+                        "leiden_resolution",
+                        profile()["basic_compute"]["leiden_resolution"],
+                    )
+                ),
+            },
+            "human_actions": [
+                "approve-series",
+                "revise-series --min-ff-evaluate ... --leiden-resolution ...",
+            ],
             "c012_node_id": c012["node_id"],
         }
     return None
@@ -1105,7 +1140,7 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
             elif source["capability_id"] == "A001": role = "cluster_profile"
             elif source["capability_id"] == "A002": role = "cluster_enrichment"
             input_values.append(artifact(role, primary_path(source), source))
-        for role, name in (("cluster_registry", "cluster_registry.csv"), ("series_registry", "series_registry.csv"), ("analysis_unit_membership", "analysis_unit_membership.csv"), ("analysis_unit_registry", "analysis_unit_registry.csv"), ("series_cluster_membership", "series_cluster_membership.csv"), ("compound_series_support", "compound_series_support.csv")):
+        for role, name in (("cluster_registry", "cluster_registry.csv"), ("series_registry", "series_registry.csv"), ("series_summary", "series_summary.json"), ("analysis_unit_membership", "analysis_unit_membership.csv"), ("analysis_unit_registry", "analysis_unit_registry.csv"), ("series_cluster_membership", "series_cluster_membership.csv"), ("compound_series_support", "compound_series_support.csv")):
             path = root / "runtime" / name
             if path.is_file(): input_values.append(artifact(role, path))
     available_cpu = int(control["available_cpu_cores"])
@@ -1118,13 +1153,39 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
         skill_options = {"available_cpu_cores": node_cpu, "compound_workers": min(8, node_cpu)}
     elif capability_id == "D020":
         skill_options = {"cpu_threads": node_cpu}
+    subject: dict[str, Any] = {
+        "mode": "batch"
+        if capability_id.startswith("A") or capability_id == "C012"
+        else "global"
+    }
+    if capability_id == "A009":
+        report_execution = []
+        for dependency in dependencies:
+            attempts = dependency.get("attempts") or []
+            attempt = attempts[-1] if attempts else {}
+            started_at = parse_time(attempt.get("started_at"))
+            finished_at = parse_time(attempt.get("finished_at"))
+            duration_seconds = (
+                round((finished_at - started_at).total_seconds(), 3)
+                if started_at and finished_at else None
+            )
+            node_status = str(dependency.get("status", "unknown"))
+            if dependency.get("waived") and node_status != "succeeded":
+                node_status = "waived_failed"
+            report_execution.append({
+                "capability_id": dependency["capability_id"],
+                "node_id": dependency["node_id"],
+                "node_status": node_status,
+                "duration_seconds": duration_seconds,
+            })
+        subject["report_execution"] = report_execution
     request = {
         "schema_version": "1.0.0",
         "identity": {"project": control["project"], "run_id": control["run_id"], "round_id": node["round_id"], "node_id": node["node_id"], "attempt_id": attempt_id, "capability_id": capability_id, "skill_name": node["skill_name"]},
         "inputs": input_values,
         "columns": control["columns"],
         "endpoint": {"higher_is_better": control["higher_is_better"]},
-        "subject": {"mode": "batch" if capability_id.startswith("A") or capability_id == "C012" else "global"},
+        "subject": subject,
         "parameters": node.get("parameters", {}),
         "resources": {"available_cpu_cores": available_cpu, "node_cpu_cores": node_cpu, "native_thread_limit": 1, "skill_options": skill_options},
         "output": {"directory": str((scratch / "skill_output").resolve()), "overwrite": False},

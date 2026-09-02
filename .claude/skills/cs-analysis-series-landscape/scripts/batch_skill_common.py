@@ -185,13 +185,20 @@ def bh_qvalues(pvalues: Iterable[float]) -> np.ndarray:
 
 
 def numeric_features(frame: pd.DataFrame, excluded: Iterable[str]) -> tuple[pd.DataFrame, list[str]]:
-    excluded_set = set(excluded)
+    excluded_set = set(excluded) | {
+        "input_smiles", "canonical_smiles", "mol_parse_ok",
+        "description_error", "descriptor_error",
+    }
     columns: list[str] = []
     converted: dict[str, pd.Series] = {}
     for column in frame.columns:
-        if column in excluded_set:
+        source = frame[column]
+        if column in excluded_set or pd.api.types.is_bool_dtype(source.dtype):
             continue
-        values = pd.to_numeric(frame[column], errors="coerce").replace([np.inf, -np.inf], np.nan)
+        values = pd.to_numeric(source, errors="coerce")
+        if pd.api.types.is_bool_dtype(values.dtype):
+            continue
+        values = values.astype(float).replace([np.inf, -np.inf], np.nan)
         if values.notna().sum() >= 3:
             columns.append(str(column)); converted[str(column)] = values
     return pd.DataFrame(converted, index=frame.index), columns
@@ -220,13 +227,14 @@ def image_uri(path: Path) -> str:
 
 def html_page(title: str, body: str) -> str:
     return f"""<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{html.escape(title)}</title><style>
-body{{margin:0;background:#f3f1ec;color:#243039;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.6}}main{{max-width:1180px;margin:auto;padding:32px}}h1,h2{{color:#263b45}}.card{{background:#fff;border:1px solid #d8d4ca;border-radius:10px;padding:20px;margin:16px 0;box-shadow:0 3px 12px #1d2d3520}}table{{border-collapse:collapse;width:100%;font-size:.9rem}}th,td{{border-bottom:1px solid #dedbd3;padding:7px;text-align:left;vertical-align:top}}th{{background:#e8eceb;position:sticky;top:0}}.good{{color:#7b3f26;font-weight:700}}.muted{{color:#69767c}}img{{max-width:100%;height:auto}}code{{background:#eef0ed;padding:2px 5px}}a{{color:#315f70}}</style></head><body><main>{body}</main></body></html>"""
+*{{box-sizing:border-box}}body{{margin:0;background:#f3f1ec;color:#243039;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.6}}main{{max-width:1180px;min-width:0;margin:auto;padding:32px}}h1,h2,h3{{color:#263b45}}.card{{min-width:0;overflow:hidden;background:#fff;border:1px solid #d8d4ca;border-radius:10px;padding:20px;margin:16px 0;box-shadow:0 3px 12px #1d2d3520}}.table-wrap{{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;border:1px solid #e2ded6;border-radius:7px}}table{{border-collapse:collapse;width:max-content;min-width:100%;max-width:none;font-size:.9rem}}th,td{{border-bottom:1px solid #dedbd3;padding:7px;text-align:left;vertical-align:top;white-space:nowrap}}th{{background:#e8eceb;position:sticky;top:0;z-index:1}}.metric-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}}.metric{{background:#f5f6f3;border-radius:7px;padding:10px 12px}}.metric b{{display:block;font-size:1.08rem}}.link-grid{{columns:3 220px}}.good{{color:#7b3f26;font-weight:700}}.warning{{color:#8a5b24;font-weight:700}}.muted{{color:#69767c}}img{{max-width:100%;height:auto}}code{{background:#eef0ed;padding:2px 5px}}a{{color:#315f70}}@media(max-width:700px){{main{{padding:16px}}.card{{padding:14px}}.link-grid{{columns:1}}}}</style></head><body><main>{body}</main></body></html>"""
 
 
 def frame_html(frame: pd.DataFrame, limit: int = 200) -> str:
     if frame.empty:
         return "<p class='muted'>該当結果なし</p>"
-    return frame.head(limit).to_html(index=False, escape=True, border=0, na_rep="")
+    table = frame.head(limit).to_html(index=False, escape=True, border=0, na_rep="")
+    return f"<div class='table-wrap' role='region' aria-label='表（横スクロール可能）' tabindex='0'>{table}</div>"
 
 
 def finish(

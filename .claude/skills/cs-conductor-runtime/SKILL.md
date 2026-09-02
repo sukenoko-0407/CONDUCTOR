@@ -24,7 +24,7 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" state execute-packet --run-root <
 
 SkillごとのCLIをRuntimeやAgentが推測せず、共通`execution_request.json`を`<skill>/scripts/launch.py --conductor-request`へ渡す。独立して実行可能なNodeを先にすべて試行し、残った失敗は同じNode IDを`retry-node`するか、人間理由付きで`waive-node`する。科学的な0件・非適用はSkillが正常結果として返す。
 
-基本計算は全18 Description、C001-C004、全18×C005-C010、A001/A002、C012。定型解析はA003-A009。Series数24超だけ人間gateを置く。Runtimeは新Roundを自動開始せず、Wall Time終了時は同じRoundをpauseする。
+基本計算は全18 Description、C001-C004、全18×C005-C010、A001/A002、C012。定型解析はA003-A009。採用Seriesとfallback Clusterを合わせた実解析単位数が24を超える場合に人間gateを置く。Runtimeは新Roundを自動開始せず、Wall Time終了時は同じRoundをpauseする。
 
 人間が定型解析の計画前に`min_ff_evaluate`またはLeiden resolutionを変更した場合だけ、`revise-series`で同じRoundへ新しいA001/A002/C012 revisionを作る。成功済みDescriptionとC001-C010は再計算しない。
 

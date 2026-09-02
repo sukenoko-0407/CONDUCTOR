@@ -787,6 +787,13 @@ def radius_candidates(distance: np.ndarray, k: int, quantiles: tuple[float, ...]
     return unique_values(values)
 
 
+def dbscan_eps_candidates(distance: np.ndarray, k: int, quantiles: tuple[float, ...]) -> list[float]:
+    # Exact duplicate vectors can make every selected k-distance zero. DBSCAN
+    # requires eps > 0, so preserve that neighborhood with a positive floor.
+    floor = float(np.finfo(float).eps)
+    return sorted({value if value > 0 else floor for value in radius_candidates(distance, k, quantiles)})
+
+
 def candidate_record(parameters: dict[str, Any], labels: np.ndarray, distance: np.ndarray, min_size: int, graph: dict[str, Any] | None = None) -> dict[str, Any]:
     record = {"parameters": parameters, "labels": labels, "statistics": partition_statistics(labels, distance, min_size)}
     if graph:
@@ -863,7 +870,7 @@ def vector_partition(distance: np.ndarray, args: argparse.Namespace, method: str
         if args.parameter_mode == "fixed":
             eps_values = [float(args.eps)]
         else:
-            eps_values = radius_candidates(distance, max(1, args.min_samples - 1), (0.50, 0.75, 0.90))
+            eps_values = dbscan_eps_candidates(distance, max(1, args.min_samples - 1), (0.50, 0.75, 0.90))
         for eps in eps_values:
             labels = DBSCAN(eps=eps, min_samples=args.min_samples, metric="precomputed").fit_predict(distance)
             candidates.append(candidate_record({"eps": eps, "min_samples": args.min_samples}, labels.astype(int), distance, args.min_cluster_size))

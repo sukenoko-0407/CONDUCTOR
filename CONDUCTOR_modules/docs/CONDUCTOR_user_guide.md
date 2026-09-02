@@ -6,11 +6,15 @@
 
 ## 人間確認
 
-まずA009の`standard_summary.html`を読み、必要ならSeries別HTML、A008 MMP HTMLを確認します。気になるSeries、Cluster、化合物、図、仮説はOn-demandへ依頼します。
+まずA009の`standard_summary.html`冒頭にある主要件数表と、Mean／Median／Favorable・Unfavorable 20% cutoffを図内表示したEndpointヒストグラムを読み、必要ならSeries別HTML、A008 MMP HTMLを確認します。気になるSeries、Cluster、化合物、図、仮説はOn-demandへ依頼します。
+
+定型A008 Type-Iは各Series／fallback ClusterのTop 1のみを対象にします。上位K化合物を追加評価する場合は、対象となるrun内compound IDを選び、On-demand Type-IIの`--target-compound-id`を複数回指定します。
+
+A008 Type-I/IIのHTMLはTargetを常にTo、NeighborをFromとして表示し、Favorable deltaもNeighbor→Target方向へ統一します。同一Target–Neighborの複数Coreは最大Coreによる最小変換1件だけをHTML表示しますが、原本CSV／Databaseには全行を保持します。最終sectionではNeighbor全体、置換前fragment、置換後fragmentの2D画像を横一列で確認できます。
 
 ## parameter変更
 
-`min_ff_evaluate`またはLeiden resolutionを変える場合、定型解析の計画前であれば、同じACTIVE Roundで`revise-series`を明示実行します。新しいA001、A002、C012 Nodeを作りますが、成功済みDescriptionとC001-C010は再計算しません。定型解析を計画した後は科学的scopeの混在を避けるため変更できません。Series数24超ではRuntimeが停止するので、人間が結果を確認し、現条件を承認するか条件変更を指示します。Runtimeは値を勝手に変更しません。
+`min_ff_evaluate`またはLeiden resolutionを変える場合、定型解析の計画前であれば、同じACTIVE Roundで`revise-series`を明示実行します。新しいA001、A002、C012 Nodeを作りますが、成功済みDescriptionとC001-C010は再計算しません。定型解析を計画した後は科学的scopeの混在を避けるため変更できません。採用Seriesとfallback Clusterを合わせた実解析単位数が24を超えるとRuntimeが、件数、fallback内訳、現在の両parameterを示して停止します。人間は結果を見て、現条件を承認するか、`min_ff_evaluate`とLeiden resolutionを適切に指定して再計算します。Runtimeは値を勝手に変更しません。
 
 ## 失敗・停止
 

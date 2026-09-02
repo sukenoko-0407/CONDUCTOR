@@ -8,6 +8,7 @@ import math
 import shutil
 import sys
 from pathlib import Path
+from string import Template
 from typing import Any
 
 import pandas as pd
@@ -38,6 +39,298 @@ from mmp_outputs import (
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
+
+MMP_REPORT_COLUMNS = {
+    "overview": [
+        "analysis_unit_id", "target_compound_id", "target_endpoint",
+        "mmp_pair_count", "effect_summary", "underexplored",
+    ],
+    "basic": [
+        "mmp_id", "target_compound_id", "target_endpoint",
+        "neighbor_compound_id", "neighbor_endpoint", "favorable_delta_report",
+    ],
+    "detail": [
+        "mmp_id", "exact_core_smiles", "variable_neighbor", "variable_target",
+    ],
+}
+
+MMP_REPORT_LABELS = {
+    "analysis_unit_id": "Analysis unit",
+    "target_compound_id": "Target compound ID",
+    "target_endpoint": "Target Endpoint",
+    "neighbor_compound_id": "Neighbor compound ID",
+    "neighbor_endpoint": "Neighbor Endpoint",
+    "favorable_delta_report": "Favorable Δ (Neighbor → Target)",
+    "mmp_pair_count": "MMP count",
+    "effect_summary": "Observed effect",
+    "underexplored": "Underexplored",
+    "mmp_id": "MMP ID",
+    "exact_core_smiles": "Core SMILES",
+    "variable_neighbor": "Before fragment (Neighbor)",
+    "variable_target": "After fragment (Target)",
+}
+
+
+def render_mmp_template(name: str, values: dict[str, Any]) -> str:
+    path = SKILL_DIR / "templates" / name
+    if not path.is_file():
+        raise FileNotFoundError(f"MMP report template is missing: {path}")
+    return Template(path.read_text(encoding="utf-8")).substitute(
+        {key: str(value) for key, value in values.items()}
+    )
+
+
+def display_value(value: Any) -> str:
+    if value is None:
+        return "—"
+    try:
+        if pd.isna(value):
+            return "—"
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        if value != 0 and abs(value) < .001:
+            return f"{value:.3e}"
+        return f"{value:.4g}"
+    return str(value)
+
+
+def compact_mmp_table(
+    frame: pd.DataFrame, table_kind: str, limit: int = 100,
+) -> str:
+    columns = [
+        column for column in MMP_REPORT_COLUMNS[table_kind]
+        if column in frame.columns
+    ]
+    if not columns:
+        return frame_html(pd.DataFrame(), limit)
+    view = frame.loc[:, columns].copy()
+    for column in view.columns:
+        view[column] = view[column].map(display_value)
+    view = view.rename(columns=MMP_REPORT_LABELS)
+    return frame_html(view, limit)
+
+
+def mmp_metric_grid(items: list[tuple[str, Any]]) -> str:
+    cards = "".join(
+        f"<div class='metric'><span class='muted'>{html.escape(label)}</span>"
+        f"<b>{html.escape(display_value(value))}</b></div>"
+        for label, value in items
+    )
+    return f"<div class='metric-grid'>{cards}</div>"
+
+
+def select_type_i_targets(
+    data: pd.DataFrame, compound_id: str, endpoint: str,
+    higher_is_better: bool, units: dict[str, set[str]],
+) -> list[dict[str, str]]:
+    """Select exactly one top compound for each Series/fallback Cluster."""
+    ranked = data.dropna(subset=[endpoint]).sort_values(
+        [endpoint, compound_id],
+        ascending=[not higher_is_better, True],
+        kind="mergesort",
+    )
+    target_rows: list[dict[str, str]] = []
+    for unit_id in sorted(units):
+        if unit_id == "GLOBAL":
+            continue
+        members = units[unit_id]
+        candidates = ranked.loc[
+            ranked[compound_id].isin(members), compound_id
+        ].head(1)
+        for value in candidates:
+            target_rows.append({
+                "analysis_unit_id": unit_id,
+                "target_compound_id": str(value),
+                "target_rank": "1",
+            })
+    return target_rows
+
+
+def depiction_molecule(value: Any) -> Any:
+    """Parse either a SMILES-like or SMARTS-like value for report drawing."""
+    from rdkit import Chem
+
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if not text:
+        return None
+    return Chem.MolFromSmiles(text) or Chem.MolFromSmarts(text)
+
+
+def comparison_core(value: Any) -> Any:
+    """Return a core molecule with attachment labels neutralized."""
+    from rdkit import Chem
+
+    molecule = depiction_molecule(value)
+    if molecule is None:
+        return None
+    molecule = Chem.Mol(molecule)
+    for atom in molecule.GetAtoms():
+        atom.SetAtomMapNum(0)
+        if atom.GetAtomicNum() == 0:
+            atom.SetIsotope(0)
+    return molecule
+
+
+def core_rank(row: pd.Series) -> tuple[int, int, int, str]:
+    molecule = comparison_core(row.get("exact_core_smiles"))
+    if molecule is None:
+        return (-1, -1, -1, str(row.get("exact_core_smiles", "")))
+    heavy = sum(atom.GetAtomicNum() > 1 for atom in molecule.GetAtoms())
+    return (
+        heavy, molecule.GetNumAtoms(), molecule.GetNumBonds(),
+        str(row.get("exact_core_smiles", "")),
+    )
+
+
+def select_minimal_transform_rows(frame: pd.DataFrame) -> pd.DataFrame:
+    """Keep one smallest-change representation per Target–Neighbor pair.
+
+    A row is dominated when its exact core is a proper substructure of another
+    row's core for the same compound pair.  The larger core represents the
+    smaller variable transformation.  Incomparable maxima are resolved by
+    core size and then stable identifiers so HTML remains one row per pair.
+    The canonical CSV/database is intentionally left untouched.
+    """
+    if frame.empty:
+        return frame.copy()
+    required = {"target_compound_id", "neighbor_compound_id"}
+    if not required.issubset(frame.columns):
+        raise ValueError(
+            "MMP report rows require target_compound_id and "
+            "neighbor_compound_id"
+        )
+    chosen_indices: list[Any] = []
+    for _, group in frame.groupby(
+        ["target_compound_id", "neighbor_compound_id"],
+        sort=True, dropna=False,
+    ):
+        group = group.drop_duplicates("mmp_id") if "mmp_id" in group else group
+        records = [
+            (index, comparison_core(row.get("exact_core_smiles")), core_rank(row))
+            for index, row in group.iterrows()
+        ]
+        maximal: list[tuple[Any, Any, tuple[int, int, int, str]]] = []
+        for candidate in records:
+            _, smaller, smaller_rank = candidate
+            dominated = False
+            if smaller is not None:
+                for other in records:
+                    if other[0] == candidate[0] or other[1] is None:
+                        continue
+                    larger = other[1]
+                    if (
+                        other[2][:3] > smaller_rank[:3]
+                        and larger.HasSubstructMatch(smaller)
+                    ):
+                        dominated = True
+                        break
+            if not dominated:
+                maximal.append(candidate)
+        pool = maximal or records
+        chosen = sorted(
+            pool,
+            key=lambda item: (
+                -item[2][0], -item[2][1], -item[2][2], item[2][3],
+                str(frame.at[item[0], "mmp_id"])
+                if "mmp_id" in frame else str(item[0]),
+            ),
+        )[0]
+        chosen_indices.append(chosen[0])
+    return frame.loc[chosen_indices].sort_values(
+        ["neighbor_compound_id", "mmp_id"]
+        if "mmp_id" in frame else ["neighbor_compound_id"],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+
+def orient_report_rows_target_to(frame: pd.DataFrame) -> pd.DataFrame:
+    """Orient report-only columns as Neighbor (From) → Target (To)."""
+    oriented = frame.copy()
+    if oriented.empty:
+        return oriented
+    oriented["compound_id_from"] = oriented["neighbor_compound_id"]
+    oriented["compound_id_to"] = oriented["target_compound_id"]
+    oriented["smiles_from"] = oriented["neighbor_smiles"]
+    oriented["smiles_to"] = oriented["target_smiles"]
+    oriented["endpoint_from"] = oriented["neighbor_endpoint"]
+    oriented["endpoint_to"] = oriented["target_endpoint"]
+    oriented["variable_from"] = oriented["variable_neighbor"]
+    oriented["variable_to"] = oriented["variable_target"]
+    oriented["favorable_delta"] = pd.to_numeric(
+        oriented["favorable_delta_toward_target"], errors="coerce"
+    )
+    oriented["favorable_delta_report"] = oriented["favorable_delta"]
+    oriented["transform_smirks"] = (
+        oriented["variable_from"].astype(str)
+        + ">>" + oriented["variable_to"].astype(str)
+    )
+    oriented["effect_direction"] = "neighbor_to_target"
+    return oriented
+
+
+def render_transformation_gallery(
+    frame: pd.DataFrame, output: Path, filename_prefix: str,
+) -> tuple[str, list[Path]]:
+    """Render one three-structure row for every report-visible MMP."""
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+
+    if frame.empty:
+        return "<p class='muted'>表示対象のMMP変換なし</p>", []
+    rows: list[str] = []
+    artifacts: list[Path] = []
+    placeholder = Chem.MolFromSmiles("*")
+    for position, record in enumerate(frame.itertuples(), 1):
+        mmp_id = str(getattr(record, "mmp_id", f"MMP-{position}"))
+        neighbor_id = str(getattr(record, "neighbor_compound_id", "—"))
+        molecules = [
+            depiction_molecule(getattr(record, "neighbor_smiles", None)),
+            depiction_molecule(getattr(record, "variable_neighbor", None)),
+            depiction_molecule(getattr(record, "variable_target", None)),
+        ]
+        molecules = [molecule or placeholder for molecule in molecules]
+        suffix = hashlib.sha256(
+            f"{mmp_id}\x1f{neighbor_id}".encode("utf-8")
+        ).hexdigest()[:10]
+        image_path = output / (
+            f"mmp_transform_{filename_prefix}_{position:03d}_{suffix}.svg"
+        )
+        image_path.write_text(
+            str(Draw.MolsToGridImage(
+                molecules, molsPerRow=3, subImgSize=(300, 230),
+                legends=[
+                    f"Neighbor {neighbor_id}",
+                    "Before fragment (Neighbor)",
+                    "After fragment (Target)",
+                ],
+                useSVG=True,
+            )),
+            encoding="utf-8",
+        )
+        delta = display_value(getattr(record, "favorable_delta_report", None))
+        rows.append(
+            "<article style='border-top:1px solid #dedbd3;padding-top:14px;"
+            "margin-top:14px'>"
+            f"<h3>{html.escape(mmp_id)} · Neighbor "
+            f"{html.escape(neighbor_id)}</h3>"
+            "<p class='muted'>Neighbor → Target / Favorable Δ: "
+            f"{html.escape(delta)}</p>"
+            f"<img src='{image_uri(image_path)}' "
+            "alt='Neighbor, before fragment, and after fragment structures'>"
+            "</article>"
+        )
+        artifacts.append(image_path)
+    return "".join(rows), artifacts
 
 
 def fragment_job_count(available_cpu_cores: int, requested_jobs: int | None) -> int:
@@ -280,18 +573,27 @@ def run_execution_request() -> int:
         build_warnings = list(build.get("warnings", []))
         shutil.rmtree(outdir / "_work", ignore_errors=True)
     details_path = outdir / "mmp_pair_detail.csv"
-    top_k = int(parameters.get("top_k", 5))
+    top_k = int(parameters.get("top_k", 1))
     if top_k < 1:
         raise ValueError("MMP top_k must be at least 1")
+    if role == "type-i" and top_k != 1:
+        raise ValueError(
+            "Standard MMP Type-I requires top_k=1. Use On-demand Type-II "
+            "with explicitly selected top compounds for a larger K."
+        )
     target_rows: list[dict[str, str]] = []
     if role == "type-i":
-        units = analysis_units(request) if any(item.get("role") == "analysis_unit_membership" for item in request.get("inputs", [])) else {"GLOBAL": set(data[compound_id])}
-        ranked = data.dropna(subset=[endpoint]).sort_values(
-            [endpoint, compound_id], ascending=[not higher_is_better, True], kind="mergesort"
+        if not any(
+            item.get("role") == "analysis_unit_membership"
+            for item in request.get("inputs", [])
+        ):
+            raise ValueError(
+                "Standard MMP Type-I requires analysis_unit_membership"
+            )
+        units = analysis_units(request, include_global=False)
+        target_rows = select_type_i_targets(
+            data, compound_id, endpoint, higher_is_better, units
         )
-        for unit_id, members in units.items():
-            for rank, value in enumerate(ranked.loc[ranked[compound_id].isin(members), compound_id].head(top_k), 1):
-                target_rows.append({"analysis_unit_id": unit_id, "target_compound_id": str(value), "target_rank": str(rank)})
     elif role == "type-ii":
         requested = parameters.get("target_compound_ids") or []
         if isinstance(requested, str): requested = [requested]
@@ -305,7 +607,10 @@ def run_execution_request() -> int:
         if not target_rows: raise ValueError("Type-II requires parameters.target_compound_ids")
     else:
         target_rows = [{"analysis_unit_id": "DATABASE", "target_compound_id": "", "target_rank": ""}]
-    targets = pd.DataFrame(target_rows)
+    targets = pd.DataFrame(
+        target_rows,
+        columns=["analysis_unit_id", "target_compound_id", "target_rank"],
+    )
     if role == "type-iii":
         target_pairs = details.copy(); target_pairs.insert(0, "analysis_unit_id", "DATABASE"); target_pairs.insert(1, "target_compound_id", "")
     else:
@@ -318,13 +623,31 @@ def run_execution_request() -> int:
             part["neighbor_compound_id"]=part["compound_id_from"].where(target_is_to,part["compound_id_to"])
             part["target_smiles"]=part["smiles_to"].where(target_is_to,part["smiles_from"])
             part["neighbor_smiles"]=part["smiles_from"].where(target_is_to,part["smiles_to"])
+            part["target_endpoint"]=part["endpoint_to"].where(target_is_to,part["endpoint_from"])
+            part["neighbor_endpoint"]=part["endpoint_from"].where(target_is_to,part["endpoint_to"])
             raw=pd.to_numeric(part["favorable_delta"],errors="coerce")
             part["favorable_delta_toward_target"]=raw.where(target_is_to,-raw)
             part["favorable_delta_from_target_to_neighbor"]=-part["favorable_delta_toward_target"]
             part["variable_neighbor"]=part["variable_from"].where(target_is_to,part["variable_to"])
             part["variable_target"]=part["variable_to"].where(target_is_to,part["variable_from"])
             parts.append(part)
-        target_pairs = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+        if parts:
+            target_pairs = pd.concat(parts, ignore_index=True)
+        else:
+            # Preserve a readable CSV schema even when no analysis unit has an
+            # Endpoint-valid target (a legitimate negative result).
+            target_pairs = details.head(0).copy()
+            target_pairs.insert(0, "analysis_unit_id", pd.Series(dtype=str))
+            target_pairs.insert(1, "target_compound_id", pd.Series(dtype=str))
+            target_pairs.insert(2, "target_rank", pd.Series(dtype=str))
+            for column in (
+                "neighbor_compound_id", "target_smiles", "neighbor_smiles",
+                "target_endpoint", "neighbor_endpoint",
+                "favorable_delta_toward_target",
+                "favorable_delta_from_target_to_neighbor",
+                "variable_neighbor", "variable_target",
+            ):
+                target_pairs[column] = pd.Series(dtype=object)
     primary = details_path if role == "type-iii" else outdir / "mmp_target_pairs.csv"
     targets_path = outdir / "mmp_targets.csv"
     if role != "type-iii": targets.to_csv(targets_path, index=False)
@@ -357,6 +680,9 @@ def run_execution_request() -> int:
         target_summary.loc[effect_fraction.ge(.6), "effect_summary"] = "favorable_observed"
         target_summary.loc[effect_fraction.eq(0), "effect_summary"] = "no_favorable_observed"
         target_summary["underexplored"] = target_summary["mmp_pair_count"].lt(3)
+        target_summary["target_endpoint"] = target_summary[
+            "target_compound_id"
+        ].map(dict(zip(data[compound_id].astype(str), data[endpoint])))
     else:
         target_summary = targets
     target_summary_path = outdir / "mmp_target_summary.csv"
@@ -413,42 +739,206 @@ def run_execution_request() -> int:
                 "core_tanimoto", "mcs_coverage_target", "mcs_coverage_reference",
             ])
         near_path=outdir/"mmp_near_core_references.csv"; near.to_csv(near_path,index=False); extra_artifacts.append(near_path)
-    report = outdir / "mmp_report.html"; target_report_links=[]
+    report = outdir / "mmp_report.html"
+    target_report_links = []
+    transformation_artifacts: list[Path] = []
     if role != "type-iii":
         from rdkit import Chem
         from rdkit.Chem import Draw
-        for _,target in targets.drop_duplicates("target_compound_id").iterrows():
-            target_id=str(target["target_compound_id"]); part=target_pairs.loc[target_pairs["target_compound_id"].astype(str).eq(target_id)].copy() if len(target_pairs) else pd.DataFrame(); unit_labels=", ".join(sorted(set(targets.loc[targets["target_compound_id"].astype(str).eq(target_id),"analysis_unit_id"].astype(str))))
-            if len(part) and "mmp_id" in part:
-                part=part.drop_duplicates("mmp_id")
-            safe_prefix="".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in target_id)[:64] or "target"
+
+        for _, target in targets.drop_duplicates("target_compound_id").iterrows():
+            target_id = str(target["target_compound_id"])
+            part = (
+                target_pairs.loc[
+                    target_pairs["target_compound_id"].astype(str).eq(target_id)
+                ].copy()
+                if len(target_pairs) else pd.DataFrame()
+            )
+            unit_labels = ", ".join(sorted(set(
+                targets.loc[
+                    targets["target_compound_id"].astype(str).eq(target_id),
+                    "analysis_unit_id",
+                ].astype(str)
+            )))
+            report_pairs = orient_report_rows_target_to(
+                select_minimal_transform_rows(part)
+            )
+            safe_prefix = (
+                "".join(
+                    ch if ch.isalnum() or ch in "-_" else "_"
+                    for ch in target_id
+                )[:64]
+                or "target"
+            )
             # Distinct IDs can normalize to the same filename (for example A/B
             # and A?B).  Preserve the readable prefix while binding every
             # target report to a collision-resistant ID-derived suffix.
-            safe=f"{safe_prefix}_{hashlib.sha256(target_id.encode('utf-8')).hexdigest()[:12]}"
-            svg_path=outdir/f"mmp_map_{safe}.svg"
-            display_effect = "favorable_delta_toward_target" if role == "type-i" else "favorable_delta_from_target_to_neighbor"
-            display_label = "Δ neighbor→target" if role == "type-i" else "Δ target→neighbor"
-            target_smiles=str(data.loc[data[compound_id].astype(str).eq(target_id),smiles].iloc[0]); display=part.sort_values(display_effect,ascending=False).drop_duplicates("neighbor_compound_id").head(11) if len(part) else part
-            molecules=[Chem.MolFromSmiles(target_smiles),*[Chem.MolFromSmiles(str(value)) for value in display.get("neighbor_smiles",pd.Series(dtype=str))]]; legends=[f"TARGET {target_id}",*[f"{row.neighbor_compound_id}\n{display_label}={getattr(row, display_effect):.3g}" if pd.notna(getattr(row, display_effect)) else str(row.neighbor_compound_id) for row in display.itertuples()]]
-            valid=[(mol,legend) for mol,legend in zip(molecules,legends) if mol is not None]
-            if valid: svg_path.write_text(str(Draw.MolsToGridImage([item[0] for item in valid],molsPerRow=4,subImgSize=(260,220),legends=[item[1] for item in valid],useSVG=True)),encoding="utf-8")
-            escaped_target = html.escape(target_id)
-            escaped_units = html.escape(unit_labels)
-            page_path=outdir/f"mmp_target_{safe}.html"; image=f"<img src='{image_uri(svg_path)}'>" if svg_path.is_file() else "<p>構造図を生成できませんでした。</p>"; direction_text="隣接化合物から対象へ向かう" if role == "type-i" else "対象から隣接化合物へ向かう"; page_path.write_text(html_page(f"MMP target {target_id}",f"<h1>MMP target {escaped_target}</h1><div class='card'><p>対象Analysis unit: {escaped_units}</p>{image}</div><div class='card'><p>{display_label}が正なら、{direction_text}変換がFavorableです。0件も正しいNegative Resultです。underexploredは結論ではなく観測MMP数の少なさを示します。</p>{frame_html(part,1000)}</div>"),encoding="utf-8"); target_report_links.append((target_id,page_path,svg_path if svg_path.is_file() else None))
-    links="".join(
-        f"<li><a href='{html.escape(path.name, quote=True)}'>{html.escape(target_id)}</a></li>"
-        for target_id,path,_ in target_report_links
+            safe = (
+                f"{safe_prefix}_"
+                f"{hashlib.sha256(target_id.encode('utf-8')).hexdigest()[:12]}"
+            )
+            svg_path = outdir / f"mmp_map_{safe}.svg"
+            display_effect = "favorable_delta_report"
+            display_label = "Δ neighbor→target"
+            target_smiles = str(
+                data.loc[
+                    data[compound_id].astype(str).eq(target_id), smiles
+                ].iloc[0]
+            )
+            display = (
+                report_pairs.sort_values(
+                    [display_effect, "neighbor_compound_id", "mmp_id"],
+                    ascending=[False, True, True],
+                    na_position="last",
+                ).drop_duplicates("neighbor_compound_id").head(11)
+                if len(report_pairs) else report_pairs
+            )
+            molecules = [
+                Chem.MolFromSmiles(target_smiles),
+                *[
+                    Chem.MolFromSmiles(str(value))
+                    for value in display.get(
+                        "neighbor_smiles", pd.Series(dtype=str)
+                    )
+                ],
+            ]
+            legends = [
+                f"TARGET {target_id}",
+                *[
+                    (
+                        f"{row.neighbor_compound_id}\n"
+                        f"{display_label}={getattr(row, display_effect):.3g}"
+                    )
+                    if pd.notna(getattr(row, display_effect))
+                    else str(row.neighbor_compound_id)
+                    for row in display.itertuples()
+                ],
+            ]
+            valid = [
+                (molecule, legend)
+                for molecule, legend in zip(molecules, legends)
+                if molecule is not None
+            ]
+            if valid:
+                svg_path.write_text(str(Draw.MolsToGridImage(
+                    [item[0] for item in valid],
+                    molsPerRow=4,
+                    subImgSize=(260, 220),
+                    legends=[item[1] for item in valid],
+                    useSVG=True,
+                )), encoding="utf-8")
+            visible_pairs = display.sort_values(
+                ["neighbor_compound_id", "mmp_id"],
+                ascending=[True, True],
+            ) if len(display) else display
+            transformation_gallery, gallery_artifacts = (
+                render_transformation_gallery(visible_pairs, outdir, safe)
+            )
+            transformation_artifacts.extend(gallery_artifacts)
+            image = (
+                f"<img src='{image_uri(svg_path)}' "
+                "alt='Target and MMP neighbor structures'>"
+                if svg_path.is_file()
+                else "<p>構造図を生成できませんでした。</p>"
+            )
+            direction_note = (
+                f"{display_label}が正なら、NeighborからTargetへの変換が"
+                "Favorableです。Targetは表示上常にToへ正規化しています。"
+                "0件も正しいNegative Resultです。"
+            )
+            target_body = render_mmp_template(
+                "mmp_target_report_template.html",
+                {
+                    "role_label": html.escape(role),
+                    "target_id": html.escape(target_id),
+                    "analysis_units": html.escape(unit_labels),
+                    "target_smiles": html.escape(target_smiles),
+                    "structure_image": image,
+                    "basic_information_table": compact_mmp_table(
+                        visible_pairs, "basic", 100
+                    ),
+                    "mmp_detail_table": compact_mmp_table(
+                        visible_pairs, "detail", 100
+                    ),
+                    "direction_note": html.escape(direction_note),
+                    "transformation_gallery": transformation_gallery,
+                    "full_csv_path": html.escape(primary.name, quote=True),
+                },
+            )
+            page_path = outdir / f"mmp_target_{safe}.html"
+            page_path.write_text(
+                html_page(f"MMP target {target_id}", target_body),
+                encoding="utf-8",
+            )
+            target_report_links.append((
+                target_id, page_path,
+                svg_path if svg_path.is_file() else None,
+            ))
+    links = "".join(
+        f"<li><a href='{html.escape(path.name, quote=True)}'>"
+        f"{html.escape(target_id)}</a></li>"
+        for target_id, path, _ in target_report_links
     )
-    effect_note = "隣接化合物からTop対象へ向かう方向" if role == "type-i" else ("指定Hitから隣接化合物へ向かう方向" if role == "type-ii" else "Databaseのcanonical方向")
-    report.write_text(html_page("MMP analysis", f"<h1>MMP analysis {role}</h1><div class='card'><p>1-cut / environment radius {radius_min}–{radius_max}. Agentの結論ではなく、対象化合物に接続する観測MMPを提示します。主effectは{effect_note}でFavorableを正とします。CSVには両方向のFavorable差を保持します。</p>{frame_html(target_summary, 200)}<ul>{links}</ul></div><div class='card'><h2>Target-connected MMP</h2>{frame_html(target_pairs, 300)}</div>"), encoding="utf-8")
-    extra_artifacts.extend([path for _,path,_ in target_report_links]); extra_artifacts.extend([svg for _,_,svg in target_report_links if svg is not None])
+    report_target_summary = target_summary.copy()
+    if role != "type-iii" and len(report_target_summary):
+        report_effect_fraction = report_target_summary[
+            "favorable_toward_target_fraction"
+        ]
+        report_target_summary["effect_direction"] = "neighbor_to_target"
+        report_target_summary["effect_summary"] = "mixed"
+        report_target_summary.loc[
+            report_effect_fraction.ge(.6), "effect_summary"
+        ] = "favorable_observed"
+        report_target_summary.loc[
+            report_effect_fraction.eq(0), "effect_summary"
+        ] = "no_favorable_observed"
+    effect_note = (
+        "隣接化合物からTop対象へ向かう方向"
+        if role == "type-i"
+        else "隣接化合物から指定Targetへ向かう方向"
+        if role == "type-ii"
+        else "Databaseのcanonical方向"
+    )
+    scope_note = (
+        f"1-cut / environment radius {radius_min}–{radius_max}。"
+        f"主effectは{effect_note}でFavorableを正とします。"
+        + (
+            "定型Type-Iは各Series／fallback ClusterのTop 1だけを対象とします。"
+            if role == "type-i" else ""
+        )
+    )
+    overview_body = render_mmp_template(
+        "mmp_overview_report_template.html",
+        {
+            "role": html.escape(role),
+            "scope_note": html.escape(scope_note),
+            "scope_metrics": mmp_metric_grid([
+                ("Targets", len(targets) if role != "type-iii" else "database"),
+                ("Target-connected MMP rows", len(target_pairs)),
+                ("Cuts", 1),
+                ("Environment radius", f"{radius_min}–{radius_max}"),
+            ]),
+            "target_table": compact_mmp_table(
+                report_target_summary, "overview",
+                max(1, len(report_target_summary))
+            ),
+            "target_links": (
+                f"<ul>{links}</ul>"
+                if links else "<p class='muted'>対象別レポートなし</p>"
+            ),
+            "full_csv_path": html.escape(primary.name, quote=True),
+        },
+    )
+    report.write_text(
+        html_page("MMP analysis", overview_body), encoding="utf-8"
+    )
+    extra_artifacts.extend([path for _,path,_ in target_report_links]); extra_artifacts.extend([svg for _,_,svg in target_report_links if svg is not None]); extra_artifacts.extend(transformation_artifacts)
     if role == "type-iii":
         extra_artifacts.extend(path for path in outdir.iterdir() if path.is_file() and path not in {primary,report})
     else:
         # Type-I/II are human-centred target analyses. The complete database and
         # global summary exports belong exclusively to explicit Type-III.
-        keep={primary.name,targets_path.name,target_summary_path.name,"mmp_target_transform_summary.csv","mmp_target_core_summary.csv","mmp_near_core_references.csv","mmp_report.html",*[path.name for _,path,_ in target_report_links],*[svg.name for _,_,svg in target_report_links if svg is not None]}
+        keep={primary.name,targets_path.name,target_summary_path.name,"mmp_target_transform_summary.csv","mmp_target_core_summary.csv","mmp_near_core_references.csv","mmp_report.html",*[path.name for _,path,_ in target_report_links],*[svg.name for _,_,svg in target_report_links if svg is not None],*[path.name for path in transformation_artifacts]}
         for path in list(outdir.iterdir()):
             if path.name not in keep:
                 if path.is_dir(): shutil.rmtree(path,ignore_errors=True)

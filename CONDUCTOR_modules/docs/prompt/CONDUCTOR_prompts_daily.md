@@ -36,10 +36,10 @@ Run root: <RUN_ROOT>
 現在のRuntime required_actionを確認し、PAUSEDまたはACTIVEの同じRoundだけを再開してください。Failed Nodeはdiagnosticを示し、実装修正後は同じNode IDをretryしてください。新Roundは開始しないでください。
 ```
 
-## Series数超過の承認
+## analysis unit数超過の承認
 
 ```text
-Run root <RUN_ROOT> のC012成果物について、accepted Series数が24を超えたことを確認しました。参考値としてフォールバックClusterを含む実解析単位数も示してください。現在のmin_ff_evaluateとLeiden resolutionを変更せず、同じRoundの定型解析へ進むことを承認します。`approve-series`を使用してください。
+Run root <RUN_ROOT> のC012成果物について、採用Seriesとfallback Clusterを合わせた実解析単位数が24を超えたことを確認しました。accepted Series数、棄却Series数、fallback Cluster数も示してください。現在のmin_ff_evaluateとLeiden resolutionを変更せず、同じRoundの定型解析へ進むことを承認します。`approve-series`を使用してください。
 ```
 
 ## Series条件の明示変更
@@ -72,5 +72,5 @@ Run root <RUN_ROOT> のA009 `standard_summary.html`とSeries詳細Reportを確�
 ## MMP Type-II
 
 ```text
-`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> のcompound_id `<ID>`を中心としたMMP Type-IIを実施してください。REQをprepareした後、専用の`run-mmp --role type-ii --target-compound-id <ID>`を使用してください。再利用する同一RunのType-III `mmp_database.sqlite`を人間が明示した場合だけ`--mmp-database <PATH>`を追加してください。1-cut、radius 0-2とし、観測MMPをありのまま示してください。near-core参考はTanimoto>=0.70かつ両側MCS coverage>=0.60を満たす場合だけ別枠で表示してください。
+`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> のcompound_id `<ID>`を中心としたMMP Type-IIを実施してください。複数の上位化合物を調べる場合は、対象IDごとに`--target-compound-id <ID>`を繰り返してください。REQをprepareした後、専用の`run-mmp --role type-ii --target-compound-id <ID>`を使用してください。再利用する同一RunのType-III `mmp_database.sqlite`を人間が明示した場合だけ`--mmp-database <PATH>`を追加してください。1-cut、radius 0-2とし、観測MMPをありのまま示してください。near-core参考はTanimoto>=0.70かつ両側MCS coverage>=0.60を満たす場合だけ別枠で表示してください。
 ```

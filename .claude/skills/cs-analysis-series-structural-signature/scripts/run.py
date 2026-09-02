@@ -5,6 +5,7 @@ import math
 import html as html_lib
 import shutil
 from pathlib import Path
+from string import Template
 from typing import Any
 
 import numpy as np
@@ -18,6 +19,170 @@ from batch_skill_common import (
 
 
 SELECTION_BIAS_NOTE = "本比較はEndpoint enrichmentで選抜した解析単位を同じEndpointで評価しており、独立検証や因果関係を示しません。"
+
+REPORT_TABLE_COLUMNS = {
+    "at_a_glance": ["metric", "count"],
+    "selected_clusters": [
+        "cluster_id", "description", "clustering", "sample_count",
+        "favorable_count_fraction", "odds_ratio", "fisher_pvalue",
+        "q_value_bh", "analysis_unit_id",
+    ],
+    "series": [
+        "series_id", "source_cluster_count", "compound_count",
+        "endpoint_valid_count", "favorable_count", "favorable_fraction",
+        "source_cluster_mean_ff", "union_ff_delta_from_source_mean",
+        "accepted", "quality_warning",
+    ],
+    "analysis_units": [
+        "analysis_unit_id", "scope_kind", "source_cluster_count",
+        "compound_count", "endpoint_valid_count", "favorable_fraction",
+        "fallback_reason",
+    ],
+    "source_clusters": [
+        "cluster_id", "description_id", "clustering_id", "sample_count",
+        "favorable_count", "favorable_fraction", "odds_ratio", "q_value_bh",
+    ],
+    "membership_support": [
+        "compound_id", "support_count", "support_fraction",
+    ],
+    "A003": [
+        "analysis_unit_id", "feature", "sample_count", "median_shift_global_iqr",
+        "shift_q_bh", "pearson_r", "spearman_r", "correlation_gain",
+        "correlation_q_bh", "strict_hit",
+    ],
+    "A005": [
+        "analysis_unit_id", "sample_count", "status", "oof_r2",
+        "global_oof_on_same_series_r2", "local_minus_global_r2", "oof_mae",
+        "global_minus_local_mae", "strict_improvement", "reason",
+    ],
+    "A006": [
+        "analysis_unit_id", "sample_count", "status", "median_sali", "p95_sali",
+        "internal_cliff_count", "boundary_cliff_count",
+        "boundary_favorable_direction_fraction", "strict_boundary_hit", "reason",
+    ],
+    "A007": [
+        "analysis_unit_id", "method", "clustering_id", "cluster_id", "structure",
+        "support_count", "source_member_count", "mcs_canceled", "status", "reason",
+    ],
+    "execution": [
+        "capability_id", "node_status", "duration_seconds", "evaluated_units",
+        "result_rows", "succeeded_units", "not_applicable_units", "failed_units",
+    ],
+}
+
+REPORT_SECTION_TITLES = {
+    "A003": "A003 D001 descriptor contrast",
+    "A005": "A005 Multi-Description feature model",
+    "A006": "A006 SALI / activity-cliff landscape",
+    "A007": "A007 Structural signature",
+}
+
+REPORT_COLUMN_LABELS = {
+    "metric": "Summary item",
+    "count": "Count",
+    "cluster_id": "Cluster ID",
+    "description": "Description",
+    "clustering": "Clustering",
+    "sample_count": "N",
+    "favorable_count_fraction": "Favorable count (FF)",
+    "favorable_count": "Favorable count",
+    "favorable_fraction": "FF",
+    "odds_ratio": "Odds ratio",
+    "fisher_pvalue": "Fisher p",
+    "q_value_bh": "BH q",
+    "analysis_unit_id": "Analysis unit",
+    "series_id": "Series ID",
+    "source_cluster_count": "Source Clusters",
+    "compound_count": "Union N",
+    "endpoint_valid_count": "Endpoint valid N",
+    "source_cluster_mean_ff": "Source mean FF",
+    "union_ff_delta_from_source_mean": "Union FF delta",
+    "quality_warning": "Quality warning",
+    "fallback_reason": "Fallback reason",
+    "support_count": "Support count",
+    "support_fraction": "Support fraction",
+    "duration_seconds": "Duration (s)",
+}
+
+STRICT_CRITERIA = {
+    "A003": "正規化median shiftまたはGlobalより強い相関が各q値基準を満たすこと",
+    "A005": "Series OOF R²とGlobal同一化合物OOFとの差が既定基準を満たすこと",
+    "A006": "boundary cliff数とSeries有利方向fractionが既定基準を満たすこと",
+}
+
+
+def render_report_template(name: str, values: dict[str, Any]) -> str:
+    path = Path(__file__).resolve().parents[1] / "templates" / name
+    if not path.is_file():
+        raise FileNotFoundError(f"A009 report template is missing: {path}")
+    return Template(path.read_text(encoding="utf-8")).substitute(
+        {key: str(value) for key, value in values.items()}
+    )
+
+
+def report_value(value: Any) -> str:
+    if value is None or (not isinstance(value, (list, dict, tuple, set)) and pd.isna(value)):
+        return "—"
+    if isinstance(value, (bool, np.bool_)):
+        return "yes" if bool(value) else "no"
+    if isinstance(value, (float, np.floating)):
+        numeric = float(value)
+        if numeric != 0 and abs(numeric) < .001:
+            return f"{numeric:.3e}"
+        return f"{numeric:.4g}"
+    return str(value)
+
+
+def compact_table(frame: pd.DataFrame, table_kind: str, limit: int = 200) -> str:
+    columns = [column for column in REPORT_TABLE_COLUMNS[table_kind] if column in frame.columns]
+    if not columns:
+        return frame_html(pd.DataFrame(), limit)
+    view = frame.loc[:, columns].copy()
+    for column in view.columns:
+        view[column] = view[column].map(report_value)
+    view = view.rename(columns=REPORT_COLUMN_LABELS)
+    return frame_html(view, limit)
+
+
+def metric_grid(items: list[tuple[str, Any]]) -> str:
+    cards = "".join(
+        f"<div class='metric'><span class='muted'>{html_lib.escape(label)}</span>"
+        f"<b>{html_lib.escape(report_value(value))}</b></div>"
+        for label, value in items
+    )
+    return f"<div class='metric-grid'>{cards}</div>"
+
+
+def bullet_list(items: list[str], *, css_class: str = "") -> str:
+    class_attribute = f" class='{html_lib.escape(css_class)}'" if css_class else ""
+    content = "".join(f"<li>{html_lib.escape(item)}</li>" for item in items)
+    return f"<ul{class_attribute}>{content or '<li>該当なし</li>'}</ul>"
+
+
+def endpoint_distribution_statistics(
+    values: pd.Series, higher_is_better: bool,
+) -> dict[str, float]:
+    """Return direction-aware statistics shown inside the Endpoint figure."""
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        return {
+            "mean": math.nan,
+            "median": math.nan,
+            "q20": math.nan,
+            "q80": math.nan,
+            "favorable_top20_cutoff": math.nan,
+            "unfavorable_bottom20_cutoff": math.nan,
+        }
+    q20 = float(numeric.quantile(.2))
+    q80 = float(numeric.quantile(.8))
+    return {
+        "mean": float(numeric.mean()),
+        "median": float(numeric.median()),
+        "q20": q20,
+        "q80": q80,
+        "favorable_top20_cutoff": q80 if higher_is_better else q20,
+        "unfavorable_bottom20_cutoff": q20 if higher_is_better else q80,
+    }
 
 
 def boolean_mask(values: pd.Series, label: str) -> pd.Series:
@@ -239,6 +404,10 @@ def run_c012(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
         selection["selected_for_series"] = selection["sample_count"].ge(min_n) & selection["favorable_fraction"].ge(min_ff)
     selected = selection.loc[boolean_mask(selection["selected_for_series"], "selected_for_series")].copy()
     selected_ids = [str(value) for value in selected["cluster_id"]]
+    selected_ff = dict(zip(
+        selected["cluster_id"].astype(str),
+        pd.to_numeric(selected["favorable_fraction"], errors="coerce"),
+    ))
     edges: list[tuple[int, int]] = []; weights: list[float] = []; edge_rows: list[dict[str, Any]] = []
     for i, left_id in enumerate(selected_ids):
         left = cluster_sets[left_id]
@@ -262,6 +431,13 @@ def run_c012(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
     for serial, (_, source_clusters) in enumerate(sorted(communities.items(), key=lambda item: min(item[1])), 1):
         series_id = f"S{serial:06d}"; union = set().union(*(cluster_sets[item] for item in source_clusters))
         valid = {item for item in union if valid_map.get(item, False)}; fav_count = sum(bool(fav_map.get(item, False)) for item in valid); ff = fav_count / len(valid) if valid else 0.0
+        source_ff_values = [
+            float(selected_ff[item])
+            for item in source_clusters if np.isfinite(selected_ff.get(item, np.nan))
+        ]
+        source_ff_min = min(source_ff_values) if source_ff_values else np.nan
+        source_ff_mean = float(np.mean(source_ff_values)) if source_ff_values else np.nan
+        source_ff_max = max(source_ff_values) if source_ff_values else np.nan
         accepted = ff >= min_ff
         if accepted:
             accepted_members[series_id] = union
@@ -273,7 +449,22 @@ def run_c012(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
         else:
             rejected_series += 1
             rejected_source_clusters.extend((series_id, cluster_id) for cluster_id in source_clusters)
-        series_rows.append({"series_id": series_id, "source_cluster_count": len(source_clusters), "compound_count": len(union), "endpoint_valid_count": len(valid), "favorable_count": fav_count, "favorable_fraction": ff, "accepted": accepted, "fallback_reason": "" if accepted else "series_ff_below_threshold"})
+        series_rows.append({
+            "series_id": series_id,
+            "source_cluster_count": len(source_clusters),
+            "compound_count": len(union),
+            "endpoint_valid_count": len(valid),
+            "favorable_count": fav_count,
+            "favorable_fraction": ff,
+            "source_cluster_min_ff": source_ff_min,
+            "source_cluster_mean_ff": source_ff_mean,
+            "source_cluster_max_ff": source_ff_max,
+            "union_ff_delta_from_source_mean": (
+                ff - source_ff_mean if np.isfinite(source_ff_mean) else np.nan
+            ),
+            "accepted": accepted,
+            "fallback_reason": "" if accepted else "series_ff_below_threshold",
+        })
     accepted_series_count = len(accepted_members)
     # A Series whose union loses enrichment must not silently discard its enriched
     # source Clusters. Only rejected communities fall back to Cluster units.
@@ -306,7 +497,13 @@ def run_c012(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
             "source_cluster_count": 1 if is_cluster_fallback else sum(row["series_id"] == unit_id for row in cluster_rows),
         })
         membership_rows.extend({"compound_id": value, "analysis_unit_id": unit_id, "membership_value": True} for value in sorted(members))
-    series_registry = pd.DataFrame(series_rows, columns=["series_id","source_cluster_count","compound_count","endpoint_valid_count","favorable_count","favorable_fraction","accepted","fallback_reason"])
+    series_registry = pd.DataFrame(series_rows, columns=[
+        "series_id", "source_cluster_count", "compound_count",
+        "endpoint_valid_count", "favorable_count", "favorable_fraction",
+        "source_cluster_min_ff", "source_cluster_mean_ff",
+        "source_cluster_max_ff", "union_ff_delta_from_source_mean",
+        "accepted", "fallback_reason",
+    ])
     series_registry.to_csv(output / "series_registry.csv", index=False)
     pd.DataFrame(cluster_rows, columns=["series_id","candidate_series_id","cluster_id"]).to_csv(output / "series_cluster_membership.csv", index=False)
     pd.DataFrame(support_rows, columns=["series_id","compound_id","support_count","support_fraction"]).to_csv(output / "compound_series_support.csv", index=False)
@@ -315,10 +512,45 @@ def run_c012(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
     pd.DataFrame(edge_rows, columns=["cluster_id_a","cluster_id_b","overlap_count","jaccard_weight","containment_a_in_b","containment_b_in_a","overlap_coefficient"]).to_csv(output / "series_edges.csv", index=False)
     global_valid_count = int(frame[endpoint].notna().sum())
     oversized = [row["analysis_unit_id"] for row in unit_rows[1:] if global_valid_count and row["endpoint_valid_count"] / global_valid_count > .5]
-    summary = {"selected_cluster_count": len(selected_ids), "series_count": len(communities), "accepted_series_count": accepted_series_count, "rejected_series_count": rejected_series, "analysis_unit_count": len(accepted_members), "fallback_to_selected_clusters": fallback, "edge_count": len(edges), "edge_weight": "Jaccard", "favorable_threshold": threshold, "min_ff_evaluate": min_n, "favorable_fraction_threshold": min_ff, "global_endpoint_valid_count": global_valid_count, "analysis_units_over_50_percent_of_global": oversized}
+    fallback_cluster_count = sum(
+        unit_id.startswith("CLU_") for unit_id in accepted_members
+    )
+    ff_deltas = [
+        float(row["union_ff_delta_from_source_mean"])
+        for row in series_rows
+        if np.isfinite(row["union_ff_delta_from_source_mean"])
+    ]
+    summary = {
+        "selected_cluster_count": len(selected_ids),
+        "series_count": len(communities),
+        "accepted_series_count": accepted_series_count,
+        "rejected_series_count": rejected_series,
+        "fallback_cluster_count": fallback_cluster_count,
+        "analysis_unit_count": len(accepted_members),
+        "fallback_to_selected_clusters": fallback,
+        "series_with_ff_decrease_count": sum(value < 0 for value in ff_deltas),
+        "median_union_ff_delta_from_source_mean": (
+            float(np.median(ff_deltas)) if ff_deltas else None
+        ),
+        "edge_count": len(edges),
+        "edge_weight": "Jaccard",
+        "favorable_threshold": threshold,
+        "min_ff_evaluate": min_n,
+        "favorable_fraction_threshold": min_ff,
+        "global_endpoint_valid_count": global_valid_count,
+        "analysis_units_over_50_percent_of_global": oversized,
+    }
     write_json(output / "series_summary.json", summary)
     primary = output / "series_registry.csv"
-    report = output / "clustering_report.html"; report.write_text(html_page("C012 Series", f"<h1>Enriched ClusterのSeries化</h1><div class='card'><p>Selected clusters: {len(selected_ids)} / accepted analysis units: {len(accepted_members)}</p></div><div class='card'>{frame_html(pd.DataFrame(unit_rows))}</div>"), encoding="utf-8")
+    report = output / "clustering_report.html"
+    report.write_text(html_page(
+        "C012 Series",
+        f"<h1>Enriched ClusterのSeries化</h1>"
+        f"<div class='card'>{metric_grid([('Selected Clusters', len(selected_ids)), ('Candidate Series', len(communities)), ('Accepted Series', accepted_series_count), ('Rejected Series', rejected_series), ('Fallback Clusters', fallback_cluster_count), ('Analysis units', len(accepted_members))])}"
+        f"<p class='muted'>Series FFはsource Clusterの和集合で再計算します。source平均FFより低下したSeries: {summary['series_with_ff_decrease_count']} / median差分: {report_value(summary['median_union_ff_delta_from_source_mean'])}</p></div>"
+        f"<div class='card'><h2>Series FF diagnostics</h2>{compact_table(series_registry, 'series', max(1, len(series_registry)))}</div>"
+        f"<div class='card'><h2>Analysis units</h2>{compact_table(pd.DataFrame(unit_rows), 'analysis_units', max(1, len(unit_rows)))}</div>",
+    ), encoding="utf-8")
     finish(request, output, cap, primary=primary, summary=summary, report=report, extra_artifacts=[output / "analysis_unit_membership.csv", output / "analysis_unit_registry.csv", output / "series_cluster_membership.csv", output / "compound_series_support.csv", output / "series_edges.csv", output / "series_summary.json"])
 
 
@@ -685,94 +917,712 @@ def run_a007(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
     finish(request,output,cap,primary=primary,summary={"row_count":len(result),"analysis_unit_count":result['analysis_unit_id'].nunique() if len(result) else 0,"mcs_timeout_count":int(result.get('mcs_canceled',pd.Series(dtype=bool)).fillna(False).sum()),"unit_failure_count":int(result.get('status',pd.Series(dtype=str)).eq('unit_failed').sum())},report=report)
 
 
+
+
 def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
     import matplotlib.pyplot as plt
-    profile=read_table(input_path(request,"cluster_profile"), ["cluster_id"]); enrichment=read_table(input_path(request,"cluster_enrichment"), ["cluster_id"]); series=read_table(input_path(request,"series_registry"), ["series_id"]); units_path=input_path(request,"analysis_unit_membership",required=False); selected=enrichment.loc[boolean_mask(enrichment["selected_for_series"], "selected_for_series")].copy() if len(enrichment) and "selected_for_series" in enrichment else enrichment.iloc[0:0].copy()
-    series_clusters_path=input_path(request,"series_cluster_membership",required=False); unit_registry_path=input_path(request,"analysis_unit_registry",required=False); support_path=input_path(request,"compound_series_support",required=False)
-    series_clusters=read_table(series_clusters_path, ["series_id", "candidate_series_id", "cluster_id"]) if series_clusters_path else pd.DataFrame()
-    if len(series_clusters) and len(selected):
-        if {"series_id","cluster_id"}.issubset(series_clusters.columns):
-            selected=selected.merge(series_clusters[["series_id","cluster_id"]],on="cluster_id",how="left")
-    sources=[]
-    for item in inputs(request,"source"):
-        path=Path(item["path"])
-        if path.suffix.lower()==".csv":
-            try:
-                sources.append((item.get("source_capability_id","source"),read_table(path, ["compound_id", "analysis_unit_id", "cluster_id", "series_id"])))
-            except Exception as exc:
-                raise ValueError(
-                    f"A009 could not read the succeeded upstream CSV {path} "
-                    f"({item.get('source_capability_id', 'source')}): {exc}"
-                ) from exc
-    data,_,_,endpoint=dataset(request)
-    histogram=output/"endpoint_histogram.png"; fig,ax=plt.subplots(figsize=(7.2,3.8)); ax.hist(pd.to_numeric(data[endpoint],errors="coerce").dropna(),bins=24,color="#526a73",edgecolor="white"); ax.set_title(f"Endpoint distribution: {endpoint}"); ax.set_xlabel(endpoint); ax.set_ylabel("Count"); fig.tight_layout(); fig.savefig(histogram,dpi=150); plt.close(fig)
-    series_map=output/"series_map.png"; accepted=series.loc[boolean_mask(series["accepted"], "accepted")].copy() if len(series) and "accepted" in series else series.copy(); fig,ax=plt.subplots(figsize=(max(7.2,min(14,.55*max(1,len(accepted)))),4.2))
-    if len(accepted):
-        accepted=accepted.sort_values("favorable_fraction",ascending=False); ax.bar(accepted["series_id"].astype(str),accepted["favorable_fraction"],color="#8b654f"); ax.axhline(.5,color="#37474f",linestyle="--",linewidth=1); ax.tick_params(axis="x",rotation=70)
-    else: ax.text(.5,.5,"No accepted Series; Cluster fallback is used",ha="center",va="center")
-    ax.set_title("Accepted Series favorable fraction"); ax.set_ylabel("Favorable fraction"); fig.tight_layout(); fig.savefig(series_map,dpi=150); plt.close(fig)
-    contact_sheets=[]
-    for item in inputs(request,"source"):
-        if item.get("source_capability_id")!="A004": continue
-        source_dir=Path(item["path"]).parent
-        for name in ("pca_series_contact_sheet.png","umap_series_contact_sheet.png"):
-            source_image=source_dir/name
-            if source_image.is_file():
-                target_image=output/name; shutil.copy2(source_image,target_image); contact_sheets.append(target_image)
-    unit_ids=[]; unit_registry=read_table(unit_registry_path, ["analysis_unit_id"]) if unit_registry_path else pd.DataFrame(); support=read_table(support_path, ["series_id", "compound_id"]) if support_path else pd.DataFrame()
+
+    profile_path = input_path(request, "cluster_profile")
+    enrichment_path = input_path(request, "cluster_enrichment")
+    series_path = input_path(request, "series_registry")
+    units_path = input_path(request, "analysis_unit_membership", required=False)
+    series_clusters_path = input_path(request, "series_cluster_membership", required=False)
+    unit_registry_path = input_path(request, "analysis_unit_registry", required=False)
+    support_path = input_path(request, "compound_series_support", required=False)
+    series_summary_path = input_path(request, "series_summary", required=False)
+
+    cluster_profile = read_table(profile_path, ["cluster_id"])
+    enrichment = read_table(enrichment_path, ["cluster_id"])
+    series = read_table(series_path, ["series_id"])
+    series_summary = (
+        json.loads(series_summary_path.read_text(encoding="utf-8"))
+        if series_summary_path else {}
+    )
+    selected = (
+        enrichment.loc[
+            boolean_mask(enrichment["selected_for_series"], "selected_for_series")
+        ].copy()
+        if len(enrichment) and "selected_for_series" in enrichment
+        else enrichment.iloc[0:0].copy()
+    )
+    series_clusters = (
+        read_table(
+            series_clusters_path, ["series_id", "candidate_series_id", "cluster_id"]
+        )
+        if series_clusters_path else pd.DataFrame()
+    )
+    unit_registry = (
+        read_table(unit_registry_path, ["analysis_unit_id"])
+        if unit_registry_path else pd.DataFrame()
+    )
+    support = (
+        read_table(support_path, ["series_id", "compound_id"])
+        if support_path else pd.DataFrame()
+    )
     if len(unit_registry) and "analysis_unit_id" not in unit_registry.columns:
         raise ValueError("analysis_unit_registry must contain analysis_unit_id")
     if len(support) and "series_id" not in support.columns:
         raise ValueError("compound_series_support must contain series_id")
-    if units_path:
-        units_frame=read_table(units_path, ["analysis_unit_id", "compound_id"])
-        if "analysis_unit_id" in units_frame: unit_ids=[value for value in sorted(units_frame["analysis_unit_id"].astype(str).unique()) if value!="GLOBAL"]
-    def report_view(capability_id:str, source_frame:pd.DataFrame, unit_id:str|None=None)->tuple[pd.DataFrame,str]:
-        frame=source_frame
+    if (
+        len(series_clusters) and len(selected)
+        and {"series_id", "cluster_id"}.issubset(series_clusters.columns)
+    ):
+        selected = selected.merge(
+            series_clusters[["series_id", "cluster_id"]],
+            on="cluster_id", how="left", validate="one_to_one",
+        )
+    selected_display = selected.copy()
+    if len(selected_display):
+        selected_display["description"] = [
+            " / ".join(
+                value for value in (
+                    report_value(row.get("description_id")),
+                    report_value(row.get("description_name")),
+                )
+                if value != "—"
+            ) or "—"
+            for _, row in selected_display.iterrows()
+        ]
+        selected_display["clustering"] = [
+            " / ".join(
+                value for value in (
+                    report_value(row.get("clustering_id")),
+                    report_value(row.get("clustering_name")),
+                )
+                if value != "—"
+            ) or "—"
+            for _, row in selected_display.iterrows()
+        ]
+        selected_display["favorable_count_fraction"] = [
+            f"{report_value(row.get('favorable_count'))} "
+            f"({report_value(row.get('favorable_fraction'))})"
+            for _, row in selected_display.iterrows()
+        ]
+        selected_display["analysis_unit_id"] = selected_display.get(
+            "series_id", pd.Series("—", index=selected_display.index)
+        ).fillna("—")
+
+    source_frames: dict[str, pd.DataFrame] = {}
+    source_paths: dict[str, Path] = {}
+    a004_source_dir: Path | None = None
+    for item in inputs(request, "source"):
+        capability_id = str(item.get("source_capability_id", "source"))
+        path = Path(item["path"])
+        if capability_id == "A004":
+            a004_source_dir = path.parent
+            continue
+        if capability_id == "A008" or path.suffix.lower() != ".csv":
+            continue
+        try:
+            source_frames[capability_id] = read_table(
+                path, ["compound_id", "analysis_unit_id", "cluster_id", "series_id"]
+            )
+            source_paths[capability_id] = path
+        except Exception as exc:
+            raise ValueError(
+                f"A009 could not read the succeeded upstream CSV {path} "
+                f"({capability_id}): {exc}"
+            ) from exc
+
+    full_table_dir = output / "tables"
+    full_table_dir.mkdir()
+    full_table_artifacts: list[Path] = []
+    full_table_links: list[tuple[str, str]] = []
+
+    def copy_full_table(label: str, source_path: Path | None, filename: str) -> None:
+        if source_path is None:
+            return
+        target = full_table_dir / filename
+        shutil.copy2(source_path, target)
+        full_table_artifacts.append(target)
+        full_table_links.append((label, target.relative_to(output).as_posix()))
+
+    copy_full_table("A001 全Cluster profile", profile_path, "A001_cluster_profile_full.csv")
+    copy_full_table("A002 全Cluster enrichment", enrichment_path, "A002_cluster_enrichment_full.csv")
+    copy_full_table("C012 Series registry", series_path, "C012_series_registry_full.csv")
+    copy_full_table("Analysis unit registry", unit_registry_path, "analysis_unit_registry_full.csv")
+    copy_full_table("Series–Cluster membership", series_clusters_path, "series_cluster_membership_full.csv")
+    copy_full_table("Compound Series support", support_path, "compound_series_support_full.csv")
+    selected_path = full_table_dir / "selected_clusters_full.csv"
+    selected.to_csv(selected_path, index=False)
+    full_table_artifacts.append(selected_path)
+    full_table_links.append(("選抜Cluster", selected_path.relative_to(output).as_posix()))
+    for capability_id in REPORT_SECTION_TITLES:
+        copy_full_table(
+            f"{capability_id} 完全結果", source_paths.get(capability_id),
+            f"{capability_id}_full.csv",
+        )
+
+    data, _, _, endpoint = dataset(request)
+    higher_is_better = bool(request.get("endpoint", {}).get("higher_is_better"))
+    endpoint_threshold, favorable = favorable_definition(
+        data, endpoint, higher_is_better
+    )
+    endpoint_valid_count = int(data[endpoint].notna().sum())
+    global_ff = float(favorable.loc[data[endpoint].notna()].mean())
+    series_ff_threshold = float(
+        series_summary.get("favorable_fraction_threshold", .5)
+    )
+
+    endpoint_values = pd.to_numeric(data[endpoint], errors="coerce").dropna()
+    endpoint_statistics = endpoint_distribution_statistics(
+        endpoint_values, higher_is_better
+    )
+    favorable_quantile = "Q80" if higher_is_better else "Q20"
+    unfavorable_quantile = "Q20" if higher_is_better else "Q80"
+    histogram = output / "endpoint_histogram.png"
+    fig, ax = plt.subplots(figsize=(8.6, 4.8))
+    ax.hist(endpoint_values, bins=24, color="#526a73", edgecolor="white")
+    statistic_lines = (
+        ("Mean", endpoint_statistics["mean"], "#246b73", "-"),
+        ("Median", endpoint_statistics["median"], "#3f4548", "-"),
+        (
+            f"Favorable top 20% cutoff ({favorable_quantile})",
+            endpoint_statistics["favorable_top20_cutoff"], "#a44a22", "--",
+        ),
+        (
+            f"Unfavorable bottom 20% cutoff ({unfavorable_quantile})",
+            endpoint_statistics["unfavorable_bottom20_cutoff"], "#526e9b", "--",
+        ),
+    )
+    for label, value, color, linestyle in statistic_lines:
+        if np.isfinite(value):
+            ax.axvline(
+                value, color=color, linestyle=linestyle, linewidth=1.4,
+                label=f"{label}: {value:.6g}",
+            )
+    ax.set_title(f"Endpoint distribution: {endpoint}")
+    ax.set_xlabel(endpoint)
+    ax.set_ylabel("Count")
+    ax.text(
+        .985, .965,
+        "\n".join(
+            f"{label}\n  {report_value(value)}"
+            for label, value, _, _ in statistic_lines
+        ),
+        transform=ax.transAxes, ha="right", va="top", fontsize=8.5,
+        bbox={
+            "boxstyle": "round,pad=0.45", "facecolor": "white",
+            "edgecolor": "#c9c5bc", "alpha": .92,
+        },
+    )
+    if endpoint_values.size:
+        ax.legend(loc="upper left", fontsize=7.5, frameon=False)
+    fig.tight_layout()
+    fig.savefig(histogram, dpi=150)
+    plt.close(fig)
+
+    accepted_mask = (
+        boolean_mask(series["accepted"], "accepted")
+        if len(series) and "accepted" in series
+        else pd.Series(True, index=series.index)
+    )
+    accepted = series.loc[accepted_mask].copy()
+    rejected_count = int((~accepted_mask).sum())
+    series_display = series.copy()
+    if len(series_display):
+        series_display["quality_warning"] = [
+            "" if accepted_value
+            else f"FF < {series_ff_threshold:g}; source Clusterへfallback"
+            for accepted_value in accepted_mask
+        ]
+    series_map = output / "series_map.png"
+    fig, ax = plt.subplots(
+        figsize=(max(7.2, min(14, .55 * max(1, len(accepted)))), 4.2)
+    )
+    if len(accepted):
+        accepted = accepted.sort_values("favorable_fraction", ascending=False)
+        ax.bar(
+            accepted["series_id"].astype(str), accepted["favorable_fraction"],
+            color="#8b654f",
+        )
+        ax.axhline(
+            series_ff_threshold, color="#37474f", linestyle="--", linewidth=1
+        )
+        ax.tick_params(axis="x", rotation=70)
+    else:
+        ax.text(
+            .5, .5, "No accepted Series; Cluster fallback is used",
+            ha="center", va="center",
+        )
+    ax.set_title("Accepted Series favorable fraction")
+    ax.set_ylabel("Favorable fraction")
+    fig.tight_layout()
+    fig.savefig(series_map, dpi=150)
+    plt.close(fig)
+
+    contact_sheets: list[Path] = []
+    if a004_source_dir is not None:
+        for name in ("pca_series_contact_sheet.png", "umap_series_contact_sheet.png"):
+            source_image = a004_source_dir / name
+            if source_image.is_file():
+                target_image = output / name
+                shutil.copy2(source_image, target_image)
+                contact_sheets.append(target_image)
+
+    if len(unit_registry):
+        unit_ids = [
+            value
+            for value in sorted(
+                unit_registry["analysis_unit_id"].astype(str).unique()
+            )
+            if value != "GLOBAL"
+        ]
+    elif units_path:
+        units_frame = read_table(units_path, ["analysis_unit_id", "compound_id"])
+        unit_ids = (
+            [
+                value
+                for value in sorted(
+                    units_frame["analysis_unit_id"].astype(str).unique()
+                )
+                if value != "GLOBAL"
+            ]
+            if "analysis_unit_id" in units_frame else []
+        )
+    else:
+        unit_ids = []
+
+    def report_view(
+        capability_id: str, source_frame: pd.DataFrame,
+        unit_id: str | None = None,
+    ) -> tuple[pd.DataFrame, str]:
+        frame = source_frame
         if unit_id is not None and "analysis_unit_id" in frame:
-            frame=frame.loc[frame["analysis_unit_id"].astype(str).eq(unit_id)]
-        elif capability_id in {"A003","A005","A006"} and "analysis_unit_id" in frame:
-            frame=frame.loc[frame["analysis_unit_id"].astype(str).ne("GLOBAL")]
-        rules={"A003":"strict_hit","A005":"strict_improvement","A006":"strict_boundary_hit"}; flag=rules.get(capability_id)
+            frame = frame.loc[frame["analysis_unit_id"].astype(str).eq(unit_id)]
+        elif (
+            capability_id in {"A003", "A005", "A006"}
+            and "analysis_unit_id" in frame
+        ):
+            frame = frame.loc[
+                frame["analysis_unit_id"].astype(str).ne("GLOBAL")
+            ]
+        flag = {
+            "A003": "strict_hit",
+            "A005": "strict_improvement",
+            "A006": "strict_boundary_hit",
+        }.get(capability_id)
         if flag and flag in frame:
-            hits=frame.loc[boolean_mask(frame[flag], flag)]
-            if len(hits): return hits, f"厳格基準を満たす候補: {len(hits)}件"
-            order="near_miss_score" if "near_miss_score" in frame else "boundary_cliff_count" if "boundary_cliff_count" in frame else None
-            near=frame.sort_values(order,ascending=False,na_position="last").head(1) if order and len(frame) else frame.head(1)
-            label=str(near.iloc[0].get("feature",near.iloc[0].get("analysis_unit_id","候補"))) if len(near) else "なし"
-            return near.iloc[0:0], f"厳格基準を満たす候補はなく、最も近い候補は{label}でした。"
-        return frame, ""
-    highlights={}
-    for name,source_frame in sources:
-        if str(name) in {"A004","A008"}: continue
-        chosen,note=report_view(str(name),source_frame)
-        highlights[str(name)]={"note":note,"rows":chosen.head(10).to_dict("records")}
-    index={"schema_version":"1.0.0","selected_cluster_count":len(selected),"series_count":len(accepted),"analysis_unit_count":len(unit_ids),"selected_cluster_preview":selected.head(25).to_dict("records"),"series_overview":series.head(24).to_dict("records"),"analysis_unit_overview":unit_registry.head(100).to_dict("records"),"operator_highlights":highlights,"detail_reports":[]}
-    contact_html="".join(f"<img src='{image_uri(path)}'>" for path in contact_sheets)
-    body=f"<h1>CONDUCTOR 定型解析 Summary</h1><div class='card'><h2>Endpoint</h2><img src='{image_uri(histogram)}'></div><div class='card'><h2>Endpoint-enriched Clusters</h2><p>選抜ClusterをDescription・Clustering由来、N、FF、odds ratio、p/q、Seriesとともに示します。</p><p class='muted'>{SELECTION_BIAS_NOTE}</p>{frame_html(selected,500)}</div><div class='card'><h2>Series / fallback Cluster</h2><img src='{image_uri(series_map)}'>{frame_html(unit_registry if len(unit_registry) else series,100)}</div><div class='card'><h2>PCA / UMAP contact sheets</h2>{contact_html or '<p class=\"muted\">Projection画像なし</p>'}</div>"
-    detail_artifacts=[]
+            hits = frame.loc[boolean_mask(frame[flag], flag)]
+            if len(hits):
+                return hits, (
+                    f"評価 {len(frame)}件、厳格基準を満たす候補 {len(hits)}件。"
+                )
+            order = (
+                "near_miss_score" if "near_miss_score" in frame
+                else "boundary_cliff_count"
+                if "boundary_cliff_count" in frame else None
+            )
+            near = (
+                frame.sort_values(
+                    order, ascending=False, na_position="last"
+                ).head(1)
+                if order and len(frame) else frame.head(1)
+            )
+            if len(near):
+                label = str(
+                    near.iloc[0].get(
+                        "feature",
+                        near.iloc[0].get("analysis_unit_id", "候補"),
+                    )
+                )
+                note = (
+                    f"評価 {len(frame)}件、厳格基準該当 0件。"
+                    f"near-miss: {label}。未達基準: "
+                    f"{STRICT_CRITERIA[capability_id]}。"
+                )
+            else:
+                note = (
+                    f"評価可能な候補 0件。未達基準: "
+                    f"{STRICT_CRITERIA[capability_id]}。"
+                )
+            return near, note
+        if frame.empty:
+            return frame, "評価可能な結果はありません。"
+        return frame, f"報告行 {len(frame)}件。"
+
+    highlights: dict[str, Any] = {}
+    overall_operator_sections: list[str] = []
+    for capability_id, title in REPORT_SECTION_TITLES.items():
+        source_frame = source_frames.get(capability_id, pd.DataFrame())
+        if capability_id not in source_frames:
+            note = "成果物なし（Operator failure/waiveまたは未実行）。"
+            chosen = pd.DataFrame()
+        else:
+            chosen, note = report_view(capability_id, source_frame)
+        highlights[capability_id] = {
+            "note": note,
+            "rows": chosen.head(10).to_dict("records"),
+        }
+        bias = (
+            f"<p class='muted'>{html_lib.escape(SELECTION_BIAS_NOTE)}</p>"
+            if capability_id == "A005" else ""
+        )
+        overall_operator_sections.append(
+            f"<section data-operator='{capability_id}'>"
+            f"<h3>{html_lib.escape(title)}</h3>"
+            f"<p>{html_lib.escape(note)}</p>{bias}"
+            f"{compact_table(chosen, capability_id, 12)}</section>"
+        )
+
+    execution_rows: list[dict[str, Any]] = []
+    execution_context = request.get("subject", {}).get(
+        "report_execution", []
+    )
+    if not execution_context:
+        execution_context = [
+            {"capability_id": capability_id, "node_status": "succeeded"}
+            for capability_id in sorted(source_frames)
+        ]
+    execution_sources = {
+        "A001": cluster_profile,
+        "A002": enrichment,
+        "C012": series,
+        **source_frames,
+    }
+    for metadata in execution_context:
+        capability_id = str(metadata.get("capability_id", ""))
+        source_frame = execution_sources.get(capability_id)
+        evaluated_units = None
+        result_rows = None
+        succeeded_units = None
+        not_applicable_units = None
+        failed_units = None
+        if source_frame is not None:
+            result_rows = len(source_frame)
+            if "analysis_unit_id" in source_frame:
+                evaluated_units = int(
+                    source_frame["analysis_unit_id"].astype(str).nunique()
+                )
+            if "status" in source_frame:
+                statuses = source_frame["status"].astype(str)
+                unit_values = (
+                    source_frame["analysis_unit_id"].astype(str)
+                    if "analysis_unit_id" in source_frame
+                    else pd.Series(
+                        source_frame.index.astype(str),
+                        index=source_frame.index,
+                    )
+                )
+                succeeded_units = int(
+                    unit_values.loc[statuses.eq("succeeded")].nunique()
+                )
+                not_applicable_units = int(
+                    unit_values.loc[statuses.eq("not_applicable")].nunique()
+                )
+                failed_units = int(
+                    unit_values.loc[
+                        statuses.isin({"unit_failed", "failed"})
+                    ].nunique()
+                )
+            elif evaluated_units is not None:
+                succeeded_units = evaluated_units
+                not_applicable_units = 0
+                failed_units = 0
+        execution_rows.append({
+            "capability_id": capability_id,
+            "node_status": metadata.get(
+                "node_status", metadata.get("status", "unknown")
+            ),
+            "duration_seconds": metadata.get("duration_seconds"),
+            "evaluated_units": evaluated_units,
+            "result_rows": result_rows,
+            "succeeded_units": succeeded_units,
+            "not_applicable_units": not_applicable_units,
+            "failed_units": failed_units,
+        })
+    execution_frame = pd.DataFrame(execution_rows)
+
+    full_links_html = "<ul>" + "".join(
+        f"<li><a href='{html_lib.escape(path)}'>"
+        f"{html_lib.escape(label)}</a></li>"
+        for label, path in full_table_links
+    ) + "</ul>"
+    detail_artifacts: list[Path] = []
+    detail_reports: list[dict[str, str]] = []
     for unit_id in unit_ids:
-        unit_info=unit_registry.loc[unit_registry["analysis_unit_id"].astype(str).eq(unit_id)] if len(unit_registry) else pd.DataFrame()
-        source_info=pd.DataFrame()
-        if {"series_id","cluster_id"}.issubset(series_clusters.columns):
-            source_info=series_clusters.loc[series_clusters["series_id"].astype(str).eq(unit_id)].merge(enrichment,on="cluster_id",how="left")
-        support_info=support.loc[support["series_id"].astype(str).eq(unit_id)] if len(support) else pd.DataFrame()
-        definition=f"<h2>Analysis unit定義</h2>{frame_html(unit_info,5)}<h2>Source Cluster</h2>{frame_html(source_info,100)}<h2>Membership support</h2>{frame_html(support_info,100)}"
-        sections=[definition]
-        for name,frame in sources:
-            if str(name) in {"A004","A008"}: continue
-            part,note=report_view(str(name),frame,unit_id)
-            sections.append(f"<h2>{html_lib.escape(str(name))}</h2><p>{html_lib.escape(note)}</p>{frame_html(part,100)}")
-        images=[]
-        for item in inputs(request,"source"):
-            if item.get("source_capability_id")!="A004": continue
-            candidate=Path(item["path"]).parent/f"projection_{unit_id}.png"
+        unit_info = (
+            unit_registry.loc[
+                unit_registry["analysis_unit_id"].astype(str).eq(unit_id)
+            ]
+            if len(unit_registry) else pd.DataFrame()
+        )
+        source_info = pd.DataFrame()
+        if {"series_id", "cluster_id"}.issubset(series_clusters.columns):
+            source_info = series_clusters.loc[
+                series_clusters["series_id"].astype(str).eq(unit_id)
+            ].merge(enrichment, on="cluster_id", how="left")
+        support_info = (
+            support.loc[support["series_id"].astype(str).eq(unit_id)]
+            if len(support) else pd.DataFrame()
+        )
+        projection_html = '<p class="muted">Projection画像なし</p>'
+        if a004_source_dir is not None:
+            candidate = a004_source_dir / f"projection_{unit_id}.png"
             if candidate.is_file():
-                images.append(f"<h2>PCA / UMAP</h2><img src='{image_uri(candidate)}'>")
-        path=output/f"series_{unit_id}.html"; path.write_text(html_page(f"Analysis unit {unit_id}",f"<h1>Analysis unit {unit_id}</h1>"+"".join(images+sections)),encoding="utf-8"); index["detail_reports"].append({"analysis_unit_id":unit_id,"path":path.name}); detail_artifacts.append(path)
-    detail_links="".join(f"<li><a href='{html_lib.escape(item['path'])}'>{html_lib.escape(item['analysis_unit_id'])}</a></li>" for item in index["detail_reports"])
-    body += f"<div class='card'><h2>Analysis unit詳細Report</h2><ul>{detail_links or '<li>該当するSeries / fallback Clusterなし</li>'}</ul></div>"
-    report=output/"standard_summary.html"; report.write_text(html_page("CONDUCTOR standard report",body),encoding="utf-8"); primary=output/"standard_report_index.json"; write_json(primary,index); finish(request,output,cap,primary=primary,summary=index,report=report,extra_artifacts=[histogram,series_map,*contact_sheets,*detail_artifacts])
+                projection_html = (
+                    f"<img src='{image_uri(candidate)}' "
+                    f"alt='PCA and UMAP projection for "
+                    f"{html_lib.escape(unit_id)}'>"
+                )
+        detail_values: dict[str, Any] = {
+            "analysis_unit_id": html_lib.escape(unit_id),
+            "unit_information": compact_table(
+                unit_info, "analysis_units", 5
+            ),
+            "source_clusters": compact_table(
+                source_info, "source_clusters", max(1, len(source_info))
+            ),
+            "membership_support": (
+                compact_table(support_info, "membership_support", 25)
+                + (
+                    f"<p class='muted'>先頭25件を表示。全 "
+                    f"{len(support_info)}件は完全CSVを参照してください。</p>"
+                    if len(support_info) > 25 else ""
+                )
+            ),
+            "projection": projection_html,
+            "selection_bias_note": html_lib.escape(SELECTION_BIAS_NOTE),
+            "full_table_links": full_links_html,
+            "limitations": bullet_list([
+                SELECTION_BIAS_NOTE,
+                "完全結果はanalysis_unit_idで絞り込んで参照してください。",
+            ]),
+        }
+        for capability_id in REPORT_SECTION_TITLES:
+            source_frame = source_frames.get(capability_id, pd.DataFrame())
+            if capability_id not in source_frames:
+                part = pd.DataFrame()
+                note = "成果物なし（Operator failure/waiveまたは未実行）。"
+            else:
+                part, note = report_view(
+                    capability_id, source_frame, unit_id
+                )
+            detail_values[f"{capability_id.lower()}_note"] = (
+                f"<p>{html_lib.escape(note)}</p>"
+            )
+            detail_values[f"{capability_id.lower()}_table"] = compact_table(
+                part, capability_id, 12
+            )
+        detail_body = render_report_template(
+            "series_detail_template.html", detail_values
+        )
+        path = output / f"series_{unit_id}.html"
+        path.write_text(
+            html_page(f"Analysis unit {unit_id}", detail_body),
+            encoding="utf-8",
+        )
+        detail_reports.append({
+            "analysis_unit_id": unit_id,
+            "path": path.name,
+        })
+        detail_artifacts.append(path)
+
+    fallback_count = (
+        int(unit_registry["scope_kind"].astype(str).eq("cluster").sum())
+        if len(unit_registry) and "scope_kind" in unit_registry else 0
+    )
+    series_formation = {
+        "selected_cluster_count": len(selected),
+        "candidate_series_count": len(series),
+        "accepted_series_count": len(accepted),
+        "rejected_series_count": rejected_count,
+        "fallback_cluster_count": fallback_count,
+        "analysis_unit_count": len(unit_ids),
+        "favorable_fraction_threshold": series_ff_threshold,
+        "series_with_ff_decrease_count": series_summary.get(
+            "series_with_ff_decrease_count"
+        ),
+        "median_union_ff_delta_from_source_mean": series_summary.get(
+            "median_union_ff_delta_from_source_mean"
+        ),
+    }
+    endpoint_overview = {
+        "endpoint": endpoint,
+        "input_count": len(data),
+        "endpoint_valid_count": endpoint_valid_count,
+        "higher_is_better": higher_is_better,
+        "favorable_comparator": ">=" if higher_is_better else "<=",
+        "favorable_threshold": endpoint_threshold,
+        "mean": endpoint_statistics["mean"],
+        "median": endpoint_statistics["median"],
+        "q20": endpoint_statistics["q20"],
+        "q80": endpoint_statistics["q80"],
+        "favorable_top20_cutoff": endpoint_statistics[
+            "favorable_top20_cutoff"
+        ],
+        "unfavorable_bottom20_cutoff": endpoint_statistics[
+            "unfavorable_bottom20_cutoff"
+        ],
+        "global_favorable_fraction": global_ff,
+    }
+    limitations = [
+        SELECTION_BIAS_NOTE,
+        "q値は補助表示であり、Cluster一次選抜のgateではありません。",
+        (
+            "Series membershipはsource Clusterの和集合です。重複するFavorable"
+            "化合物と固有の非Favorable化合物の組合せにより、union FFは各source "
+            "ClusterのFFより低くなる場合があります。"
+        ),
+        "MMP（A008）は専用レポートへ分離し、このSummaryには重複収載しません。",
+        "HTMLは固定した要約列のみを表示し、完全な列と行はCSVへ保持しています。",
+    ]
+    missing_operators = [
+        capability_id
+        for capability_id in REPORT_SECTION_TITLES
+        if capability_id not in source_frames
+    ]
+    if missing_operators:
+        limitations.append(
+            f"Partial report: 成果物がないOperatorは "
+            f"{', '.join(missing_operators)} です。"
+        )
+
+    detail_links_html = (
+        "<ul class='link-grid'>" + "".join(
+            f"<li><a href='{html_lib.escape(item['path'])}'>"
+            f"{html_lib.escape(item['analysis_unit_id'])}</a></li>"
+            for item in detail_reports
+        ) + "</ul>"
+        if detail_reports
+        else "<p class='muted'>該当するSeries / fallback Clusterなし</p>"
+    )
+    projection_gallery = (
+        "".join(
+            f"<figure><img src='{image_uri(path)}' "
+            f"alt='{html_lib.escape(path.stem)}'></figure>"
+            for path in contact_sheets
+        )
+        or '<p class="muted">Projection画像なし</p>'
+    )
+    body = render_report_template("standard_summary_template.html", {
+        "at_a_glance_table": compact_table(
+            pd.DataFrame([
+                {"metric": "All Clusters", "count": len(cluster_profile)},
+                {
+                    "metric": "Criterion-selected Clusters",
+                    "count": len(selected),
+                },
+                {
+                    "metric": "Criterion-accepted Series",
+                    "count": len(accepted),
+                },
+                {"metric": "Fallback Clusters", "count": fallback_count},
+                {"metric": "Active analysis units", "count": len(unit_ids)},
+            ]),
+            "at_a_glance", 10,
+        ),
+        "report_scope": bullet_list([
+            "主報告対象: Endpoint enrichment条件を満たした全Cluster",
+            "解析単位: 採用Seriesと、棄却Seriesからのfallback Cluster",
+            "A003–A007のcanonical resultを定型表示。A008 MMPは専用レポート",
+        ]),
+        "endpoint_metrics": metric_grid([
+            ("Endpoint", endpoint),
+            ("Input N", len(data)),
+            ("Endpoint valid N", endpoint_valid_count),
+            (
+                "Direction",
+                "higher is better"
+                if higher_is_better else "lower is better",
+            ),
+            ("Favorable threshold", endpoint_threshold),
+            ("Measured Global FF", global_ff),
+        ]),
+        "endpoint_definition": html_lib.escape(
+            f"Favorable = {endpoint} "
+            f"{'>=' if higher_is_better else '<='} "
+            f"{endpoint_threshold:.6g}"
+        ),
+        "endpoint_histogram_uri": image_uri(histogram),
+        "selection_bias_note": html_lib.escape(SELECTION_BIAS_NOTE),
+        "cluster_metrics": metric_grid([
+            ("All Clusters", len(cluster_profile)),
+            ("Selected Clusters", len(selected)),
+            ("Selection min N", series_summary.get("min_ff_evaluate")),
+            ("Selection min FF", series_ff_threshold),
+        ]),
+        "selected_clusters_table": compact_table(
+            selected_display, "selected_clusters", max(1, len(selected_display))
+        ),
+        "selected_clusters_note": (
+            "表示列を固定しています。省略列を含む全行は「選抜Cluster」CSVにあります。"
+        ),
+        "series_metrics": metric_grid([
+            ("Candidate Series", len(series)),
+            ("Accepted Series", len(accepted)),
+            ("Rejected Series", rejected_count),
+            ("Fallback Clusters", fallback_count),
+            ("Active analysis units", len(unit_ids)),
+            ("Series FF threshold", series_ff_threshold),
+            (
+                "Series with FF decrease",
+                series_summary.get("series_with_ff_decrease_count"),
+            ),
+            (
+                "Median union FF delta",
+                series_summary.get(
+                    "median_union_ff_delta_from_source_mean"
+                ),
+            ),
+        ]),
+        "series_map_uri": image_uri(series_map),
+        "series_table": compact_table(
+            series_display, "series", max(1, len(series_display))
+        ),
+        "analysis_units_table": compact_table(
+            unit_registry, "analysis_units", max(1, len(unit_registry))
+        ),
+        "operator_sections": "".join(overall_operator_sections),
+        "execution_table": compact_table(
+            execution_frame, "execution", max(1, len(execution_frame))
+        ),
+        "projection_gallery": projection_gallery,
+        "detail_links": detail_links_html,
+        "full_table_links": full_links_html,
+        "limitations": bullet_list(limitations),
+    })
+
+    index = {
+        "schema_version": "1.0.0",
+        "report_template": "standard_summary_template.html",
+        "report_sections": [
+            "at-a-glance", "endpoint-overview", "report-scope",
+            "selected-clusters",
+            "series-formation", "operator-results", "execution-metadata",
+            "projections", "detail-reports",
+            "full-tables-and-limitations",
+        ],
+        "selected_cluster_count": len(selected),
+        "series_count": len(accepted),
+        "analysis_unit_count": len(unit_ids),
+        "endpoint_overview": endpoint_overview,
+        "series_formation": series_formation,
+        "execution_metadata": execution_rows,
+        "limitations": limitations,
+        "selected_cluster_preview": selected.head(25).to_dict("records"),
+        "series_overview": series.head(24).to_dict("records"),
+        "analysis_unit_overview": unit_registry.head(100).to_dict("records"),
+        "operator_highlights": highlights,
+        "full_tables": [
+            {"label": label, "path": path}
+            for label, path in full_table_links
+        ],
+        "detail_reports": detail_reports,
+    }
+    report = output / "standard_summary.html"
+    report.write_text(
+        html_page("CONDUCTOR standard report", body), encoding="utf-8"
+    )
+    primary = output / "standard_report_index.json"
+    write_json(primary, index)
+    finish(
+        request, output, cap, primary=primary, summary=index, report=report,
+        extra_artifacts=[
+            histogram, series_map, *contact_sheets, *full_table_artifacts,
+            *detail_artifacts,
+        ],
+    )
 
 
 def main() -> int:

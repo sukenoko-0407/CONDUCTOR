@@ -217,14 +217,14 @@ Series形成後にFavorable Fractionを再計算する。
 
 有効Seriesとfallback Clusterが混在する場合、両者を`analysis_unit`として一括管理する。各単位に`scope_kind=series|cluster`を必ず付け、暗黙に混在させない。
 
-### 5.4 Series数とsoft gate
+### 5.4 analysis unit数とsoft gate
 
-- Series数24以下：自動的に定型解析へ進む
-- Series数24超：人間の判断を待つ
+- 採用Seriesとfallback Clusterを合わせた実解析単位数が24以下：自動的に定型解析へ進む
+- 実解析単位数が24超：人間の判断を待つ
 - Runtimeは`leiden_resolution`や`min_ff_evaluate`を自動変更しない
 - 人間がparameterを変更した場合は新revisionとして再計算する
 
-一つのSeriesがGlobalのEndpoint有効化合物数の50%を超える場合は`global_like_series`警告を付けるが、停止条件にはしない。Series数0件のときも人間承認なしでfallbackへ進む。
+一つのSeriesがGlobalのEndpoint有効化合物数の50%を超える場合は`global_like_series`警告を付けるが、停止条件にはしない。Series数0件でもfallback自体は作るが、その結果の実解析単位数が24を超える場合は定型解析前に人間確認を入れる。
 
 ## 6. 定型解析
 
@@ -308,12 +308,12 @@ Seriesのsource ClusterにC001～C004由来が存在する場合は、その構�
 
 ### 6.7 A008 MMP Type-I
 
-Type-Iは定型解析としてGlobalと各analysis unitで実行する。
+Type-Iは定型解析として各active Series／fallback Clusterで実行する。GlobalはType-Iの自動Targetに含めない。
 
-- Global Top 5と各Series／fallback Cluster内Top 5を対象
+- 各Series／fallback Cluster内Top 1を対象
 - `higher_is_better`に従って順位を決める
 - tieは`compound_id`昇順
-- MMPが0件でも下位順位を補充しない
+- MMPが0件でも次順位を補充しない
 - 一つのbatch Nodeで処理する
 - 1-cutのみ
 - Environment radius 0～2
@@ -321,7 +321,9 @@ Type-Iは定型解析としてGlobalと各analysis unitで実行する。
 
 全観測MMPから対象化合物へ接続するPairを漏れなく抽出するため、入力全体のfragmentationとPair抽出は行う。ただしType-I／IIでは包括的なSummary群やSQLiteを保存せず、対象接続成果物だけを永続化する。包括的Databaseを保存する役割はType-IIIに限定する。
 
-各対象について、直接MMP pair、Exact Core、置換fragment、Endpoint差、Favorable方向差、support、反証例を保存する。MMPを因果的・加算的な活性要因とは断定せず、観測された局所構造差として報告する。
+各対象について、直接MMP pair、Exact Core、置換fragment、Endpoint差、Favorable方向差、support、反証例を保存する。Databaseと原本CSVはcanonical方向と全Exact Core行を保持する。対象別HTMLだけはTargetを常にTo、NeighborをFromへ正規化し、Favorable deltaもNeighbor→Target方向へ揃える。同一Target–Neighborの複数行は、Coreが別Coreの部分構造なら小さいCore側を除き、最大Coreによる最小変換1件へ決定論的に縮約する。
+
+対象別HTMLは、(1) Target／Neighbor 2D構造、(2) Target全体SMILES、MMP ID、両化合物ID・Endpoint値、Neighbor→Target Favorable delta、(3) MMP ID、Core、Neighbor側置換部分、Target側置換部分、(4) 各MMPについてNeighbor化合物全体、置換前部分、置換後部分を1行3列にした2D変換図、の固定順で表示する。Neighbor全体SMILES文字列は掲載しない。HTMLはこの要約へ限定し、完全列・未縮約行は原本CSVに保持する。MMPを因果的・加算的な活性要因とは断定せず、観測された局所構造差として報告する。
 
 ## 7. MMP Type-II／III
 
@@ -333,7 +335,7 @@ Radiusは変換点周辺の、変化しないCore側環境をどこまで区別�
 
 ### 7.2 Type-II Hit-to-Lead
 
-人間がrun内の`compound_id`を一つ指定する。外部SMILESだけのHitは0.1.9対象外である。主成果物はAgentの最終判断ではなく、指定化合物周辺のMMPを人間が探索できるself-contained HTMLと完全CSVである。
+人間がrun内の`compound_id`を一つ以上指定する。外部SMILESだけのHitは0.1.9対象外である。定型Top 1より多い上位K化合物を調べる場合は、人間が対象IDを選びType-IIへ明示する。主成果物はAgentの最終判断ではなく、指定化合物周辺のMMPを人間が探索できるself-contained HTMLと完全CSVである。
 
 Exact Coreの直接MMPを主証拠とし、near-coreは別sectionへ分離する。near-core条件は次である。
 
@@ -372,7 +374,7 @@ HTMLの初期表示edge数は可読性のため制限してよいが、計算、
 
 ### 8.1 A009 Standard Series report
 
-A009はcanonical artifactだけを読む決定論的rendererであり、自由生成型Interpretationではない。一回の実行を一つのNodeとし、次を生成する。
+A009はcanonical artifactだけを読む決定論的rendererであり、自由生成型Interpretationではない。固定HTMLテンプレートの必須sectionへ値を差し込み、表示列を固定する。一回の実行を一つのNodeとし、次を生成する。
 
 - 全体Summary HTML：1件
 - Series／fallback Cluster詳細HTML：analysis unitごとに1件
@@ -392,9 +394,9 @@ A009はcanonical artifactだけを読む決定論的rendererであり、自由�
 - p値、q値
 - Series IDまたはfallback状態
 
-追加する定型情報は次の二種類に限定する。
+レポート冒頭には、全Cluster数、選抜Cluster数、基準合格Series数、fallback Cluster数、active解析単位数だけの簡略表を置く。続く定型情報は次の二種類とする。
 
-1. Endpoint overview：入力数、Endpoint有効数、方向、Favorable閾値、実測Global FF、ヒストグラム
+1. Endpoint overview：入力数、Endpoint有効数、方向、Favorable閾値、実測Global FF、ヒストグラム。ヒストグラム内にMean、Median、方向依存のFavorable top-20% cutoffとUnfavorable bottom-20% cutoffを具体値で描画する
 2. Compact Series map：Series ID、source Cluster数、union compound数、再計算FF、品質警告
 
 処理時間、成功／`not_applicable`／失敗数は簡潔な実行メタデータとして表示する。
@@ -420,6 +422,7 @@ MMPは含めない。MMPは専用HTMLへ分離する。
 near-missはOperatorが決定論的に選び、LLMに選ばせない。hitやInsightと異なるlabel／配色にする。評価可能な候補がなければ、候補を捏造せず理由を表示する。
 
 HTMLは低彩度で視認性の高い配色とし、画像、CSS、必要な軽量JavaScriptをbase64／inlineで埋め込んだoffline self-contained形式とする。
+幅の広い表はページ全体からはみ出さないscroll containerへ収める。HTMLには定義済みの要約列だけを掲載し、省略列と完全行はA009成果物内のCSVへのlinkで提供する。
 
 ## 9. Interpretation
 

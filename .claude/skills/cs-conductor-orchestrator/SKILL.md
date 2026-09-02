@@ -36,7 +36,7 @@ Runtime応答の`required_action.code`を一つだけ実行する。
 | `EXECUTE_RUNNABLE_BATCH` | `prepare-execution-packet`後、返されたpathを`execute-packet --packet`へ一回渡す |
 | `WAIT_RUNNING` | 再投入せず待つ |
 | `FAILED_NODE_REPAIR_REQUIRED` | 他の独立Nodeを試行し終えた後、diagnosticを人間へ示し、修正後は同じNodeをretryする。推測CLIで代行しない |
-| `HUMAN_SERIES_REVIEW_REQUIRED` | accepted Series数が24を超えたことと、参考値として実解析単位数を示す。人間が現条件を承認したら`approve-series`、変更指示なら`revise-series` |
+| `HUMAN_SERIES_REVIEW_REQUIRED` | 採用Seriesとfallback Clusterを合わせた実解析単位数が24を超えたことを示し、accepted／rejected Series数とfallback Cluster数も報告する。人間が現条件を承認したら`approve-series`、変更指示なら`revise-series` |
 | `PLAN_STANDARD` | `plan-standard` |
 | `PREPARE_INTERPRETATION` | `prepare-interpretation` |
 | `WRITE_INTERPRETATION` | `cs-conductor-interpreter`を一つ起動し、draft完成後`commit-interpretation` |

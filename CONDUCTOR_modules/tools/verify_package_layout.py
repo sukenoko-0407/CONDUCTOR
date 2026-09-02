@@ -161,15 +161,85 @@ def main() -> int:
         runner = SKILLS / name / "scripts" / "run.py"
         if runner.read_bytes() != batch_runner_template:
             errors.append(f"{name}: run.py differs from the canonical batch runner")
+    for template_name in (
+        "standard_summary_template.html", "series_detail_template.html",
+    ):
+        canonical_template = MODULES / "tools" / "templates" / template_name
+        installed_template = (
+            SKILLS / "cs-analysis-series-report" / "templates" / template_name
+        )
+        if not installed_template.is_file():
+            errors.append(
+                f"cs-analysis-series-report: missing templates/{template_name}"
+            )
+        elif installed_template.read_bytes() != canonical_template.read_bytes():
+            errors.append(
+                f"cs-analysis-series-report: templates/{template_name} "
+                "differs from the canonical template"
+            )
+    standard_template_source = (
+        MODULES / "tools" / "templates" / "standard_summary_template.html"
+    ).read_text(encoding="utf-8")
+    at_a_glance_token = 'data-report-section="at-a-glance"'
+    endpoint_token = 'data-report-section="endpoint-overview"'
+    if at_a_glance_token not in standard_template_source:
+        errors.append("A009 template is missing the at-a-glance section")
+    elif (
+        endpoint_token not in standard_template_source
+        or standard_template_source.index(at_a_glance_token)
+        > standard_template_source.index(endpoint_token)
+    ):
+        errors.append("A009 at-a-glance section must precede Endpoint overview")
     mmp_source = (SKILLS / "cs-analysis-matched-molecular-pairs" / "scripts" / "run.py").read_text(encoding="utf-8")
     for obsolete_role in ("global-build", "local-screen", "local-detail"):
         if obsolete_role in mmp_source:
             errors.append(f"MMP implementation retains obsolete role: {obsolete_role}")
+    mmp_template_contract = {
+        "mmp_target_report_template.html": (
+            'data-report-section="structures"',
+            'data-report-section="basic-information"',
+            'data-report-section="mmp-details"',
+            'data-report-section="visual-transformations"',
+            'data-report-section="full-data"',
+            'Target full SMILES',
+        ),
+        "mmp_overview_report_template.html": (
+            'data-report-section="scope"',
+            'data-report-section="targets"',
+            'data-report-section="full-data"',
+        ),
+    }
+    for template_name, required_tokens in mmp_template_contract.items():
+        template_path = (
+            SKILLS / "cs-analysis-matched-molecular-pairs"
+            / "templates" / template_name
+        )
+        if not template_path.is_file():
+            errors.append(
+                "cs-analysis-matched-molecular-pairs: missing "
+                f"templates/{template_name}"
+            )
+            continue
+        template_source = template_path.read_text(encoding="utf-8")
+        for token in required_tokens:
+            if token not in template_source:
+                errors.append(
+                    "cs-analysis-matched-molecular-pairs: "
+                    f"templates/{template_name} is missing {token}"
+                )
+    for token in (
+        "select_minimal_transform_rows(",
+        "orient_report_rows_target_to(",
+        "render_transformation_gallery(",
+    ):
+        if token not in mmp_source:
+            errors.append(f"MMP report implementation is missing {token}")
     profile=json.loads((MODULES/"catalog"/"analysis_profile.json").read_text(encoding="utf-8"))
     if profile.get("conductor_version")!=VERSION: errors.append("analysis_profile version mismatch")
     if profile.get("basic_compute",{}).get("min_cluster_size")!=5: errors.append("min_cluster_size must be 5")
     if profile.get("basic_compute",{}).get("min_ff_evaluate")!=10: errors.append("min_ff_evaluate must default to 10")
     if profile.get("standard_analysis",{}).get("capabilities")!=["A003","A004","A005","A006","A007","A008","A009"]: errors.append("standard capability order mismatch")
+    if profile.get("standard_analysis",{}).get("mmp_type_i_top_k")!=1: errors.append("standard MMP Type-I must use Top 1")
     obsolete=("cs-conductor-executor.md",)
     for name in obsolete:
         if (ROOT/".claude"/"agents"/name).exists(): errors.append(f"obsolete Agent remains: {name}")

@@ -15,7 +15,7 @@ CONDUCTORは、化合物の多様な表現を全体から局所へ組み替え�
   → 人間のOn-demand深掘り
 ```
 
-「基本計算」はDescriptionからSeries確定まで、「定型解析」はA003-A009です。基本計算・定型解析は一つの人間承認Round内で完了させます。Series数24超だけ人間確認を挟みます。
+「基本計算」はDescriptionからSeries確定まで、「定型解析」はA003-A009です。基本計算・定型解析は一つの人間承認Round内で完了させます。採用Seriesとfallback Clusterを合わせた実解析単位数が24を超える場合は人間確認を挟みます。
 
 RuntimeはDAG、Node番号、依存関係、再試行、Round gateを決定論的に管理します。Main AgentはRuntimeの一つの`required_action`だけを進め、科学SkillのCLIを推測しません。各OperatorはGlobalと全Seriesを一括処理するため、Series数に比例してNodeが増えません。
 

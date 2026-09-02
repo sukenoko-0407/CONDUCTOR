@@ -1,0 +1,34 @@
+<header>
+  <p><a href="mmp_report.html">← MMP overview</a></p>
+  <p class="muted">$role_label / deterministic target report</p>
+  <h1>MMP target $target_id</h1>
+  <p>Analysis unit: $analysis_units</p>
+</header>
+
+<section class="card" data-report-section="structures">
+  <h2>1. Target / Neighbor structures</h2>
+  $structure_image
+</section>
+
+<section class="card" data-report-section="basic-information">
+  <h2>2. Basic information</h2>
+  <p>2D構造図に示したTargetとNeighborについて、化合物ID、Endpoint値、MMP IDを示します。</p>
+  <p><b>Target full SMILES:</b> <code style="white-space:normal;overflow-wrap:anywhere">$target_smiles</code></p>
+  $basic_information_table
+</section>
+
+<section class="card" data-report-section="mmp-details">
+  <h2>3. MMP details</h2>
+  <p>Targetは表示上常にToとし、Core、Neighbor側の置換前部分、Target側の置換後部分だけを表示します。</p>
+  <p>$direction_note</p>
+  $mmp_detail_table
+</section>
+
+<section class="card" data-report-section="visual-transformations">
+  <h2>4. Visual transformations</h2>
+  <p>各行を「Neighbor化合物全体 → 置換前部分 → 置換後部分」の順に示します。同一Target–Neighborでは最大Coreに対応する最小変換だけを表示します。</p>
+  $transformation_gallery
+  <footer data-report-section="full-data">
+    <p>HTMLは表示用に最小変換へ整理しています。省略していない全MMP列・全接続Pairは<a href="$full_csv_path">原本CSV</a>を参照してください。</p>
+  </footer>
+</section>

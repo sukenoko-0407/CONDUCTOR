@@ -1,0 +1,51 @@
+<header class="report-header">
+  <p><a href="standard_summary.html">← Standard Summary</a></p>
+  <p class="muted">A009 / deterministic analysis-unit detail</p>
+  <h1>Analysis unit $analysis_unit_id</h1>
+</header>
+
+<section class="card" data-report-section="unit-definition">
+  <h2>1. Analysis unit definition</h2>
+  $unit_information
+  <h3>Source Clusters</h3>
+  $source_clusters
+  <h3>Membership support</h3>
+  $membership_support
+</section>
+
+<section class="card" data-report-section="projection">
+  <h2>2. PCA / UMAP</h2>
+  $projection
+</section>
+
+<section class="card" data-report-section="a003">
+  <h2>3. A003 D001 descriptor contrast</h2>
+  $a003_note
+  $a003_table
+</section>
+
+<section class="card" data-report-section="a005">
+  <h2>4. A005 feature model</h2>
+  <p class="muted">$selection_bias_note</p>
+  $a005_note
+  $a005_table
+</section>
+
+<section class="card" data-report-section="a006">
+  <h2>5. A006 SALI and Cliff landscape</h2>
+  $a006_note
+  $a006_table
+</section>
+
+<section class="card" data-report-section="a007">
+  <h2>6. A007 structural signature</h2>
+  $a007_note
+  $a007_table
+</section>
+
+<section class="card" data-report-section="full-tables-and-limitations">
+  <h2>7. Full tables and limitations</h2>
+  <p>完全表はSummaryと同じCSVを参照し、<code>analysis_unit_id</code>で絞り込んでください。MMPはA008専用レポートに分離されています。</p>
+  $full_table_links
+  $limitations
+</section>

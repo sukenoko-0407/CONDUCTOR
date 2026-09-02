@@ -1,4 +1,4 @@
 interface:
   display_name: "Matched Molecular Pair Analysis"
-  short_description: "Build and query reusable MMP evidence databases"
-  default_prompt: "Use $cs-analysis-matched-molecular-pairs to build an exhaustive MMP database and analyze transform, core, context, and cluster-local effects."
+  short_description: "Report standard Top-1 or on-demand MMP evidence"
+  default_prompt: "Use $cs-analysis-matched-molecular-pairs for standard per-Series Top-1 Type-I, explicitly targeted Type-II, or a human-requested Type-III evidence database."

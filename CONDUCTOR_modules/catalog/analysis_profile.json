@@ -25,7 +25,7 @@
     "landscape_description": "D002",
     "model_description_panel": ["D001", "D002", "D006", "D013", "D016", "D019"],
     "minimum_local_model_samples": 30,
-    "mmp_type_i_top_k": 5,
+    "mmp_type_i_top_k": 1,
     "mmp_cuts": 1,
     "mmp_radius_min": 0,
     "mmp_radius_max": 2
