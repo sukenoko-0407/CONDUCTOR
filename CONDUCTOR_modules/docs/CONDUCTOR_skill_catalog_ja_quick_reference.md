@@ -42,13 +42,13 @@
 |---|---|---|
 | A001 | Cluster profile | 全ClusterのEndpoint/FF |
 | A002 | Cluster enrichment | OR、Fisher p、BH q |
-| A003 | Descriptor contrast | D001 Global vs Series |
+| A003 | Descriptor contrast | D001 Global vs Series、相関上位3散布図 |
 | A004 | Projection panel | D002 PCA/UMAP |
 | A005 | Multi-Description model | 固定6表現、OOF低容量model |
 | A006 | Landscape | D002 SALI、内部/境界Cliff |
 | A007 | Structural signature | 構造由来Cluster、Murcko/MCS fallback |
 | A008 | MMP | Type-I/II/III、1-cut |
-| A009 | Standard report | 全体・Series別HTML |
+| A009 | Standard report | 全体・Series別HTML、コンパクトA003表 |
 
 ## Interpretation / Control
 

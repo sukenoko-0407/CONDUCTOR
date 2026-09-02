@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import hashlib
 import html as html_lib
 import shutil
 from pathlib import Path
@@ -49,6 +50,10 @@ REPORT_TABLE_COLUMNS = {
         "analysis_unit_id", "feature", "sample_count", "median_shift_global_iqr",
         "shift_q_bh", "pearson_r", "spearman_r", "correlation_gain",
         "correlation_q_bh", "strict_hit",
+    ],
+    "A003_detail": [
+        "feature", "sample_count", "pearson_r", "spearman_r",
+        "max_abs_correlation", "correlation_q_bh", "strict_hit",
     ],
     "A005": [
         "analysis_unit_id", "sample_count", "status", "oof_r2",
@@ -102,6 +107,12 @@ REPORT_COLUMN_LABELS = {
     "support_count": "Support count",
     "support_fraction": "Support fraction",
     "duration_seconds": "Duration (s)",
+    "feature": "Feature",
+    "pearson_r": "Pearson r",
+    "spearman_r": "Spearman r",
+    "max_abs_correlation": "Max |r|",
+    "correlation_q_bh": "Correlation BH q",
+    "strict_hit": "Strict hit",
 }
 
 STRICT_CRITERIA = {
@@ -563,6 +574,139 @@ def correlations(x: pd.Series, y: pd.Series) -> tuple[float, float, float, float
     return float(pcc.statistic), float(pcc.pvalue), float(spr.statistic), float(spr.pvalue)
 
 
+def rank_a003_correlations(
+    frame: pd.DataFrame, limit: int | None = None,
+) -> pd.DataFrame:
+    """Rank A003 rows deterministically by the strongest absolute correlation."""
+    if frame.empty:
+        return frame.copy()
+    ranked = frame.copy()
+    if "max_abs_correlation" in ranked:
+        strength = pd.to_numeric(
+            ranked["max_abs_correlation"], errors="coerce"
+        )
+    else:
+        coefficients = pd.concat([
+            pd.to_numeric(
+                ranked.get(
+                    "pearson_r", pd.Series(np.nan, index=ranked.index)
+                ),
+                errors="coerce",
+            ).abs(),
+            pd.to_numeric(
+                ranked.get(
+                    "spearman_r", pd.Series(np.nan, index=ranked.index)
+                ),
+                errors="coerce",
+            ).abs(),
+        ], axis=1)
+        strength = coefficients.max(axis=1)
+        ranked["max_abs_correlation"] = strength
+    ranked = ranked.loc[strength.notna()].copy()
+    if ranked.empty:
+        return ranked
+    ranked["_correlation_strength"] = strength.loc[ranked.index]
+    ranked["_correlation_q"] = pd.to_numeric(
+        ranked.get(
+            "correlation_q_bh", pd.Series(np.nan, index=ranked.index)
+        ),
+        errors="coerce",
+    ).fillna(np.inf)
+    ranked["_feature_sort"] = ranked.get(
+        "feature", pd.Series("", index=ranked.index)
+    ).astype(str)
+    ranked = ranked.sort_values(
+        ["_correlation_strength", "_correlation_q", "_feature_sort"],
+        ascending=[False, True, True], kind="mergesort",
+    ).drop(columns=[
+        "_correlation_strength", "_correlation_q", "_feature_sort",
+    ])
+    return ranked.head(limit) if limit is not None else ranked
+
+
+def render_a003_correlation_plots(
+    merged: pd.DataFrame, features: pd.DataFrame, endpoint: str,
+    compound_id: str, units: dict[str, set[str]], result: pd.DataFrame,
+    output: Path, top_n: int = 3,
+) -> tuple[Path, list[Path]]:
+    """Create one up-to-three-panel scatter figure for every analysis unit."""
+    import matplotlib.pyplot as plt
+
+    index_path = output / "A003_top_correlation_plots.json"
+    plots: list[Path] = []
+    entries: list[dict[str, Any]] = []
+    for unit_id in sorted(value for value in units if value != "GLOBAL"):
+        unit_rows = result.loc[
+            result["analysis_unit_id"].astype(str).eq(unit_id)
+        ] if len(result) else result
+        top = rank_a003_correlations(unit_rows, top_n)
+        if top.empty:
+            continue
+        member_mask = merged[compound_id].isin(units[unit_id])
+        figure, axes = plt.subplots(
+            1, len(top), figsize=(4.4 * len(top), 3.9), squeeze=False,
+        )
+        plotted_features: list[dict[str, Any]] = []
+        for rank, ((_, row), axis) in enumerate(
+            zip(top.iterrows(), axes[0]), 1
+        ):
+            feature = str(row["feature"])
+            x = pd.to_numeric(features.loc[member_mask, feature], errors="coerce")
+            y = pd.to_numeric(merged.loc[member_mask, endpoint], errors="coerce")
+            valid = x.notna() & y.notna()
+            x_valid = x.loc[valid]
+            y_valid = y.loc[valid]
+            axis.scatter(
+                x_valid, y_valid, s=24, alpha=.78, color="#526a73",
+                edgecolors="white", linewidths=.35,
+            )
+            if len(x_valid) >= 2 and x_valid.nunique() >= 2:
+                slope, intercept = np.polyfit(x_valid, y_valid, 1)
+                line_x = np.linspace(float(x_valid.min()), float(x_valid.max()), 100)
+                axis.plot(
+                    line_x, slope * line_x + intercept,
+                    color="#a44a22", linewidth=1.25,
+                )
+            pearson = report_value(row.get("pearson_r"))
+            spearman = report_value(row.get("spearman_r"))
+            axis.set_title(
+                f"#{rank} {feature}\nPearson={pearson} / Spearman={spearman}",
+                fontsize=9,
+            )
+            axis.set_xlabel(feature)
+            axis.set_ylabel(endpoint)
+            axis.grid(alpha=.18)
+            plotted_features.append({
+                "rank": rank, "feature": feature,
+                "sample_count": int(valid.sum()),
+                "pearson_r": row.get("pearson_r"),
+                "spearman_r": row.get("spearman_r"),
+                "max_abs_correlation": row.get("max_abs_correlation"),
+                "correlation_q_bh": row.get("correlation_q_bh"),
+            })
+        figure.suptitle(f"{unit_id}: top {len(top)} feature–Endpoint correlations")
+        figure.tight_layout()
+        safe_prefix = "".join(
+            character if character.isalnum() or character in "-_" else "_"
+            for character in unit_id
+        )[:64] or "unit"
+        suffix = hashlib.sha256(unit_id.encode("utf-8")).hexdigest()[:10]
+        plot_path = output / f"A003_top_correlations_{safe_prefix}_{suffix}.png"
+        figure.savefig(plot_path, dpi=160)
+        plt.close(figure)
+        plots.append(plot_path)
+        entries.append({
+            "analysis_unit_id": unit_id,
+            "path": plot_path.name,
+            "features": plotted_features,
+        })
+    write_json(index_path, {
+        "schema_version": "1.0.0", "ranking": "max_abs_correlation",
+        "top_n": top_n, "plots": entries,
+    })
+    return index_path, plots
+
+
 def run_a003(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
     from scipy.stats import mannwhitneyu
     parameters = request.get("parameters", {})
@@ -613,11 +757,14 @@ def run_a003(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
         result["near_miss_score"] = pd.concat([pearson_credit, spearman_credit, shift_credit], axis=1).max(axis=1)
         result = result.sort_values(["strict_hit","near_miss_score","max_abs_correlation","analysis_unit_id","feature"], ascending=[False,False,False,True,True])
     primary = output / "A003_series_descriptor_contrast.csv"; result.to_csv(primary, index=False)
+    plot_index, correlation_plots = render_a003_correlation_plots(
+        merged, features, endpoint, cid, units, result, output, top_n=3
+    )
     candidates = result.loc[result["analysis_unit_id"].astype(str).ne("GLOBAL")] if len(result) else result
     hit_count = int(candidates.get("strict_hit", pd.Series(dtype=bool)).sum()); near = candidates.loc[~candidates.get("strict_hit", False)].head(1) if len(candidates) else candidates
     note = f"厳格基準を満たす候補は{hit_count}件。" if hit_count else ("厳格基準を満たす候補はなく、最も近い候補は " + (f"{near.iloc[0]['analysis_unit_id']} / {near.iloc[0]['feature']} (|r|max={near.iloc[0]['max_abs_correlation']:.3f})。" if len(near) else "ありません。"))
     report = output / "operator_report.html"; report.write_text(html_page("A003 Series descriptor contrast", f"<h1>Series vs Global: D001</h1><div class='card'><p>{note}</p><p class='muted'>{SELECTION_BIAS_NOTE}</p></div><div class='card'>{frame_html(result.loc[result.get('strict_hit', False)] if len(result) else result, 200)}</div>"), encoding="utf-8")
-    finish(request, output, cap, primary=primary, summary={"tested_feature_unit_pairs": len(result), "strict_hit_count": hit_count, "near_miss": near.to_dict("records") if len(near) else []}, report=report)
+    finish(request, output, cap, primary=primary, summary={"tested_feature_unit_pairs": len(result), "strict_hit_count": hit_count, "near_miss": near.to_dict("records") if len(near) else [], "correlation_plot_count": len(correlation_plots), "correlation_plot_top_n": 3}, report=report, extra_artifacts=[plot_index, *correlation_plots])
 
 
 def projection_coordinates(matrix: np.ndarray, seed: int) -> tuple[np.ndarray, np.ndarray, list[str]]:
@@ -1005,6 +1152,7 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
     source_frames: dict[str, pd.DataFrame] = {}
     source_paths: dict[str, Path] = {}
     a004_source_dir: Path | None = None
+    a003_plot_paths: dict[str, Path] = {}
     for item in inputs(request, "source"):
         capability_id = str(item.get("source_capability_id", "source"))
         path = Path(item["path"])
@@ -1018,6 +1166,24 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
                 path, ["compound_id", "analysis_unit_id", "cluster_id", "series_id"]
             )
             source_paths[capability_id] = path
+            if capability_id == "A003":
+                plot_index_path = path.parent / "A003_top_correlation_plots.json"
+                if plot_index_path.is_file():
+                    plot_index = json.loads(
+                        plot_index_path.read_text(encoding="utf-8")
+                    )
+                    for plot_record in plot_index.get("plots", []):
+                        unit_id = str(
+                            plot_record.get("analysis_unit_id", "")
+                        )
+                        candidate = (
+                            path.parent / str(plot_record.get("path", ""))
+                        ).resolve()
+                        if (
+                            unit_id and candidate.is_file()
+                            and candidate.parent == path.parent.resolve()
+                        ):
+                            a003_plot_paths[unit_id] = candidate
         except Exception as exc:
             raise ValueError(
                 f"A009 could not read the succeeded upstream CSV {path} "
@@ -1197,6 +1363,20 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
             frame = frame.loc[
                 frame["analysis_unit_id"].astype(str).ne("GLOBAL")
             ]
+        if capability_id == "A003" and unit_id is not None:
+            ranked = rank_a003_correlations(frame)
+            displayed = ranked.head(10)
+            correlation_hit_count = (
+                int(boolean_mask(
+                    ranked["correlation_hit"], "correlation_hit"
+                ).sum())
+                if len(ranked) and "correlation_hit" in ranked else 0
+            )
+            return displayed, (
+                f"相関係数順に上位{len(displayed)}件を表示。"
+                f"厳格な相関基準該当は{correlation_hit_count}件。"
+                "上位3件は下の散布図で確認できます。"
+            )
         flag = {
             "A003": "strict_hit",
             "A005": "strict_improvement",
@@ -1382,6 +1562,15 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
                 )
             ),
             "projection": projection_html,
+            "a003_scatter_plots": (
+                f"<figure><img src='{image_uri(a003_plot_paths[unit_id])}' "
+                f"alt='Top D001 feature versus Endpoint scatter plots for "
+                f"{html_lib.escape(unit_id)}'><figcaption>"
+                "Max |Pearson r, Spearman r|で順位付けした上位3特徴量。"
+                "回帰線は視認補助です。</figcaption></figure>"
+                if unit_id in a003_plot_paths
+                else "<p class='muted'>A003相関散布図なし</p>"
+            ),
             "selection_bias_note": html_lib.escape(SELECTION_BIAS_NOTE),
             "full_table_links": full_links_html,
             "limitations": bullet_list([
@@ -1402,7 +1591,9 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
                 f"<p>{html_lib.escape(note)}</p>"
             )
             detail_values[f"{capability_id.lower()}_table"] = compact_table(
-                part, capability_id, 12
+                part,
+                "A003_detail" if capability_id == "A003" else capability_id,
+                10 if capability_id == "A003" else 12,
             )
         detail_body = render_report_template(
             "series_detail_template.html", detail_values

@@ -425,6 +425,26 @@ class Version019Contracts(unittest.TestCase):
         self.assertNotIn("parameters_json", rendered)
         self.assertNotIn("intentionally hidden", rendered)
 
+        a003_frame = runner.pd.DataFrame([{
+            "feature": "MolWt", "sample_count": 12, "pearson_r": .81,
+            "spearman_r": .78, "max_abs_correlation": .81,
+            "correlation_q_bh": .01, "strict_hit": True,
+            "median_shift_global_iqr": 1.2, "shift_q_bh": .02,
+            "global_pearson_r": .15,
+        }])
+        a003_rendered = runner.compact_table(a003_frame, "A003_detail")
+        self.assertIn("Max |r|", a003_rendered)
+        self.assertIn("Correlation BH q", a003_rendered)
+        self.assertNotIn("median_shift_global_iqr", a003_rendered)
+        self.assertNotIn("global_pearson_r", a003_rendered)
+
+        ranked = runner.rank_a003_correlations(runner.pd.DataFrame([
+            {"feature": "B", "pearson_r": -.7, "spearman_r": -.6},
+            {"feature": "A", "pearson_r": .8, "spearman_r": .75},
+            {"feature": "C", "pearson_r": .2, "spearman_r": .9},
+        ]), 2)
+        self.assertEqual(ranked["feature"].tolist(), ["C", "A"])
+
         higher = runner.endpoint_distribution_statistics(
             runner.pd.Series([1, 2, 3, 4, 5]), True
         )
@@ -523,6 +543,19 @@ class Version019Contracts(unittest.TestCase):
                 "S000001,MolWt,6,0.3,0.35,0.1,0.08,0.5,0.07,"
                 "False,0.9\n",
             )
+            a003_plot = root / "A003_top_correlations_S000001.png"
+            a003_plot.write_bytes(b"test-png")
+            write(
+                "A003_top_correlation_plots.json",
+                json.dumps({
+                    "schema_version": "1.0.0", "top_n": 3,
+                    "plots": [{
+                        "analysis_unit_id": "S000001",
+                        "path": a003_plot.name,
+                        "features": [{"rank": 1, "feature": "MolWt"}],
+                    }],
+                }),
+            )
             request = {
                 "inputs": [
                     {"role": "dataset", "path": str(dataset)},
@@ -583,6 +616,9 @@ class Version019Contracts(unittest.TestCase):
             self.assertIn("tables/A003_full.csv", summary_html)
             self.assertNotIn("parameters_json", summary_html)
             self.assertIn('data-report-section="a005"', detail_html)
+            self.assertIn("Top feature–Endpoint scatter plots", detail_html)
+            self.assertIn("data:image/png;base64", detail_html)
+            self.assertIn("相関係数順に上位1件", detail_html)
             self.assertIn("成果物なし", detail_html)
             self.assertEqual(
                 index["report_template"], "standard_summary_template.html"
@@ -596,6 +632,72 @@ class Version019Contracts(unittest.TestCase):
                 index["endpoint_overview"]["unfavorable_bottom20_cutoff"], 2.0
             )
             self.assertTrue((output / "tables" / "A003_full.csv").is_file())
+
+    def test_a003_generates_top_three_feature_endpoint_scatter_plots(self) -> None:
+        runner = self.load_batch_runner("batch_runner_019_a003_scatter_test")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "output"
+            output.mkdir()
+            dataset = root / "dataset.csv"
+            description = root / "D001.csv"
+            membership = root / "membership.csv"
+            dataset.write_text(
+                "compound_id,SMILES,activity\n" + "".join(
+                    f"C{index},CC,{index}\n" for index in range(1, 9)
+                ),
+                encoding="utf-8",
+            )
+            description.write_text(
+                "compound_id,feature_a,feature_b,feature_c,feature_d\n"
+                + "".join(
+                    f"C{index},{index},{9-index},{index * index},{index % 3}\n"
+                    for index in range(1, 9)
+                ),
+                encoding="utf-8",
+            )
+            membership.write_text(
+                "compound_id,analysis_unit_id,membership_value\n"
+                + "".join(
+                    f"C{index},S000001,True\n" for index in range(1, 7)
+                ),
+                encoding="utf-8",
+            )
+            request = {
+                "inputs": [
+                    {"role": "dataset", "path": str(dataset)},
+                    {
+                        "role": "description", "path": str(description),
+                        "source_capability_id": "D001",
+                    },
+                    {
+                        "role": "analysis_unit_membership",
+                        "path": str(membership),
+                    },
+                ],
+                "columns": {
+                    "compound_id": "compound_id", "smiles": "SMILES",
+                    "endpoint": "activity",
+                },
+                "endpoint": {"higher_is_better": True},
+                "parameters": {},
+            }
+            with mock.patch.object(runner, "finish"):
+                runner.run_a003(request, output, {})
+
+            plot_index = json.loads(
+                (output / "A003_top_correlation_plots.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(plot_index["top_n"], 3)
+            self.assertEqual(len(plot_index["plots"]), 1)
+            self.assertEqual(
+                len(plot_index["plots"][0]["features"]), 3
+            )
+            self.assertTrue(
+                (output / plot_index["plots"][0]["path"]).is_file()
+            )
 
     def test_dbscan_auto_eps_is_positive_for_duplicate_d006_vectors(self) -> None:
         runner_path = SKILLS / "cs-compute-clustering-vector-dbscan" / "scripts" / "run.py"

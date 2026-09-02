@@ -135,6 +135,7 @@
 4. 相関hitを`abs(r)>=0.4`、Global比0.2増加、`q<=0.05`で絞る。
 5. median hitをIQR比0.75以上、`q<=0.05`で絞る。
 6. 全特徴量CSVと決定論的near-missを出力する。
+7. 各Series／fallback Clusterの`max(abs(Pearson r), abs(Spearman r))`上位3特徴量について単一特徴量–Endpoint散布図panelとJSON索引を出力する。
 
 ### 11.3 A004 projection panel
 
@@ -221,7 +222,7 @@
 6. Endpoint overview／histogramを追加し、Mean、Median、Favorable top-20% cutoff、Unfavorable bottom-20% cutoffを図内へ数値描画する。
 7. Compact Series mapを追加する。
 8. 実行時間と状態件数を簡潔に表示する。
-9. Series詳細へD001、projection、model、landscape、structureを表示する。
+9. Series詳細へD001、projection、model、landscape、structureを表示する。A003表は7列へ限定し、相関上位3特徴量の散布図panelを埋め込む。
 10. MMPをSeries詳細へ含めない。
 11. hit 0件でも決定論的near-missを一文表示する。
 12. HTMLをoffline self-containedとし、画像をbase64埋め込みする。

@@ -260,7 +260,7 @@ median shiftのhitは次をすべて満たすものに限定する。
 1. `abs(median_series - median_nonseries) / IQR_global >= 0.75`
 2. 補正後`q <= 0.05`
 
-完全表には全特徴量を保存する。基準未達の場合は最も近い候補を一文だけ報告する。
+完全表には全特徴量を保存する。基準未達の場合は最も近い候補を一文だけ報告する。各Series／fallback Clusterについて、`max(abs(Pearson r), abs(Spearman r))`の上位3特徴量を決定論的に選び、それぞれの単一特徴量–Endpoint散布図を1枚のpanel PNGとして保存する。回帰線は視認補助であり、因果関係を示さない。
 
 ### 6.3 A004 Series projection panel
 
@@ -406,7 +406,7 @@ A009はcanonical artifactだけを読む決定論的rendererであり、自由�
 各詳細レポートには次を含める。
 
 - Series定義、source Cluster、membership support、FF
-- GlobalとのD001特徴量差とSeries内相関
+- GlobalとのD001特徴量差とSeries内相関。HTML表はFeature、N、Pearson r、Spearman r、Max |r|、correlation BH q、strict hitの7列に限定し、相関上位3特徴量の散布図panelを併記する
 - PCA／UMAP combined画像
 - A005 model結果と選抜bias
 - Global vs Series SALI、internal／boundary cliff

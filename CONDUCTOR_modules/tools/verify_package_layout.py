@@ -190,6 +190,19 @@ def main() -> int:
         > standard_template_source.index(endpoint_token)
     ):
         errors.append("A009 at-a-glance section must precede Endpoint overview")
+    series_detail_template_source = (
+        MODULES / "tools" / "templates" / "series_detail_template.html"
+    ).read_text(encoding="utf-8")
+    if "$a003_scatter_plots" not in series_detail_template_source:
+        errors.append("A009 detail template is missing A003 scatter plots")
+    for token in (
+        '"A003_detail": [',
+        "def rank_a003_correlations(",
+        "def render_a003_correlation_plots(",
+        '"A003_top_correlation_plots.json"',
+    ):
+        if token not in batch_runner_template.decode("utf-8"):
+            errors.append(f"canonical batch runner is missing {token}")
     mmp_source = (SKILLS / "cs-analysis-matched-molecular-pairs" / "scripts" / "run.py").read_text(encoding="utf-8")
     for obsolete_role in ("global-build", "local-screen", "local-detail"):
         if obsolete_role in mmp_source:
