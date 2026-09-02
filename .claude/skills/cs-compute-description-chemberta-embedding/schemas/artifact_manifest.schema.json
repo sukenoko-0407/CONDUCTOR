@@ -22,7 +22,7 @@
       "const": "2.0.0"
     },
     "conductor_version": {
-      "const": "0.1.8"
+      "const": "0.1.9"
     },
     "artifact_stage": {
       "enum": [

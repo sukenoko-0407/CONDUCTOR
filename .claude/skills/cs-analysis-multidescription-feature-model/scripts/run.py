@@ -1,282 +1,787 @@
 from __future__ import annotations
 
-import argparse
-import hashlib
-import html
 import json
 import math
-import sys
-from collections import Counter, defaultdict
-from datetime import datetime, timezone
+import html as html_lib
+import shutil
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-
-SKILL_DIR = Path(__file__).resolve().parents[1]
-CAPABILITY = json.loads((SKILL_DIR / "capability.json").read_text(encoding="utf-8"))
-PANEL = tuple(CAPABILITY.get("fixed_description_panel") or ["D001", "D002", "D006", "D013", "D016", "D019"])
-
-
-def now() -> str: return datetime.now(timezone.utc).isoformat()
+from batch_skill_common import (
+    analysis_units, bh_qvalues, dataset, description_table, favorable_definition,
+    finish, frame_html, html_page, image_uri, input_path, inputs, membership_sets,
+    numeric_features, parse_request, read_table, write_json,
+)
 
 
-def sha(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""): digest.update(chunk)
-    return digest.hexdigest()
+SELECTION_BIAS_NOTE = "本比較はEndpoint enrichmentで選抜した解析単位を同じEndpointで評価しており、独立検証や因果関係を示しません。"
 
 
-def value_hash(value: Any) -> str: return hashlib.sha256(json.dumps(value,sort_keys=True,default=str).encode()).hexdigest()
+def boolean_mask(values: pd.Series, label: str) -> pd.Series:
+    """Parse a serialized Boolean column without treating 'False' as truthy."""
+    normalized = values.astype("string").str.strip().str.lower()
+    true_values = {"true", "1", "1.0", "yes"}
+    false_values = {"false", "0", "0.0", "no", ""}
+    invalid = normalized.notna() & ~normalized.isin(true_values | false_values)
+    if invalid.any():
+        examples = sorted(set(normalized.loc[invalid].astype(str)))[:10]
+        raise ValueError(f"{label} contains invalid Boolean values: {examples}")
+    return normalized.isin(true_values)
 
 
-def clean(value: Any) -> Any:
-    if isinstance(value,dict): return {str(k):clean(v) for k,v in value.items()}
-    if isinstance(value,(list,tuple)): return [clean(v) for v in value]
-    if isinstance(value,(np.integer,)): return int(value)
-    if isinstance(value,(np.floating,float)): return float(value) if math.isfinite(float(value)) else None
-    return value
+def registry_join(result: pd.DataFrame, request: dict[str, Any]) -> pd.DataFrame:
+    path = input_path(request, "cluster_registry", required=False)
+    if path is None or result.empty:
+        return result
+    registry = read_table(path, ["cluster_id", "source_cluster_id", "source_node_id"])
+    if "cluster_id" not in registry.columns:
+        return result
+    registry["cluster_id"] = registry["cluster_id"].astype(str)
+    result["cluster_id"] = result["cluster_id"].astype(str)
+    extra = [column for column in registry.columns if column == "cluster_id" or column not in result.columns]
+    return result.merge(registry[extra], on="cluster_id", how="left")
 
 
-def write_json(path: Path,value: Any)->None: path.write_text(json.dumps(clean(value),ensure_ascii=False,indent=2),encoding="utf-8")
+def cluster_statistics(request: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, Any]]:
+    frame, cid, _, endpoint = dataset(request)
+    membership = input_path(request, "clustering") or input_path(request, "cluster_membership_matrix")
+    _, groups = membership_sets(membership)
+    higher = bool(request.get("endpoint", {}).get("higher_is_better"))
+    parameters = request.get("parameters", {})
+    high_quantile = float(parameters.get("high_quantile", .8))
+    threshold, favorable = favorable_definition(frame, endpoint, higher, high_quantile)
+    valid_values = frame[endpoint].dropna(); low_quantile = float(parameters.get("low_quantile", .2))
+    unfavorable_threshold = float(valid_values.quantile(low_quantile if higher else 1.0-low_quantile))
+    unfavorable = frame[endpoint].le(unfavorable_threshold) if higher else frame[endpoint].ge(unfavorable_threshold)
+    values = frame.set_index(cid)[endpoint]
+    fav = pd.Series(favorable.to_numpy(), index=frame[cid])
+    global_valid = values.dropna()
+    rows: list[dict[str, Any]] = []
+    for cluster_id, member_ids in sorted(groups.items()):
+        selected = values.reindex(sorted(member_ids)).dropna()
+        favorable_count = int(fav.reindex(selected.index).fillna(False).sum()); unfavorable_count = int(pd.Series(unfavorable.to_numpy(),index=frame[cid]).reindex(selected.index).fillna(False).sum())
+        rows.append({
+            "cluster_id": cluster_id, "sample_count": int(len(selected)),
+            "favorable_count": favorable_count,
+            "favorable_fraction": favorable_count / len(selected) if len(selected) else np.nan,
+            "unfavorable_count": unfavorable_count,
+            "unfavorable_fraction": unfavorable_count / len(selected) if len(selected) else np.nan,
+            "endpoint_mean": float(selected.mean()) if len(selected) else np.nan,
+            "endpoint_median": float(selected.median()) if len(selected) else np.nan,
+            "endpoint_std": float(selected.std(ddof=1)) if len(selected) > 1 else np.nan,
+            "endpoint_iqr": float(selected.quantile(.75) - selected.quantile(.25)) if len(selected) else np.nan,
+            "endpoint_min": float(selected.min()) if len(selected) else np.nan,
+            "endpoint_max": float(selected.max()) if len(selected) else np.nan,
+        })
+    profile_columns = [
+        "cluster_id", "sample_count", "favorable_count", "favorable_fraction",
+        "unfavorable_count", "unfavorable_fraction", "endpoint_mean",
+        "endpoint_median", "endpoint_std", "endpoint_iqr", "endpoint_min",
+        "endpoint_max",
+    ]
+    # A Run with no registered Cluster is a valid scientific Negative Result.
+    # Preserve a readable header-only contract so A002, C012, reporting, and
+    # Interpretation can still finish without inventing any Cluster.
+    result = registry_join(pd.DataFrame(rows, columns=profile_columns), request)
+    min_n = int(parameters.get("min_ff_evaluate", 10)); min_ff = float(parameters.get("favorable_fraction_threshold", .5))
+    if not result.empty:
+        result["ff_evaluation_eligible"] = result["sample_count"].ge(min_n)
+        result["selected_for_series"] = result["ff_evaluation_eligible"] & result["favorable_fraction"].ge(min_ff)
+        # Human-facing FF rank applies only to Clusters that satisfy the explicit
+        # min_ff_evaluate contract. Smaller Clusters remain in the full table for
+        # traceability, but must not outrank statistically usable candidates.
+        result = result.sort_values(["ff_evaluation_eligible", "favorable_fraction", "sample_count", "cluster_id"], ascending=[False, False, False, True]).reset_index(drop=True)
+        result["ff_rank"] = np.nan
+        eligible = boolean_mask(result["ff_evaluation_eligible"], "ff_evaluation_eligible")
+        result.loc[eligible, "ff_rank"] = np.arange(1, int(eligible.sum()) + 1)
+    else:
+        result["ff_evaluation_eligible"] = pd.Series(dtype=bool)
+        result["selected_for_series"] = pd.Series(dtype=bool)
+        result["ff_rank"] = pd.Series(dtype=float)
+    summary = {
+        "cluster_count": len(result), "selected_cluster_count": int(result.get("selected_for_series", pd.Series(dtype=bool)).sum()),
+        "global_sample_count": int(global_valid.size), "global_favorable_fraction": float(favorable[frame[endpoint].notna()].mean()),
+        "favorable_threshold": threshold, "favorable_comparator": ">=" if higher else "<=", "unfavorable_threshold": unfavorable_threshold, "unfavorable_comparator": "<=" if higher else ">=",
+        "favorable_quantile": high_quantile if higher else 1.0-high_quantile, "theoretical_favorable_fraction": 1.0-high_quantile,
+        "min_ff_evaluate": min_n, "favorable_fraction_threshold": min_ff,
+    }
+    return result, summary
 
 
-def validate(value:dict[str,Any],name:str)->None:
-    import jsonschema
-    jsonschema.validate(value,json.loads((SKILL_DIR/"schemas"/name).read_text(encoding="utf-8")))
+def run_a001(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    result, summary = cluster_statistics(request)
+    primary = output / "A001_cluster_profile.csv"; result.to_csv(primary, index=False)
+    selected = result.loc[result.get("selected_for_series", False)].copy() if not result.empty else result
+    selected_path = output / "selected_clusters.csv"; selected.to_csv(selected_path, index=False)
+    body = f"<h1>全Cluster Endpoint profile</h1><div class='card'><p>Global favorable fraction: <b>{summary['global_favorable_fraction']:.3f}</b> / selected: <b>{summary['selected_cluster_count']}</b></p></div><div class='card'><h2>FF順位</h2>{frame_html(result, 300)}</div>"
+    report = output / "operator_report.html"; report.write_text(html_page("A001 Cluster profile", body), encoding="utf-8")
+    finish(request, output, cap, primary=primary, summary=summary, report=report, extra_artifacts=[selected_path])
 
 
-def workspace()->Path:
-    for root in [SKILL_DIR,*SKILL_DIR.parents,Path.cwd(),*Path.cwd().parents]:
-        if (root/".claude"/"skills").is_dir(): return root
-    return Path.cwd()
+def fisher_enrichment(a: int, b: int, c: int, d: int) -> tuple[float, float]:
+    from scipy.stats import fisher_exact
+    odds, pvalue = fisher_exact([[a, b], [c, d]], alternative="greater")
+    return float(odds), float(pvalue)
 
 
-def parse_description(values:list[str])->dict[str,Path]:
-    result:dict[str,Path]={}
-    for item in values:
-        if "=" not in item: raise ValueError("--description requires D###=/path/to/table")
-        key,path=item.split("=",1); result[key.upper()]=Path(path)
-    missing=set(PANEL)-set(result); extra=set(result)-set(PANEL)
-    if missing or extra: raise ValueError(f"Fixed Description panel mismatch; missing={sorted(missing)}, extra={sorted(extra)}")
-    return result
+def run_a002(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    from scipy.stats import mannwhitneyu
+    profile, summary = cluster_statistics(request)
+    frame, cid, _, endpoint = dataset(request)
+    higher = bool(request.get("endpoint", {}).get("higher_is_better"))
+    threshold, favorable = favorable_definition(frame, endpoint, higher, float(request.get("parameters", {}).get("high_quantile", .8)))
+    membership = input_path(request, "clustering") or input_path(request, "cluster_membership_matrix")
+    _, groups = membership_sets(membership)
+    valid_ids = set(frame.loc[frame[endpoint].notna(), cid].astype(str)); favorable_ids = set(frame.loc[favorable & frame[endpoint].notna(), cid].astype(str))
+    endpoint_values=frame.set_index(cid)[endpoint]; global_median=float(endpoint_values.dropna().median()); stats: list[dict[str, Any]] = []
+    for cluster_id, members in groups.items():
+        inside = members & valid_ids; outside = valid_ids - inside
+        a = len(inside & favorable_ids); b = len(inside - favorable_ids); c = len(outside & favorable_ids); d = len(outside - favorable_ids)
+        odds, pvalue = fisher_enrichment(a, b, c, d); inside_values=endpoint_values.reindex(sorted(inside)).dropna(); outside_values=endpoint_values.reindex(sorted(outside)).dropna()
+        mw=float(mannwhitneyu(inside_values,outside_values,alternative="two-sided").pvalue) if len(inside_values)>=3 and len(outside_values)>=3 and pd.concat([inside_values,outside_values]).nunique()>1 else np.nan
+        stats.append({"cluster_id": cluster_id, "odds_ratio": odds, "fisher_pvalue": pvalue, "mann_whitney_pvalue": mw, "median_difference_from_global": float(inside_values.median()-global_median) if len(inside_values) else np.nan})
+    enrichment = pd.DataFrame(stats)
+    if not enrichment.empty:
+        enrichment["q_value_bh"] = bh_qvalues(enrichment["fisher_pvalue"])
+        enrichment["mann_whitney_q_bh"] = bh_qvalues(enrichment["mann_whitney_pvalue"])
+        result = profile.merge(enrichment, on="cluster_id", how="left")
+    else:
+        result = profile.assign(odds_ratio=np.nan, fisher_pvalue=np.nan, q_value_bh=np.nan, mann_whitney_pvalue=np.nan, mann_whitney_q_bh=np.nan, median_difference_from_global=np.nan)
+    result = result.sort_values(["selected_for_series", "favorable_fraction", "q_value_bh"], ascending=[False, False, True]) if not result.empty else result
+    primary = output / "A002_cluster_enrichment.csv"; result.to_csv(primary, index=False)
+    summary.update({"favorable_threshold": threshold, "q_value_role": "auxiliary; not a selection gate"})
+    report = output / "operator_report.html"; report.write_text(html_page("A002 Cluster enrichment", f"<h1>全Cluster enrichment</h1><div class='card'>{frame_html(result, 300)}</div>"), encoding="utf-8")
+    finish(request, output, cap, primary=primary, summary=summary, report=report)
 
 
-def args()->argparse.Namespace:
-    parser=argparse.ArgumentParser(description=f"Run {CAPABILITY['display_name']}.")
-    parser.add_argument("--input",required=True); parser.add_argument("--property-column",required=True); parser.add_argument("--id-column",default="compound_id")
-    parser.add_argument("--higher-is-better",action=argparse.BooleanOptionalAction,default=None)
-    parser.add_argument("--description",action="append",required=True,help="Repeat exactly six times: D001=path ... D019=path")
-    parser.add_argument("--role",choices=["global-model","cluster-survey","within-cluster"],default="global-model")
-    parser.add_argument("--membership"); parser.add_argument("--target-cluster"); parser.add_argument("--global-oof")
-    parser.add_argument("--min-local-samples",type=int,default=30); parser.add_argument("--outer-folds",type=int,default=5); parser.add_argument("--random-seed",type=int,default=61453)
-    parser.add_argument("--output-dir"); parser.add_argument("--project"); parser.add_argument("--run-id"); parser.add_argument("--round-id"); parser.add_argument("--node-id"); parser.add_argument("--attempt-id")
-    parser.add_argument("--description-node-id",action="append",default=[]); parser.add_argument("--clustering-node-id"); parser.add_argument("--global-model-node-id")
-    parser.add_argument("--conductor",action="store_true"); parser.add_argument("--overwrite",action="store_true")
-    result=parser.parse_args(); result.description_paths=parse_description(result.description)
-    if result.higher_is_better is None: parser.error("--higher-is-better or --no-higher-is-better is required")
-    if result.min_local_samples<30: parser.error("--min-local-samples must be >= 30")
-    if result.role != "global-model" and not result.membership: parser.error("Local model roles require --membership")
-    if result.role=="within-cluster" and not result.target_cluster: parser.error("within-cluster requires --target-cluster")
-    if result.role=="cluster-survey" and not result.global_oof: parser.error("cluster-survey requires --global-oof from the Global A005 Node")
-    if result.conductor:
-        missing=[k for k in ("project","run_id","round_id","node_id","attempt_id") if not getattr(result,k)]
-        if missing: parser.error(f"--conductor missing: {', '.join(missing)}")
-    elif any(getattr(result,k) for k in ("project","round_id","node_id","attempt_id")): parser.error("CONDUCTOR context requires --conductor")
-    return result
+def leiden_membership(vertex_count: int, edges: list[tuple[int, int]], weights: list[float], resolution: float, seed: int) -> list[int]:
+    if vertex_count == 0:
+        return []
+    if not edges:
+        return list(range(vertex_count))
+    try:
+        import igraph as ig
+        import leidenalg
+        graph = ig.Graph(n=vertex_count, edges=edges, directed=False)
+        partition = leidenalg.find_partition(
+            graph, leidenalg.RBConfigurationVertexPartition, weights=weights,
+            resolution_parameter=resolution, seed=seed,
+        )
+        return list(partition.membership)
+    except ImportError as exc:
+        raise RuntimeError("weighted Leiden requires python-igraph and leidenalg in this Skill environment") from exc
 
 
-def table(path:Path)->pd.DataFrame: return pd.read_parquet(path) if path.suffix.lower()==".parquet" else pd.read_csv(path,dtype={"compound_id":"string"})
+def run_c012(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    _, cluster_sets = membership_sets(input_path(request, "cluster_membership_matrix"))
+    profile = read_table(input_path(request, "cluster_profile"), ["cluster_id"]); enrichment = read_table(input_path(request, "cluster_enrichment"), ["cluster_id"])
+    registry = read_table(input_path(request, "cluster_registry"), ["cluster_id", "source_cluster_id", "source_node_id"])
+    required_profile = {"cluster_id", "sample_count", "favorable_fraction", "selected_for_series"}
+    for label, table in (("cluster_profile", profile), ("cluster_enrichment", enrichment)):
+        missing = sorted(required_profile - set(table.columns))
+        if missing:
+            raise ValueError(f"C012 input {label} is missing required columns: {missing}")
+        if table["cluster_id"].isna().any() or table["cluster_id"].astype(str).duplicated().any():
+            raise ValueError(f"C012 input {label} has null or duplicate cluster_id values")
+        counts = pd.to_numeric(table["sample_count"], errors="coerce")
+        fractions = pd.to_numeric(table["favorable_fraction"], errors="coerce")
+        if counts.isna().any() or counts.lt(0).any() or fractions.isna().any() or not bool(fractions.between(0, 1).all()):
+            raise ValueError(f"C012 input {label} has invalid sample_count or favorable_fraction values")
+        boolean_mask(table["selected_for_series"], f"{label}.selected_for_series")
+    if not {"cluster_id", "sample_count"}.issubset(registry.columns) or registry["cluster_id"].isna().any() or registry["cluster_id"].astype(str).duplicated().any():
+        raise ValueError("C012 cluster_registry requires unique, non-null cluster_id and sample_count values")
+    profile_ids = set(profile["cluster_id"].astype(str))
+    enrichment_ids = set(enrichment["cluster_id"].astype(str))
+    registry_ids = set(registry["cluster_id"].astype(str))
+    membership_ids = set(cluster_sets)
+    if not (profile_ids == enrichment_ids == registry_ids == membership_ids):
+        raise ValueError(
+            "C012 Cluster inputs disagree. "
+            f"profile_only={sorted(profile_ids - enrichment_ids)[:10]}, "
+            f"enrichment_only={sorted(enrichment_ids - profile_ids)[:10]}, "
+            f"registry_vs_membership={sorted(registry_ids ^ membership_ids)[:10]}"
+        )
+    registry_indexed = registry.copy()
+    registry_indexed["cluster_id"] = registry_indexed["cluster_id"].astype(str)
+    registry_counts = pd.to_numeric(registry_indexed.set_index("cluster_id")["sample_count"], errors="coerce")
+    invalid_registry_counts = {
+        cluster_id: {"registry": registry_counts.get(cluster_id), "membership": len(cluster_sets[cluster_id])}
+        for cluster_id in sorted(membership_ids)
+        if pd.isna(registry_counts.get(cluster_id))
+        or float(registry_counts.get(cluster_id)) != float(len(cluster_sets[cluster_id]))
+    }
+    if invalid_registry_counts:
+        raise ValueError(f"C012 cluster_registry sample_count disagrees with membership: {dict(list(invalid_registry_counts.items())[:10])}")
+    consistency = profile[["cluster_id", "sample_count", "favorable_fraction", "selected_for_series"]].merge(
+        enrichment[["cluster_id", "sample_count", "favorable_fraction", "selected_for_series"]],
+        on="cluster_id", suffixes=("_profile", "_enrichment"), validate="one_to_one",
+    )
+    numeric_consistent = np.isclose(
+        pd.to_numeric(consistency["sample_count_profile"], errors="coerce"),
+        pd.to_numeric(consistency["sample_count_enrichment"], errors="coerce"),
+        equal_nan=True,
+    ) & np.isclose(
+        pd.to_numeric(consistency["favorable_fraction_profile"], errors="coerce"),
+        pd.to_numeric(consistency["favorable_fraction_enrichment"], errors="coerce"),
+        equal_nan=True,
+    )
+    selected_consistent = boolean_mask(consistency["selected_for_series_profile"], "selected_for_series_profile").eq(
+        boolean_mask(consistency["selected_for_series_enrichment"], "selected_for_series_enrichment")
+    )
+    if not bool(np.all(numeric_consistent)) or not bool(selected_consistent.all()):
+        raise ValueError("C012 A001 profile and A002 enrichment disagree on Cluster statistics or selection")
+    parameters = request.get("parameters", {}); min_n = int(parameters.get("min_ff_evaluate", 10)); min_ff = float(parameters.get("favorable_fraction_threshold", .5))
+    selection = enrichment.copy()
+    if "selected_for_series" not in selection:
+        selection["selected_for_series"] = selection["sample_count"].ge(min_n) & selection["favorable_fraction"].ge(min_ff)
+    selected = selection.loc[boolean_mask(selection["selected_for_series"], "selected_for_series")].copy()
+    selected_ids = [str(value) for value in selected["cluster_id"]]
+    edges: list[tuple[int, int]] = []; weights: list[float] = []; edge_rows: list[dict[str, Any]] = []
+    for i, left_id in enumerate(selected_ids):
+        left = cluster_sets[left_id]
+        for j in range(i + 1, len(selected_ids)):
+            right_id = selected_ids[j]; right = cluster_sets[right_id]; overlap = len(left & right)
+            if overlap == 0:
+                continue
+            union = len(left | right); weight = overlap / union if union else 0.0
+            containment_left = overlap / len(left) if left else 0.0; containment_right = overlap / len(right) if right else 0.0
+            edges.append((i, j)); weights.append(weight)
+            edge_rows.append({"cluster_id_a": left_id, "cluster_id_b": right_id, "overlap_count": overlap, "jaccard_weight": weight, "containment_a_in_b": containment_left, "containment_b_in_a": containment_right, "overlap_coefficient": overlap / min(len(left),len(right)) if left and right else 0.0})
+    assignments = leiden_membership(len(selected_ids), edges, weights, float(parameters.get("leiden_resolution", 1.0)), int(parameters.get("random_seed", 61453)))
+    communities: dict[int, list[str]] = {}
+    for cluster_id, community in zip(selected_ids, assignments): communities.setdefault(community, []).append(cluster_id)
+    frame, cid, _, endpoint = dataset(request); higher = bool(request.get("endpoint", {}).get("higher_is_better")); threshold, favorable = favorable_definition(frame, endpoint, higher)
+    valid_map = dict(zip(frame[cid], frame[endpoint].notna())); fav_map = dict(zip(frame[cid], favorable))
+    series_rows: list[dict[str, Any]] = []; cluster_rows: list[dict[str, Any]] = []; support_rows: list[dict[str, Any]] = []
+    accepted_members: dict[str, set[str]] = {}
+    rejected_source_clusters: list[tuple[str, str]] = []
+    rejected_series = 0
+    for serial, (_, source_clusters) in enumerate(sorted(communities.items(), key=lambda item: min(item[1])), 1):
+        series_id = f"S{serial:06d}"; union = set().union(*(cluster_sets[item] for item in source_clusters))
+        valid = {item for item in union if valid_map.get(item, False)}; fav_count = sum(bool(fav_map.get(item, False)) for item in valid); ff = fav_count / len(valid) if valid else 0.0
+        accepted = ff >= min_ff
+        if accepted:
+            accepted_members[series_id] = union
+            for cluster_id in source_clusters:
+                cluster_rows.append({"series_id": series_id, "candidate_series_id": series_id, "cluster_id": cluster_id})
+            for compound_id in sorted(union):
+                count = sum(compound_id in cluster_sets[item] for item in source_clusters)
+                support_rows.append({"series_id": series_id, "compound_id": compound_id, "support_count": count, "support_fraction": count / len(source_clusters)})
+        else:
+            rejected_series += 1
+            rejected_source_clusters.extend((series_id, cluster_id) for cluster_id in source_clusters)
+        series_rows.append({"series_id": series_id, "source_cluster_count": len(source_clusters), "compound_count": len(union), "endpoint_valid_count": len(valid), "favorable_count": fav_count, "favorable_fraction": ff, "accepted": accepted, "fallback_reason": "" if accepted else "series_ff_below_threshold"})
+    accepted_series_count = len(accepted_members)
+    # A Series whose union loses enrichment must not silently discard its enriched
+    # source Clusters. Only rejected communities fall back to Cluster units.
+    for candidate_series_id, cluster_id in sorted(set(rejected_source_clusters)):
+        fallback_id = f"CLU_{cluster_id}"
+        accepted_members[fallback_id] = cluster_sets[cluster_id]
+        cluster_rows.append({"series_id": fallback_id, "candidate_series_id": candidate_series_id, "cluster_id": cluster_id})
+        support_rows.extend({"series_id": fallback_id, "compound_id": compound_id, "support_count": 1, "support_fraction": 1.0} for compound_id in sorted(cluster_sets[cluster_id]))
+    fallback = bool(rejected_source_clusters) or not communities
+    if not communities:
+        accepted_members = {f"CLU_{cluster_id}": cluster_sets[cluster_id] for cluster_id in selected_ids}
+    unit_rows = [{
+        "analysis_unit_id": "GLOBAL", "scope_kind": "global",
+        "compound_count": int(len(frame)),
+        "endpoint_valid_count": int(frame[endpoint].notna().sum()),
+        "favorable_fraction": float(favorable[frame[endpoint].notna()].mean()),
+        "source_cluster_count": 0,
+    }]
+    membership_rows = [{"compound_id": value, "analysis_unit_id": "GLOBAL", "membership_value": True} for value in frame[cid]]
+    for unit_id, members in accepted_members.items():
+        valid = {item for item in members if valid_map.get(item, False)}; ff = sum(bool(fav_map.get(item, False)) for item in valid) / len(valid) if valid else 0.0
+        is_cluster_fallback = unit_id.startswith("CLU_")
+        unit_rows.append({
+            "analysis_unit_id": unit_id,
+            "scope_kind": "cluster" if is_cluster_fallback else "series",
+            "fallback_reason": "series_ff_below_threshold" if is_cluster_fallback else "",
+            "compound_count": len(members),
+            "endpoint_valid_count": len(valid),
+            "favorable_fraction": ff,
+            "source_cluster_count": 1 if is_cluster_fallback else sum(row["series_id"] == unit_id for row in cluster_rows),
+        })
+        membership_rows.extend({"compound_id": value, "analysis_unit_id": unit_id, "membership_value": True} for value in sorted(members))
+    series_registry = pd.DataFrame(series_rows, columns=["series_id","source_cluster_count","compound_count","endpoint_valid_count","favorable_count","favorable_fraction","accepted","fallback_reason"])
+    series_registry.to_csv(output / "series_registry.csv", index=False)
+    pd.DataFrame(cluster_rows, columns=["series_id","candidate_series_id","cluster_id"]).to_csv(output / "series_cluster_membership.csv", index=False)
+    pd.DataFrame(support_rows, columns=["series_id","compound_id","support_count","support_fraction"]).to_csv(output / "compound_series_support.csv", index=False)
+    pd.DataFrame(membership_rows).to_csv(output / "analysis_unit_membership.csv", index=False)
+    pd.DataFrame(unit_rows).to_csv(output / "analysis_unit_registry.csv", index=False)
+    pd.DataFrame(edge_rows, columns=["cluster_id_a","cluster_id_b","overlap_count","jaccard_weight","containment_a_in_b","containment_b_in_a","overlap_coefficient"]).to_csv(output / "series_edges.csv", index=False)
+    global_valid_count = int(frame[endpoint].notna().sum())
+    oversized = [row["analysis_unit_id"] for row in unit_rows[1:] if global_valid_count and row["endpoint_valid_count"] / global_valid_count > .5]
+    summary = {"selected_cluster_count": len(selected_ids), "series_count": len(communities), "accepted_series_count": accepted_series_count, "rejected_series_count": rejected_series, "analysis_unit_count": len(accepted_members), "fallback_to_selected_clusters": fallback, "edge_count": len(edges), "edge_weight": "Jaccard", "favorable_threshold": threshold, "min_ff_evaluate": min_n, "favorable_fraction_threshold": min_ff, "global_endpoint_valid_count": global_valid_count, "analysis_units_over_50_percent_of_global": oversized}
+    write_json(output / "series_summary.json", summary)
+    primary = output / "series_registry.csv"
+    report = output / "clustering_report.html"; report.write_text(html_page("C012 Series", f"<h1>Enriched ClusterのSeries化</h1><div class='card'><p>Selected clusters: {len(selected_ids)} / accepted analysis units: {len(accepted_members)}</p></div><div class='card'>{frame_html(pd.DataFrame(unit_rows))}</div>"), encoding="utf-8")
+    finish(request, output, cap, primary=primary, summary=summary, report=report, extra_artifacts=[output / "analysis_unit_membership.csv", output / "analysis_unit_registry.csv", output / "series_cluster_membership.csv", output / "compound_series_support.csv", output / "series_edges.csv", output / "series_summary.json"])
 
 
-def load(a:argparse.Namespace)->tuple[pd.DataFrame,dict[str,list[str]]]:
-    endpoint=pd.read_csv(a.input,dtype={a.id_column:"string"})
-    if a.id_column not in endpoint or a.property_column not in endpoint: raise ValueError("ID/property column missing")
-    data=endpoint[[a.id_column,a.property_column]].rename(columns={a.id_column:"compound_id"}); data[a.property_column]=pd.to_numeric(data[a.property_column],errors="coerce"); data=data.dropna(subset=[a.property_column])
-    blocks:dict[str,list[str]]={}
-    for block in PANEL:
-        frame=table(a.description_paths[block])
-        if "compound_id" not in frame: raise ValueError(f"{block} lacks compound_id")
-        columns=[c for c in frame if c not in {"compound_id","input_smiles","mol_parse_ok","description_error"} and pd.api.types.is_numeric_dtype(frame[c])]
-        if not columns: raise ValueError(f"{block} has no numeric features")
-        if frame["compound_id"].isna().any():
-            raise ValueError(f"{block} compound IDs must be non-empty and unique")
-        frame["compound_id"]=frame["compound_id"].astype(str).str.strip()
-        if frame["compound_id"].eq("").any() or frame["compound_id"].duplicated().any():
-            raise ValueError(f"{block} compound IDs must be non-empty and unique")
-        valid_mask=frame[columns].notna().any(axis=1)
-        if "mol_parse_ok" in frame:
-            valid_mask &= frame["mol_parse_ok"].map(lambda value:str(value).strip().lower() in {"true","1","yes"})
-        frame=frame.loc[valid_mask].copy()
-        if block=="D006":
-            frame[columns]=frame[columns].clip(lower=0).apply(np.log1p)
-        elif block=="D002":
-            values=frame[columns].stack().dropna()
-            if len(values) and not values.isin([0,1]).all(): raise ValueError("D002 must be a binary Morgan fingerprint")
-        renamed={c:f"{block}::{c}" for c in columns}; frame=frame[["compound_id",*columns]].rename(columns=renamed); data=data.merge(frame,on="compound_id",how="inner"); blocks[block]=list(renamed.values())
-    if len(data)<10: raise ValueError("Too few complete panel rows")
-    return data,blocks
+def correlations(x: pd.Series, y: pd.Series) -> tuple[float, float, float, float]:
+    from scipy.stats import pearsonr, spearmanr
+    valid = x.notna() & y.notna()
+    if valid.sum() < 4 or x[valid].nunique() < 2 or y[valid].nunique() < 2:
+        return np.nan, np.nan, np.nan, np.nan
+    pcc = pearsonr(x[valid], y[valid]); spr = spearmanr(x[valid], y[valid])
+    return float(pcc.statistic), float(pcc.pvalue), float(spr.statistic), float(spr.pvalue)
 
 
-def folds(ids:pd.Series,count:int,seed:int)->np.ndarray:
-    return np.array([int(hashlib.sha256(f"{seed}:{value}".encode()).hexdigest()[:8],16)%count for value in ids.astype(str)])
+def run_a003(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    from scipy.stats import mannwhitneyu
+    parameters = request.get("parameters", {})
+    correlation_threshold = float(parameters.get("correlation_threshold", .4))
+    correlation_gain_threshold = float(parameters.get("correlation_gain_threshold", .2))
+    median_iqr_threshold = float(parameters.get("median_iqr_threshold", .75))
+    q_threshold = float(parameters.get("q_threshold", .05))
+    if correlation_threshold <= 0 or correlation_gain_threshold < 0 or median_iqr_threshold <= 0 or not (0 < q_threshold <= 1):
+        raise ValueError("A003 thresholds must be positive and q_threshold must satisfy 0 < q <= 1")
+    data, cid, _, endpoint = dataset(request); desc, did = description_table(request, "D001"); merged = data[[cid, endpoint]].merge(desc, left_on=cid, right_on=did, how="inner")
+    features, columns = numeric_features(merged, [cid, did, endpoint]); units = analysis_units(request)
+    global_ids = units["GLOBAL"]; global_index = merged[cid].isin(global_ids); global_iqr = features.loc[global_index].quantile(.75) - features.loc[global_index].quantile(.25)
+    global_stats: dict[str, tuple[float,float,float,float]] = {col: correlations(features[col], merged[endpoint]) for col in columns}
+    rows: list[dict[str, Any]] = []
+    for unit_id, members in units.items():
+        mask = merged[cid].isin(members)
+        if mask.sum() < 5: continue
+        for column in columns:
+            pcc, pp, spr, sp = correlations(features.loc[mask, column], merged.loc[mask, endpoint]); gpcc, _, gspr, _ = global_stats[column]
+            shift = float(features.loc[mask, column].median() - features.loc[global_index, column].median()); scale = float(global_iqr.get(column, np.nan)); norm = shift / scale if np.isfinite(scale) and scale > 0 else np.nan
+            inside = features.loc[mask, column].dropna(); outside = features.loc[global_index & ~mask, column].dropna()
+            shift_p = float(mannwhitneyu(inside, outside, alternative="two-sided").pvalue) if len(inside) >= 3 and len(outside) >= 3 and pd.concat([inside, outside]).nunique() > 1 else np.nan
+            rows.append({"analysis_unit_id": unit_id, "feature": column, "sample_count": int(mask.sum()), "pearson_r": pcc, "pearson_p": pp, "spearman_r": spr, "spearman_p": sp, "global_pearson_r": gpcc, "global_spearman_r": gspr, "max_abs_correlation": max(abs(pcc) if np.isfinite(pcc) else 0, abs(spr) if np.isfinite(spr) else 0), "correlation_gain": max(abs(pcc)-abs(gpcc) if np.isfinite(pcc) and np.isfinite(gpcc) else -np.inf, abs(spr)-abs(gspr) if np.isfinite(spr) and np.isfinite(gspr) else -np.inf), "median_shift": shift, "median_shift_global_iqr": norm, "shift_pvalue": shift_p})
+    base_columns = [
+        "analysis_unit_id", "feature", "sample_count", "pearson_r", "pearson_p",
+        "spearman_r", "spearman_p", "global_pearson_r", "global_spearman_r",
+        "max_abs_correlation", "correlation_gain", "median_shift",
+        "median_shift_global_iqr", "shift_pvalue",
+    ]
+    result = pd.DataFrame(rows, columns=base_columns)
+    if not result.empty:
+        result["pearson_q_bh"] = bh_qvalues(result["pearson_p"])
+        result["spearman_q_bh"] = bh_qvalues(result["spearman_p"])
+        result["correlation_q_bh"] = result[["pearson_q_bh","spearman_q_bh"]].min(axis=1)
+        result["shift_q_bh"] = bh_qvalues(result["shift_pvalue"])
+        result["shift_hit"] = result["median_shift_global_iqr"].abs().ge(median_iqr_threshold) & result["shift_q_bh"].le(q_threshold)
+        pearson_gain = result["pearson_r"].abs() - result["global_pearson_r"].abs()
+        spearman_gain = result["spearman_r"].abs() - result["global_spearman_r"].abs()
+        result["pearson_hit"] = result["pearson_r"].abs().ge(correlation_threshold) & pearson_gain.ge(correlation_gain_threshold) & result["pearson_q_bh"].le(q_threshold)
+        result["spearman_hit"] = result["spearman_r"].abs().ge(correlation_threshold) & spearman_gain.ge(correlation_gain_threshold) & result["spearman_q_bh"].le(q_threshold)
+        result["correlation_hit"] = result["pearson_hit"] | result["spearman_hit"]
+        result["strict_hit"] = result["shift_hit"] | result["correlation_hit"]
+        gain_denominator = max(correlation_gain_threshold, np.finfo(float).eps)
+        pearson_credit = pd.concat([(result["pearson_r"].abs() / correlation_threshold).clip(upper=1), (pearson_gain / gain_denominator).clip(lower=0, upper=1), (q_threshold / result["pearson_q_bh"]).clip(upper=1).fillna(0)], axis=1).min(axis=1)
+        spearman_credit = pd.concat([(result["spearman_r"].abs() / correlation_threshold).clip(upper=1), (spearman_gain / gain_denominator).clip(lower=0, upper=1), (q_threshold / result["spearman_q_bh"]).clip(upper=1).fillna(0)], axis=1).min(axis=1)
+        shift_q_credit = (q_threshold / result["shift_q_bh"]).clip(upper=1).fillna(0)
+        shift_credit = pd.concat([(result["median_shift_global_iqr"].abs() / median_iqr_threshold).clip(upper=1), shift_q_credit], axis=1).min(axis=1)
+        result["near_miss_score"] = pd.concat([pearson_credit, spearman_credit, shift_credit], axis=1).max(axis=1)
+        result = result.sort_values(["strict_hit","near_miss_score","max_abs_correlation","analysis_unit_id","feature"], ascending=[False,False,False,True,True])
+    primary = output / "A003_series_descriptor_contrast.csv"; result.to_csv(primary, index=False)
+    candidates = result.loc[result["analysis_unit_id"].astype(str).ne("GLOBAL")] if len(result) else result
+    hit_count = int(candidates.get("strict_hit", pd.Series(dtype=bool)).sum()); near = candidates.loc[~candidates.get("strict_hit", False)].head(1) if len(candidates) else candidates
+    note = f"厳格基準を満たす候補は{hit_count}件。" if hit_count else ("厳格基準を満たす候補はなく、最も近い候補は " + (f"{near.iloc[0]['analysis_unit_id']} / {near.iloc[0]['feature']} (|r|max={near.iloc[0]['max_abs_correlation']:.3f})。" if len(near) else "ありません。"))
+    report = output / "operator_report.html"; report.write_text(html_page("A003 Series descriptor contrast", f"<h1>Series vs Global: D001</h1><div class='card'><p>{note}</p><p class='muted'>{SELECTION_BIAS_NOTE}</p></div><div class='card'>{frame_html(result.loc[result.get('strict_hit', False)] if len(result) else result, 200)}</div>"), encoding="utf-8")
+    finish(request, output, cap, primary=primary, summary={"tested_feature_unit_pairs": len(result), "strict_hit_count": hit_count, "near_miss": near.to_dict("records") if len(near) else []}, report=report)
 
 
-def vip_select(train:pd.DataFrame,y:np.ndarray,blocks:dict[str,list[str]])->tuple[list[str],dict[str,float]]:
-    from sklearn.cross_decomposition import PLSRegression
+def projection_coordinates(matrix: np.ndarray, seed: int) -> tuple[np.ndarray, np.ndarray, list[str]]:
+    from sklearn.decomposition import PCA
     from sklearn.impute import SimpleImputer
     from sklearn.preprocessing import StandardScaler
-    scores:dict[str,float]={}
-    n=len(train)
-    for block,columns in blocks.items():
-        usable=[c for c in columns if train[c].notna().any() and train[c].nunique(dropna=True)>1]
-        if not usable: continue
-        matrix=SimpleImputer(strategy="median").fit_transform(train[usable]); variances=np.var(matrix,axis=0); usable=[c for c,v in zip(usable,variances) if v>1e-12]
-        if not usable: continue
-        matrix=SimpleImputer(strategy="median").fit_transform(train[usable]); matrix=StandardScaler().fit_transform(matrix)
-        corr=np.nan_to_num([abs(np.corrcoef(matrix[:,i],y)[0,1]) for i in range(matrix.shape[1])]); limit=min(len(usable),256,max(5,5*n)); keep=np.argsort(corr)[::-1][:limit]; matrix=matrix[:,keep]; names=[usable[i] for i in keep]
-        comp=max(1,min(2,matrix.shape[0]-1,matrix.shape[1]))
-        try:
-            model=PLSRegression(n_components=comp,scale=False).fit(matrix,y)
-            weights=np.asarray(model.x_weights_); q=np.asarray(model.y_loadings_).reshape(-1); strength=np.sum((np.asarray(model.x_scores_)**2),axis=0)*(q[:comp]**2); denom=max(float(np.sum(strength)),1e-12)
-            vip=np.sqrt(matrix.shape[1]*np.sum((weights[:,:comp]**2)*strength[:comp],axis=1)/denom)
-            if not np.isfinite(vip).all():raise ValueError("non-finite VIP")
-        except Exception:
-            # Degenerate/collinear blocks cannot support a stable PLS solution.
-            # Retain a deterministic training-fold-only univariate fallback.
-            vip=np.asarray(corr,dtype=float)[keep]
-        for name,value in zip(names,vip): scores[name]=float(value)
-    selected=[]
-    for block in PANEL:
-        selected.extend([name for name,_ in sorted(((n,s) for n,s in scores.items() if n.startswith(block+"::")),key=lambda x:-x[1])[:5]])
-    cap=min(30,max(6,len(train)//3)); selected=sorted(selected,key=lambda name:-scores[name])[:cap]
-    return selected,scores
+    warnings: list[str] = []
+    clean = StandardScaler().fit_transform(SimpleImputer(strategy="median").fit_transform(matrix))
+    component_count = min(2, clean.shape[0], clean.shape[1])
+    if component_count < 1:
+        empty = np.full((len(matrix), 2), np.nan)
+        return empty, empty.copy(), ["Projection requires at least one usable feature and one compound"]
+    pca_raw = PCA(n_components=component_count, random_state=seed).fit_transform(clean)
+    pca = np.zeros((len(matrix), 2), dtype=float)
+    pca[:, :component_count] = pca_raw
+    try:
+        if len(matrix) < 3:
+            raise ValueError("UMAP requires at least three compounds")
+        import umap
+        binary = np.isin(matrix[~np.isnan(matrix)], [0, 1]).all() if np.isfinite(matrix).any() else False
+        metric = "jaccard" if binary else "cosine"
+        umap_xy = umap.UMAP(n_components=2, metric=metric, random_state=seed, n_neighbors=min(15, max(2, len(matrix)-1))).fit_transform(np.nan_to_num(matrix, nan=0.0))
+    except Exception as exc:
+        umap_xy = np.full((len(matrix), 2), np.nan); warnings.append(f"UMAP unavailable: {exc}")
+    return pca, umap_xy, warnings
 
 
-def fit_predict(train:pd.DataFrame,test:pd.DataFrame,y_train:np.ndarray,features:list[str])->dict[str,np.ndarray]:
-    from sklearn.cross_decomposition import PLSRegression
+def run_a004(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    import matplotlib.pyplot as plt
+    data, cid, _, endpoint = dataset(request); desc, did = description_table(request, "D002"); merged = data[[cid,endpoint]].merge(desc, left_on=cid, right_on=did, how="inner")
+    matrix, columns = numeric_features(merged, [cid,did,endpoint]); seed = int(request.get("parameters", {}).get("random_seed",61453))
+    if columns:
+        pca, umap_xy, warnings = projection_coordinates(matrix.to_numpy(dtype=float), seed)
+    else:
+        pca = np.full((len(merged), 2), np.nan); umap_xy = np.full((len(merged), 2), np.nan)
+        warnings = ["Projection was not applicable because no feature had at least three finite values"]
+    coords = pd.DataFrame({"compound_id":merged[cid],"endpoint":merged[endpoint],"pca_1":pca[:,0],"pca_2":pca[:,1],"umap_1":umap_xy[:,0],"umap_2":umap_xy[:,1]}); primary=output/"A004_projection_coordinates.csv"; coords.to_csv(primary,index=False)
+    units=analysis_units(request); pca_images=[]; umap_images=[]; combined=[]
+    def plot_one(unit_id:str, method:str, x:str,y:str,path:Path)->None:
+        member=coords["compound_id"].isin(units[unit_id]); fig,ax=plt.subplots(figsize=(5.2,4.2)); ax.scatter(coords.loc[~member,x],coords.loc[~member,y],s=12,c="#aeb7b8",alpha=.42); ax.scatter(coords.loc[member,x],coords.loc[member,y],s=22,c="#a65b3b",alpha=.85); ax.set_title(f"{method}: {unit_id} (n={int(member.sum())})"); ax.set_xlabel(x); ax.set_ylabel(y); fig.tight_layout(); fig.savefig(path,dpi=150); plt.close(fig)
+    for unit_id in [item for item in units if item!="GLOBAL"]:
+        safe="".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in unit_id); pp=output/f"pca_{safe}.png"; up=output/f"umap_{safe}.png"; plot_one(unit_id,"PCA","pca_1","pca_2",pp); plot_one(unit_id,"UMAP","umap_1","umap_2",up); pca_images.append(pp); umap_images.append(up)
+        image=plt.imread(pp); image2=plt.imread(up); fig,axes=plt.subplots(1,2,figsize=(10.4,4.2)); axes[0].imshow(image); axes[1].imshow(image2); [ax.axis("off") for ax in axes]; fig.tight_layout(); cp=output/f"projection_{safe}.png"; fig.savefig(cp,dpi=150); plt.close(fig); combined.append(cp)
+    def sheet(paths:list[Path], name:str)->Path:
+        target=output/name
+        if not paths:
+            fig, ax = plt.subplots(figsize=(8, 3)); ax.text(.5, .5, "No accepted Series", ha="center", va="center"); ax.axis("off"); fig.tight_layout(); fig.savefig(target, dpi=150); plt.close(fig); return target
+        rows=math.ceil(len(paths)/4); fig,axes=plt.subplots(rows,4,figsize=(16,4*rows)); axes=np.asarray(axes).reshape(-1)
+        for ax,path in zip(axes,paths): ax.imshow(plt.imread(path)); ax.axis("off")
+        for ax in axes[len(paths):]: ax.axis("off")
+        fig.tight_layout(); fig.savefig(target,dpi=150); plt.close(fig); return target
+    pca_sheet=sheet(pca_images,"pca_series_contact_sheet.png"); umap_sheet=sheet(umap_images,"umap_series_contact_sheet.png")
+    report=output/"operator_report.html"; report.write_text(html_page("A004 projection",f"<h1>D002 Morgan空間のPCA / UMAP</h1><div class='card'><p>Global fitを全Series overlayで共有しています。</p><p class='muted'>{SELECTION_BIAS_NOTE}</p></div><div class='card'><img src='{image_uri(pca_sheet)}'><img src='{image_uri(umap_sheet)}'></div>"),encoding="utf-8")
+    finish(request,output,cap,primary=primary,summary={"compound_count":len(coords),"feature_count":len(columns),"analysis_unit_count":len(units)-1},report=report,extra_artifacts=[*pca_images,*umap_images,*combined,pca_sheet,umap_sheet],warnings=warnings)
+
+
+def run_a005(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    from sklearn.feature_selection import f_regression
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import Ridge
+    from sklearn.metrics import mean_absolute_error, r2_score
+    from sklearn.model_selection import KFold
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
-    if not features: return {"constant":np.repeat(float(np.mean(y_train)),len(test))}
-    xtr=train[features]; xte=test[features]; predictions={"constant":np.repeat(float(np.mean(y_train)),len(test))}
-    ridge=make_pipeline(SimpleImputer(strategy="median"),StandardScaler(),Ridge(alpha=1.0)); ridge.fit(xtr,y_train); predictions["ridge"]=ridge.predict(xte)
-    components=max(1,min(2,len(features),len(train)-1)); pls=make_pipeline(SimpleImputer(strategy="median"),StandardScaler(),PLSRegression(n_components=components))
-    try:
-        pls.fit(xtr,y_train); values=pls.predict(xte).reshape(-1)
-        if np.isfinite(values).all():predictions["pls"]=values
-    except Exception:
-        pass
-    if len(train)>=60 and len(features)<=12:
-        from sklearn.preprocessing import SplineTransformer
-        spline=make_pipeline(SimpleImputer(strategy="median"),StandardScaler(),SplineTransformer(n_knots=3,degree=2),Ridge(alpha=1.0)); spline.fit(xtr,y_train); predictions["spline_ridge"]=spline.predict(xte)
-    return predictions
+    data,cid,_,endpoint=dataset(request); blocks=[]
+    for item in inputs(request,"description"):
+        source=str(item.get("source_capability_id") or "DXXX"); frame=read_table(Path(item["path"]), ["compound_id","id","molecule_id"]); ids=[c for c in frame.columns if str(c).lower() in {"compound_id","id","molecule_id"}]
+        if not ids: continue
+        did=ids[0]; num,cols=numeric_features(frame,[did]); num.columns=[f"{source}::{col}" for col in cols]; num.insert(0,cid,frame[did].astype(str)); blocks.append(num)
+    merged=data[[cid,endpoint]].copy()
+    for block in blocks: merged=merged.merge(block,on=cid,how="inner")
+    parameters=request.get("parameters",{}); feature_cols=[c for c in merged.columns if c not in {cid,endpoint}]; units=analysis_units(request); min_n=int(parameters.get("min_local_samples",30)); seed=int(parameters.get("random_seed",61453)); min_local_r2=float(parameters.get("strict_local_oof_r2_min",.2)); min_r2_gain=float(parameters.get("strict_r2_gain_min",.2)); require_mae=bool(parameters.get("require_local_mae_not_worse",True)); metrics=[]; predictions=[]; global_oof: dict[str,float]={}
+    if min_n < 5 or min_r2_gain < 0:
+        raise ValueError("A005 requires min_local_samples >= 5 and strict_r2_gain_min >= 0")
+    for unit_id,members in units.items():
+        part=merged.loc[merged[cid].isin(members)&merged[endpoint].notna()].copy(); n=len(part)
+        try:
+            if n < (10 if unit_id=="GLOBAL" else min_n): metrics.append({"analysis_unit_id":unit_id,"sample_count":n,"status":"not_applicable","reason":f"sample_count<{10 if unit_id=='GLOBAL' else min_n}"}); continue
+            x=part[feature_cols].apply(pd.to_numeric,errors="coerce"); y=part[endpoint].to_numpy(float)
+            if x.shape[1]==0: metrics.append({"analysis_unit_id":unit_id,"sample_count":n,"status":"not_applicable","reason":"no_usable_features"}); continue
+            # Selection is independently fitted inside every outer fold; held-out
+            # endpoint values cannot affect the selected feature set.
+            folds=min(5,max(3,n//10)); cv=KFold(n_splits=folds,shuffle=True,random_state=seed); pred=np.full(n,np.nan); selected_counts: dict[str,int]={}
+            for train_idx,test_idx in cv.split(x):
+                train_x=x.iloc[train_idx]; test_x=x.iloc[test_idx]; train_y=y[train_idx]
+                # Determine usable columns from the training fold only.  This
+                # prevents SimpleImputer from silently dropping an all-missing
+                # fold column and shifting the reported feature names relative
+                # to the fitted matrix columns.
+                fold_keep=train_x.notna().sum().ge(3) & train_x.nunique(dropna=True).gt(1)
+                train_x=train_x.loc[:,fold_keep]; test_x=test_x.loc[:,fold_keep]
+                if train_x.shape[1]==0:
+                    pred[test_idx]=float(np.mean(train_y))
+                    continue
+                imputer=SimpleImputer(strategy="median"); train_matrix=imputer.fit_transform(train_x); test_matrix=imputer.transform(test_x)
+                scores=np.nan_to_num(f_regression(train_matrix,train_y)[0],nan=0.0); top=np.argsort(scores)[::-1][:min(24,train_x.shape[1],max(3,len(train_idx)//4))]
+                selected=[train_x.columns[index] for index in top]
+                for feature in selected: selected_counts[feature]=selected_counts.get(feature,0)+1
+                model=make_pipeline(StandardScaler(),Ridge(alpha=10.0)); model.fit(train_matrix[:,top],train_y); pred[test_idx]=model.predict(test_matrix[:,top])
+            stable=sorted(selected_counts,key=lambda feature:(-selected_counts[feature],feature))
+            if not stable:
+                metrics.append({"analysis_unit_id":unit_id,"sample_count":n,"status":"not_applicable","reason":"no_training_fold_had_usable_features"})
+                continue
+            local_r2=float(r2_score(y,pred)); local_mae=float(mean_absolute_error(y,pred)); local_spearman=float(pd.Series(y).corr(pd.Series(pred),method="spearman"))
+            row={"analysis_unit_id":unit_id,"sample_count":n,"status":"succeeded","feature_count":len(stable),"oof_r2":local_r2,"oof_mae":local_mae,"oof_spearman":local_spearman,"selected_features":";".join(stable),"selection_contract":"inside_outer_cv"}
+            if unit_id=="GLOBAL":
+                global_oof=dict(zip(part[cid].astype(str),pred))
+            else:
+                baseline=np.asarray([global_oof.get(str(value),np.nan) for value in part[cid]],dtype=float); comparable=np.isfinite(baseline)
+                if comparable.sum() >= 3:
+                    global_r2=float(r2_score(y[comparable],baseline[comparable])); global_mae=float(mean_absolute_error(y[comparable],baseline[comparable])); global_spearman=float(pd.Series(y[comparable]).corr(pd.Series(baseline[comparable]),method="spearman"))
+                    row.update({"global_oof_on_same_series_r2":global_r2,"global_oof_on_same_series_mae":global_mae,"global_oof_on_same_series_spearman":global_spearman,"local_minus_global_r2":local_r2-global_r2,"global_minus_local_mae":global_mae-local_mae})
+                    mae_condition = local_mae <= global_mae if require_mae else True
+                    row["strict_improvement"]=bool(local_r2>=min_local_r2 and local_r2-global_r2>=min_r2_gain and mae_condition)
+                    local_r2_credit = local_r2 / max(min_local_r2, np.finfo(float).eps) if local_r2 > 0 else 0
+                    gain_credit = (local_r2-global_r2) / max(min_r2_gain, np.finfo(float).eps) if local_r2 > global_r2 else 0
+                    mae_credit = global_mae/local_mae if require_mae and local_mae>0 else 1
+                    row["near_miss_score"]=min(local_r2_credit,gain_credit,mae_credit)
+                else:
+                    row.update({"status":"not_applicable","reason":"global_oof_predictions_missing_for_series","strict_improvement":False,"near_miss_score":0.0})
+            metrics.append(row)
+            predictions.extend({"analysis_unit_id":unit_id,"compound_id":compound,"observed":obs,"oof_prediction":estimate} for compound,obs,estimate in zip(part[cid],y,pred))
+        except Exception as exc:
+            metrics.append({"analysis_unit_id":unit_id,"sample_count":n,"status":"unit_failed","reason":f"{type(exc).__name__}: {exc}"})
+    result=pd.DataFrame(metrics)
+    if len(result) and "strict_improvement" in result:
+        result["strict_improvement"]=boolean_mask(result["strict_improvement"], "strict_improvement"); result=result.sort_values(["strict_improvement","near_miss_score","analysis_unit_id"],ascending=[False,False,True],na_position="last")
+    primary=output/"A005_series_feature_model.csv"; result.to_csv(primary,index=False); pred_path=output/"oof_predictions.csv"; pd.DataFrame(predictions, columns=["analysis_unit_id","compound_id","observed","oof_prediction"]).to_csv(pred_path,index=False)
+    local=result.loc[result["analysis_unit_id"].astype(str).ne("GLOBAL")] if len(result) else result
+    local_flags=boolean_mask(local["strict_improvement"], "strict_improvement") if "strict_improvement" in local else pd.Series(False,index=local.index)
+    hits=local.loc[local_flags]; near=local.loc[~local_flags].head(1)
+    note=f"Global OOFより厳格に改善したSeriesは{len(hits)}件。" if len(hits) else (f"厳格基準を満たさず、最も近い候補は{near.iloc[0]['analysis_unit_id']}（local OOF R2={near.iloc[0].get('oof_r2',np.nan):.3f}）。" if len(near) else "評価可能なSeriesはありません。")
+    report=output/"operator_report.html"; report.write_text(html_page("A005 models",f"<h1>Global / Series低容量OOFモデル</h1><div class='card'><p>{note}</p><p class='muted'>{SELECTION_BIAS_NOTE}</p></div><div class='card'>{frame_html(hits)}</div>"),encoding="utf-8")
+    finish(request,output,cap,primary=primary,summary={"analysis_unit_count":len(result),"modeled_unit_count":int(result.get('status',pd.Series(dtype=str)).eq('succeeded').sum()),"strict_improvement_count":len(hits),"unit_failure_count":int(result.get('status',pd.Series(dtype=str)).eq('unit_failed').sum()),"validation":"out-of-fold predictions; Global comparator uses the same Series compounds' Global OOF predictions; no random holdout metric","near_miss":near.to_dict('records') if len(near) else []},report=report,extra_artifacts=[pred_path])
 
 
-def evaluate(data:pd.DataFrame,blocks:dict[str,list[str]],property_column:str,fold:np.ndarray)->tuple[pd.DataFrame,pd.DataFrame,dict[str,Any]]:
-    rows=[]; selection=Counter(); valid_folds=0
-    for label in sorted(set(fold)):
-        test_mask=fold==label; train=data.loc[~test_mask]; test=data.loc[test_mask]
-        if len(train)<8 or not len(test): continue
-        y=train[property_column].to_numpy(float); features,scores=vip_select(train,y,blocks)
-        if not features: continue
-        valid_folds+=1; selection.update(features); predictions=fit_predict(train,test,y,features)
-        for model,values in predictions.items():
-            for cid,actual,pred in zip(test["compound_id"],test[property_column],values): rows.append({"compound_id":cid,"fold":int(label),"model":model,"actual":actual,"predicted":float(pred),"residual":float(actual-pred)})
-    prediction=pd.DataFrame(rows)
-    metrics=[]
-    for model,frame in prediction.groupby("model"):
-        actual=frame["actual"].to_numpy(float); pred=frame["predicted"].to_numpy(float); rmse=float(np.sqrt(np.mean((actual-pred)**2))); mae=float(np.mean(np.abs(actual-pred))); r2=float(1-np.sum((actual-pred)**2)/max(np.sum((actual-np.mean(actual))**2),1e-12)); metrics.append({"model":model,"oof_n":len(frame),"rmse":rmse,"mae":mae,"r2":r2})
-    metric_frame=pd.DataFrame(metrics).sort_values(["rmse","model"]) if metrics else pd.DataFrame(columns=["model","oof_n","rmse","mae","r2"])
-    return prediction,metric_frame,{"valid_fold_count":valid_folds,"selection_frequency":dict(selection),"selected_feature_count":len(selection)}
+def run_a006(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    from sklearn.metrics import pairwise_distances
 
-
-def memberships(path:str)->dict[str,set[str]]:
-    frame=pd.read_csv(path,dtype={"compound_id":"string"}); active=frame["membership_value"].fillna(0).astype(float)>0 if "membership_value" in frame else pd.Series(True,index=frame.index)
-    return {str(cid):set(part["compound_id"].astype(str)) for cid,part in frame.loc[active].groupby("cluster_id")}
-
-
-def output_dir(a:argparse.Namespace)->Path:
-    run=a.run_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    if a.output_dir:return Path(a.output_dir)
-    root=workspace()/"results"
-    if a.conductor:return root/"CONDUCTOR"/a.project/run/"analysis"/CAPABILITY["skill_name"]/a.node_id/"attempts"/a.attempt_id
-    return root/"analysis"/Path(a.input).stem/CAPABILITY["skill_name"]/run
-
-
-def report(rows:pd.DataFrame,headline:str)->str:
-    table_html=rows.to_html(index=False,escape=True) if len(rows) else "<p>適用可能な結果はありません。</p>"
-    css="body{margin:0;background:#efede8;color:#293840;font:15px/1.65 'Yu Gothic UI',sans-serif}main{max-width:1100px;margin:28px auto;background:white;padding:44px}h1,h2{color:#304957}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d9d5cc;padding:8px}th{background:#e9ecea}"
-    return f"<!doctype html><html lang='ja'><head><meta charset='utf-8'><style>{css}</style></head><body><main><p>CONDUCTOR Operator report</p><h1>{html.escape(CAPABILITY['display_name'])}</h1><p>{html.escape(headline)}</p><h2>モデル比較</h2>{table_html}<h2>解釈上の注意</h2><p>これは予測製品ではなく、単変量相関では埋没し得る複数Description由来signalを探索する機能です。OOF baselineとの差、fold間変動、特徴量選択安定性を確認してください。</p></main></body></html>"
-
-
-def run()->int:
-    started=now(); a=args(); data,blocks=load(a); fold=folds(data["compound_id"],a.outer_folds,a.random_seed); data["outer_fold"]=fold; out=output_dir(a)
-    if out.exists() and any(out.iterdir()) and not a.overwrite: raise FileExistsError(f"Output directory is not empty: {out}")
-    out.mkdir(parents=True,exist_ok=True); rows=[]; prediction_artifact=None; cluster_predictions=[]; details={"role":a.role,"panel":list(PANEL),"block_preprocessing":{"D001":"median+scale","D002":"binary median+scale","D006":"log1p+median+scale","D013":"median+scale","D016":"median+scale","D019":"median+scale"},"selection_scope":"outer-training-fold-only","cluster_results":[]}
-    if a.role=="global-model":
-        pred,metrics,extra=evaluate(data,blocks,a.property_column,fold); pred_path=out/"global_oof_predictions.csv"; pred.to_csv(pred_path,index=False); prediction_artifact=pred_path; rows=metrics.assign(cluster_id="GLOBAL").to_dict("records"); details.update(extra)
-        if len(metrics):
-            details.update({"best_model":str(metrics.iloc[0]["model"]),"best_rmse":float(metrics.iloc[0]["rmse"]),"best_mae":float(metrics.iloc[0]["mae"]),"best_r2":float(metrics.iloc[0]["r2"])})
+    parameters = request.get("parameters", {})
+    metric = str(parameters.get("metric", "tanimoto")).lower()
+    if metric != "tanimoto":
+        raise ValueError("A006 uses D002 Morgan bits and therefore requires metric='tanimoto'")
+    similarity_threshold = float(parameters.get("similarity_threshold", .8))
+    minimum_support_pairs = int(parameters.get("minimum_support_pairs", 3))
+    direction_fraction_threshold = float(parameters.get("direction_fraction_threshold", .8))
+    if not (0 <= similarity_threshold <= 1) or minimum_support_pairs < 1 or not (0 <= direction_fraction_threshold <= 1):
+        raise ValueError("A006 similarity/direction thresholds must be in [0,1] and minimum_support_pairs >= 1")
+    data, cid, _, endpoint = dataset(request)
+    desc, did = description_table(request, "D002")
+    merged = data[[cid, endpoint]].merge(desc, left_on=cid, right_on=did, how="inner").dropna(subset=[endpoint]).reset_index(drop=True)
+    x, feature_columns = numeric_features(merged, [cid, did, endpoint])
+    pair_path = output / "A006_cliff_pairs.csv"
+    if len(merged) < 2 or not feature_columns:
+        units = analysis_units(request)
+        result = pd.DataFrame([
+            {"analysis_unit_id": unit_id, "sample_count": int(merged[cid].isin(members).sum()), "status": "not_applicable", "reason": "insufficient_compounds_or_features"}
+            for unit_id, members in units.items()
+        ])
+        primary = output / "A006_series_landscape.csv"; result.to_csv(primary, index=False)
+        pd.DataFrame(columns=["analysis_unit_id","pair_scope","compound_id_a","compound_id_b","similarity","endpoint_delta","sali","series_side_favorable"]).to_csv(pair_path, index=False)
+        report = output / "operator_report.html"
+        report.write_text(html_page("A006 landscape", "<h1>SALI / internal-boundary cliff</h1><div class='card'><p>化合物数または有効D002特徴量が不足し、評価対象外でした。</p></div>"), encoding="utf-8")
+        finish(request, output, cap, primary=primary, summary={"analysis_unit_count":len(result),"strict_boundary_hit_count":0,"negative_result":True}, report=report, extra_artifacts=[pair_path])
+        return
+    matrix = x.fillna(0).to_numpy(bool)
+    sim = 1 - pairwise_distances(matrix, metric="jaccard")
+    endpoint_values = merged[endpoint].to_numpy(float)
+    delta = np.abs(endpoint_values[:, None] - endpoint_values[None, :])
+    sali = delta / np.maximum(1 - sim, 1e-6)
+    global_iqr = float(merged[endpoint].quantile(.75) - merged[endpoint].quantile(.25))
+    units = analysis_units(request)
+    id_to_index = {str(value): index for index, value in enumerate(merged[cid])}
+    rows: list[dict[str, Any]] = []
+    pair_rows: list[dict[str, Any]] = []
+    if not np.isfinite(global_iqr) or global_iqr <= 0:
+        result = pd.DataFrame([{"analysis_unit_id": unit_id, "sample_count": sum(item in id_to_index for item in members), "status": "not_applicable", "reason": "global_endpoint_iqr_is_zero"} for unit_id, members in units.items()])
+        result.to_csv(output / "A006_series_landscape.csv", index=False)
+        pd.DataFrame(columns=["analysis_unit_id","pair_scope","compound_id_a","compound_id_b","similarity","endpoint_delta","sali","series_side_favorable"]).to_csv(pair_path, index=False)
+        report = output / "operator_report.html"
+        report.write_text(html_page("A006 landscape", f"<h1>SALI / internal-boundary cliff</h1><div class='card'><p>Global Endpoint IQRが0のため、Cliff閾値を定義できませんでした。</p><p class='muted'>{SELECTION_BIAS_NOTE}</p></div>"), encoding="utf-8")
+        finish(request, output, cap, primary=output / "A006_series_landscape.csv", summary={"analysis_unit_count":len(result),"strict_boundary_hit_count":0,"global_endpoint_iqr":global_iqr,"negative_result":True}, report=report, extra_artifacts=[pair_path])
+        return
+    endpoint_delta_parameter = parameters.get("endpoint_delta_threshold", "1.0_global_iqr")
+    if isinstance(endpoint_delta_parameter, str) and endpoint_delta_parameter.endswith("_global_iqr"):
+        try:
+            endpoint_delta_threshold = float(endpoint_delta_parameter.removesuffix("_global_iqr")) * global_iqr
+        except ValueError as exc:
+            raise ValueError("A006 endpoint_delta_threshold must be '<positive>_global_iqr' or a positive number") from exc
     else:
-        cluster_map=memberships(a.membership); selected={a.target_cluster:cluster_map.get(a.target_cluster,set())} if a.role=="within-cluster" else cluster_map
-        global_oof=pd.read_csv(a.global_oof) if a.global_oof else None
-        for cluster_id,members in sorted(selected.items()):
-            subset=data[data["compound_id"].astype(str).isin(members)].copy(); entry={"cluster_id":cluster_id,"sample_count":len(subset)}
-            if len(subset)<a.min_local_samples or subset[a.property_column].nunique()<3: entry.update({"status":"not_applicable","reason":"minimum sample count or endpoint variation not met"}); details["cluster_results"].append(entry); continue
-            pred,metrics,extra=evaluate(subset,blocks,a.property_column,subset["outer_fold"].to_numpy()); valid_fold_count=extra["valid_fold_count"]
-            if valid_fold_count<3: entry.update({"status":"not_applicable","reason":"fewer than three valid shared folds"}); details["cluster_results"].append(entry); continue
-            cluster_dir=out/"clusters"/str(cluster_id); cluster_dir.mkdir(parents=True,exist_ok=True); pred_path=cluster_dir/"oof_predictions.csv"; pred.to_csv(pred_path,index=False); metrics.to_csv(cluster_dir/"model_comparison.csv",index=False); cluster_prediction=pred.copy(); cluster_prediction.insert(0,"cluster_id",str(cluster_id)); cluster_predictions.append(cluster_prediction)
-            baseline_rmse=None
-            if global_oof is not None:
-                common=global_oof[global_oof["compound_id"].astype(str).isin(set(subset["compound_id"].astype(str)))].copy()
-                if len(common):
-                    candidates=common[common["model"]!="constant"] if "model" in common else common
-                    by_model=[]
-                    for model_name,model_rows in candidates.groupby("model",dropna=False):
-                        by_model.append((float(np.sqrt(np.mean((model_rows["actual"]-model_rows["predicted"])**2))),str(model_name)))
-                    if by_model:baseline_rmse=min(by_model)[0]
-            for row in metrics.to_dict("records"): row.update({"cluster_id":cluster_id,"global_context_rmse":baseline_rmse,"rmse_delta_vs_global":None if baseline_rmse is None else row["rmse"]-baseline_rmse}); rows.append(row)
-            best=metrics.iloc[0] if len(metrics) else None
-            entry.update({"status":"succeeded","valid_fold_count":valid_fold_count,"best_model":best["model"] if best is not None else None,"best_rmse":best["rmse"] if best is not None else None,"best_mae":best["mae"] if best is not None else None,"best_r2":best["r2"] if best is not None else None,"rmse_delta_vs_global":None if best is None or baseline_rmse is None else float(best["rmse"])-float(baseline_rmse)}); details["cluster_results"].append(entry)
-        if cluster_predictions:
-            prediction_artifact=out/"cluster_oof_predictions.csv"; pd.concat(cluster_predictions,ignore_index=True).to_csv(prediction_artifact,index=False)
-    result=pd.DataFrame(rows); result_path=out/CAPABILITY["output"]["filename"]; result.to_csv(result_path,index=False)
-    headline=f"固定panel {', '.join(PANEL)}をfold内で選択し、{a.role}としてbaseline・Ridge・PLS・条件付きSpline-Ridgeを比較しました。"
-    (out/"operator_report.html").write_text(report(result,headline),encoding="utf-8")
-    input_components=[sha(Path(a.input)),*[sha(path) for path in a.description_paths.values()],*[sha(Path(v)) for v in (a.membership,a.global_oof) if v]]; input_hash=value_hash(input_components)
-    scope_mode=a.role; source_nodes=[*a.description_node_id,*([a.clustering_node_id] if a.clustering_node_id else []),*([a.global_model_node_id] if a.global_model_node_id else [])]; base_ref=f"{a.node_id}@{a.attempt_id}" if a.conductor else "standalone"
-    result_ref=base_ref+f"/{a.target_cluster}" if a.conductor and a.role=="within-cluster" and a.target_cluster else base_ref
-    context={"description_node_ids":list(a.description_node_id),"clustering_node_ids":[a.clustering_node_id] if a.clustering_node_id else [],"cluster_ids":[a.target_cluster] if a.target_cluster else []}
-    limitations=["探索的モデル比較であり予測モデルの採用を推奨するものではない。","小標本では性能差と特徴量選択が不安定になり得る。"]
-    summary_sample_count=len(data)
-    if a.role=="within-cluster" and details["cluster_results"]:
-        summary_sample_count=int(details["cluster_results"][0]["sample_count"])
-    summary={"schema_version":"1.0.0","result_ref":result_ref,"node_id":a.node_id,"attempt_id":a.attempt_id,"operator_id":CAPABILITY["operator_id"],"run_id":a.run_id or "standalone","round_id":a.round_id or "RND0000","scope":{"mode":scope_mode,"target_cluster_id":a.target_cluster},"scope_context":context,"sample_count":summary_sample_count,"endpoint":{"column":a.property_column,"higher_is_better":bool(a.higher_is_better)},"metric":"rmse","headline":headline,"key_metrics":details,"top_records":result.head(100).to_dict("records"),"limitations":limitations,"warnings":[],"source_nodes":source_nodes,"primary_artifact":{"path":result_path.name,"sha256":sha(result_path)},"created_at":now()}
-    cluster_summaries=[]
-    if a.conductor and a.role=="cluster-survey":
-        for entry in details["cluster_results"]:
-            if entry.get("status")!="succeeded":continue
-            cluster_id=str(entry["cluster_id"]);comparison_path=out/"clusters"/cluster_id/"model_comparison.csv";cluster_rows=result[result.get("cluster_id",pd.Series(dtype=str)).astype(str)==cluster_id] if "cluster_id" in result else pd.DataFrame()
-            local_headline=f"{cluster_id}（N={entry['sample_count']}）のLocal modelをGlobal OOF contextと比較しました。best RMSE={entry.get('best_rmse')}。"
-            cluster_summary={"schema_version":"1.0.0","result_ref":f"{base_ref}/{cluster_id}","node_id":a.node_id,"attempt_id":a.attempt_id,"operator_id":CAPABILITY["operator_id"],"run_id":a.run_id,"round_id":a.round_id,"scope":{"mode":"within-cluster","target_cluster_id":cluster_id},"scope_context":{"description_node_ids":list(a.description_node_id),"clustering_node_ids":[a.clustering_node_id] if a.clustering_node_id else [],"cluster_ids":[cluster_id]},"sample_count":int(entry["sample_count"]),"endpoint":{"column":a.property_column,"higher_is_better":bool(a.higher_is_better)},"metric":"rmse","headline":local_headline,"key_metrics":entry,"top_records":cluster_rows.head(20).to_dict("records"),"limitations":limitations,"warnings":[],"source_nodes":source_nodes,"primary_artifact":{"path":str(comparison_path.relative_to(out)),"sha256":sha(comparison_path)},"created_at":now()}
-            validate(cluster_summary,"operator_summary.schema.json");cluster_summaries.append(cluster_summary)
-    config={k:v for k,v in vars(a).items() if k!="description_paths"}; manifest={"schema_version":"2.0.0","conductor_version":"0.1.8","artifact_stage":"analysis","run_id":a.run_id or "standalone","node_id":a.node_id,"attempt_id":a.attempt_id,"capability_id":CAPABILITY["capability_id"],"skill_name":CAPABILITY["skill_name"],"skill_version":CAPABILITY["version"],"input":a.input,"input_hash":input_hash,"value_semantics":"model_evaluation","natural_metric":None,"warnings":[],"created_at":now(),"configuration":config,"fixed_description_panel":list(PANEL)}
-    if a.conductor:
-        validate(summary,"operator_summary.schema.json"); write_json(out/"operator_summary.json",summary); validate(manifest,"artifact_manifest.schema.json"); write_json(out/"analysis_manifest.json",manifest)
-        artifacts=[]
-        for kind,name in [("operator_result",result_path.name),("operator_report","operator_report.html"),("operator_summary","operator_summary.json"),("manifest","analysis_manifest.json")]: artifacts.append({"type":kind,"path":name,"sha256":sha(out/name)})
-        if cluster_summaries:
-            write_json(out/"cluster_operator_summaries.json",cluster_summaries);artifacts.append({"type":"operator_summary_collection","path":"cluster_operator_summaries.json","sha256":sha(out/"cluster_operator_summaries.json")})
-        if prediction_artifact is not None: artifacts.append({"type":"oof_predictions","path":str(prediction_artifact.relative_to(out)),"sha256":sha(prediction_artifact)})
-        event={"schema_version":"2.0.0","project":a.project,"run_id":a.run_id,"round_id":a.round_id,"node_id":a.node_id,"attempt_id":a.attempt_id,"capability_id":CAPABILITY["capability_id"],"skill_name":CAPABILITY["skill_name"],"status":"succeeded","input_hash":input_hash,"config_hash":value_hash(config),"configuration":config,"artifacts":artifacts,"warnings":[],"started_at":started,"finished_at":now()}; validate(event,"execution_event.schema.json"); write_json(out/"execution_event.json",event)
-    print(out); return 0
+        endpoint_delta_threshold = float(endpoint_delta_parameter)
+    if not np.isfinite(endpoint_delta_threshold) or endpoint_delta_threshold <= 0:
+        raise ValueError("A006 endpoint_delta_threshold must resolve to a positive finite value")
+    higher = bool(request.get("endpoint", {}).get("higher_is_better"))
+    for unit_id, members in units.items():
+        indices = np.array([id_to_index[item] for item in members if item in id_to_index], dtype=int)
+        if len(indices) < 3:
+            rows.append({"analysis_unit_id":unit_id,"sample_count":len(indices),"status":"not_applicable","reason":"sample_count<3"})
+            continue
+        tri = np.triu_indices(len(indices), 1)
+        internal_a, internal_b = indices[tri[0]], indices[tri[1]]
+        values = sali[internal_a, internal_b]
+        internal_mask = (sim[internal_a, internal_b] >= similarity_threshold) & (delta[internal_a, internal_b] >= endpoint_delta_threshold)
+        for left, right in zip(internal_a[internal_mask], internal_b[internal_mask]):
+            pair_rows.append({"analysis_unit_id":unit_id,"pair_scope":"internal","compound_id_a":merged.at[left,cid],"compound_id_b":merged.at[right,cid],"similarity":sim[left,right],"endpoint_delta":delta[left,right],"sali":sali[left,right],"series_side_favorable":np.nan})
+        index_set = set(indices)
+        boundary_indices = np.array([index for index in range(len(merged)) if index not in index_set], dtype=int)
+        boundary_count = 0; boundary_direction = np.nan
+        if unit_id != "GLOBAL" and len(boundary_indices):
+            boundary_similarity = sim[np.ix_(indices, boundary_indices)]
+            boundary_delta = delta[np.ix_(indices, boundary_indices)]
+            boundary_mask = (boundary_similarity >= similarity_threshold) & (boundary_delta >= endpoint_delta_threshold)
+            boundary_count = int(boundary_mask.sum())
+            if boundary_count:
+                inside_values = endpoint_values[indices][:, None]; outside_values = endpoint_values[boundary_indices][None, :]
+                favorable = (inside_values > outside_values) if higher else (inside_values < outside_values)
+                boundary_direction = float(favorable[boundary_mask].mean())
+                positions = np.argwhere(boundary_mask)
+                for inside_position, outside_position in positions:
+                    left = indices[inside_position]; right = boundary_indices[outside_position]
+                    pair_rows.append({"analysis_unit_id":unit_id,"pair_scope":"boundary","compound_id_a":merged.at[left,cid],"compound_id_b":merged.at[right,cid],"similarity":sim[left,right],"endpoint_delta":delta[left,right],"sali":sali[left,right],"series_side_favorable":bool(favorable[inside_position,outside_position])})
+        strict = boundary_count >= minimum_support_pairs and np.isfinite(boundary_direction) and boundary_direction >= direction_fraction_threshold
+        direction_credit = min(boundary_direction / max(direction_fraction_threshold, np.finfo(float).eps), 1.0) if np.isfinite(boundary_direction) else 0.0
+        rows.append({"analysis_unit_id":unit_id,"sample_count":len(indices),"median_sali":float(np.median(values)) if len(values) else np.nan,"p95_sali":float(np.quantile(values,.95)) if len(values) else np.nan,"internal_cliff_count":int(internal_mask.sum()),"boundary_cliff_count":boundary_count,"boundary_favorable_direction_fraction":boundary_direction,"strict_boundary_hit":strict,"near_miss_score":min(boundary_count/minimum_support_pairs,1.0)*direction_credit,"status":"succeeded"})
+    result = pd.DataFrame(rows)
+    primary = output / "A006_series_landscape.csv"; result.to_csv(primary, index=False)
+    pd.DataFrame(pair_rows, columns=["analysis_unit_id","pair_scope","compound_id_a","compound_id_b","similarity","endpoint_delta","sali","series_side_favorable"]).to_csv(pair_path, index=False)
+    local = result.loc[result.get("analysis_unit_id", pd.Series(dtype=str)).astype(str).ne("GLOBAL")] if len(result) else result
+    hit_flags = boolean_mask(local["strict_boundary_hit"], "strict_boundary_hit") if "strict_boundary_hit" in local else pd.Series(False, index=local.index)
+    hits = local.loc[hit_flags]
+    sort_columns = [column for column in ("near_miss_score", "boundary_cliff_count") if column in local.columns]
+    near = local.sort_values(sort_columns, ascending=[False] * len(sort_columns), na_position="last").head(1) if len(local) and sort_columns else local.head(1)
+    note = f"厳格な境界Cliff候補は{len(hits)}件。" if len(hits) else (f"厳格基準を満たさず、最も近い候補は{near.iloc[0]['analysis_unit_id']}（boundary cliffs={near.iloc[0].get('boundary_cliff_count',0)}）。" if len(near) else "評価対象なし。")
+    report = output / "operator_report.html"
+    report.write_text(html_page("A006 landscape",f"<h1>SALI / internal-boundary cliff</h1><div class='card'><p>{note}</p><p class='muted'>{SELECTION_BIAS_NOTE}</p></div><div class='card'>{frame_html(hits)}</div>"),encoding="utf-8")
+    finish(request,output,cap,primary=primary,summary={"analysis_unit_count":len(result),"strict_boundary_hit_count":len(hits),"global_endpoint_iqr":global_iqr,"cliff_pair_rows":len(pair_rows)},report=report,extra_artifacts=[pair_path])
 
 
-if __name__=="__main__":
-    try: raise SystemExit(run())
-    except Exception as exc: print(f"ERROR: {exc}",file=sys.stderr); raise SystemExit(1)
+def run_a007(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    from rdkit import Chem
+    from rdkit.Chem.Scaffolds import MurckoScaffold
+    data, cid, smiles, _ = dataset(request)
+    units = analysis_units(request)
+    registry_path = input_path(request, "cluster_registry", required=False)
+    source_path = input_path(request, "series_cluster_membership", required=False)
+    registry = read_table(registry_path, ["cluster_id", "source_cluster_id", "source_node_id"]) if registry_path else pd.DataFrame()
+    source = read_table(source_path, ["series_id", "cluster_id"]) if source_path else pd.DataFrame()
+    structural = {"C001", "C002", "C003", "C004"}
+    timeout_seconds = int(request.get("parameters", {}).get("mcs_timeout_seconds", 60))
+    if timeout_seconds < 1:
+        raise ValueError("A007 mcs_timeout_seconds must be at least 1")
+    rows: list[dict[str, Any]] = []
+    for unit_id, members in units.items():
+        if unit_id == "GLOBAL":
+            continue
+        try:
+            found: list[dict[str, Any]] = []
+            if not source.empty and not registry.empty and "series_id" in source and unit_id in set(source["series_id"].astype(str)):
+                ids = source.loc[source["series_id"].astype(str).eq(unit_id), "cluster_id"].astype(str)
+                part = registry.loc[registry["cluster_id"].astype(str).isin(ids) & registry["clustering_id"].astype(str).isin(structural)]
+                for _, row in part.iterrows():
+                    found.append({"analysis_unit_id":unit_id,"method":"source_structural_cluster","clustering_id":row.get("clustering_id"),"cluster_id":row.get("cluster_id"),"structure":row.get("structure_definition",row.get("definition","")),"support_count":row.get("sample_count"),"source_member_count":len(members),"mcs_canceled":False,"status":"succeeded","reason":""})
+            if not found:
+                scaffolds: dict[str, int] = {}
+                subset = data.loc[data[cid].isin(members), smiles]
+                mols = []
+                for value in subset:
+                    mol = Chem.MolFromSmiles(str(value))
+                    if mol is None:
+                        continue
+                    mols.append(mol)
+                    scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol)
+                    if scaffold:
+                        scaffolds[scaffold] = scaffolds.get(scaffold, 0) + 1
+                for structure, count in sorted(scaffolds.items(), key=lambda item: (-item[1], item[0])):
+                    found.append({"analysis_unit_id":unit_id,"method":"fallback_murcko","clustering_id":"C001","cluster_id":"","structure":structure,"support_count":count,"source_member_count":len(members),"mcs_canceled":False,"status":"succeeded","reason":""})
+                if len(mols) >= 3:
+                    from rdkit.Chem import rdFMCS
+                    # Use every valid molecule. The timeout is explicit because
+                    # silent sampling would change the Series-level MCS question.
+                    mcs = rdFMCS.FindMCS(mols, timeout=timeout_seconds, ringMatchesRingOnly=True, completeRingsOnly=True)
+                    query = Chem.MolFromSmarts(mcs.smartsString) if mcs.smartsString else None
+                    mcs_heavy = sum(atom.GetAtomicNum() > 1 for atom in query.GetAtoms()) if query else 0
+                    coverages = [mcs_heavy / max(1, sum(atom.GetAtomicNum() > 1 for atom in mol.GetAtoms())) for mol in mols]
+                    found.append({"analysis_unit_id":unit_id,"method":"fallback_mcs","clustering_id":"C002","cluster_id":"","structure":mcs.smartsString,"support_count":len(mols),"source_member_count":len(members),"mcs_canceled":bool(mcs.canceled),"mcs_heavy_atoms":mcs_heavy,"mcs_min_coverage":min(coverages),"mcs_median_coverage":float(np.median(coverages)),"mcs_trivial":mcs_heavy < 3,"status":"partial_timeout" if mcs.canceled else "succeeded","reason":"MCS timeout reached" if mcs.canceled else ""})
+                else:
+                    found.append({"analysis_unit_id":unit_id,"method":"fallback_mcs","clustering_id":"C002","cluster_id":"","structure":"","support_count":len(mols),"source_member_count":len(members),"mcs_canceled":False,"status":"not_applicable","reason":"fewer than 3 valid molecules"})
+            rows.extend(found)
+        except Exception as exc:
+            rows.append({"analysis_unit_id":unit_id,"method":"unit_error","clustering_id":"","cluster_id":"","structure":"","support_count":0,"source_member_count":len(members),"mcs_canceled":False,"status":"unit_failed","reason":f"{type(exc).__name__}: {exc}"})
+    columns = ["analysis_unit_id","method","clustering_id","cluster_id","structure","support_count","source_member_count","mcs_canceled","mcs_heavy_atoms","mcs_min_coverage","mcs_median_coverage","mcs_trivial","status","reason"]
+    result = pd.DataFrame(rows, columns=columns)
+    primary = output / "A007_series_structural_signature.csv"
+    result.to_csv(primary, index=False)
+    report = output / "operator_report.html"
+    report.write_text(html_page("A007 structures",f"<h1>Series構造由来とfallback key structures</h1><div class='card'>{frame_html(result,300)}</div>"),encoding="utf-8")
+    finish(request,output,cap,primary=primary,summary={"row_count":len(result),"analysis_unit_count":result['analysis_unit_id'].nunique() if len(result) else 0,"mcs_timeout_count":int(result.get('mcs_canceled',pd.Series(dtype=bool)).fillna(False).sum()),"unit_failure_count":int(result.get('status',pd.Series(dtype=str)).eq('unit_failed').sum())},report=report)
+
+
+def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None:
+    import matplotlib.pyplot as plt
+    profile=read_table(input_path(request,"cluster_profile"), ["cluster_id"]); enrichment=read_table(input_path(request,"cluster_enrichment"), ["cluster_id"]); series=read_table(input_path(request,"series_registry"), ["series_id"]); units_path=input_path(request,"analysis_unit_membership",required=False); selected=enrichment.loc[boolean_mask(enrichment["selected_for_series"], "selected_for_series")].copy() if len(enrichment) and "selected_for_series" in enrichment else enrichment.iloc[0:0].copy()
+    series_clusters_path=input_path(request,"series_cluster_membership",required=False); unit_registry_path=input_path(request,"analysis_unit_registry",required=False); support_path=input_path(request,"compound_series_support",required=False)
+    series_clusters=read_table(series_clusters_path, ["series_id", "candidate_series_id", "cluster_id"]) if series_clusters_path else pd.DataFrame()
+    if len(series_clusters) and len(selected):
+        if {"series_id","cluster_id"}.issubset(series_clusters.columns):
+            selected=selected.merge(series_clusters[["series_id","cluster_id"]],on="cluster_id",how="left")
+    sources=[]
+    for item in inputs(request,"source"):
+        path=Path(item["path"])
+        if path.suffix.lower()==".csv":
+            try:
+                sources.append((item.get("source_capability_id","source"),read_table(path, ["compound_id", "analysis_unit_id", "cluster_id", "series_id"])))
+            except Exception as exc:
+                raise ValueError(
+                    f"A009 could not read the succeeded upstream CSV {path} "
+                    f"({item.get('source_capability_id', 'source')}): {exc}"
+                ) from exc
+    data,_,_,endpoint=dataset(request)
+    histogram=output/"endpoint_histogram.png"; fig,ax=plt.subplots(figsize=(7.2,3.8)); ax.hist(pd.to_numeric(data[endpoint],errors="coerce").dropna(),bins=24,color="#526a73",edgecolor="white"); ax.set_title(f"Endpoint distribution: {endpoint}"); ax.set_xlabel(endpoint); ax.set_ylabel("Count"); fig.tight_layout(); fig.savefig(histogram,dpi=150); plt.close(fig)
+    series_map=output/"series_map.png"; accepted=series.loc[boolean_mask(series["accepted"], "accepted")].copy() if len(series) and "accepted" in series else series.copy(); fig,ax=plt.subplots(figsize=(max(7.2,min(14,.55*max(1,len(accepted)))),4.2))
+    if len(accepted):
+        accepted=accepted.sort_values("favorable_fraction",ascending=False); ax.bar(accepted["series_id"].astype(str),accepted["favorable_fraction"],color="#8b654f"); ax.axhline(.5,color="#37474f",linestyle="--",linewidth=1); ax.tick_params(axis="x",rotation=70)
+    else: ax.text(.5,.5,"No accepted Series; Cluster fallback is used",ha="center",va="center")
+    ax.set_title("Accepted Series favorable fraction"); ax.set_ylabel("Favorable fraction"); fig.tight_layout(); fig.savefig(series_map,dpi=150); plt.close(fig)
+    contact_sheets=[]
+    for item in inputs(request,"source"):
+        if item.get("source_capability_id")!="A004": continue
+        source_dir=Path(item["path"]).parent
+        for name in ("pca_series_contact_sheet.png","umap_series_contact_sheet.png"):
+            source_image=source_dir/name
+            if source_image.is_file():
+                target_image=output/name; shutil.copy2(source_image,target_image); contact_sheets.append(target_image)
+    unit_ids=[]; unit_registry=read_table(unit_registry_path, ["analysis_unit_id"]) if unit_registry_path else pd.DataFrame(); support=read_table(support_path, ["series_id", "compound_id"]) if support_path else pd.DataFrame()
+    if len(unit_registry) and "analysis_unit_id" not in unit_registry.columns:
+        raise ValueError("analysis_unit_registry must contain analysis_unit_id")
+    if len(support) and "series_id" not in support.columns:
+        raise ValueError("compound_series_support must contain series_id")
+    if units_path:
+        units_frame=read_table(units_path, ["analysis_unit_id", "compound_id"])
+        if "analysis_unit_id" in units_frame: unit_ids=[value for value in sorted(units_frame["analysis_unit_id"].astype(str).unique()) if value!="GLOBAL"]
+    def report_view(capability_id:str, source_frame:pd.DataFrame, unit_id:str|None=None)->tuple[pd.DataFrame,str]:
+        frame=source_frame
+        if unit_id is not None and "analysis_unit_id" in frame:
+            frame=frame.loc[frame["analysis_unit_id"].astype(str).eq(unit_id)]
+        elif capability_id in {"A003","A005","A006"} and "analysis_unit_id" in frame:
+            frame=frame.loc[frame["analysis_unit_id"].astype(str).ne("GLOBAL")]
+        rules={"A003":"strict_hit","A005":"strict_improvement","A006":"strict_boundary_hit"}; flag=rules.get(capability_id)
+        if flag and flag in frame:
+            hits=frame.loc[boolean_mask(frame[flag], flag)]
+            if len(hits): return hits, f"厳格基準を満たす候補: {len(hits)}件"
+            order="near_miss_score" if "near_miss_score" in frame else "boundary_cliff_count" if "boundary_cliff_count" in frame else None
+            near=frame.sort_values(order,ascending=False,na_position="last").head(1) if order and len(frame) else frame.head(1)
+            label=str(near.iloc[0].get("feature",near.iloc[0].get("analysis_unit_id","候補"))) if len(near) else "なし"
+            return near.iloc[0:0], f"厳格基準を満たす候補はなく、最も近い候補は{label}でした。"
+        return frame, ""
+    highlights={}
+    for name,source_frame in sources:
+        if str(name) in {"A004","A008"}: continue
+        chosen,note=report_view(str(name),source_frame)
+        highlights[str(name)]={"note":note,"rows":chosen.head(10).to_dict("records")}
+    index={"schema_version":"1.0.0","selected_cluster_count":len(selected),"series_count":len(accepted),"analysis_unit_count":len(unit_ids),"selected_cluster_preview":selected.head(25).to_dict("records"),"series_overview":series.head(24).to_dict("records"),"analysis_unit_overview":unit_registry.head(100).to_dict("records"),"operator_highlights":highlights,"detail_reports":[]}
+    contact_html="".join(f"<img src='{image_uri(path)}'>" for path in contact_sheets)
+    body=f"<h1>CONDUCTOR 定型解析 Summary</h1><div class='card'><h2>Endpoint</h2><img src='{image_uri(histogram)}'></div><div class='card'><h2>Endpoint-enriched Clusters</h2><p>選抜ClusterをDescription・Clustering由来、N、FF、odds ratio、p/q、Seriesとともに示します。</p><p class='muted'>{SELECTION_BIAS_NOTE}</p>{frame_html(selected,500)}</div><div class='card'><h2>Series / fallback Cluster</h2><img src='{image_uri(series_map)}'>{frame_html(unit_registry if len(unit_registry) else series,100)}</div><div class='card'><h2>PCA / UMAP contact sheets</h2>{contact_html or '<p class=\"muted\">Projection画像なし</p>'}</div>"
+    detail_artifacts=[]
+    for unit_id in unit_ids:
+        unit_info=unit_registry.loc[unit_registry["analysis_unit_id"].astype(str).eq(unit_id)] if len(unit_registry) else pd.DataFrame()
+        source_info=pd.DataFrame()
+        if {"series_id","cluster_id"}.issubset(series_clusters.columns):
+            source_info=series_clusters.loc[series_clusters["series_id"].astype(str).eq(unit_id)].merge(enrichment,on="cluster_id",how="left")
+        support_info=support.loc[support["series_id"].astype(str).eq(unit_id)] if len(support) else pd.DataFrame()
+        definition=f"<h2>Analysis unit定義</h2>{frame_html(unit_info,5)}<h2>Source Cluster</h2>{frame_html(source_info,100)}<h2>Membership support</h2>{frame_html(support_info,100)}"
+        sections=[definition]
+        for name,frame in sources:
+            if str(name) in {"A004","A008"}: continue
+            part,note=report_view(str(name),frame,unit_id)
+            sections.append(f"<h2>{html_lib.escape(str(name))}</h2><p>{html_lib.escape(note)}</p>{frame_html(part,100)}")
+        images=[]
+        for item in inputs(request,"source"):
+            if item.get("source_capability_id")!="A004": continue
+            candidate=Path(item["path"]).parent/f"projection_{unit_id}.png"
+            if candidate.is_file():
+                images.append(f"<h2>PCA / UMAP</h2><img src='{image_uri(candidate)}'>")
+        path=output/f"series_{unit_id}.html"; path.write_text(html_page(f"Analysis unit {unit_id}",f"<h1>Analysis unit {unit_id}</h1>"+"".join(images+sections)),encoding="utf-8"); index["detail_reports"].append({"analysis_unit_id":unit_id,"path":path.name}); detail_artifacts.append(path)
+    detail_links="".join(f"<li><a href='{html_lib.escape(item['path'])}'>{html_lib.escape(item['analysis_unit_id'])}</a></li>" for item in index["detail_reports"])
+    body += f"<div class='card'><h2>Analysis unit詳細Report</h2><ul>{detail_links or '<li>該当するSeries / fallback Clusterなし</li>'}</ul></div>"
+    report=output/"standard_summary.html"; report.write_text(html_page("CONDUCTOR standard report",body),encoding="utf-8"); primary=output/"standard_report_index.json"; write_json(primary,index); finish(request,output,cap,primary=primary,summary=index,report=report,extra_artifacts=[histogram,series_map,*contact_sheets,*detail_artifacts])
+
+
+def main() -> int:
+    request, output, capability = parse_request(); cid = capability["capability_id"]
+    dispatch = {"A001":run_a001,"A002":run_a002,"C012":run_c012,"A003":run_a003,"A004":run_a004,"A005":run_a005,"A006":run_a006,"A007":run_a007,"A009":run_a009}
+    if cid not in dispatch: raise ValueError(f"Unsupported batch capability: {cid}")
+    dispatch[cid](request, output, capability)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

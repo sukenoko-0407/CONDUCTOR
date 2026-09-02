@@ -88,6 +88,8 @@ def validate_json(value: dict[str, Any], schema_name: str) -> None:
     except ImportError as exc:
         raise RuntimeError("jsonschema is required in CONDUCTOR mode") from exc
     schema = json.loads((SKILL_DIR / "schemas" / schema_name).read_text(encoding="utf-8"))
+    schema.pop("$schema", None)
+    schema.pop("$id", None)
     jsonschema.validate(value, schema)
 
 
@@ -195,9 +197,16 @@ def load_input(args: argparse.Namespace) -> tuple[pd.DataFrame, str, str]:
     paths = [Path(value) for value in args.input] if isinstance(args.input, list) else [Path(args.input)]
     frames = []
     for path in paths:
-        header = pd.read_csv(path, nrows=0)
-        candidate_id = args.id_column or infer_named(list(header.columns), "id")
-        frames.append(pd.read_csv(path, dtype={candidate_id: "string"} if candidate_id else None))
+        if path.suffix.lower() == ".parquet":
+            frame = pd.read_parquet(path)
+            candidate_id = args.id_column or infer_named(list(frame.columns), "id")
+            if candidate_id and candidate_id in frame.columns:
+                frame[candidate_id] = frame[candidate_id].astype("string")
+        else:
+            header = pd.read_csv(path, nrows=0)
+            candidate_id = args.id_column or infer_named(list(header.columns), "id")
+            frame = pd.read_csv(path, dtype={candidate_id: "string"} if candidate_id else None)
+        frames.append(frame)
     df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
     source_name = paths[0].stem if len(paths) == 1 else "multiple_memberships"
     digest = value_hash([{"path": str(path.resolve()), "sha256": file_hash(path)} for path in paths])
@@ -507,7 +516,8 @@ def vector_distances(df: pd.DataFrame, args: argparse.Namespace) -> tuple[list[i
     if not features:
         raise ValueError("No numeric feature columns were found")
     raw_feature_count = len(features)
-    valid_mask = df[features].notna().any(axis=1)
+    numeric_values = df[features].replace([np.inf, -np.inf], np.nan)
+    valid_mask = numeric_values.notna().any(axis=1)
     if "mol_parse_ok" in df.columns:
         parse_ok = df["mol_parse_ok"].map(lambda value: str(value).strip().lower() in {"true", "1", "yes"})
         valid_mask &= parse_ok
@@ -521,7 +531,10 @@ def vector_distances(df: pd.DataFrame, args: argparse.Namespace) -> tuple[list[i
     features = [column for column in features if column not in all_missing]
     if not features:
         raise ValueError("No usable numeric feature columns were found")
-    values = df.iloc[positions][features]
+    # Bind the matrix to the post-filter feature list explicitly.  Relying on
+    # SimpleImputer to drop all-missing columns differs across sklearn versions
+    # and can desynchronise matrix columns from `features`.
+    values = numeric_values.iloc[positions][features]
     if contract.get("row_count") is not None and int(contract["row_count"]) != len(df):
         raise ValueError("Description Result row_count does not match the vector payload")
     if declared_features and int(contract["feature_count"]) != len(declared_features):
@@ -1107,14 +1120,14 @@ def run() -> int:
         "cluster_count": len(registry),
         "membership_count": int((membership["membership_value"] > 0).sum()),
         "unassigned_count": int((membership["membership_value"] <= 0).sum()),
-        "coverage": float((membership["membership_value"] > 0).sum() / len(membership)) if len(membership) else 0.0,
+        "coverage": float(len(assigned_ids) / len(input_ids)) if input_ids else 0.0,
         "largest_cluster_ratio": float((details.get("selected_statistics") or {}).get("largest_cluster_ratio") or 0.0),
         "unassigned_breakdown": json.dumps(dict(sorted(unassigned_breakdown.items())), ensure_ascii=False, sort_keys=True),
     }
     pd.DataFrame([diagnostic_row]).to_csv(diagnostics_path, index=False)
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     input_label = ";".join(args.input) if isinstance(args.input, list) else (args.input or "inline_smiles")
-    manifest = {"schema_version": "2.0.0", "conductor_version": "0.1.8", "artifact_stage": "clustering", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "value_semantics": "cluster_membership", "natural_metric": details.get("metric"), "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "unassigned_breakdown": dict(sorted(unassigned_breakdown.items())), "selection_status": details.get("selection_status", "selected"), "quality_flags": details.get("quality_flags") or [], "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name, diagnostics_path.name], "created_at": utc_now()}
+    manifest = {"schema_version": "2.0.0", "conductor_version": "0.1.9", "artifact_stage": "clustering", "run_id": run_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "clustering_id": CAPABILITY["clustering_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"], "input": input_label, "input_hash": input_hash, "value_semantics": "cluster_membership", "natural_metric": details.get("metric"), "cluster_count": len(registry), "membership_count": int((membership["membership_value"] > 0).sum()), "unassigned_count": int((membership["membership_value"] <= 0).sum()), "unassigned_breakdown": dict(sorted(unassigned_breakdown.items())), "selection_status": details.get("selection_status", "selected"), "quality_flags": details.get("quality_flags") or [], "details": details, "warnings": warnings, "outputs": [membership_path.name, summary_path.name, diagnostics_path.name], "created_at": utc_now()}
     if args.conductor:
         if vector_profile is not None:
             write_json(outdir / "distance_profile.json", vector_profile)
@@ -1124,7 +1137,7 @@ def run() -> int:
         write_json(outdir / "warnings.json", {"warnings": warnings})
     if args.conductor:
         write_json(outdir / "cluster_registry.json", registry)
-        artifacts = [{"type": "cluster_membership", "path": membership_path.name, "sha256": file_hash(membership_path)}, {"type": "clustering_diagnostics", "path": diagnostics_path.name, "sha256": file_hash(diagnostics_path)}, {"type": "cluster_registry", "path": "cluster_registry.json", "sha256": file_hash(outdir / "cluster_registry.json")}, {"type": "manifest", "path": "clustering_manifest.json", "sha256": file_hash(outdir / "clustering_manifest.json")}]
+        artifacts = [{"type": "cluster_membership", "path": membership_path.name, "sha256": file_hash(membership_path)}, {"type": "cluster_summary", "path": summary_path.name, "sha256": file_hash(summary_path)}, {"type": "clustering_diagnostics", "path": diagnostics_path.name, "sha256": file_hash(diagnostics_path)}, {"type": "cluster_registry", "path": "cluster_registry.json", "sha256": file_hash(outdir / "cluster_registry.json")}, {"type": "manifest", "path": "clustering_manifest.json", "sha256": file_hash(outdir / "clustering_manifest.json")}]
         if vector_profile is not None:
             artifacts.append({"type": "distance_profile", "path": "distance_profile.json", "sha256": file_hash(outdir / "distance_profile.json")})
         event = {"schema_version": "2.0.0", "project": args.project, "run_id": run_id, "round_id": args.round_id, "node_id": args.node_id, "attempt_id": args.attempt_id, "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "status": "succeeded", "input_hash": input_hash, "config_hash": value_hash(config), "configuration": config, "artifacts": artifacts, "warnings": warnings, "started_at": started_at, "finished_at": utc_now()}

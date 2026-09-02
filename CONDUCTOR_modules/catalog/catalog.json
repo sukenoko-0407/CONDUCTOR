@@ -1,22 +1,20 @@
 {
-  "schema_version": "2.0.0",
-  "conductor_version": "0.1.8",
-  "profile_id": "balanced-global-first-0.1.8",
-  "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json",
-  "profile_hash": "8e1a4799e0dbba727217f6e79eea6d7e1ddf7b90b243e870514674a538277aca",
-  "selection_managed_by": "human",
-  "selection_path": "CONDUCTOR_modules/catalog/included_skills.json",
-  "generated_at": "2026-08-28T12:38:50.716593+00:00",
+  "schema_version": "1.0.0",
+  "conductor_version": "0.1.9",
+  "profile_id": "enrichment-series-0.1.9",
+  "profile_hash": "f237782c1e4516513bb65ffc2088f550bcc5ea4bfbcc022d28034791c653f211",
+  "selection_hash": "c38dcaba02f0b1c832ddcad3638b125d6dcb9caee82827d32f9fc5d00ac5619e",
+  "generated_at": "2026-09-02T02:18:53.278575+00:00",
   "capabilities": [
     {
       "schema_version": "2.0.0",
       "capability_id": "A001",
-      "skill_name": "cs-analysis-activity-distribution",
-      "display_name": "Activity distribution",
-      "version": "0.1.8",
+      "skill_name": "cs-analysis-cluster-profile",
+      "display_name": "All-Cluster profile survey",
+      "version": "0.1.9",
       "stage": "analysis",
-      "family": "property_profile",
-      "description": "Use when Claude Code needs to run Activity distribution from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "cluster_survey",
+      "description": "全ClusterのEndpoint分布とFavorable Fractionを一括計算する。",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -27,94 +25,56 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "operator_id": "A001",
-      "dependencies": [],
+      "dependencies": [
+        "clustering"
+      ],
       "input_contract": [
-        "endpoint_csv"
+        "endpoint_csv",
+        "cluster_membership_matrix",
+        "cluster_registry"
       ],
       "output": {
-        "filename": "A001_activity_distribution.csv",
+        "filename": "A001_cluster_profile.csv",
         "report": "operator_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
       "implementation": {
-        "operator": "activity_distribution"
+        "operator": "cluster_profile"
       },
-      "analysis_role": "activity_distribution",
+      "analysis_role": "basic_cluster_profile_survey",
       "scope_support": [
-        "global",
-        "within-cluster"
+        "all-clusters"
       ],
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A001-2.0.0",
-        "result_role": "activity_signal",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "endpoint_median",
-            "source": "global_median",
-            "unit": "endpoint",
-            "direction": "favorable",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": "endpoint_median",
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "supporting_only",
-        "minimum_support": {
-          "global": 5,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "favorable_evidence": [
-            "方向情報なし",
-            "小さく不安定な移動",
-            "限定scopeで明確な移動",
-            "方向と大きさが一貫した移動"
-          ],
-          "context_contrast": [
-            "Globalとの差なし",
-            "軽度の差",
-            "Globalまたはsiblingとの差が明確",
-            "分布解釈を変える反転または局在"
-          ],
-          "evidence_specificity": [
-            "対象不明",
-            "全体分布のみ",
-            "特定scopeまたは分布成分",
-            "特定Clusterと分布変化が明確"
-          ]
-        }
+      "default_parameters": {
+        "high_quantile": 0.8,
+        "low_quantile": 0.2,
+        "min_ff_evaluate": 10,
+        "favorable_fraction_threshold": 0.5
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "standard_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "dataset"
+          "dataset",
+          "clustering",
+          "cluster_registry"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
       "schema_version": "2.0.0",
       "capability_id": "A002",
-      "skill_name": "cs-analysis-descriptor-activity-correlation",
-      "display_name": "Descriptor-activity correlation",
-      "version": "0.1.8",
+      "skill_name": "cs-analysis-cluster-enrichment",
+      "display_name": "All-Cluster enrichment survey",
+      "version": "0.1.9",
       "stage": "analysis",
-      "family": "interpretable_association",
-      "description": "Use when Claude Code needs to run Descriptor-activity correlation from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "cluster_survey",
+      "description": "全ClusterのFavorable enrichmentと単純な多重比較補正を一括計算する。",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -125,113 +85,58 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "operator_id": "A002",
       "dependencies": [
-        "description"
+        "clustering"
       ],
       "input_contract": [
         "endpoint_csv",
-        "description"
+        "cluster_membership_matrix",
+        "cluster_registry"
       ],
       "output": {
-        "filename": "A002_descriptor_activity_correlation.csv",
+        "filename": "A002_cluster_enrichment.csv",
         "report": "operator_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
       "implementation": {
-        "operator": "descriptor_activity_correlation"
+        "operator": "cluster_enrichment"
       },
-      "analysis_role": "descriptor_activity_correlation",
+      "analysis_role": "basic_cluster_enrichment_survey",
       "scope_support": [
-        "global",
-        "within-cluster"
+        "all-clusters"
       ],
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A002-2.0.0",
-        "result_role": "activity_signal",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "strongest_association",
-            "source": "max_abs_association",
-            "unit": null,
-            "direction": "absolute",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "signed_association",
-            "source": "top_signed_association",
-            "unit": null,
-            "direction": "favorable",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "association_pvalue",
-            "source": "top_association_pvalue",
-            "unit": null,
-            "direction": "lower",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": "signed_association",
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "conditional",
-        "minimum_support": {
-          "global": 10,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "favorable_evidence": [
-            "方向情報なし",
-            "弱い単変量傾向",
-            "限定scopeで明確な方向",
-            "方向が明確で反証にも耐える"
-          ],
-          "context_contrast": [
-            "差なし",
-            "係数の軽度変化",
-            "GlobalとLocalで明確な変化",
-            "方向反転または局所化"
-          ],
-          "evidence_specificity": [
-            "feature不明",
-            "広い物性",
-            "特定featureに接続",
-            "特定featureと対応する構造要素が明確"
-          ]
-        }
+      "default_parameters": {
+        "high_quantile": 0.8,
+        "low_quantile": 0.2,
+        "min_ff_evaluate": 10,
+        "favorable_fraction_threshold": 0.5
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "standard_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "dataset"
+          "dataset",
+          "clustering",
+          "cluster_registry"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
       "schema_version": "2.0.0",
       "capability_id": "A003",
-      "skill_name": "cs-analysis-projection-pca",
-      "display_name": "PCA projection",
-      "version": "0.1.8",
+      "skill_name": "cs-analysis-series-descriptor-contrast",
+      "display_name": "Series descriptor contrast",
+      "version": "0.1.9",
       "stage": "analysis",
-      "family": "projection",
-      "description": "Use when Claude Code needs to run PCA projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "series_contrast",
+      "description": "D001についてGlobal、Series、non-Seriesの相関とrobust shiftを一括比較する。",
       "cost": {
-        "class": "medium",
+        "class": "low",
         "human_approval_required": false,
         "hpc_profile": "cpu64"
       },
@@ -240,98 +145,53 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "operator_id": "A003",
       "dependencies": [
-        "description"
+        "description",
+        "series"
       ],
       "input_contract": [
         "endpoint_csv",
-        "description_vector_payload",
-        "canonical_description_result_in_conductor",
-        "explicit_semantics_metric_in_general",
-        "optional_clustering",
-        "optional_projection"
+        "D001",
+        "analysis_unit_membership"
       ],
       "output": {
-        "filename": "A003_projection_pca.csv",
+        "filename": "A003_series_descriptor_contrast.csv",
         "report": "operator_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
       "implementation": {
-        "operator": "projection_pca"
+        "operator": "series_descriptor_contrast"
       },
-      "analysis_role": "projection_pca",
-      "scope_support": [
-        "projection-fit",
-        "cluster-overlay"
-      ],
       "default_parameters": {
-        "role": "projection-fit",
-        "random_seed": 61453
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A003-2.0.0",
-        "result_role": "context",
-        "allowed_axes": [
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "explained_variance_first_two",
-            "source": "explained_variance_first_two",
-            "unit": "fraction",
-            "direction": "higher",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "optional",
-        "sibling_comparison": "supported",
-        "standalone_insight": "supporting_only",
-        "minimum_support": {
-          "global": 5,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "context_contrast": [
-            "局在差なし",
-            "軽度の局在",
-            "Cluster局在が明確",
-            "Global解釈を変える分離・反転"
-          ],
-          "evidence_specificity": [
-            "投影全体のみ",
-            "広い領域",
-            "特定Clusterまたは領域",
-            "特定Clusterと分離方向が明確"
-          ]
-        }
+        "correlation_threshold": 0.4,
+        "correlation_gain_threshold": 0.2,
+        "median_iqr_threshold": 0.75,
+        "q_threshold": 0.05
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "projection_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "dataset"
+          "dataset",
+          "description",
+          "analysis_unit_membership"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
       "schema_version": "2.0.0",
       "capability_id": "A004",
-      "skill_name": "cs-analysis-projection-umap",
-      "display_name": "UMAP projection",
-      "version": "0.1.8",
+      "skill_name": "cs-analysis-series-projection-panel",
+      "display_name": "Series PCA and UMAP projection panel",
+      "version": "0.1.9",
       "stage": "analysis",
-      "family": "projection",
-      "description": "Use when Claude Code needs to run UMAP projection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "series_projection",
+      "description": "Global座標上へ各Seriesを重ね、PCA／UMAP画像とcontact sheetを生成する。",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -342,140 +202,81 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "operator_id": "A004",
       "dependencies": [
-        "description"
+        "description",
+        "series"
       ],
       "input_contract": [
         "endpoint_csv",
-        "description_vector_payload",
-        "canonical_description_result_in_conductor",
-        "explicit_semantics_metric_in_general",
-        "optional_clustering",
-        "optional_projection"
+        "description",
+        "analysis_unit_membership"
       ],
       "output": {
-        "filename": "A004_projection_umap.csv",
+        "filename": "A004_projection_coordinates.csv",
         "report": "operator_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
       "implementation": {
-        "operator": "projection_umap"
+        "operator": "series_projection_panel"
       },
-      "analysis_role": "projection_umap",
-      "scope_support": [
-        "projection-fit",
-        "cluster-overlay"
-      ],
       "default_parameters": {
-        "role": "projection-fit",
-        "random_seed": 61453,
-        "n_neighbors": 15,
-        "min_dist": 0.1,
-        "stability_seeds": 3
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A004-2.0.0",
-        "result_role": "context",
-        "allowed_axes": [
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "trustworthiness",
-            "source": "trustworthiness",
-            "unit": "fraction",
-            "direction": "higher",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "optional",
-        "sibling_comparison": "supported",
-        "standalone_insight": "supporting_only",
-        "minimum_support": {
-          "global": 5,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "context_contrast": [
-            "局在差なし",
-            "軽度の局在",
-            "Cluster局在が明確",
-            "Global解釈を変える分離・反転"
-          ],
-          "evidence_specificity": [
-            "投影全体のみ",
-            "広い領域",
-            "特定Clusterまたは領域",
-            "特定Clusterと分離方向が明確"
-          ]
-        }
+        "random_seed": 61453
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "projection_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "dataset"
+          "dataset",
+          "description",
+          "analysis_unit_membership"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
       "schema_version": "2.0.0",
       "capability_id": "A005",
       "skill_name": "cs-analysis-multidescription-feature-model",
-      "display_name": "Multi-Description feature model",
-      "version": "0.1.8",
+      "display_name": "Series multi-Description feature model",
+      "version": "0.1.9",
       "stage": "analysis",
-      "family": "feature_model",
-      "description": "Use when Claude Code needs to run Multi-Description feature model from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "series_model",
+      "description": "固定6 Description panelでGlobalと全SeriesのOOFモデルを一括比較する。",
       "cost": {
         "class": "high",
         "human_approval_required": false,
         "hpc_profile": "cpu64"
       },
       "applicability": {
-        "status": "experimental",
+        "status": "stable",
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "operator_id": "A005",
       "dependencies": [
-        "description"
+        "description",
+        "series"
       ],
       "input_contract": [
         "endpoint_csv",
         "six_description_artifacts",
-        "optional_clustering",
-        "optional_global_model"
+        "analysis_unit_membership"
       ],
       "output": {
-        "filename": "A005_multidescription_feature_model.csv",
+        "filename": "A005_series_feature_model.csv",
         "report": "operator_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
       "implementation": {
-        "operator": "multidescription_feature_model"
+        "operator": "series_feature_model"
       },
-      "analysis_role": "multidescription_feature_model",
-      "scope_support": [
-        "global-model",
-        "cluster-survey",
-        "within-cluster"
-      ],
-      "approval_policy": "preauthorized_initial",
       "fixed_description_panel": [
         "D001",
         "D002",
@@ -485,91 +286,32 @@
         "D019"
       ],
       "default_parameters": {
-        "role": "global-model",
         "random_seed": 61453,
-        "min_local_samples": 30
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A005-2.0.0",
-        "result_role": "model",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "oof_rmse",
-            "source": "best_rmse",
-            "unit": "endpoint",
-            "direction": "lower",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "oof_r2",
-            "source": "best_r2",
-            "unit": null,
-            "direction": "higher",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "rmse_delta_vs_global",
-            "source": "rmse_delta_vs_global",
-            "unit": "endpoint",
-            "direction": "lower",
-            "comparison_scope": "global_local"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "conditional",
-        "minimum_support": {
-          "global": 30,
-          "local": 30
-        },
-        "null_result": "background",
-        "anchors": {
-          "favorable_evidence": [
-            "活性方向を示さない",
-            "弱いfeature方向候補",
-            "安定したfeature方向候補",
-            "具体的featureと方向が明確"
-          ],
-          "context_contrast": [
-            "性能差なし",
-            "軽度のLocal差",
-            "GlobalとLocalで性能差が明確",
-            "Localで予測可能性が質的に変化"
-          ],
-          "evidence_specificity": [
-            "feature不明",
-            "広いfeature block",
-            "少数の具体feature",
-            "少数の具体featureと構造対応が明確"
-          ]
-        }
+        "min_local_samples": 30,
+        "strict_local_oof_r2_min": 0.2,
+        "strict_r2_gain_min": 0.2,
+        "require_local_mae_not_worse": true
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "multidescription_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
           "dataset",
-          "description"
+          "description",
+          "analysis_unit_membership"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
       "schema_version": "2.0.0",
       "capability_id": "A006",
-      "skill_name": "cs-analysis-pairwise-structure-similarity",
-      "display_name": "Pairwise structure similarity",
-      "version": "0.1.8",
+      "skill_name": "cs-analysis-series-landscape",
+      "display_name": "Series SALI and Cliff landscape",
+      "version": "0.1.9",
       "stage": "analysis",
-      "family": "feature_space",
-      "description": "Use when Claude Code needs to run Pairwise structure similarity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "series_landscape",
+      "description": "D002/Tanimoto空間でGlobal、SeriesのSALIとinternal／boundary Cliffを一括評価する。",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -580,105 +322,55 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "operator_id": "A006",
-      "dependencies": [],
+      "dependencies": [
+        "description",
+        "series"
+      ],
       "input_contract": [
-        "endpoint_csv"
+        "endpoint_csv",
+        "D002",
+        "analysis_unit_membership"
       ],
       "output": {
-        "filename": "A006_pairwise_structure_similarity.csv",
+        "filename": "A006_series_landscape.csv",
+        "pair_table": "A006_cliff_pairs.csv",
         "report": "operator_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
       "implementation": {
-        "operator": "pairwise_structure_similarity"
-      },
-      "analysis_role": "pairwise_structure_similarity",
-      "scope_support": [
-        "global",
-        "within-cluster",
-        "between-clusters"
-      ],
-      "internal_representation": {
-        "kind": "morgan",
-        "radius": 2,
-        "n_bits": 2048,
-        "metric": "tanimoto"
+        "operator": "series_landscape"
       },
       "default_parameters": {
-        "max_pairs": 200000,
-        "random_seed": 61453
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A006-2.0.0",
-        "result_role": "context",
-        "allowed_axes": [
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "mean_similarity",
-            "source": "mean_similarity",
-            "unit": null,
-            "direction": "higher",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "p90_similarity",
-            "source": "p90_similarity",
-            "unit": null,
-            "direction": "higher",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "optional",
-        "sibling_comparison": "supported",
-        "standalone_insight": "supporting_only",
-        "minimum_support": {
-          "global": 5,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "context_contrast": [
-            "構造context差なし",
-            "軽度の差",
-            "Globalまたはsiblingとの差が明確",
-            "比較成立性を変える大きな差"
-          ],
-          "evidence_specificity": [
-            "構造要素不明",
-            "広い類似性",
-            "限定seriesに接続",
-            "具体的coreまたは近傍に接続"
-          ]
-        }
+        "metric": "tanimoto",
+        "similarity_threshold": 0.8,
+        "endpoint_delta_threshold": "1.0_global_iqr",
+        "minimum_support_pairs": 3,
+        "direction_fraction_threshold": 0.8
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "standard_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "dataset"
+          "dataset",
+          "description",
+          "analysis_unit_membership"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
       "schema_version": "2.0.0",
       "capability_id": "A007",
-      "skill_name": "cs-analysis-knn-activity-consistency",
-      "display_name": "kNN activity consistency",
-      "version": "0.1.8",
+      "skill_name": "cs-analysis-series-structural-signature",
+      "display_name": "Series structural signature",
+      "version": "0.1.9",
       "stage": "analysis",
-      "family": "feature_space",
-      "description": "Use when Claude Code needs to run kNN activity consistency from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "series_structure",
+      "description": "構造由来Cluster provenanceを優先し、必要なSeriesだけMurcko／MCS fallbackを行う。",
       "cost": {
         "class": "medium",
         "human_approval_required": false,
@@ -689,812 +381,75 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "operator_id": "A007",
       "dependencies": [
-        "description"
+        "series",
+        "clustering"
       ],
       "input_contract": [
         "endpoint_csv",
-        "description"
+        "cluster_registry",
+        "series_registry",
+        "analysis_unit_membership"
       ],
       "output": {
-        "filename": "A007_knn_activity_consistency.csv",
+        "filename": "A007_series_structural_signature.csv",
         "report": "operator_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
       "implementation": {
-        "operator": "knn_activity_consistency"
+        "operator": "series_structural_signature"
       },
-      "analysis_role": "knn_activity_consistency",
-      "scope_support": [
-        "global",
-        "within-cluster",
-        "between-clusters"
-      ],
       "default_parameters": {
-        "k": 10
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A007-2.0.0",
-        "result_role": "landscape",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "neighbor_activity_consistency",
-            "source": "neighbor_property_spearman",
-            "unit": null,
-            "direction": "higher",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "median_neighbor_activity_delta",
-            "source": "median_abs_delta_property",
-            "unit": "endpoint",
-            "direction": "lower",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "conditional",
-        "minimum_support": {
-          "global": 10,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "favorable_evidence": [
-            "方向情報なし",
-            "局所的な弱い傾向",
-            "近傍内で明確な方向候補",
-            "具体的な近傍と方向が明確"
-          ],
-          "context_contrast": [
-            "整合性差なし",
-            "軽度の差",
-            "GlobalとLocalで明確な差",
-            "局所で平滑性または不整合が反転"
-          ],
-          "evidence_specificity": [
-            "近傍不明",
-            "広い領域",
-            "特定近傍に接続",
-            "具体的な化合物対・構造変化へ接続"
-          ]
-        }
+        "mcs_timeout_seconds": 60
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "standard_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "dataset"
+          "dataset",
+          "cluster_registry",
+          "series_registry",
+          "analysis_unit_membership"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
       "schema_version": "2.0.0",
       "capability_id": "A008",
-      "skill_name": "cs-analysis-sali",
-      "display_name": "Extended structure-activity landscape index",
-      "version": "0.1.8",
-      "stage": "analysis",
-      "family": "landscape",
-      "description": "Use when Claude Code needs to evaluate local property-landscape roughness and smoothness with representation-aware SALI and preserve high-SALI cliff pairs for CONDUCTOR Interpretation.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "operator_id": "A008",
-      "dependencies": [
-        "description"
-      ],
-      "input_contract": [
-        "endpoint_csv",
-        "description"
-      ],
-      "output": {
-        "filename": "A008_sali.csv",
-        "report": "operator_report.html",
-        "summary": "operator_summary.json",
-        "manifest": "analysis_manifest.json"
-      },
-      "implementation": {
-        "operator": "sali"
-      },
-      "analysis_role": "sali",
-      "scope_support": [
-        "global",
-        "within-cluster",
-        "between-clusters"
-      ],
-      "default_parameters": {
-        "k": 10
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A008-2.0.0",
-        "result_role": "landscape",
-        "allowed_axes": [
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "median_sali",
-            "source": "median_sali",
-            "unit": "endpoint_per_distance",
-            "direction": "lower",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "p95_sali",
-            "source": "p95_sali",
-            "unit": "endpoint_per_distance",
-            "direction": "lower",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "near_zero_distance_edges",
-            "source": "near_zero_distance_edge_count",
-            "unit": "count",
-            "direction": "lower",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "conditional",
-        "minimum_support": {
-          "global": 10,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "context_contrast": [
-            "地形差なし",
-            "軽度の差",
-            "GlobalとLocalで平滑性が明確に変化",
-            "Cliff性の反転・局在・消失"
-          ],
-          "evidence_specificity": [
-            "該当対不明",
-            "広い領域",
-            "特定の化合物対",
-            "具体的構造差に接続"
-          ]
-        }
-      },
-      "conductor_request": {
-        "schema_version": "1.0.0",
-        "adapter": "standard_operator",
-        "required_input_roles": [
-          "dataset"
-        ],
-        "unknown_parameters": "reject_by_skill_cli"
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "A009",
-      "skill_name": "cs-analysis-activity-cliff",
-      "display_name": "Activity cliff detection",
-      "version": "0.1.8",
-      "stage": "analysis",
-      "family": "landscape",
-      "description": "Use when Claude Code needs to run Activity cliff detection from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "operator_id": "A009",
-      "dependencies": [],
-      "input_contract": [
-        "endpoint_csv"
-      ],
-      "output": {
-        "filename": "A009_activity_cliff.csv",
-        "report": "operator_report.html",
-        "summary": "operator_summary.json",
-        "manifest": "analysis_manifest.json"
-      },
-      "implementation": {
-        "operator": "activity_cliff"
-      },
-      "analysis_role": "activity_cliff",
-      "scope_support": [
-        "global",
-        "within-cluster",
-        "between-clusters"
-      ],
-      "internal_representation": {
-        "kind": "morgan",
-        "radius": 2,
-        "n_bits": 2048,
-        "metric": "tanimoto"
-      },
-      "default_parameters": {
-        "similarity_threshold": 0.8,
-        "activity_delta_threshold": 1.0,
-        "max_pairs": 200000,
-        "random_seed": 61453
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A009-2.0.0",
-        "result_role": "activity_signal",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "cliff_density",
-            "source": "cliff_density",
-            "unit": "fraction",
-            "direction": "higher",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "cliff_count",
-            "source": "cliff_count",
-            "unit": "count",
-            "direction": "higher",
-            "comparison_scope": "all"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "conditional",
-        "minimum_support": {
-          "global": 10,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "favorable_evidence": [
-            "方向づけ不能",
-            "単一Cliff対",
-            "複数対で方向候補",
-            "一貫した構造変換方向"
-          ],
-          "context_contrast": [
-            "Cliff差なし",
-            "軽度の密度差",
-            "GlobalとLocalで明確な差",
-            "Cliffの局在または消失"
-          ],
-          "evidence_specificity": [
-            "構造差不明",
-            "広い差",
-            "特定置換に接続",
-            "再現した方向付き変換に接続"
-          ]
-        }
-      },
-      "conductor_request": {
-        "schema_version": "1.0.0",
-        "adapter": "standard_operator",
-        "required_input_roles": [
-          "dataset"
-        ],
-        "unknown_parameters": "reject_by_skill_cli"
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "A010",
-      "skill_name": "cs-analysis-cluster-profile",
-      "display_name": "Cluster profile",
-      "version": "0.1.8",
-      "stage": "analysis",
-      "family": "cluster_profile",
-      "description": "Use when Claude Code needs to run Cluster profile from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "low",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "operator_id": "A010",
-      "dependencies": [
-        "clustering"
-      ],
-      "input_contract": [
-        "endpoint_csv",
-        "clustering"
-      ],
-      "output": {
-        "filename": "A010_cluster_profile.csv",
-        "report": "operator_report.html",
-        "summary": "operator_summary.json",
-        "manifest": "analysis_manifest.json"
-      },
-      "implementation": {
-        "operator": "cluster_profile"
-      },
-      "analysis_role": "cluster_profile",
-      "scope_support": [
-        "global",
-        "within-cluster"
-      ],
-      "default_parameters": {
-        "high_quantile": 0.8,
-        "low_quantile": 0.2
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A010-2.0.0",
-        "result_role": "activity_signal",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "favorable_fraction",
-            "source": "selected_favorable_fraction|global_favorable_fraction",
-            "unit": "fraction",
-            "direction": "higher",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "endpoint_median",
-            "source": "selected_property_median",
-            "unit": "endpoint",
-            "direction": "favorable",
-            "comparison_scope": "global_local"
-          },
-          {
-            "name": "endpoint_iqr",
-            "source": "selected_property_iqr",
-            "unit": "endpoint",
-            "direction": "neutral",
-            "comparison_scope": "global_local"
-          }
-        ],
-        "primary_favorable_metric": "favorable_fraction",
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "conditional",
-        "minimum_support": {
-          "global": 10,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "favorable_evidence": [
-            "favorable濃縮なし",
-            "弱い濃縮",
-            "Localで明確な濃縮",
-            "強く一貫した濃縮"
-          ],
-          "context_contrast": [
-            "分布差なし",
-            "軽度の差",
-            "GlobalとLocalで明確な差",
-            "中央値・濃縮・分散が質的に変化"
-          ],
-          "evidence_specificity": [
-            "Cluster由来不明",
-            "広いCluster特性",
-            "特定Clusterに接続",
-            "解釈可能な構造seriesに接続"
-          ]
-        }
-      },
-      "conductor_request": {
-        "schema_version": "1.0.0",
-        "adapter": "standard_operator",
-        "required_input_roles": [
-          "dataset"
-        ],
-        "unknown_parameters": "reject_by_skill_cli"
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "A011",
-      "skill_name": "cs-analysis-cluster-enrichment",
-      "display_name": "Cluster activity enrichment",
-      "version": "0.1.8",
-      "stage": "analysis",
-      "family": "cluster_profile",
-      "description": "Use when Claude Code needs to run Cluster activity enrichment from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "low",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "operator_id": "A011",
-      "dependencies": [
-        "clustering"
-      ],
-      "input_contract": [
-        "endpoint_csv",
-        "clustering"
-      ],
-      "output": {
-        "filename": "A011_cluster_enrichment.csv",
-        "report": "operator_report.html",
-        "summary": "operator_summary.json",
-        "manifest": "analysis_manifest.json"
-      },
-      "implementation": {
-        "operator": "cluster_enrichment"
-      },
-      "analysis_role": "cluster_enrichment",
-      "scope_support": [
-        "global",
-        "within-cluster"
-      ],
-      "default_parameters": {
-        "high_quantile": 0.8,
-        "low_quantile": 0.2
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A011-2.0.0",
-        "result_role": "activity_signal",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "favorable_fraction",
-            "source": "selected_favorable_fraction|global_favorable_fraction",
-            "unit": "fraction",
-            "direction": "higher",
-            "comparison_scope": "all"
-          },
-          {
-            "name": "odds_ratio",
-            "source": "selected_odds_ratio",
-            "unit": null,
-            "direction": "higher",
-            "comparison_scope": "global_local"
-          },
-          {
-            "name": "fisher_pvalue",
-            "source": "selected_fisher_pvalue",
-            "unit": null,
-            "direction": "lower",
-            "comparison_scope": "global_local"
-          },
-          {
-            "name": "median_shift_vs_global",
-            "source": "selected_median_shift_vs_global",
-            "unit": "endpoint",
-            "direction": "favorable",
-            "comparison_scope": "global_local"
-          }
-        ],
-        "primary_favorable_metric": "favorable_fraction",
-        "global_comparator": "required_for_local",
-        "sibling_comparison": "supported",
-        "standalone_insight": "conditional",
-        "minimum_support": {
-          "global": 10,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "favorable_evidence": [
-            "濃縮なし",
-            "弱い濃縮",
-            "統計と効果が限定scopeで明確",
-            "強く一貫した濃縮"
-          ],
-          "context_contrast": [
-            "Globalとの差なし",
-            "軽度の差",
-            "明確なLocal濃縮",
-            "兄弟Clusterと反対方向の局在"
-          ],
-          "evidence_specificity": [
-            "Cluster由来不明",
-            "広いCluster特性",
-            "特定seriesに接続",
-            "具体的な構造要素へ接続"
-          ]
-        }
-      },
-      "conductor_request": {
-        "schema_version": "1.0.0",
-        "adapter": "standard_operator",
-        "required_input_roles": [
-          "dataset"
-        ],
-        "unknown_parameters": "reject_by_skill_cli"
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "A012",
-      "skill_name": "cs-analysis-cluster-overlap",
-      "display_name": "Cluster overlap",
-      "version": "0.1.8",
-      "stage": "analysis",
-      "family": "cluster_quality",
-      "description": "Use when Claude Code needs to run Cluster overlap from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "low",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "operator_id": "A012",
-      "dependencies": [
-        "clustering"
-      ],
-      "input_contract": [
-        "endpoint_csv",
-        "clustering"
-      ],
-      "output": {
-        "filename": "A012_cluster_overlap.csv",
-        "report": "operator_report.html",
-        "summary": "operator_summary.json",
-        "manifest": "analysis_manifest.json"
-      },
-      "implementation": {
-        "operator": "cluster_overlap"
-      },
-      "analysis_role": "cluster_overlap",
-      "scope_support": [
-        "global"
-      ],
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A012-2.0.0",
-        "result_role": "quality",
-        "allowed_axes": [
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "maximum_cluster_overlap",
-            "source": "max_jaccard",
-            "unit": "jaccard",
-            "direction": "lower",
-            "comparison_scope": "sibling"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "not_applicable",
-        "sibling_comparison": "required",
-        "standalone_insight": "supporting_only",
-        "minimum_support": {
-          "global": 5,
-          "local": 5
-        },
-        "null_result": "supporting",
-        "anchors": {
-          "context_contrast": [
-            "比較差なし",
-            "軽度の重複差",
-            "解釈に影響する重複",
-            "独立性判断を反転させる重複"
-          ],
-          "evidence_specificity": [
-            "対象不明",
-            "全体重複のみ",
-            "特定Cluster対",
-            "特定Cluster対と重複化合物が明確"
-          ]
-        }
-      },
-      "conductor_request": {
-        "schema_version": "1.0.0",
-        "adapter": "standard_operator",
-        "required_input_roles": [
-          "dataset"
-        ],
-        "unknown_parameters": "reject_by_skill_cli"
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "A013",
-      "skill_name": "cs-analysis-cluster-structural-diversity",
-      "display_name": "Cluster structural diversity",
-      "version": "0.1.8",
-      "stage": "analysis",
-      "family": "cluster_quality",
-      "description": "Use when Claude Code needs to run Cluster structural diversity from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "operator_id": "A013",
-      "dependencies": [
-        "clustering"
-      ],
-      "input_contract": [
-        "endpoint_csv",
-        "clustering"
-      ],
-      "output": {
-        "filename": "A013_cluster_structural_diversity.csv",
-        "report": "operator_report.html",
-        "summary": "operator_summary.json",
-        "manifest": "analysis_manifest.json"
-      },
-      "implementation": {
-        "operator": "cluster_structural_diversity"
-      },
-      "analysis_role": "cluster_structural_diversity",
-      "scope_support": [
-        "global",
-        "within-cluster"
-      ],
-      "internal_representation": {
-        "kind": "morgan",
-        "radius": 2,
-        "n_bits": 2048,
-        "metric": "tanimoto"
-      },
-      "default_parameters": {
-        "max_pairs": 200000,
-        "random_seed": 61453
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A013-2.0.0",
-        "result_role": "context",
-        "allowed_axes": [
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "mean_tanimoto",
-            "source": "selected_mean_tanimoto",
-            "unit": null,
-            "direction": "higher",
-            "comparison_scope": "sibling"
-          },
-          {
-            "name": "structural_diversity",
-            "source": "selected_structural_diversity_score",
-            "unit": null,
-            "direction": "neutral",
-            "comparison_scope": "sibling"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "not_applicable",
-        "sibling_comparison": "supported",
-        "standalone_insight": "supporting_only",
-        "minimum_support": {
-          "global": 5,
-          "local": 5
-        },
-        "null_result": "background",
-        "anchors": {
-          "context_contrast": [
-            "多様性差なし",
-            "軽度の差",
-            "兄弟Clusterで明確な差",
-            "解釈可能性を質的に変える差"
-          ],
-          "evidence_specificity": [
-            "構造series不明",
-            "広い構造群",
-            "まとまったseries",
-            "具体的core・seriesへ接続"
-          ]
-        }
-      },
-      "conductor_request": {
-        "schema_version": "1.0.0",
-        "adapter": "standard_operator",
-        "required_input_roles": [
-          "dataset"
-        ],
-        "unknown_parameters": "reject_by_skill_cli"
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "A014",
       "skill_name": "cs-analysis-matched-molecular-pairs",
-      "display_name": "Matched molecular pair analysis",
-      "version": "0.1.8",
+      "display_name": "Human-centered matched molecular pair analysis",
+      "version": "0.1.9",
       "stage": "analysis",
       "family": "matched_molecular_pairs",
-      "description": "Build and query a reusable exhaustive matched molecular pair evidence database with exact-core and environment-aware Global-to-Cluster comparisons.",
+      "description": "1-cut MMPをType-I top compound、Type-II Hit-to-Lead、Type-III databaseとして提供する。",
       "cost": {
         "class": "high",
         "human_approval_required": false,
         "hpc_profile": "cpu64"
       },
-      "approval_policy": "preauthorized_initial",
       "applicability": {
         "status": "stable",
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
-      "operator_id": "A014",
+      "operator_id": "A008",
       "dependencies": [],
       "input_contract": [
         "endpoint_csv",
         "smiles",
-        "optional_cluster_membership",
-        "optional_global_mmp_database"
+        "optional_analysis_unit_membership",
+        "optional_explicit_database"
       ],
       "output": {
-        "filename": "mmp_pair_detail.csv",
-        "report": "operator_report.html",
+        "filename": "mmp_target_pairs.csv",
+        "report": "mmp_report.html",
         "summary": "operator_summary.json",
         "manifest": "analysis_manifest.json"
       },
@@ -1503,89 +458,81 @@
         "engine": "mmpdb",
         "engine_version": "3.1.4"
       },
-      "analysis_role": "matched_molecular_pairs",
       "roles": [
-        "global-build",
-        "local-screen",
-        "local-detail"
-      ],
-      "scope_support": [
-        "global",
-        "cluster-survey",
-        "within-cluster"
+        "type-i",
+        "type-ii",
+        "type-iii"
       ],
       "default_parameters": {
-        "num_cuts": 2,
-        "min_core_heavy_atoms": 8,
-        "min_core_fraction": 0.5,
-        "max_variable_heavy_atoms": 10,
-        "min_radius": 0,
-        "max_radius": 2,
-        "extended_search": false,
+        "cuts": 1,
+        "radius_min": 0,
+        "radius_max": 2,
+        "top_k": 5,
+        "near_core_tanimoto": 0.7,
+        "near_core_mcs_coverage": 0.6,
         "max_compounds": 2000
-      },
-      "interpretation_profile": {
-        "schema_version": "2.0.0",
-        "profile_id": "IP-A014-2.0.0",
-        "result_role": "specialized",
-        "allowed_axes": [
-          "favorable_evidence",
-          "context_contrast",
-          "evidence_specificity"
-        ],
-        "comparison_metrics": [
-          {
-            "name": "pair_count",
-            "source": "pair_count",
-            "unit": "count",
-            "direction": "higher",
-            "comparison_scope": "global"
-          },
-          {
-            "name": "transform_count",
-            "source": "transform_count",
-            "unit": "count",
-            "direction": "higher",
-            "comparison_scope": "global"
-          }
-        ],
-        "primary_favorable_metric": null,
-        "global_comparator": "not_applicable",
-        "sibling_comparison": "not_applicable",
-        "standalone_insight": "specialized_only",
-        "minimum_support": {
-          "global": 5,
-          "local": 5
-        },
-        "null_result": "not_scorable",
-        "anchors": {
-          "favorable_evidence": [
-            "方向情報なし",
-            "低支持のTransform",
-            "限定contextで明確",
-            "複数coreで一貫した方向"
-          ],
-          "context_contrast": [
-            "context差なし",
-            "軽度の差",
-            "GlobalとClusterで明確な差",
-            "Transform効果の反転・局在"
-          ],
-          "evidence_specificity": [
-            "変換不明",
-            "広い変換",
-            "特定Transform/Core",
-            "方向付きTransformと適用contextが明確"
-          ]
-        }
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "mmp_operator",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "dataset_or_mmp_database"
+          "dataset"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
+      }
+    },
+    {
+      "schema_version": "2.0.0",
+      "capability_id": "A009",
+      "skill_name": "cs-analysis-series-report",
+      "display_name": "CONDUCTOR standard Series report",
+      "version": "0.1.9",
+      "stage": "analysis",
+      "family": "series_reporting",
+      "description": "Enriched Cluster一覧、Endpoint概要、Series map、Series詳細を決定論的HTMLへ描画する。",
+      "cost": {
+        "class": "low",
+        "human_approval_required": false,
+        "hpc_profile": "cpu64"
+      },
+      "applicability": {
+        "status": "stable",
+        "platforms": [
+          "linux-64",
+          "win-64"
+        ]
+      },
+      "operator_id": "A009",
+      "dependencies": [
+        "analysis",
+        "series"
+      ],
+      "input_contract": [
+        "dataset",
+        "cluster_profile",
+        "cluster_enrichment",
+        "series_registry",
+        "optional_standard_operator_results"
+      ],
+      "output": {
+        "filename": "standard_report_index.json",
+        "report": "standard_summary.html",
+        "summary": "operator_summary.json",
+        "manifest": "analysis_manifest.json"
+      },
+      "implementation": {
+        "operator": "standard_series_report"
+      },
+      "conductor_request": {
+        "schema_version": "1.0.0",
+        "adapter": "passthrough",
+        "required_input_roles": [
+          "dataset",
+          "cluster_profile",
+          "cluster_enrichment",
+          "series_registry"
+        ],
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
@@ -1593,7 +540,7 @@
       "capability_id": "C001",
       "skill_name": "cs-compute-clustering-structure-murcko",
       "display_name": "Murcko scaffold clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "direct_structure",
       "description": "Cluster compounds from a compound-ID/SMILES CSV with Murcko scaffold clustering, without generating a hidden descriptor vector.",
@@ -1642,7 +589,7 @@
       "capability_id": "C002",
       "skill_name": "cs-compute-clustering-structure-mcs",
       "display_name": "MCS clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "direct_structure",
       "description": "Cluster compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR axis, without generating a hidden descriptor vector or requiring per-run human approval.",
@@ -1695,7 +642,7 @@
       "capability_id": "C003",
       "skill_name": "cs-compute-clustering-structure-brics",
       "display_name": "BRICS fragment clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "direct_structure",
       "description": "Cluster compounds from a compound-ID/SMILES CSV with BRICS fragment clustering, without generating a hidden descriptor vector.",
@@ -1744,7 +691,7 @@
       "capability_id": "C004",
       "skill_name": "cs-compute-clustering-structure-recap",
       "display_name": "RECAP fragment clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "direct_structure",
       "description": "Cluster compounds from a compound-ID/SMILES CSV with RECAP fragment clustering, without generating a hidden descriptor vector.",
@@ -1793,7 +740,7 @@
       "capability_id": "C005",
       "skill_name": "cs-compute-clustering-vector-butina",
       "display_name": "Vector Butina clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "description_vector",
       "description": "Apply Vector Butina clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -1848,7 +795,7 @@
       "capability_id": "C006",
       "skill_name": "cs-compute-clustering-vector-hierarchical",
       "display_name": "Vector hierarchical clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "description_vector",
       "description": "Apply Vector hierarchical clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -1903,7 +850,7 @@
       "capability_id": "C007",
       "skill_name": "cs-compute-clustering-vector-dbscan",
       "display_name": "Vector DBSCAN clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "description_vector",
       "description": "Apply Vector DBSCAN clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -1959,7 +906,7 @@
       "capability_id": "C008",
       "skill_name": "cs-compute-clustering-vector-louvain",
       "display_name": "Vector Louvain clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "description_vector",
       "description": "Apply Vector Louvain clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -2016,7 +963,7 @@
       "capability_id": "C009",
       "skill_name": "cs-compute-clustering-vector-leiden",
       "display_name": "Vector Leiden clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "description_vector",
       "description": "Apply Vector Leiden clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -2073,7 +1020,7 @@
       "capability_id": "C010",
       "skill_name": "cs-compute-clustering-vector-connected-components",
       "display_name": "Vector connected-component clustering",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "clustering",
       "family": "description_vector",
       "description": "Apply Vector connected-component clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally.",
@@ -2125,15 +1072,15 @@
     },
     {
       "schema_version": "2.0.0",
-      "capability_id": "C011",
-      "skill_name": "cs-compute-clustering-categorical",
-      "display_name": "Categorical-column clustering",
-      "version": "0.1.6",
+      "capability_id": "C012",
+      "skill_name": "cs-compute-clustering-meta-overlap",
+      "display_name": "Overlap-weighted Leiden Series clustering",
+      "version": "0.1.9",
       "stage": "clustering",
-      "family": "human_context",
-      "description": "Use when Claude Code needs to run Categorical-column clustering from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
+      "family": "meta",
+      "description": "FF適格ClusterのJaccard重複graphをweighted LeidenでSeries化する。",
       "cost": {
-        "class": "low",
+        "class": "medium",
         "human_approval_required": false,
         "hpc_profile": "cpu64"
       },
@@ -2142,85 +1089,47 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "clustering_kind": "categorical",
-      "clustering_id": "C011",
-      "dependencies": [],
-      "input_contract": [
-        "categorical_csv"
-      ],
-      "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv",
-        "manifest": "clustering_manifest.json"
-      },
-      "implementation": {
-        "algorithm": "categorical"
-      },
-      "analysis_role": "clustering",
-      "default_parameters": {
-        "min_cluster_size": 5
-      },
-      "conductor_request": {
-        "schema_version": "1.0.0",
-        "adapter": "categorical_clustering",
-        "required_input_roles": [
-          "dataset"
-        ],
-        "unknown_parameters": "reject_by_skill_cli"
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "C012",
-      "skill_name": "cs-compute-clustering-meta-overlap",
-      "display_name": "Overlap-based meta clustering",
-      "version": "0.1.6",
-      "stage": "clustering",
-      "family": "meta",
-      "description": "Use when Claude Code needs to run Overlap-based meta clustering from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "experimental",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "clustering_kind": "meta",
       "clustering_id": "C012",
       "dependencies": [
-        "clustering"
+        "clustering",
+        "analysis"
       ],
       "input_contract": [
-        "cluster_membership_csv"
+        "dataset",
+        "cluster_membership_matrix",
+        "cluster_registry",
+        "cluster_profile",
+        "cluster_enrichment"
       ],
       "output": {
-        "membership": "cluster_membership.csv",
-        "summary": "cluster_summary.csv",
+        "filename": "series_registry.csv",
+        "membership": "analysis_unit_membership.csv",
+        "summary": "series_summary.json",
         "manifest": "clustering_manifest.json"
       },
       "implementation": {
-        "algorithm": "meta_overlap"
+        "algorithm": "weighted_leiden_series"
       },
-      "analysis_role": "clustering",
       "default_parameters": {
-        "min_cluster_size": 5
+        "min_ff_evaluate": 10,
+        "favorable_fraction_threshold": 0.5,
+        "leiden_resolution": 1.0,
+        "random_seed": 61453
       },
       "conductor_request": {
         "schema_version": "1.0.0",
-        "adapter": "meta_clustering",
+        "adapter": "passthrough",
         "required_input_roles": [
-          "cluster_membership_matrix"
+          "dataset",
+          "cluster_membership_matrix",
+          "cluster_registry",
+          "cluster_profile",
+          "cluster_enrichment"
         ],
-        "unknown_parameters": "reject_by_skill_cli"
+        "unknown_parameters": "reject_by_skill"
       }
     },
     {
@@ -2228,7 +1137,7 @@
       "capability_id": "D001",
       "skill_name": "cs-compute-description-rdkit-2d",
       "display_name": "RDKit 2D descriptors",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "physicochemical",
       "description": "Use when Claude Code needs to run RDKit 2D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2275,7 +1184,7 @@
       "capability_id": "D002",
       "skill_name": "cs-compute-description-morgan",
       "display_name": "Morgan fingerprint (optional chirality)",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "2d_fingerprint",
       "description": "Use when Claude Code needs to run Morgan fingerprint (optional chirality) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2342,7 +1251,7 @@
       "capability_id": "D003",
       "skill_name": "cs-compute-description-maccs",
       "display_name": "MACCS keys",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "2d_fingerprint",
       "description": "Use when Claude Code needs to run MACCS keys from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2389,7 +1298,7 @@
       "capability_id": "D004",
       "skill_name": "cs-compute-description-atom-pair",
       "display_name": "Hashed atom-pair fingerprint",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "2d_fingerprint",
       "description": "Use when Claude Code needs to run Hashed atom-pair fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2439,7 +1348,7 @@
       "capability_id": "D005",
       "skill_name": "cs-compute-description-topological-torsion",
       "display_name": "Hashed topological-torsion fingerprint",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "2d_fingerprint",
       "description": "Use when Claude Code needs to run Hashed topological-torsion fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2486,7 +1395,7 @@
       "capability_id": "D006",
       "skill_name": "cs-compute-description-rdkit-fragment",
       "display_name": "RDKit fragment counts",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "substructure",
       "description": "Use when Claude Code needs to run RDKit fragment counts from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2533,7 +1442,7 @@
       "capability_id": "D007",
       "skill_name": "cs-compute-description-rdkit-path-fingerprint",
       "display_name": "RDKit path fingerprint",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "2d_fingerprint",
       "description": "Use when Claude Code needs to run RDKit path fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2583,7 +1492,7 @@
       "capability_id": "D008",
       "skill_name": "cs-compute-description-rdkit-pattern-fingerprint",
       "display_name": "RDKit pattern fingerprint",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "substructure",
       "description": "Use when Claude Code needs to run RDKit pattern fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2630,7 +1539,7 @@
       "capability_id": "D009",
       "skill_name": "cs-compute-description-rdkit-layered-fingerprint",
       "display_name": "RDKit layered fingerprint",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "2d_fingerprint",
       "description": "Use when Claude Code needs to run RDKit layered fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2677,7 +1586,7 @@
       "capability_id": "D010",
       "skill_name": "cs-compute-description-avalon-fingerprint",
       "display_name": "Avalon fingerprint",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "2d_fingerprint",
       "description": "Use when Claude Code needs to run Avalon fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2724,7 +1633,7 @@
       "capability_id": "D011",
       "skill_name": "cs-compute-description-gobbi-pharm2d",
       "display_name": "Gobbi 2D pharmacophore fingerprint (optional SVD)",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "pharmacophore",
       "description": "Use when Claude Code needs to run Gobbi 2D pharmacophore fingerprint (optional SVD) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2789,7 +1698,7 @@
       "capability_id": "D012",
       "skill_name": "cs-compute-description-rdkit-3d",
       "display_name": "RDKit 3D descriptors",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "3d_shape",
       "description": "Use when Claude Code needs to run RDKit 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2836,7 +1745,7 @@
       "capability_id": "D013",
       "skill_name": "cs-compute-description-usr-usrcat",
       "display_name": "USR and USRCAT",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "3d_shape",
       "description": "Use when Claude Code needs to run USR and USRCAT from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2887,7 +1796,7 @@
       "capability_id": "D014",
       "skill_name": "cs-compute-description-shape",
       "display_name": "Basic 3D shape descriptors",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "3d_shape",
       "description": "Use when Claude Code needs to run Basic 3D shape descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2934,7 +1843,7 @@
       "capability_id": "D015",
       "skill_name": "cs-compute-description-mordred-2d",
       "display_name": "Mordred 2D descriptors",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "physicochemical",
       "description": "Use when Claude Code needs to run Mordred 2D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -2981,7 +1890,7 @@
       "capability_id": "D016",
       "skill_name": "cs-compute-description-mordred-3d",
       "display_name": "Mordred 3D descriptors",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "3d_shape",
       "description": "Use when Claude Code needs to run Mordred 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -3033,7 +1942,7 @@
       "capability_id": "D019",
       "skill_name": "cs-compute-description-tblite-xtb",
       "display_name": "GFN2-xTB quantum descriptors",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "quantum",
       "description": "Use when Claude Code needs to run GFN2-xTB quantum descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -3084,7 +1993,7 @@
       "capability_id": "D020",
       "skill_name": "cs-compute-description-chemberta-embedding",
       "display_name": "ChemBERTa-100M-MLM embedding",
-      "version": "0.1.6",
+      "version": "0.1.9",
       "stage": "description",
       "family": "pretrained_embedding",
       "description": "Use when Claude Code needs to run ChemBERTa-100M-MLM embedding from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment.",
@@ -3130,11 +2039,11 @@
       "schema_version": "2.0.0",
       "capability_id": "I001",
       "skill_name": "cs-analysis-interpret-results",
-      "display_name": "SAR result interpretation",
-      "version": "0.1.8",
+      "display_name": "Lightweight Series interpretation",
+      "version": "0.1.9",
       "stage": "interpretation",
-      "family": "result_integration",
-      "description": "Use when the dedicated Claude Code Interpreter must screen small Result batches or compare a Runtime-selected shortlist across representations, Clusters, scopes, and Rounds under a read-only Policy.",
+      "family": "summary_interpretation",
+      "description": "定型Summaryだけを読みGlobalとSeriesの変化を簡潔に解釈する。",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -3145,79 +2054,24 @@
         "platforms": [
           "linux-64",
           "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
+        ]
       },
       "interpretation_id": "I001",
       "dependencies": [
-        "analysis"
+        "A009"
       ],
       "input_contract": [
-        "runtime_interpretation_context",
-        "selected_result_artifacts",
-        "interpretation_policy_markdown"
+        "runtime_prepared_summary_context"
       ],
       "output": {
         "json": "interpretation.json",
         "markdown": "interpretation.md",
-        "html": "interpretation.html",
-        "context": "interpretation_context.json",
-        "quality": "report_quality.json",
-        "draft": "interpretation_draft.json"
+        "html": "interpretation.html"
       },
       "implementation": {
-        "purpose": "policy_guided_iterative_result_exploration",
         "state_access": "read_only",
-        "execution_authority": "runtime_commit_only",
-        "requires_dedicated_agent_review": true
-      }
-    },
-    {
-      "schema_version": "2.0.0",
-      "capability_id": "I002",
-      "skill_name": "cs-analysis-interpret-mmp",
-      "display_name": "Read-only MMP Global–Local interpretation",
-      "version": "0.1.8",
-      "stage": "interpretation",
-      "family": "mmp_cluster_interpretation",
-      "description": "Human-triggered read-only interpretation of an existing Global A014 MMP database against canonical CONDUCTOR Cluster memberships, without DAG or State mutation.",
-      "cost": {
-        "class": "medium",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ],
-        "molecule_standardization": "out_of_scope"
-      },
-      "interpretation_id": "I002",
-      "dependencies": [
-        "analysis",
-        "clustering"
-      ],
-      "input_contract": [
-        "explicit_frozen_run_root",
-        "successful_global_A014_database",
-        "canonical_cluster_registry_and_membership",
-        "explicit_human_request"
-      ],
-      "output": {
-        "directory": "mmp_interpretation/MMPREQ######/",
-        "markdown": "mmp_interpretation.md",
-        "html": "mmp_interpretation.html",
-        "context": "mmp_interpretation_context.json",
-        "tables": "*.csv"
-      },
-      "implementation": {
-        "purpose": "read_only_global_local_mmp_cluster_interpretation",
-        "state_access": "read_only",
-        "invocation": "explicit_human_request_only",
-        "dag_registration": "forbidden",
-        "write_scope": "run_root/mmp_interpretation/MMPREQ######"
+        "requires_dedicated_agent_review": true,
+        "formal_insight_ids": false
       }
     },
     {
@@ -3225,10 +2079,10 @@
       "capability_id": "O001",
       "skill_name": "cs-conductor-runtime",
       "display_name": "CONDUCTOR deterministic runtime",
-      "version": "0.1.8",
+      "version": "0.1.9",
       "stage": "orchestration",
-      "family": "graph_orchestration",
-      "description": "Deterministic Runtime owning compact Control, five-state Nodes, idempotent OS Workers, common Execution Requests, incremental Result Screening, bounded synthesis, and Round finalization.",
+      "family": "workflow_runtime",
+      "description": "固定された基本計算、定型解析、Report、Interpretation、Auditを管理する単純なRuntime。",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -3243,39 +2097,37 @@
       },
       "dependencies": [],
       "input_contract": [
-        "catalog_json",
-        "analysis_profile_json",
-        "policy_markdown",
-        "interpretation_policy_markdown",
+        "analysis_profile",
         "endpoint_csv",
-        "round_request"
+        "human_round_authorization"
       ],
       "output": {
         "control": "conductor_control.json",
-        "catalog": "CONDUCTOR_modules/catalog/catalog.json",
-        "rounds": "rounds/RND####/",
-        "dag": "runtime/dag_snapshot.json",
-        "events": "runtime/event_ledger.jsonl",
-        "working_set": "runtime/working_set.json",
-        "result_assessments": "runtime/result_assessment_index.jsonl",
-        "round_screening": "rounds/RND####/screening_summary.json",
-        "audit": "audit/<timestamp>/"
+        "dag": "runtime/dag.json",
+        "events": "runtime/events.jsonl",
+        "audit": "state/<timestamp>/"
       },
       "implementation": {
-        "purpose": "deterministic_multiround_incremental_screening_runtime",
-        "state_access": "human_authorized_main_agent_single_writer_lease",
-        "interpretation_execution_authority": "runtime_commit_only"
+        "node_states": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "human_round_authority": true,
+        "automatic_next_round": false
       }
     },
     {
       "schema_version": "2.0.0",
-      "capability_id": "O002",
-      "skill_name": "cs-conductor-state-report",
-      "display_name": "CONDUCTOR State DAG report",
-      "version": "0.1.8",
+      "capability_id": "O004",
+      "skill_name": "cs-conductor-on-demand-analysis",
+      "display_name": "CONDUCTOR On-demand Analysis",
+      "version": "0.1.9",
       "stage": "orchestration",
-      "family": "state_reporting",
-      "description": "Use only on an explicit human request with an explicitly supplied Run Root to render a read-only timestamped HTML and SVG execution DAG report.",
+      "family": "on_demand",
+      "description": "Roundと通常DAGに干渉せず、人間依頼をREQ recordとしてRun内で解析・報告する。",
       "cost": {
         "class": "low",
         "human_approval_required": false,
@@ -3290,55 +2142,47 @@
       },
       "dependencies": [],
       "input_contract": [
-        "explicit_run_root_read_only"
+        "explicit_run_root",
+        "human_request",
+        "explicit_sources"
       ],
       "output": {
-        "html": "state/<timestamp>/state_report.html",
-        "svg": "state/<timestamp>/state_dag.svg",
-        "nodes": "state/<timestamp>/state_nodes.csv",
-        "summary": "state/<timestamp>/state_summary.json"
+        "directory": "on_demand/REQ######",
+        "markdown": "result.md",
+        "html": "result.html",
+        "manifest": "artifact_manifest.json"
       },
       "implementation": {
-        "purpose": "read_only_execution_dag_visualization",
         "state_access": "read_only",
-        "invocation": "explicit_human_request_only",
-        "dag_registration": "forbidden"
+        "round_participation": "forbidden",
+        "dag_registration": "forbidden",
+        "record_namespace": "REQ",
+        "network_install": "forbidden"
       }
     },
     {
       "schema_version": "2.0.0",
-      "capability_id": "O003",
-      "skill_name": "cs-conductor-run-audit",
-      "display_name": "CONDUCTOR Run Audit",
-      "version": "0.1.8",
+      "capability_id": "O005",
+      "skill_name": "cs-conductor-orchestrator",
+      "display_name": "CONDUCTOR Main Agent Orchestrator",
+      "version": "0.1.9",
       "stage": "orchestration",
-      "family": "run_audit",
-      "description": "Read-only Quick/Full audit of a supplied CONDUCTOR 0.1.8 Run Root and referenced artifacts.",
+      "family": "control",
+      "description": "Main Agentを一つの人間承認RoundのOrchestratorとして有効化する。",
+      "dependencies": [
+        "O001"
+      ],
       "cost": {
         "class": "low",
-        "human_approval_required": false,
-        "hpc_profile": "cpu64"
-      },
-      "applicability": {
-        "status": "stable",
-        "platforms": [
-          "linux-64",
-          "win-64"
-        ]
-      },
-      "dependencies": [],
-      "input_contract": [
-        "explicit_run_root"
-      ],
-      "output": {
-        "json": "audit/<timestamp>/audit.json",
-        "markdown": "audit/<timestamp>/audit.md"
+        "human_approval_required": false
       },
       "implementation": {
-        "purpose": "read_only_control_and_artifact_audit",
-        "state_access": "read_only",
-        "invocation": "orchestrator_control_boundary_or_explicit_human_request",
-        "dag_registration": "forbidden"
+        "invocation": "manual_inline_skill",
+        "state_access": "runtime_only",
+        "automatic_next_round": false
+      },
+      "output": {
+        "filename": "compact_runtime_response.json"
       }
     }
   ]

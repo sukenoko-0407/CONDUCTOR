@@ -1,13 +1,15 @@
 [project]
 name = "conductor-workspace"
-version = "0.1.8"
-description = "Development and acceptance-test environment for the CONDUCTOR multi-Round analysis architecture"
+version = "0.1.9"
+description = "CONDUCTOR deterministic enrichment-to-Series SAR analysis runtime"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "jinja2>=3.1",
   "jsonschema>=4.21",
   "matplotlib>=3.8",
   "networkx>=3.2",
+  "igraph>=0.11",
+  "leidenalg>=0.10",
   "numpy>=1.26",
   "pandas>=2.2",
   "pyarrow>=15",

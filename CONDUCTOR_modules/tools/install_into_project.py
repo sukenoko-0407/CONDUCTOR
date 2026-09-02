@@ -10,6 +10,16 @@ from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = MODULE_ROOT.parent
+OBSOLETE_CONDUCTOR_SKILLS = {
+    "cs-analysis-activity-cliff", "cs-analysis-activity-distribution",
+    "cs-analysis-cluster-overlap", "cs-analysis-cluster-structural-diversity",
+    "cs-analysis-descriptor-activity-correlation", "cs-analysis-interpret-mmp",
+    "cs-analysis-knn-activity-consistency", "cs-analysis-pairwise-structure-similarity",
+    "cs-analysis-projection-pca", "cs-analysis-projection-umap", "cs-analysis-sali",
+    "cs-compute-clustering-categorical", "cs-conductor-assessment-report",
+    "cs-conductor-dispatch", "cs-conductor-node-review", "cs-conductor-result-concierge",
+    "cs-conductor-run-audit", "cs-conductor-state-report",
+}
 
 
 def ignored(directory: str, names: list[str]) -> set[str]:
@@ -22,26 +32,24 @@ def ignored(directory: str, names: list[str]) -> set[str]:
 
 def copy_targets(target: Path) -> list[tuple[Path, Path]]:
     selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
+    selected_skills = [
+        name
+        for key in ("description_skills", "clustering_skills", "analysis_skills", "interpretation_skills", "support_skills")
+        for name in selection.get(key, [])
+    ]
     pairs = [
         (
             SOURCE_ROOT / ".claude" / "agents" / name,
             target / ".claude" / "agents" / name,
         )
-        for name in [
-            "cs-conductor-executor.md",
-            "cs-conductor-interpreter.md",
-        ]
+        for name in ["cs-conductor-interpreter.md"]
     ]
     pairs.extend(
         (
             SOURCE_ROOT / ".claude" / "skills" / name,
             target / ".claude" / "skills" / name,
         )
-        for name in [
-            *selection["included_skills"],
-            *selection.get("maintenance_skills", []),
-            *selection.get("support_skills", []),
-        ]
+        for name in selected_skills
     )
     pairs.append((MODULE_ROOT, target / "CONDUCTOR_modules"))
     return pairs
@@ -63,9 +71,10 @@ def main() -> int:
     missing = [source for source, _destination in pairs if not source.exists()]
     conflicts = [destination for _source, destination in pairs if destination.exists()]
     obsolete_present = [path for path in [target / ".claude" / "agents" / "cs-conductor-orchestrator.md"] if path.exists()]
-    old_dispatch = target / ".claude" / "skills" / "cs-conductor-dispatch"
-    if any((old_dispatch / name).exists() for name in ("SKILL.md", "capability.json", "README.md")):
-        obsolete_present.append(old_dispatch)
+    obsolete_present.extend(
+        path for name in sorted(OBSOLETE_CONDUCTOR_SKILLS)
+        if (path := target / ".claude" / "skills" / name).exists()
+    )
     if missing:
         raise FileNotFoundError("Package source is incomplete:\n" + "\n".join(str(path) for path in missing))
     if conflicts:

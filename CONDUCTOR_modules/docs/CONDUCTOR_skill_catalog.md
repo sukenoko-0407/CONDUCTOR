@@ -1,80 +1,72 @@
 # CONDUCTOR Skill Catalog
 
-> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。
+> 収載対象は人間管理の`included_skills.json`、実行範囲は`analysis_profile.json`を正本とする。
 
-Profile: `balanced-global-first-0.1.8`
-Generated: `2026-08-28T12:38:50.716593+00:00`
+CONDUCTOR: `0.1.9`
 
 ## Description
 
-| ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| D001 | `cs-compute-description-rdkit-2d` | RDKit 2D descriptors | - | physicochemical | - | csv_or_smiles | dense_continuous | euclidean | low | stable | False |
-| D002 | `cs-compute-description-morgan` | Morgan fingerprint (optional chirality) | standard, chiral (default: standard) | 2d_fingerprint | - | csv_or_smiles | binary_fingerprint | tanimoto | low | stable | False |
-| D003 | `cs-compute-description-maccs` | MACCS keys | - | 2d_fingerprint | - | csv_or_smiles | binary_fingerprint | tanimoto | low | stable | False |
-| D004 | `cs-compute-description-atom-pair` | Hashed atom-pair fingerprint | - | 2d_fingerprint | - | csv_or_smiles | sparse_count | cosine | low | stable | False |
-| D005 | `cs-compute-description-topological-torsion` | Hashed topological-torsion fingerprint | - | 2d_fingerprint | - | csv_or_smiles | sparse_count | cosine | low | stable | False |
-| D006 | `cs-compute-description-rdkit-fragment` | RDKit fragment counts | - | substructure | - | csv_or_smiles | sparse_count | cosine | low | stable | False |
-| D007 | `cs-compute-description-rdkit-path-fingerprint` | RDKit path fingerprint | - | 2d_fingerprint | - | csv_or_smiles | binary_fingerprint | tanimoto | low | stable | False |
-| D008 | `cs-compute-description-rdkit-pattern-fingerprint` | RDKit pattern fingerprint | - | substructure | - | csv_or_smiles | binary_fingerprint | tanimoto | low | stable | False |
-| D009 | `cs-compute-description-rdkit-layered-fingerprint` | RDKit layered fingerprint | - | 2d_fingerprint | - | csv_or_smiles | binary_fingerprint | tanimoto | low | stable | False |
-| D010 | `cs-compute-description-avalon-fingerprint` | Avalon fingerprint | - | 2d_fingerprint | - | csv_or_smiles | binary_fingerprint | tanimoto | low | stable | False |
-| D011 | `cs-compute-description-gobbi-pharm2d` | Gobbi 2D pharmacophore fingerprint (optional SVD) | folded, svd (default: folded) | pharmacophore | - | csv_or_smiles | binary_fingerprint | tanimoto | medium | stable | False |
-| D012 | `cs-compute-description-rdkit-3d` | RDKit 3D descriptors | - | 3d_shape | - | csv_or_smiles | dense_continuous | euclidean | medium | stable | False |
-| D013 | `cs-compute-description-usr-usrcat` | USR and USRCAT | - | 3d_shape | - | csv_or_smiles | dense_shape_moment | manhattan | medium | stable | False |
-| D014 | `cs-compute-description-shape` | Basic 3D shape descriptors | - | 3d_shape | - | csv_or_smiles | dense_continuous | euclidean | medium | stable | False |
-| D015 | `cs-compute-description-mordred-2d` | Mordred 2D descriptors | - | physicochemical | - | csv_or_smiles | dense_continuous | euclidean | medium | experimental | False |
-| D016 | `cs-compute-description-mordred-3d` | Mordred 3D descriptors | - | 3d_shape | - | csv_or_smiles | dense_continuous | euclidean | high | experimental | True |
-| D019 | `cs-compute-description-tblite-xtb` | GFN2-xTB quantum descriptors | - | quantum | - | csv_or_smiles | dense_continuous | euclidean | very_high | experimental | True |
-| D020 | `cs-compute-description-chemberta-embedding` | ChemBERTa-100M-MLM embedding | - | pretrained_embedding | - | csv_or_smiles | dense_embedding | cosine | high | experimental | True |
+| ID | 名称 | 主な役割 | Cost |
+|---|---|---|---|
+| D001 | RDKit 2D descriptors | Use when Claude Code needs to run RDKit 2D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D002 | Morgan fingerprint (optional chirality) | Use when Claude Code needs to run Morgan fingerprint (optional chirality) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D003 | MACCS keys | Use when Claude Code needs to run MACCS keys from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D004 | Hashed atom-pair fingerprint | Use when Claude Code needs to run Hashed atom-pair fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D005 | Hashed topological-torsion fingerprint | Use when Claude Code needs to run Hashed topological-torsion fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D006 | RDKit fragment counts | Use when Claude Code needs to run RDKit fragment counts from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D007 | RDKit path fingerprint | Use when Claude Code needs to run RDKit path fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D008 | RDKit pattern fingerprint | Use when Claude Code needs to run RDKit pattern fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D009 | RDKit layered fingerprint | Use when Claude Code needs to run RDKit layered fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D010 | Avalon fingerprint | Use when Claude Code needs to run Avalon fingerprint from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | low |
+| D011 | Gobbi 2D pharmacophore fingerprint (optional SVD) | Use when Claude Code needs to run Gobbi 2D pharmacophore fingerprint (optional SVD) from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | medium |
+| D012 | RDKit 3D descriptors | Use when Claude Code needs to run RDKit 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | medium |
+| D013 | USR and USRCAT | Use when Claude Code needs to run USR and USRCAT from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | medium |
+| D014 | Basic 3D shape descriptors | Use when Claude Code needs to run Basic 3D shape descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | medium |
+| D015 | Mordred 2D descriptors | Use when Claude Code needs to run Mordred 2D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | medium |
+| D016 | Mordred 3D descriptors | Use when Claude Code needs to run Mordred 3D descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | high |
+| D019 | GFN2-xTB quantum descriptors | Use when Claude Code needs to run GFN2-xTB quantum descriptors from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | very_high |
+| D020 | ChemBERTa-100M-MLM embedding | Use when Claude Code needs to run ChemBERTa-100M-MLM embedding from CSV or compatible CONDUCTOR artifacts with a self-contained Pixi environment. | high |
 
 ## Clustering
 
-| ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| C001 | `cs-compute-clustering-structure-murcko` | Murcko scaffold clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | low | stable | False |
-| C002 | `cs-compute-clustering-structure-mcs` | MCS clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | high | experimental | False |
-| C003 | `cs-compute-clustering-structure-brics` | BRICS fragment clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | medium | stable | False |
-| C004 | `cs-compute-clustering-structure-recap` | RECAP fragment clustering | - | direct_structure | direct_structure | compound_id_smiles_csv | - | - | medium | stable | False |
-| C005 | `cs-compute-clustering-vector-butina` | Vector Butina clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
-| C006 | `cs-compute-clustering-vector-hierarchical` | Vector hierarchical clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
-| C007 | `cs-compute-clustering-vector-dbscan` | Vector DBSCAN clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
-| C008 | `cs-compute-clustering-vector-louvain` | Vector Louvain clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
-| C009 | `cs-compute-clustering-vector-leiden` | Vector Leiden clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
-| C010 | `cs-compute-clustering-vector-connected-components` | Vector connected-component clustering | - | description_vector | description_vector | description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general | - | - | medium | stable | False |
-| C011 | `cs-compute-clustering-categorical` | Categorical-column clustering | - | human_context | categorical | categorical_csv | - | - | low | stable | False |
-| C012 | `cs-compute-clustering-meta-overlap` | Overlap-based meta clustering | - | meta | meta | cluster_membership_csv | - | - | medium | experimental | False |
+| ID | 名称 | 主な役割 | Cost |
+|---|---|---|---|
+| C001 | Murcko scaffold clustering | Cluster compounds from a compound-ID/SMILES CSV with Murcko scaffold clustering, without generating a hidden descriptor vector. | low |
+| C002 | MCS clustering | Cluster compounds directly from SMILES by maximum common substructure as a mandatory initial CONDUCTOR axis, without generating a hidden descriptor vector or requiring per-run human approval. | high |
+| C003 | BRICS fragment clustering | Cluster compounds from a compound-ID/SMILES CSV with BRICS fragment clustering, without generating a hidden descriptor vector. | medium |
+| C004 | RECAP fragment clustering | Cluster compounds from a compound-ID/SMILES CSV with RECAP fragment clustering, without generating a hidden descriptor vector. | medium |
+| C005 | Vector Butina clustering | Apply Vector Butina clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally. | medium |
+| C006 | Vector hierarchical clustering | Apply Vector hierarchical clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally. | medium |
+| C007 | Vector DBSCAN clustering | Apply Vector DBSCAN clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally. | medium |
+| C008 | Vector Louvain clustering | Apply Vector Louvain clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally. | medium |
+| C009 | Vector Leiden clustering | Apply Vector Leiden clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally. | medium |
+| C010 | Vector connected-component clustering | Apply Vector connected-component clustering to a numeric vector artifact produced by a Description Skill; do not accept SMILES or generate descriptors internally. | medium |
+| C012 | Overlap-weighted Leiden Series clustering | FF適格ClusterのJaccard重複graphをweighted LeidenでSeries化する。 | medium |
 
 ## Analysis
 
-| ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| A001 | `cs-analysis-activity-distribution` | Activity distribution | - | property_profile | - | endpoint_csv | - | - | low | stable | False |
-| A002 | `cs-analysis-descriptor-activity-correlation` | Descriptor-activity correlation | - | interpretable_association | - | endpoint_csv, description | - | - | low | stable | False |
-| A003 | `cs-analysis-projection-pca` | PCA projection | - | projection | - | endpoint_csv, description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general, optional_clustering, optional_projection | - | - | medium | stable | False |
-| A004 | `cs-analysis-projection-umap` | UMAP projection | - | projection | - | endpoint_csv, description_vector_payload, canonical_description_result_in_conductor, explicit_semantics_metric_in_general, optional_clustering, optional_projection | - | - | medium | stable | False |
-| A005 | `cs-analysis-multidescription-feature-model` | Multi-Description feature model | - | feature_model | - | endpoint_csv, six_description_artifacts, optional_clustering, optional_global_model | - | - | high | experimental | False |
-| A006 | `cs-analysis-pairwise-structure-similarity` | Pairwise structure similarity | - | feature_space | - | endpoint_csv | - | - | medium | stable | False |
-| A007 | `cs-analysis-knn-activity-consistency` | kNN activity consistency | - | feature_space | - | endpoint_csv, description | - | - | medium | stable | False |
-| A008 | `cs-analysis-sali` | Extended structure-activity landscape index | - | landscape | - | endpoint_csv, description | - | - | medium | stable | False |
-| A009 | `cs-analysis-activity-cliff` | Activity cliff detection | - | landscape | - | endpoint_csv | - | - | medium | stable | False |
-| A010 | `cs-analysis-cluster-profile` | Cluster profile | - | cluster_profile | - | endpoint_csv, clustering | - | - | low | stable | False |
-| A011 | `cs-analysis-cluster-enrichment` | Cluster activity enrichment | - | cluster_profile | - | endpoint_csv, clustering | - | - | low | stable | False |
-| A012 | `cs-analysis-cluster-overlap` | Cluster overlap | - | cluster_quality | - | endpoint_csv, clustering | - | - | low | stable | False |
-| A013 | `cs-analysis-cluster-structural-diversity` | Cluster structural diversity | - | cluster_quality | - | endpoint_csv, clustering | - | - | medium | stable | False |
-| A014 | `cs-analysis-matched-molecular-pairs` | Matched molecular pair analysis | - | matched_molecular_pairs | - | endpoint_csv, smiles, optional_cluster_membership, optional_global_mmp_database | - | - | high | stable | False |
+| ID | 名称 | 主な役割 | Cost |
+|---|---|---|---|
+| A001 | All-Cluster profile survey | 全ClusterのEndpoint分布とFavorable Fractionを一括計算する。 | low |
+| A002 | All-Cluster enrichment survey | 全ClusterのFavorable enrichmentと単純な多重比較補正を一括計算する。 | low |
+| A003 | Series descriptor contrast | D001についてGlobal、Series、non-Seriesの相関とrobust shiftを一括比較する。 | low |
+| A004 | Series PCA and UMAP projection panel | Global座標上へ各Seriesを重ね、PCA／UMAP画像とcontact sheetを生成する。 | medium |
+| A005 | Series multi-Description feature model | 固定6 Description panelでGlobalと全SeriesのOOFモデルを一括比較する。 | high |
+| A006 | Series SALI and Cliff landscape | D002/Tanimoto空間でGlobal、SeriesのSALIとinternal／boundary Cliffを一括評価する。 | medium |
+| A007 | Series structural signature | 構造由来Cluster provenanceを優先し、必要なSeriesだけMurcko／MCS fallbackを行う。 | medium |
+| A008 | Human-centered matched molecular pair analysis | 1-cut MMPをType-I top compound、Type-II Hit-to-Lead、Type-III databaseとして提供する。 | high |
+| A009 | CONDUCTOR standard Series report | Enriched Cluster一覧、Endpoint概要、Series map、Series詳細を決定論的HTMLへ描画する。 | low |
 
 ## Interpretation
 
-| ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| I001 | `cs-analysis-interpret-results` | SAR result interpretation | - | result_integration | - | runtime_interpretation_context, selected_result_artifacts, interpretation_policy_markdown | - | - | low | stable | False |
-| I002 | `cs-analysis-interpret-mmp` | Read-only MMP Global–Local interpretation | - | mmp_cluster_interpretation | - | explicit_frozen_run_root, successful_global_A014_database, canonical_cluster_registry_and_membership, explicit_human_request | - | - | medium | stable | False |
+| ID | 名称 | 主な役割 | Cost |
+|---|---|---|---|
+| I001 | Lightweight Series interpretation | 定型Summaryだけを読みGlobalとSeriesの変化を簡潔に解釈する。 | low |
 
 ## Orchestration
 
-| ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| O001 | `cs-conductor-runtime` | CONDUCTOR deterministic runtime | - | graph_orchestration | - | catalog_json, analysis_profile_json, policy_markdown, interpretation_policy_markdown, endpoint_csv, round_request | - | - | low | stable | False |
-| O002 | `cs-conductor-state-report` | CONDUCTOR State DAG report | - | state_reporting | - | explicit_run_root_read_only | - | - | low | stable | False |
-| O003 | `cs-conductor-run-audit` | CONDUCTOR Run Audit | - | run_audit | - | explicit_run_root | - | - | low | stable | False |
+| ID | 名称 | 主な役割 | Cost |
+|---|---|---|---|
+| O001 | CONDUCTOR deterministic runtime | 固定された基本計算、定型解析、Report、Interpretation、Auditを管理する単純なRuntime。 | low |
+| O004 | CONDUCTOR On-demand Analysis | Roundと通常DAGに干渉せず、人間依頼をREQ recordとしてRun内で解析・報告する。 | low |
+| O005 | CONDUCTOR Main Agent Orchestrator | Main Agentを一つの人間承認RoundのOrchestratorとして有効化する。 | low |

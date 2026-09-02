@@ -18,9 +18,10 @@ if not arguments:
     raise SystemExit("Usage: run.py <runtime-control-command> ...")
 command_name = arguments[0]
 needs_authority = command_name in {
-    "authorize-round", "resume-round", "continue-round", "revise-report",
-    "accept-round", "approve-high-cost", "request-checkpoint",
-} or (command_name == "verify-return" and "--confirm-returned" in arguments)
+    "authorize-round", "resume-round", "continue-round", "accept-round",
+    "approve-high-cost", "approve-series", "retry-node", "waive-node",
+    "revise-series",
+}
 if needs_authority and "--control-key" not in arguments:
     try:
         run_root = Path(arguments[arguments.index("--run-root") + 1]).resolve()

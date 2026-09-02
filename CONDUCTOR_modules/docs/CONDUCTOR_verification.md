@@ -1,37 +1,9 @@
-# CONDUCTOR 0.1.8 verification
-
-## 必須検証
-
-- Package、Catalog、Runtime、protocol、成果物manifestが0.1.8で一致する。
-- A001～A014に有効なOperator Interpretation Profileがあり、Result Card v2が共通schemaを満たす。
-- `higher_is_better=true/false`の両方でfavorable方向が正規化される。
-- Global、Global–Local、sibling Cluster Review Bundleが決定論的に再生成される。
-- comparator必須のLocal Resultは一致Globalがなければ`awaiting_comparator`となり、一次評価されない。
-- metric、Description、Operator parameterが異なるResultを誤って同じcomparison familyへ入れない。
-- sibling Clusterの重複を独立supportとして扱わない。
-- 一次評価は0～3の絶対複数軸と信頼性を分離し、合計点を持たない。
-- 一次評価は各Review Bundle内のResultを最低1件引用し、Bundle固有の数値・比較・品質事実を理由に含める。同一内容または同一理由を複数Bundleへ複製したdraftはcommitされない。
-- Review BundleにOperator固有の評価anchorが同梱され、既定4 Bundleの小batchで評価される。
-- 明示的な再Screeningでは最大4小batchを独立contextで並列評価でき、順不同完了でもRuntime commitは直列となる。
-- Candidate classはRuntimeの固定決定表だけが確定する。
-- 正式Interpretationは`favorable_clue`と`contextual_clue`だけを単独Insight候補にする。
-- Cluster-local ResultをGlobalと表示せず、比較claimがReview Bundle内のcomparatorを参照する。
-- Insightがゼロ件でも日本語Markdown／HTMLを作り、negative resultを長く列挙しない。
-- 累積Interpretationは人間承認した報告専用Full Roundとして実行され、指定したCLOSED Roundの最新一次評価だけを参照する。過去の正式Insightに使用済みのReview Bundleは候補から除外され、Description、Clustering、Operator Nodeを追加しない。
-- historical re-Screeningは明示されたCLOSED Roundの保存済みReview Bundleだけを対象にし、対象集合をRound contractでhash固定する。Operator Nodeを追加せず、Assessmentに実行RoundとSource Roundを記録し、元Roundを変更しない。
-- Result Card、Review Bundle、Assessment、Interpretationの全参照先がRun Root内に存在する。
-- Main session中断、Packet再投入、Lease期限、Worker再接続で科学processを二重起動しない。
-
-## 実行方法
+# CONDUCTOR 0.1.9 検証
 
 ```bash
 python CONDUCTOR_modules/tools/verify_package_layout.py
+python -m unittest CONDUCTOR_modules.tests.test_019_contracts
 python .claude/skills/cs-conductor-runtime/scripts/build_catalog.py --check
-pytest -q CONDUCTOR_modules/tests
 ```
 
-環境依存の科学Skill試験は各SkillのPixi環境を使う。0.1.8は0.1.7以前のRun Rootの継続を受入条件に含めず、新規RunでDescription → Clustering → Global Operator → Local Operator → Bundle assessment → Interpretation → Full Auditを確認する。
-
-## 合格記録
-
-Release時に実行日、platform、test件数、skip理由、E2E Run Rootの一時pathを追記する。未実施の試験を合格済みと記載しない。
+静的検証ではCapability ID、選択Skill、必要file、Python syntax、Catalog/Profile Hash、共通実装の同期、基本計算範囲、MMP/On-demand契約を確認します。契約テストは入力ID、State transaction、Lease、Node既定値、Description Result、Cluster全化合物coverage、Series、MMP、On-demandの異常系を含みます。科学libraryとHPC並列処理を使う本番検証は各Skill LauncherとLinux Pixi環境で行います。

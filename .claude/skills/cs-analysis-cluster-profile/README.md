@@ -1,42 +1,25 @@
-# Cluster profile
+# SKILLの目的
 
-## SKILLの目的
-
-Cluster profileを実行し、一般利用向け数値結果とCONDUCTOR向けOperator resultを生成する。
+全ClusterのEndpoint分布とFavorable Fraction（FF）を一括計算します。
 
 ## 想定利用シーン
 
-各Clusterの活性分布と、endpoint方向を考慮した良好側／不良側比率を比較する場合。
+基本計算におけるFF順位とSeries候補の選定です。
 
 ## 環境構築
 
-`scripts/launch.py`を実行すると、`env/pixi.toml`から環境を自動作成または再利用する。Linuxでは共有Pixiを優先し、cacheと環境はこのSkillの`env/`配下に置かれる。
+`scripts/launch.py`がSkill内`env/pixi.toml`から自動構築します。
 
 ## 利用例
 
-一般利用（主成果物のみ）:
-
-```bash
-python .claude/skills/cs-analysis-cluster-profile/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --membership cluster_membership.csv
-```
-
-
-CONDUCTORのState nodeとして利用する場合:
-
-```bash
-python .claude/skills/cs-analysis-cluster-profile/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --membership cluster_membership.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
-```
+`python scripts/launch.py --conductor-request execution_request.json`
 
 ## 制約事項
 
-- endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
-- `high_threshold`／`low_threshold`はGlobal endpointの上側／下側分位点であり、良好／不良を直接表す名称ではない。良好側の判定は出力内の`favorable_threshold`と`favorable_comparator`を使用する。
-- 境界値を含めて数えるため、同値が多い場合はGlobalの`favorable_fraction`が指定分位点から期待される比率と一致しないことがある。
-- 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
-- CONDUCTORモードではState由来のDescription／Clustering Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。
+Favorable閾値はGlobalデータから定義し、Clusterごとに再定義しません。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。 |
+| 1.0.0 | 全Cluster一括FF profileとして新設 |

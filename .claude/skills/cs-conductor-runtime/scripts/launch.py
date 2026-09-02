@@ -89,12 +89,14 @@ def recover_stale_mutex(mutex: Path) -> bool:
         owner = json.loads((mutex / "owner.json").read_text(encoding="utf-8"))
         created = datetime.fromisoformat(str(owner["created_at"]))
         same_host = owner.get("host") == socket.gethostname()
-        stale = (same_host and not process_alive(int(owner.get("pid", -1)))) or (
-            datetime.now(timezone.utc) - created > timedelta(hours=2)
+        owner_alive = same_host and process_alive(int(owner.get("pid", -1)))
+        stale = (same_host and not owner_alive) or (
+            not same_host
+            and datetime.now(timezone.utc) - created > timedelta(hours=8)
         )
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         try:
-            stale = time.time() - mutex.stat().st_mtime > 2 * 60 * 60
+            stale = time.time() - mutex.stat().st_mtime > 8 * 60 * 60
         except OSError:
             return False
     if stale:
@@ -112,7 +114,7 @@ def ensure_environment(pixi: str, manifest: Path, environment: dict[str, str]) -
     if pixi_environment.is_dir() and expected and ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected:
         return
     acquired = False
-    for _ in range(600):
+    for _ in range(3600):
         try:
             mutex.mkdir()
             (mutex / "owner.json").write_text(

@@ -75,25 +75,45 @@ def option_value(arguments: list[str], option: str, default: int) -> int:
     return value if value > 0 else default
 
 
-def configure_xtb_process_environment(
+def configure_native_process_environment(
     runtime_env: dict[str, str], arguments: list[str], capability: dict[str, object]
 ) -> None:
-    """Set native thread limits before NumPy, BLAS, or tblite is imported."""
+    """Set native thread limits before NumPy, BLAS, Torch, or tblite imports."""
     implementation = capability.get("implementation", {})
-    if not isinstance(implementation, dict) or implementation.get("algorithm") != "tblite_xtb":
+    algorithm = implementation.get("algorithm") if isinstance(implementation, dict) else None
+    if algorithm == "tblite_xtb":
+        default_threads = int(implementation.get("default_cores_per_compound", 4))
+        threads = option_value(arguments, "--cores-per-compound", default_threads)
+        runtime_env.update(
+            {
+                "OMP_NUM_THREADS": f"{threads},1",
+                "OMP_THREAD_LIMIT": str(threads),
+                "OMP_MAX_ACTIVE_LEVELS": "1",
+                "OMP_DYNAMIC": "FALSE",
+                "OMP_NESTED": "FALSE",
+                "OPENBLAS_NUM_THREADS": "1",
+                "BLIS_NUM_THREADS": "1",
+                "NUMEXPR_NUM_THREADS": "1",
+                "MKL_NUM_THREADS": str(threads),
+                "MKL_DYNAMIC": "FALSE",
+            }
+        )
         return
-    default_threads = int(implementation.get("default_cores_per_compound", 4))
-    threads = option_value(arguments, "--cores-per-compound", default_threads)
+    # Parallelism across ordinary Nodes and Mordred/MCS process workers is
+    # owned by Runtime. Prevent an implicit BLAS/OpenMP pool in every process
+    # from exceeding the Run's available CPU budget. ChemBERTa is the one
+    # ordinary CPU kernel that explicitly receives a per-Node thread budget.
+    threads = option_value(arguments, "--cpu-threads", 1) if algorithm == "chemberta_embedding" else 1
     runtime_env.update(
         {
-            "OMP_NUM_THREADS": f"{threads},1",
+            "OMP_NUM_THREADS": str(threads),
             "OMP_THREAD_LIMIT": str(threads),
             "OMP_MAX_ACTIVE_LEVELS": "1",
             "OMP_DYNAMIC": "FALSE",
             "OMP_NESTED": "FALSE",
-            "OPENBLAS_NUM_THREADS": "1",
-            "BLIS_NUM_THREADS": "1",
-            "NUMEXPR_NUM_THREADS": "1",
+            "OPENBLAS_NUM_THREADS": str(threads),
+            "BLIS_NUM_THREADS": str(threads),
+            "NUMEXPR_NUM_THREADS": str(threads),
             "MKL_NUM_THREADS": str(threads),
             "MKL_DYNAMIC": "FALSE",
         }
@@ -148,15 +168,17 @@ def ensure_environment(pixi: str, manifest: Path, runtime_env: dict[str, str]) -
             owner = json.loads(owner_path.read_text(encoding="utf-8"))
             created = datetime.fromisoformat(str(owner["created_at"]))
             same_host = owner.get("host") == socket.gethostname()
-            stale = (same_host and not process_alive(int(owner.get("pid", -1)))) or (
-                datetime.now(timezone.utc) - created > timedelta(hours=2)
+            owner_alive = same_host and process_alive(int(owner.get("pid", -1)))
+            stale = (same_host and not owner_alive) or (
+                not same_host
+                and datetime.now(timezone.utc) - created > timedelta(hours=8)
             )
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             try:
                 age = time.time() - mutex.stat().st_mtime
             except OSError:
                 return False
-            stale = age > 2 * 60 * 60
+            stale = age > 8 * 60 * 60
         if stale:
             shutil.rmtree(mutex, ignore_errors=True)
         return stale
@@ -165,7 +187,11 @@ def ensure_environment(pixi: str, manifest: Path, runtime_env: dict[str, str]) -
     if environment.is_dir() and expected and ready.is_file() and ready.read_text(encoding="utf-8").strip() == expected:
         return
     acquired = False
-    for _ in range(600):
+    # Multiple Nodes of one Skill can reach a fresh shared Pixi environment at
+    # once.  Large scientific environments may legitimately need more than ten
+    # minutes to install on a shared filesystem, so wait up to one hour for the
+    # single bootstrap owner instead of failing otherwise healthy Nodes.
+    for _ in range(3600):
         try:
             mutex.mkdir()
             (mutex / "owner.json").write_text(
@@ -226,7 +252,7 @@ if not pixi:
     )
     raise SystemExit(127)
 runtime_env = prepare_runtime_environment(skill_dir)
-configure_xtb_process_environment(runtime_env, arguments, capability)
+configure_native_process_environment(runtime_env, arguments, capability)
 print(f"INFO: Using Pixi executable: {pixi}", file=sys.stderr)
 print(f"INFO: Skill-local cache root: {skill_dir / 'env' / 'cache'}", file=sys.stderr)
 ensure_environment(pixi, manifest, runtime_env)

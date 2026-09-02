@@ -1,29 +1,16 @@
-# CONDUCTOR identifier reference
+# CONDUCTOR 0.1.9 ID
 
-| ID | 意味 | 例 | 発行主体 |
-|---|---|---|---|
-| `D###` | Description capability | D002 | Catalog／人間 |
-| `C###` | Clustering capability | C005 | Catalog／人間 |
-| `A###` | Operator capability | A008 | Catalog／人間 |
-| `I###` | Interpretation capability | I001 | Catalog／人間 |
-| `O###` | 制御・補助capability | O001 | Catalog／人間 |
-| `RND####` | 人間が開始した解析Round | RND0002 | Main Orchestrator／Runtime |
-| `N######` | Run全体で一意の実行Node | N000125 | Runtime |
-| `ATT####` | 同一Node内の実行attempt | ATT0002 | Runtime |
-| `C######` | Run全体で一意のCluster | C000041 | Runtime |
-| `SCR<16hex>` | 一回のbounded Result Screening batch | SCR1a2b3c4d5e6f7890 | Runtime |
-| `CFM<16hex>` | 比較可能なOperator条件を結ぶcomparison family | CFM1a2b3c4d5e6f7890 | Runtime |
-| `RVB<16hex>` | Global／Global–Local／sibling等のReview Bundle | RVB1a2b3c4d5e6f7890 | Runtime |
-| `ASR<16hex>` | Review Bundle、source hash、rubric、revisionに結合した評価record。実行RoundとSource Roundを別記録 | ASR1a2b3c4d5e6f7890 | Runtime commit |
-| `INS######` | Run全体で一意のInsight | INS000023 | Runtime commit |
-| `REQ######` | Concierge依頼 | REQ000004 | Concierge |
-| `MMPREQ######` | read-only MMP解釈依頼 | MMPREQ000004 | I002 Skill |
-| `MMP-<hash>` | Pair × Transform × Exact Core | MMP-A1B2C3D4E5F6 | A014 |
-| `TRF-<hash>` | Canonical方向の置換 | TRF-A1B2C3D4E5F6 | A014 |
-| `CORE-<hash>` | Exact Core | CORE-A1B2C3D4E5F6 | A014 |
-| `CTX-<hash>` | Pairに紐づくEnvironment radius context | CTX-A1B2C3D4E5F6 | A014 |
-| `MRC-<hash>` | MMP候補索引カード | MRC-A1B2C3D4E5F6 | A014 |
+| ID | 用途 | 例 |
+|---|---|---|
+| `D###` | Description Capability | D002 |
+| `C###` | Clustering Capability | C012 |
+| `A###` | Analysis Capability | A006 |
+| `I###` | Interpretation Capability | I001 |
+| `O###` | Control/On-demand Capability | O004 |
+| `RND####` | 人間承認Round | RND0001 |
+| `N######` | 通常DAG Node | N000123 |
+| `C######` | Run内Global Cluster ID | C000123 |
+| `S####` | Series ID | S0003 |
+| `REQ######` | On-demand記録ID | REQ000004 |
 
-旧alpha版の`ND/NC/NA/NI`、`F/H/E/Q/R/ACT`体系は使用しません。追加解析案はInsight内の文章であり、独立した永続IDやstatusを持ちません。
-
-MMP内のhash IDはRun全体のNode／Cluster／Insight連番とは独立したArtifact-local IDです。同じ正規化内容から決定論的に再現され、RuntimeのNode counterを消費しません。
+Node IDはRun全体の通し番号です。REQ IDは通常DAGと独立し、Round番号を持ちません。

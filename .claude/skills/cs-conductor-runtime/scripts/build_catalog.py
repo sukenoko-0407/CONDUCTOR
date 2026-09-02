@@ -9,177 +9,68 @@ from pathlib import Path
 from typing import Any
 
 
-SKILL_DIR = Path(__file__).resolve().parents[1]
-
-
-def find_workspace() -> Path:
-    for candidate in [SKILL_DIR, *SKILL_DIR.parents, Path.cwd(), *Path.cwd().parents]:
-        if (candidate / ".claude" / "skills").is_dir() and (candidate / "CONDUCTOR_modules" / "catalog").is_dir():
+def workspace() -> Path:
+    here = Path(__file__).resolve()
+    for candidate in [here, *here.parents, Path.cwd(), *Path.cwd().parents]:
+        if (candidate / ".claude" / "skills").is_dir() and (candidate / "CONDUCTOR_modules" / "VERSION").is_file():
             return candidate
-    raise RuntimeError("CONDUCTOR project root could not be located")
+    raise FileNotFoundError("CONDUCTOR workspace was not found")
 
 
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def selected_names(selection: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for key in ("description_skills", "clustering_skills", "analysis_skills", "interpretation_skills", "support_skills"):
+        values = selection.get(key)
+        if not isinstance(values, list): raise ValueError(f"included_skills.json requires array {key}")
+        names.extend(str(value) for value in values)
+    if len(names) != len(set(names)): raise ValueError("included_skills.json contains duplicate Skill names")
+    return names
 
 
-def validate_capability(value: dict[str, Any], expected_name: str) -> None:
-    try:
-        import jsonschema
-    except ImportError as exc:
-        raise RuntimeError("jsonschema is required to validate the Catalog") from exc
-    schema = json.loads((SKILL_DIR / "schemas" / "capability.schema.json").read_text(encoding="utf-8"))
-    jsonschema.validate(value, schema)
-    if value["skill_name"] != expected_name:
-        raise ValueError(f"{expected_name}: metadata skill_name mismatch")
-    if value["stage"] == "analysis":
-        profile = value.get("interpretation_profile")
-        if not isinstance(profile, dict):
-            raise ValueError(f"{expected_name}: analysis capability requires interpretation_profile")
-        profile_schema = json.loads(
-            (find_workspace() / "CONDUCTOR_modules" / "schemas" / "operator_interpretation_profile.schema.json").read_text(encoding="utf-8")
-        )
-        jsonschema.validate(profile, profile_schema)
-        expected_profile_prefix = f"IP-{value['capability_id']}-"
-        if not str(profile["profile_id"]).startswith(expected_profile_prefix):
-            raise ValueError(f"{expected_name}: interpretation profile ID does not match capability_id")
-        allowed_axes = set(profile["allowed_axes"])
-        anchor_axes = set(profile["anchors"])
-        if anchor_axes != allowed_axes:
-            raise ValueError(
-                f"{expected_name}: interpretation profile anchors must match allowed_axes exactly; "
-                f"missing={sorted(allowed_axes-anchor_axes)}, unexpected={sorted(anchor_axes-allowed_axes)}"
-            )
-    approval_policy = value.get("approval_policy", "standard")
-    high_cost = value["cost"].get("class") in {"high", "very_high"}
-    approval_required = bool(value["cost"].get("human_approval_required"))
-    if approval_policy == "preauthorized_initial":
-        if not high_cost or approval_required:
-            raise ValueError(
-                f"{expected_name}: preauthorized_initial requires a high-cost, approval-free capability"
-            )
-    elif high_cost and not approval_required:
-        raise ValueError(f"{expected_name}: high-cost capability must require human approval unless explicitly preauthorized")
-    if value["stage"] != "clustering":
-        return
-    kind = value.get("clustering_kind")
-    algorithm = value.get("implementation", {}).get("algorithm", "")
-    contracts = value.get("input_contract") or []
-    dependencies = value.get("dependencies") or []
-    if kind == "direct_structure":
-        if algorithm not in {"structure_murcko", "structure_mcs", "structure_brics", "structure_recap"}:
-            raise ValueError(f"{expected_name}: direct_structure must use an explicit structure rule, decomposition, or MCS algorithm")
-        if contracts != ["compound_id_smiles_csv"] or dependencies:
-            raise ValueError(f"{expected_name}: direct_structure must consume a compound-ID/SMILES CSV and have no Description dependency")
-    elif kind == "description_vector":
-        if not algorithm.startswith("vector_"):
-            raise ValueError(f"{expected_name}: description_vector must use a vector_* implementation")
-        expected = ["description_vector_payload", "canonical_description_result_in_conductor", "explicit_semantics_metric_in_general"]
-        if contracts != expected or dependencies != ["description"]:
-            raise ValueError(f"{expected_name}: description_vector must consume one payload under the explicit canonical/general contract")
-    elif kind not in {"categorical", "meta"}:
-        raise ValueError(f"{expected_name}: clustering_kind is missing or unsupported")
-
-
-def render_markdown(catalog: dict[str, Any]) -> str:
-    lines = ["# CONDUCTOR Skill Catalog", "", "> この文書は`CONDUCTOR_modules/catalog/catalog.json`から生成される。収載対象は人間管理の`CONDUCTOR_modules/catalog/included_skills.json`、解析profileは`CONDUCTOR_modules/catalog/analysis_profile.json`で指定する。", "", f"Profile: `{catalog['profile_id']}`", f"Generated: `{catalog['generated_at']}`", ""]
-    for stage in ["description", "clustering", "analysis", "interpretation", "orchestration"]:
-        entries = [entry for entry in catalog["capabilities"] if entry["stage"] == stage]
-        if not entries:
-            continue
-        lines.extend([f"## {stage.title()}", "", "| ID | Skill | Capability | Variants | Family | Clustering kind | Input | Value semantics | Natural metric | Cost | Status | Human approval |", "|---|---|---|---|---|---|---|---|---|---|---|---|"])
-        for entry in entries:
-            variants = ", ".join(item["id"] for item in entry.get("variants") or []) or "-"
-            if entry.get("default_variant"):
-                variants += f" (default: {entry['default_variant']})"
-            semantics = entry.get("value_semantics") or "-"
-            metric = entry.get("natural_metric") or "-"
-            clustering_kind = entry.get("clustering_kind") or "-"
-            input_contract = ", ".join(entry.get("input_contract") or []) or "-"
-            lines.append(f"| {entry['capability_id']} | `{entry['skill_name']}` | {entry['display_name']} | {variants} | {entry['family']} | {clustering_kind} | {input_contract} | {semantics} | {metric} | {entry['cost']['class']} | {entry['applicability']['status']} | {entry['cost']['human_approval_required']} |")
+def render(catalog: dict[str, Any]) -> str:
+    lines = ["# CONDUCTOR Skill Catalog", "", "> 収載対象は人間管理の`included_skills.json`、実行範囲は`analysis_profile.json`を正本とする。", "", f"CONDUCTOR: `{catalog['conductor_version']}`", ""]
+    for stage in ("description", "clustering", "analysis", "interpretation", "orchestration"):
+        entries = [item for item in catalog["capabilities"] if item.get("stage") == stage]
+        if not entries: continue
+        lines += [f"## {stage.title()}", "", "| ID | 名称 | 主な役割 | Cost |", "|---|---|---|---|"]
+        for item in entries:
+            lines.append(f"| {item['capability_id']} | {item['display_name']} | {item.get('description','')} | {item.get('cost',{}).get('class','-')} |")
         lines.append("")
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip() + "\n"
 
 
-def build(workspace: Path) -> tuple[dict[str, Any], str]:
-    modules = workspace / "CONDUCTOR_modules"
-    conductor_version = (modules / "VERSION").read_text(encoding="utf-8").strip()
-    selection_path = modules / "catalog" / "included_skills.json"
-    selection = json.loads(selection_path.read_text(encoding="utf-8"))
-    names = selection.get("included_skills") or []
-    if len(names) != len(set(names)):
-        raise ValueError("included_skills contains duplicates")
-    profile_path = modules / "catalog" / "analysis_profile.json"
-    profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    try:
-        import jsonschema
-    except ImportError as exc:
-        raise RuntimeError("jsonschema is required to validate the analysis profile") from exc
-    jsonschema.validate(profile, json.loads((modules / "schemas" / "analysis_profile.schema.json").read_text(encoding="utf-8")))
-    capabilities = []
+def build(root: Path) -> tuple[dict[str, Any], str]:
+    modules = root / "CONDUCTOR_modules"; version = (modules / "VERSION").read_text(encoding="utf-8").strip()
+    selection_path = modules / "catalog" / "included_skills.json"; selection = json.loads(selection_path.read_text(encoding="utf-8")); names = selected_names(selection)
+    profile_path = modules / "catalog" / "analysis_profile.json"; profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    if profile.get("conductor_version") != version: raise ValueError("analysis_profile conductor_version differs from VERSION")
+    capabilities=[]
     for name in names:
-        path = workspace / ".claude" / "skills" / name / "capability.json"
-        if not path.exists():
-            raise FileNotFoundError(f"Allowlisted Skill metadata not found: {path}")
-        value = json.loads(path.read_text(encoding="utf-8"))
-        validate_capability(value, name)
-        value = dict(value)
+        path=root/".claude"/"skills"/name/"capability.json"
+        if not path.is_file(): raise FileNotFoundError(f"Selected Skill has no capability.json: {name}")
+        value=json.loads(path.read_text(encoding="utf-8"))
+        for key in ("capability_id","skill_name","display_name","stage"):
+            if not value.get(key): raise ValueError(f"{name}: capability metadata lacks {key}")
+        if value["skill_name"] != name: raise ValueError(f"{name}: skill_name mismatch")
         capabilities.append(value)
-    capabilities.sort(key=lambda item: item["capability_id"])
-    ids = [item["capability_id"] for item in capabilities]
-    if len(ids) != len(set(ids)):
-        raise ValueError("Capability IDs must be unique")
-    known = set(ids)
-    referenced = set()
-    for key in ["description_capabilities", "direct_structure_clustering", "vector_clustering_capabilities", "vector_clustering_representations", "conditional_clustering", "high_cost_bundle"]:
-        referenced.update(profile["basic_compute"].get(key) or [])
-    for key in ["description_panel", "global_operator_capabilities", "local_operator_capabilities"]:
-        referenced.update(profile["exploration"][key])
-    referenced.update(profile["modeling"]["fixed_description_panel"])
-    if profile.get("matched_molecular_pairs"):
-        referenced.add(profile["matched_molecular_pairs"]["capability_id"])
-        manual_skill = profile["matched_molecular_pairs"]["manual_interpretation_skill"]
-        if manual_skill not in names:
-            raise ValueError(f"MMP manual interpretation Skill is not allowlisted: {manual_skill}")
-    unknown = sorted(referenced - known)
-    if unknown:
-        raise ValueError(f"Analysis profile references unknown capabilities: {unknown}")
-    catalog = {"schema_version": "2.0.0", "conductor_version": conductor_version, "profile_id": profile["profile_id"], "profile_path": "CONDUCTOR_modules/catalog/analysis_profile.json", "profile_hash": hashlib.sha256(profile_path.read_bytes()).hexdigest(), "selection_managed_by": "human", "selection_path": "CONDUCTOR_modules/catalog/included_skills.json", "generated_at": utc_now(), "capabilities": capabilities}
-    return catalog, render_markdown(catalog)
+    capabilities.sort(key=lambda item:(item.get("stage",""),item["capability_id"]))
+    ids=[item["capability_id"] for item in capabilities]
+    if len(ids)!=len(set(ids)): raise ValueError("Selected capability IDs are not unique")
+    catalog={"schema_version":"1.0.0","conductor_version":version,"profile_id":profile["profile_id"],"profile_hash":hashlib.sha256(profile_path.read_bytes()).hexdigest(),"selection_hash":hashlib.sha256(selection_path.read_bytes()).hexdigest(),"generated_at":datetime.now(timezone.utc).isoformat(),"capabilities":capabilities}
+    return catalog,render(catalog)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Build the human-curated CONDUCTOR Catalog.")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--check", action="store_true", help="Validate metadata and selection without writing (default).")
-    mode.add_argument("--write", action="store_true", help="Explicit maintenance mode: regenerate the packaged Catalog and Markdown.")
-    args = parser.parse_args()
-    workspace = find_workspace()
-    modules = workspace / "CONDUCTOR_modules"
-    catalog, markdown = build(workspace)
-    if not args.write:
-        catalog_path = modules / "catalog" / "catalog.json"
-        markdown_path = modules / "docs" / "CONDUCTOR_skill_catalog.md"
-        if not catalog_path.exists() or not markdown_path.exists():
-            raise FileNotFoundError("Generated Catalog artifacts are missing")
-        existing = json.loads(catalog_path.read_text(encoding="utf-8"))
-        comparable_existing = {key: value for key, value in existing.items() if key != "generated_at"}
-        comparable_generated = {key: value for key, value in catalog.items() if key != "generated_at"}
-        if comparable_existing != comparable_generated:
-            raise ValueError("CONDUCTOR_modules/catalog/catalog.json is stale; rebuild the Catalog")
-        catalog["generated_at"] = existing["generated_at"]
-        if markdown_path.read_text(encoding="utf-8") != render_markdown(catalog):
-            raise ValueError("CONDUCTOR_modules/docs/CONDUCTOR_skill_catalog.md is stale; rebuild the Catalog")
+def main()->int:
+    parser=argparse.ArgumentParser(); parser.add_argument("--write",action="store_true"); parser.add_argument("--check",action="store_true"); args=parser.parse_args(); root=workspace(); modules=root/"CONDUCTOR_modules"; catalog,markdown=build(root); cp=modules/"catalog"/"catalog.json"; mp=modules/"docs"/"CONDUCTOR_skill_catalog.md"
+    if args.write:
+        cp.write_text(json.dumps(catalog,ensure_ascii=False,indent=2)+"\n",encoding="utf-8"); mp.write_text(markdown,encoding="utf-8")
     else:
-        (modules / "catalog" / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        (modules / "docs" / "CONDUCTOR_skill_catalog.md").write_text(markdown, encoding="utf-8")
-    print(f"Validated {len(catalog['capabilities'])} allowlisted capabilities")
-    return 0
+        if not cp.is_file() or not mp.is_file(): raise FileNotFoundError("Generated Catalog is missing; run --write")
+        old=json.loads(cp.read_text(encoding="utf-8")); old.pop("generated_at",None); current=dict(catalog); current.pop("generated_at",None)
+        if old!=current or mp.read_text(encoding="utf-8")!=render({**catalog,"generated_at":json.loads(cp.read_text(encoding="utf-8")).get("generated_at")}): raise ValueError("Generated Catalog is stale; run --write")
+    print(json.dumps({"status":"ok","capability_count":len(catalog["capabilities"])},ensure_ascii=False)); return 0
 
 
-if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+if __name__=="__main__":
+    try: raise SystemExit(main())
+    except Exception as exc: print(f"ERROR: {exc}",file=sys.stderr); raise SystemExit(1)

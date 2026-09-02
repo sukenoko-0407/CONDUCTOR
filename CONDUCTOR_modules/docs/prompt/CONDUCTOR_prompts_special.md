@@ -1,265 +1,30 @@
-# CONDUCTOR 特別対応プロンプト集
+# CONDUCTOR 0.1.9 特別対応プロンプト集
 
-対象Version: `0.1.8`
+- [Failed Node修復](#failed-node修復)
+- [Wall Time後の継続](#wall-time後の継続)
+- [MMP Type-III](#mmp-type-iii)
+- [監査のみ](#監査のみ)
 
-障害修復、実行契約の補正、特定Operatorの再解析、限定的な深掘り、既存Reportの翻訳に使う。通常のRound運用には[日常運用プロンプト集](CONDUCTOR_prompts_daily.md)を使用する。対象は0.1.8で新規作成したRunに限り、0.1.7以前のRunの修復継続には使用しない。
-
-## 目次
-
-- [共通原則](#special-common)
-- [実行中packet完了後の安全な一時停止](#special-safe-pause)
-- [Failed Nodeの原因調査・実装修正](#special-failure-maintenance)
-- [修正済みFailed Nodeを同一Roundで再実行](#special-failure-retry)
-- [既知のOperator契約不一致を修復して再開](#special-operator-contract)
-- [A010を同一Run内で再実行](#special-a010)
-- [現在のRoundの一次評価を全件再Screening](#special-result-rescreening)
-- [CLOSED Roundの一次評価を新Roundで再Screening](#special-historical-rescreening)
-- [Interpretation日本語HTMLの追加作成](#special-translation)
-- [同一Runを使用せず新Runを選ぶ条件](#special-new-run)
-
-<a id="special-common"></a>
-## 共通原則
-
-- State、DAG、Event Ledger、Node Statusを直接編集しない。
-- `pending / running / succeeded / failed / cancelled`以外の独自Statusを作らない。
-- 生存中のRuntime Workerや科学processを二重起動、強制的にreconcile、代行実行しない。
-- 技術的不具合の修復と、科学的scope／parameterの変更を区別する。科学的意味が変わる場合は人間判断を待つ。
-- succeeded Nodeと既存artifactを削除・上書きしない。無効化が必要なら`cs-conductor-node-review`を使う。
-- 人間が許可していない新Run、新Round、代替Nodeを作らない。
-
-<a id="special-safe-pause"></a>
-## 実行中packet完了後の安全な一時停止
-
-実行中のNodeを強制終了せず、現在発行済みExecution packetがterminalになった直後でActive Roundを止める。
+## Failed Node修復
 
 ```text
-現在のCONDUCTOR処理を安全に一時停止してください。
-
-Run Root: <absolute run_root>
-対象Round: <RND####>
-
-目的:
-失敗したNodeの原因を修正し、同じRound・同じNode IDで再実行することです。
-
-指示:
-- 起動済みRuntime Workerと、そのExecution packet内のNodeは中断せずterminalまで完了させる
-- WAIT_RUNNING中はreconcileせず待ち、RECONCILE_RUNNINGになった場合だけ一回実行する
-- 現在のpacket処理後は、新しいExecution packet、二つ目のWorker、failed Nodeのretryを開始しない
-- 実行中Nodeがゼロになった時点を停止境界とする
-- RoundはACTIVEのまま維持し、request-checkpoint、ENTER_FINALIZING、Interpretation、Full Audit、accept-roundを実行しない
-- failed Nodeをcancelledまたは独自Statusへ変更しない
-- failed NodeごとにNode ID、Capability ID、Attempt数、failure code、failure pointerを報告する
-- State、DAG、Event Ledgerを直接編集しない
-- 最後にOrchestrator leaseをreleaseして終了する
+Run root <RUN_ROOT> のRuntimeが`FAILED_NODE_REPAIR_REQUIRED`を返しています。新Roundを開始せず、対象Nodeのdiagnosticとlog末尾だけを確認してください。原因を実装または入力契約で修正し、科学的scopeが同じなら同じNode IDを`retry-node`してください。別CLIを直接組み立てて代行しないでください。
 ```
 
-`request-checkpoint`はRoundを`FINALIZING`へ進めるため、この一時停止には使用しない。一つのpacketに複数Nodeがある場合は、packet単位で停止境界まで完了させる。
-
-<a id="special-failure-maintenance"></a>
-## Failed Nodeの原因調査・実装修正
-
-Orchestratorを動かさず、通常のMain Agentへ保守作業として依頼する。
+## Wall Time後の継続
 
 ```text
-これはCONDUCTOR Roundの再開ではなく、失敗原因の保守作業です。
-
-Run Root: <absolute run_root>
-対象Node: <N######>
-failure pointer: <failure_packet等のpath>
-
-Run Rootはread-onlyとして扱い、State、DAG、Node、既存artifactを変更しないでください。failure情報と該当Skillの必要最小限の実装を調査し、原因を特定してください。
-
-CLI、環境、path、入出力契約などの技術的不具合であれば、該当Skillを修正して回帰試験まで実施してください。修正対象、原因、科学的意味が不変であること、検証結果を報告してください。
-
-科学的アルゴリズム、対象化合物、endpoint、Metric、Cluster scope、乱数seed、parameterの意味を変更する必要がある場合は、修正前に人間の判断を待ってください。Stateを書き換えたり代替Nodeを作成したりしないでください。
+Run root <RUN_ROOT> のPAUSED RoundへWall Time <MINUTES>を追加し、同じRoundをcontinueしてください。未完Nodeから再開し、新しいRoundを開始しないでください。
 ```
 
-<a id="special-failure-retry"></a>
-## 修正済みFailed Nodeを同一Roundで再実行
+## MMP Type-III
 
 ```text
-/cs-conductor-orchestrator
-
-操作: 修正後のActive Roundを同じRoundのまま再開
-Run Root: <absolute run_root>
-対象Round: <RND####>
-優先対象Node: <N######>
-修正内容: <修正した技術的不具合の要約>
-SMILES列名（現行Runでmetadata欠損を修復する場合のみ）: <column name>
-
-最初にconductor_control.jsonを確認し、対象RoundがACTIVEであること、running Nodeがゼロであることを照合してください。修正済みfailed Nodeを同じNode IDの新Attemptとして再実行し、代替Nodeや新Roundを作らないでください。
-
-required_actionがRETRY_FAILED_NODEなら同じNodeを再試行してください。FAILED_NODE_REPAIR_REQUIREDで、上記の人間承認済み修正が完了している場合はrepair retryしてください。EXECUTE_RUNNABLE_BATCHでも、このプロンプトで人間が優先再実行を明示しており、running Nodeがゼロなら、Control Authorityを付けたretry-nodeで同じNodeをpendingへ戻してください。
-
-それ以外のrequired_actionでは別の科学Nodeを実行せず、required_actionと対象Node状態を報告して停止してください。修復後は通常の固定ループへ戻り、新規Result Screening、対象Roundのhandoff成果物、Full Auditまで完了してAWAITING_HUMAN_REVIEWで停止してください。screening RoundへInterpretationを追加せず、Roundを自動受理せず、次Roundを開始しないでください。
+`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> の全化合物についてMMP Type-IIIを明示実行してください。REQをprepareした後、専用の`run-mmp --role type-iii`を使用してください。1-cut、radius 0-2とし、Spotfire用の全詳細CSVと集約CSVを正本、SQLiteを派生成果物としてREQ directory内へ保存してください。通常analysis NodeやDAGは変更しないでください。
 ```
 
-Wall Timeが先に終了して`FINALIZING`へ進んだ場合はretryを強行しない。得られた結果でInterpretationとAuditを完成させ、人間がpartial Round受理または同一Round継続を選ぶ。
-
-<a id="special-operator-contract"></a>
-## 既知のOperator契約不一致を修復して再開
-
-A003/A004のCanonical subject不一致、Description有効行数とsample countの不一致、A012への無効なLocal scopeなど、複数Runで別々に観測された既知事象に使用する。対象Runに実在する事象だけを処置する。
+## 監査のみ
 
 ```text
-/cs-conductor-orchestrator
-
-操作: Operator契約修正後のActive Roundを、同じRun・同じRoundのまま修復再開
-Run Root: <absolute run_root>
-期待するRun ID: <run_id>
-期待するRound: <RND####>
-
-人間による明示承認:
-- 修正版Packageへの差し替えは完了しています。
-- このRunのfailure pointerで確認できる既知の実装契約不一致だけを、同じNode IDの新Attemptとして再試行して構いません。
-- このRunにA012へLocal Clusterを指定した無効Nodeが実在する場合だけ、cs-conductor-node-reviewでinspect後にcancelして構いません。
-- 新しいRunおよび新しいRoundの開始は許可しません。
-
-最初にconductor_control.jsonとcompact inspectionを読み、Run ID、Active Round、required_action、live lease、Worker、running Nodeを照合してください。このRunに実在するFailed/Pending NodeだけについてCapability、scope、role、failure code、failure pointerを確認し、別Runを探索しないでください。
-
-Node別処置:
-- A003/A004 role=cluster-overlayでCanonical subjectまたは投影payload件数不一致により失敗したNode: 同じNode IDをrepair retryする。
-- A002/A005/A007/A008で利用可能Description行数とsample_countの不一致により失敗したNode: 同じNode IDをrepair retryする。正当な欠損・無効分子・Vectorなし・Local標本数不足はwarningまたはnot-applicableとして保持する。
-- A012へtarget_clusterまたはsingle_cluster scopeが付いたFailed/Pending Node: A012はGlobal専用なので再試行しない。inspectし、activeな下流Nodeがないことを確認して「旧Planning契約が無効」を理由にcancelする。Global A012は再利用する。
-- 上記以外のFailed Node: 一括retry、cancel、独自Status化をせず、人間判断を待つ。
-- succeeded Node: 他Runで同じCapabilityに問題があっても再計算しない。
-
-ACTIVEかつ修復可能なrequired_actionの場合だけ処置してください。FINALIZINGならretryせず、対象Roundのreport modeに従うhandoff成果物とFull Auditを完成させてAWAITING_HUMAN_REVIEWで停止してください。AWAITING_HUMAN_REVIEWなら自動continue／acceptせず、CLOSEDなら新Roundを作らず報告してください。
-
-State、DAG、Ledgerを直接編集せず、RuntimeのExecution Request／Packet経路を使用してください。終了時に再試行NodeとAttempt、cancel Node、未処置事象、残存Status件数、Interpretation、Audit、最終required_actionを報告してください。
+Run root <RUN_ROOT> に対してRuntime `audit --mode full`を実行し、結果だけを報告してください。State/DAGの登録・変更、Round進行、Node実行は行わないでください。監査成果物が`state/<TIMESTAMP>/`へ保存されることは許容します。
 ```
-
-<a id="special-a010"></a>
-## A010を同一Run内で再実行
-
-同一0.1.8 RunでPackage修正前に生成したA010を監査履歴として残し、現在の`cs-analysis-cluster-profile`で再実行する。
-
-Round操作は状態に合わせて人間が明記する。
-
-- `ACTIVE`：現在のRoundをそのまま再開
-- `AWAITING_HUMAN_REVIEW`：現在のRoundを継続
-- `CLOSED`：同じRun内で新しいRoundを開始
-
-```text
-/cs-conductor-orchestrator
-
-Run Root: <absolute RUN_ROOT path>
-Roundの扱い: <現在のRoundをそのまま再開 / 現在のRoundを継続 / 同じRun内で新しいRoundを開始>
-追加Wall Time: <minutes>
-A010再実行対象: <旧A010 Node IDを列挙 / 旧形式のA010をすべて>
-
-同じRun IDを維持し、現在のcs-analysis-cluster-profile Skillを使用してA010を再実行してください。人間が上記で許可したRound操作だけを行い、別Runや許可されていない新Roundを作らないでください。
-
-対象A010 Nodeをqueryして次を区別してください。
-- failed Node: 同じ科学的契約が成立する場合は同じNode IDの新Attemptとしてretryする。
-- succeeded Node: 削除・上書きしない。cs-conductor-node-reviewで下流影響をinspect後、旧結果をdisable-resultで下流利用停止にし、同じ入力Node、scope、Cluster、parameterを使う新しいA010 Nodeとして実行する。
-- favorable_fraction、favorable_threshold、favorable_comparatorを持つ新形式の成功Node: 再実行対象から除外する。
-
-新A010でhigh_threshold／low_thresholdが維持され、favorable／unfavorableのfraction、count、comparator、quantile、threshold populationがCSVとoperator_summary.jsonへ記録されていることを確認してください。operator_report.htmlのFavorable definitionとGlobal favorable baselineも確認してください。
-
-A010以外の科学Nodeをこの依頼だけを理由に追加しないでください。公開Runtime操作だけでは対象A010を限定できない場合は、State編集やprivate関数呼出しをせず、人間へ報告して停止してください。
-
-新結果を正規commitし、Interpretationを更新してFull Auditまで完了してください。旧A010 Nodeは監査履歴に残し、新旧Node IDの対応を報告してください。
-```
-
-`disable-result`は旧成果物を削除しないが、旧A010を参照するInterpretationを失効させることがある。新結果commit後にInterpretationを再作成する。
-
-<a id="special-result-rescreening"></a>
-## 現在のRoundの一次評価を全件再Screening
-
-Interpreterによる一次評価が欠落、不完全、または信頼できないと人間が判断した場合に、現在のRoundのReview Bundleを小バッチで再評価する。旧評価は削除せず、同じBundleへ新しいrevisionをappendする。
-
-```text
-/cs-conductor-orchestrator
-
-操作: 現在のRoundの一次評価を全件再Screening
-Run Root: <absolute run_root>
-対象Round: <RND####>
-再Screening理由: <一次評価が機能していなかったと判断した根拠>
-Screening batch size: 4
-Interpreter並列数: 4（推奨。必要なら1～3へ変更）
-追加Wall Time: <FINALIZINGまたはAWAITING_HUMAN_REVIEWから同じRoundを再開する場合のminutes>
-
-最初にconductor_control.jsonだけを読み、Run ID、対象Round、round_state、running Node、current Screening waveを確認してください。対象は現在のactive_round_idと一致するRoundに限定します。CLOSED Roundは再開せず、新Roundも作らず、人間へhistorical re-Screeningを案内してください。
-
-running Nodeがある場合は新しい処理を開始せず、安全にterminalとなるまで待ってください。current Screening waveがある場合は、そのwaveを先に正常完了または正式なretry処理で解消してください。
-
-Control Authorityを使用し、Runtimeの公開コマンド`request-result-rescreening`を`--all-current --batch-size 4 --screening-parallelism <1-4>`で一回だけ実行してください。対象RoundがFINALIZINGまたはAWAITING_HUMAN_REVIEWの場合は、上記の追加Wall Timeを`--additional-walltime-minutes`へ渡し、同じRoundだけを再開してください。ACTIVEなら新しいRound操作や暗黙のWall Time変更をしないでください。
-
-その後は通常の単一required_actionループへ戻ってください。`PREPARE_RESULT_SCREENING`が一waveに複数の`batches`を返した場合、それぞれのcontextとdraftだけを別々の短命cs-conductor-interpreterへ渡し、一回の並列Agent呼出しで同時評価してください。各Interpreterは自分のBundleだけを一回ずつ絶対評価し、Mainへ評価本文を展開しません。
-
-全Interpreterの終了を待ってから、成功draftを`commit-result-screening`で一件ずつ直列commitしてください。Runtime commitを並列化しないでください。一部が失敗した場合は成功分を先にcommitし、失敗batchだけを同じcontextで再評価してください。現在waveが空になる前に次waveを準備しないでください。この小wave Loopを対象がゼロになるまで続けます。
-
-既存のresult_assessment_index.jsonl、Round CSV、State、DAGを直接編集せず、旧Assessmentを削除・上書きしないでください。新AssessmentはRuntimeにrevisionを付与させてappendしてください。再Screening中は新しいDescription、Clustering、Operator Nodeを追加しないでください。
-
-Runtimeは再Screening依頼時に同じRoundのhuman checkpointも予約するため、全対象の再Screening完了後は追加科学計算へ戻らずfinalizingへ進みます。report_mode=screeningならScreening Summaryを再生成し、report_mode=fullなら新しい一次評価に基づいてInterpretationを再生成してください。その後Full Auditを実行し、AWAITING_HUMAN_REVIEWで停止してください。Roundをacceptせず、次Roundを開始しないでください。
-
-最後に、再評価Request ID、対象Bundle総数、batch数、成功／失敗数、各Bundleの旧revision→新revision、残存未評価数、再生成したSummaryまたはInterpretation、Audit結果を簡潔に報告してください。
-```
-
-現在Roundの再Screeningへ別RoundのBundleを混在させない。すでに`CLOSED`となった過去Roundは不変履歴であり、この操作では再Screeningしない。複数の過去Roundは次のhistorical re-Screening専用RoundへSourceとしてまとめて指定し、State編集で代用しない。
-
-<a id="special-historical-rescreening"></a>
-## CLOSED Roundの一次評価を新Roundで再Screening
-
-過去のCLOSED Roundを変更せず、そのRoundで保存済みのReview Bundleだけを再評価する。Operator計算や正式Interpretationは実施しない。
-
-```text
-/cs-conductor-orchestrator
-
-操作: CLOSED Roundの一次評価を再Screeningする専用Roundを開始
-Run Root: <absolute run_root>
-対象Source Round:
-- <RND####>
-- <必要な場合だけ別のRND####>
-Wall Time: <minutes>
-Interpreter並列数: 4（推奨。必要なら1～3へ変更）
-
-Active Roundがないこと、対象Source RoundがすべてCLOSEDであることを確認してください。元のCLOSED Roundは再開・変更しないでください。
-
-人間が明示した新Roundについて、`prepare-round --report-mode screening --historical-rescreening --screening-parallelism <1-4>`を使い、各対象Roundを`--source-round-id`で一回ずつ渡してください。契約のOperator予算が0で、対象Review Bundle集合がhash固定され、required deliverableがScreeningだけであることを確認してから通常の一回限りauthorizationを行ってください。
-
-通常の単一required_actionループに従います。Runtimeが一waveに複数の`batches`を返したときだけ、batchごとに短命cs-conductor-interpreterを並列起動してください。各Subagentへは割り当てられた既定4 Review Bundleのcontextとdraftだけを渡します。全Subagent終了後に成功batchを一件ずつ直列commitし、失敗batchだけを再評価してください。Description、Clustering、Operator、Interpretation Nodeを計画・実行しないでください。旧Assessmentを削除・上書きせず、Runtimeに新revisionをappendさせてください。Agentへ旧revision本文を渡さないでください。
-
-全対象の再Screening後にscreening_summary.jsonとresult_assessments.csvを生成し、Full Auditを実行してください。AWAITING_HUMAN_REVIEWで停止し、Roundを自動受理せず、次Roundや累積Interpretationを自動開始しないでください。
-
-最後に、再評価Round、Source Round、対象Bundle数、成功した新revision数、not_scorable数、Summary、Audit結果を簡潔に報告してください。
-```
-
-新Assessmentでは`round_id`が再評価専用Round、`source_round_id`が元のCLOSED Roundになる。累積Interpretationは`source_round_id`に基づいて最新revisionを選ぶ。
-
-<a id="special-translation"></a>
-## Interpretation日本語HTMLの追加作成
-
-標準Interpretationは日本語である。例外的に英語で作成された既存Reportだけに使用し、Stateや既存Reportは変更しない。
-
-```text
-Plan modeで実施してください。
-
-指定したinterpretation.mdを内容の正本、interpretation.htmlをlayout／CSS templateとして、日本語のinterpretation_jp.htmlを同じdirectoryに新規作成してください。
-
-入力Markdown: <absolute path>/interpretation.md
-参照HTML template: <absolute path>/interpretation.html
-出力: <same directory>/interpretation_jp.html
-
-最初に入力Markdownと参照HTMLをread-onlyで確認してください。Markdown本文がすでに日本語ならfileを作らず報告してください。出力fileが存在する場合は上書きせず人間へ確認してください。
-
-翻訳対象はMarkdownの人間向け文章です。見出し構造、INS######、N######、C######、RND####、Capability ID、数値、単位、metric、sample数、Operator result reference、相対リンク、警告、limitations、recommended follow-upsを省略・追加・再解釈しないでください。新しいInsightや現行仕様にないIDを生成しないでください。
-
-HTMLのsection順、低彩度配色、table、fact panel、print CSS、埋め込みassetを参照HTMLから維持してください。大容量HTMLを翻訳元にせず内容はMarkdownから取得し、外部CDN、font、network取得を追加しないでください。
-
-既存のinterpretation.json、interpretation.md、interpretation.html、quality report、Runtime、DAG、State、その他artifactは変更しないでください。書き込みはinterpretation_jp.htmlの新規作成一回だけとし、実行前に計画と書き込み対象を人間へ示してください。
-```
-
-<a id="special-new-run"></a>
-## 同一Runを使用せず新Runを選ぶ条件
-
-次のいずれかに該当する場合は修復再開を中止し、新Runを人間へ提案する。
-
-- Control、DAG、Event Ledgerの検証自体が失敗する
-- Node ID、依存関係、Run入力、endpoint、Cluster registryの整合性が崩れている
-- 失敗の大半を既知の技術的不具合で説明できない
-- 入力CSV、endpoint、前処理方針、科学parameterを変更する必要がある
-- 人間が既存Operator／Clustering結果を信頼しないと判断した
-
-新Runを選ぶ場合も、Descriptionを無条件にコピーしたりStateを手編集したりしない。正式なMigrationが`result.json`、payload hash、compound ID集合、入力hashを検証できる場合だけ再利用する。

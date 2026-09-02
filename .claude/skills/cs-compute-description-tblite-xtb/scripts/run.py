@@ -95,6 +95,7 @@ def validate_json(instance: dict[str, Any], schema_name: str) -> None:
         raise RuntimeError("jsonschema is required in CONDUCTOR mode") from exc
     schema_path = SKILL_DIR / "schemas" / schema_name
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    schema.pop("$schema", None); schema.pop("$id", None)
     jsonschema.validate(instance=instance, schema=schema)
 
 
@@ -802,7 +803,7 @@ def run() -> int:
         warnings.append(f"{len(errors)} row-level errors were recorded")
     config = {key: value for key, value in vars(args).items() if key not in {"smiles", "compound_id"}}
     manifest = {
-        "schema_version": "2.0.0", "conductor_version": "0.1.8", "artifact_stage": "description", "run_id": run_id,
+        "schema_version": "2.0.0", "conductor_version": "0.1.9", "artifact_stage": "description", "run_id": run_id,
         "node_id": args.node_id, "attempt_id": args.attempt_id,
         "capability_id": CAPABILITY["capability_id"], "skill_name": CAPABILITY["skill_name"], "skill_version": CAPABILITY["version"],
         "representation_id": CAPABILITY["representation_id"], "input": args.input or "inline_smiles", "input_hash": input_hash,

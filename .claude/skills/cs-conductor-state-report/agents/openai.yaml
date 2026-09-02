@@ -1,4 +1,0 @@
-interface:
-  display_name: "CONDUCTOR State Report"
-  short_description: "Render a read-only CONDUCTOR Run DAG report"
-  default_prompt: "Use $cs-conductor-state-report to render the explicitly provided CONDUCTOR Run Root as a human-readable DAG report."

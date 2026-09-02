@@ -1,104 +1,51 @@
 ---
 name: cs-conductor-orchestrator
-description: Manually activate the Claude Code Main Agent as the CONDUCTOR 0.1.8 Orchestrator for exactly one human-authorized Round. Use only when the human explicitly requests CONDUCTOR control.
+description: Activate the Claude Code Main Agent as the CONDUCTOR 0.1.9 Orchestrator for exactly one human-authorized Round.
 disable-model-invocation: true
-allowed-tools: Read, Bash, Glob, Grep, Agent, Skill
+allowed-tools: Read, Bash, Agent
 ---
 
-# CONDUCTOR Main Orchestrator
+# Main Agent Orchestrator 0.1.9
 
-このSkillはMain Agent内でだけ有効化する。Subagentとして起動せず、既存Projectの`CLAUDE.md`も変更しない。人間が明示した一つのRoundだけを制御し、新しいRoundを自動開始しない。
+このSkillはMain Agentでだけ有効化する。Subagentとして起動せず、Projectの`CLAUDE.md`を変更しない。人間が明示した一つのRoundだけを進め、新しいRoundを勝手に開始しない。
 
-## 開始時の固定手順
+## 開始
 
-1. 新規Runなら、人間指定のCSV、endpoint、`higher_is_better`、project、parallel limit、Available CPU Cores、出力先でRuntime `init`を一回だけ実行する。CPU未指定時は8。SMILES列が一意でない場合だけ`--smiles-column`を要求する。
-2. 既存Runでは、最初に`conductor_control.json`だけを読む。全DAG、Ledger、過去Reportを先読みしない。
-3. 人間依頼を`inspect`、`start new Round`、`start historical re-Screening Round`、`start cumulative Interpretation Round`、`resume active Round`、`continue current Round`、`re-Screen current Round`、`revise report`、`accept Round`へ分類する。新Roundは人間が明示したときだけ`prepare-round`と`authorize-round`を行う。
-4. `ACTIVE`または`FINALIZING`は同じRoundを`resume-round`する。live leaseがあれば二重起動しない。`AWAITING_HUMAN_REVIEW`では人間の`continue-round`、明示的な`request-result-rescreening`、`revise-report`、`accept-round`以外を行わない。
+新規Runは`init`、`prepare-round`、人間承認後の`authorize-round`、`resume-round`の順。既存Runは最初にRuntime `query`だけを呼び、DAGや過去Reportを全読込しない。CPU未指定は8。高コストDescriptionは一括承認を一回だけ求める。
 
-Runtime操作は必ずこのSkillの`scripts/launch.py`を使う。JSON／JSONLを直接編集せず、Runtime Controllerを別Pythonで直接起動しない。
+期限切れLeaseを再取得する際、同一hostで実行中のRuntime processが検出されたら再取得しない。異なるhostまたは旧形式の`running` Nodeが残る場合も自動回収せず、旧process停止を人間が確認した場合だけ`resume-round --confirm-interrupted-running`を使う。
+
+すべてのRuntime操作は次のLauncher経由とし、JSONを直接編集しない。
 
 ```bash
-python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> --run-root <RUN_ROOT> --lease-token <LEASE> <COMMAND固有引数>
+python .claude/skills/cs-conductor-orchestrator/scripts/launch.py <COMMAND> ...
 ```
-
-`init`、`prepare-round`、`authorize-round`、`resume-round`、`request-result-rescreening`、read-only queryは例外である。Round authorization tokenはRound開始承認専用であり、通常ループでは使わない。
-
-人間が現在の`ACTIVE`、`FINALIZING`、`AWAITING_HUMAN_REVIEW` Roundの一次評価を明示的にやり直す場合だけ、Control Authorityを付けて`request-result-rescreening --screening-parallelism <1-4>`を一回実行できる。`FINALIZING`または`AWAITING_HUMAN_REVIEW`から戻す場合は追加Wall Timeを必須とする。各batchは既定4、最大8 Review Bundleで、Runtimeは最大4 batchを一つのwaveとして準備できる。旧評価を削除せずrevisionを追加する。`CLOSED` Roundを再開したり、別RoundのBundleを現在Roundへ混在させたりしない。
-
-人間が一つ以上のCLOSED Roundの一次評価をやり直す場合は、元Roundを再開せず、`prepare-round --report-mode screening --historical-rescreening --source-round-id <RND####> --screening-parallelism <1-4>`で再Screening専用の新Roundを開始する。`--source-round-id`は対象ごとに繰り返し、すべてCLOSEDでなければならない。Runtimeが当時のReview BundleとResult参照を凍結し、Operator予算0、並列評価可能な小batch wave、Summary、Auditだけを許可する。新Assessmentの`round_id`は再評価Round、`source_round_id`は元Roundである。旧revisionはInterpreter contextへ渡さない。
-
-人間が複数の完了済みScreening Roundから正式Reportを求めた場合は、通常解析Roundへ混ぜず、`prepare-round --report-mode full --cumulative-interpretation`で新しい報告専用Roundを提案し、通常どおり一回限りのauthorizationを受ける。必要なら`--source-round-id`を繰り返す。RuntimeがOperator予算0、既報Bundle除外、過去Round最新Assessmentの選抜を固定するため、Mainは過去Reportや全Resultを列挙しない。このRoundでDescription、Clustering、Operatorを計画しない。
 
 ## 固定ループ
 
-Runtime compact responseの`protocol_version=0.1.8`と、一つの`required_action.code`だけを信頼する。
+Runtime応答の`required_action.code`を一つだけ実行する。
 
-| required action | Main Agentの操作 |
+| code | 実行 |
 |---|---|
+| `AWAIT_HUMAN_ROUND` | 停止する。人間から新Roundの明示指示があるまで`prepare-round`しない |
+| `AUTHORIZE_ROUND` | `request_file`の目的、資源、Parameter、高コスト承認状態を人間へ示す。明示承認後だけ`authorize-round`する |
+| `AWAIT_HUMAN_REVIEW` | 停止する。Interpretationと監査の完了を報告し、人間のAccept指示後だけRoundを閉じる |
+| `ROUND_PAUSED` | 停止する。人間が追加Wall Timeを指定した場合だけ同じRoundを`continue-round`する |
 | `PLAN_BASIC` | `plan-basic` |
-| `PLAN_EXPLORATION` | `plan-exploration` |
-| `EXECUTE_RUNNABLE_BATCH` | `prepare-execution-packet`後、MainからRuntime `execute-packet`を一回だけ呼ぶ |
-| `WAIT_RUNNING` | Runtime Workerまたは科学processが生存中。再投入・reconcile・短間隔pollをせず待機 |
-| `RECONCILE_RUNNING` | Worker不在が確定したため`reconcile-running`を一回だけ実行 |
-| `RETRY_FAILED_NODE` | `retry_mode=same_command`を確認し、同じNodeを`retry-node` |
-| `FAILED_NODE_REPAIR_REQUIRED` | 自動retryを止め、`diagnostic_code`、`diagnostic_message`、`remediation`、`retry_mode`を人間へ返す。通常はAttempt log全文を読まず、`UNKNOWN_FAILURE`または人間が詳細を求めた場合だけ`log_pointer`を確認する。修正後も同じ科学的Nodeが成立する場合だけ同じNodeを`retry-node`。Planningしたscope自体が無効なら、人間承認後に`cs-conductor-node-review cancel` |
-| `SCIENTIFIC_DECISION` | bounded Working Setから候補を選び`scientific-decision` |
-| `ENTER_FINALIZING` | `enter-finalizing` |
-| `PREPARE_RESULT_SCREENING` | `prepare-result-screening` |
-| `WRITE_RESULT_SCREENING` | 通常Screeningは指定1 batchをInterpreterへ渡す。再Screeningで`batches`が複数なら各contextへ短命Interpreterを同時起動し、全終了後に`commit-result-screening`を1 batchずつ直列実行 |
-| `WRITE_SCREENING_SUMMARY` | `write-screening-summary` |
-| `PLAN_INTERPRETATION` | `prepare-interpretation` |
-| `WRITE_INTERPRETATION` | Interpreterを一つ起動し、`commit-interpretation` |
-| `RUN_FULL_AUDIT` | `audit --mode full --register` |
+| `HUMAN_APPROVAL_REQUIRED` | 人間へ一括承認を求める |
+| `EXECUTE_RUNNABLE_BATCH` | `prepare-execution-packet`後、返されたpathを`execute-packet --packet`へ一回渡す |
+| `WAIT_RUNNING` | 再投入せず待つ |
+| `FAILED_NODE_REPAIR_REQUIRED` | 他の独立Nodeを試行し終えた後、diagnosticを人間へ示し、修正後は同じNodeをretryする。推測CLIで代行しない |
+| `HUMAN_SERIES_REVIEW_REQUIRED` | accepted Series数が24を超えたことと、参考値として実解析単位数を示す。人間が現条件を承認したら`approve-series`、変更指示なら`revise-series` |
+| `PLAN_STANDARD` | `plan-standard` |
+| `PREPARE_INTERPRETATION` | `prepare-interpretation` |
+| `WRITE_INTERPRETATION` | `cs-conductor-interpreter`を一つ起動し、draft完成後`commit-interpretation` |
+| `RUN_FULL_AUDIT` | 現在のLease tokenを渡して`audit --mode full --register` |
 | `COMPLETE_FINALIZING` | `complete-finalizing` |
+| `PAUSE_ROUND` | `pause-round`。新Roundを作らない |
+| `BLOCKED_BASIC` / `BLOCKED_STANDARD` | 停止する。Runtime応答と未完了Nodeを報告し、推測でNodeや依存関係を追加しない |
+| `INTERPRETATION_BLOCKED` | 停止する。I001の診断を報告し、同じInterpretation Nodeの修復方針を人間へ確認する |
 
-`FAILED_NODE_REPAIR_REQUIRED`、`RESULT_SCREENING_BLOCKED`、`HUMAN_APPROVAL_REQUIRED`、`HUMAN_REVIEW_REQUIRED`、`INTERPRETATION_BLOCKED`、`AWAIT_HUMAN_ROUND`では停止して人間へ返す。Runtimeが許可していない処理へ読み替えない。
+表にないcodeでは停止して応答をそのまま人間へ示す。MainはDescription、Clustering、Operatorを直接Bash実行しない。`execute-packet`は同期的に完了まで待つため、短間隔pollや独自実行fileは不要である。
 
-人間が失敗Nodeの修正と優先再実行を明示した場合だけ、`EXECUTE_RUNNABLE_BATCH`中でも、running Nodeがゼロであることを確認し、Main leaseとControl Authorityを付けた`retry-node`を使える。これは自動探索の優先順位変更ではない。Wall Time終了により`ENTER_FINALIZING`へ移った場合はpartial RoundとしてInterpretation／Auditを完成させ、人間へ「受理して次Roundで補完」または「同じRoundをcontinue」の選択を返す。自動的にcontinueや新Round開始をしない。
-
-## Runtime Worker契約
-
-- Mainは専門Skillを直接実行しない。
-- `prepare-execution-packet`が返す`packet_path`を、そのままRuntime `execute-packet`へ一回だけ渡す。lease tokenは渡さない。
-- 正式な実行形は次の一つである。応答キー`packet_path`から別の引数名を推測せず、`--packet`へ値を渡す。
-
-  ```bash
-  python .claude/skills/cs-conductor-orchestrator/scripts/launch.py execute-packet --run-root <RUN_ROOT> --packet <packet_path>
-  ```
-
-- `execute-packet`はPacketを原子的にclaimし、独立した決定論的OS Workerを起動して完了を待つ。科学Nodeの並列数とCPU配分はRuntimeが決める。
-- MainのBash Tool callまたはsessionが失われても、claim済みWorkerは継続する。同じPacketを再度`execute-packet`へ渡す操作は既存Workerへの再接続であり、科学processを二重起動しない。
-- 各科学Skillには共通`execution_request.json`が渡る。MainとRuntime Workerは個別Skillの長いCLIを組み立てない。
-- 失敗時もcommandを即席修正しない。Runtimeは回復可能な一時障害だけを同じRequest契約で有限再試行し、引数・列・schema・実装欠陥は人間修正待ちにする。
-- 未claimのstale、expired、invalid packetは再送せず、Controlを再確認する。claim済みPacketはPacket IDで冪等に追跡する。
-- `WAIT_RUNNING`中はMainが科学processを監視・代行しない。異常終了後にRuntimeが`RECONCILE_RUNNING`を返した場合だけ一回reconcileする。
-
-## Interpreter契約
-
-- InterpreterはMainが必要なときだけ直接起動する短命の専用Subagentである。通常の科学計算を所有するのはSubagentではなくRuntime Workerである。
-- Runtimeが返す`context_path`、`draft_path`、mode、必要な場合だけ`node_id`と人間focusを渡す。
-- `screening`では一回のbounded Review Bundle batchだけを絶対評価させ、Mainへ個別評価本文を展開しない。`synthesis`ではRuntime shortlistだけを横断比較させる。
-- 再Screeningの一waveに複数batchがある場合だけ、Mainはbatch数と同数のInterpreterを一回の並列Agent呼出しで起動する。各Interpreterは自分の`context_path`と`draft_path`だけを扱う。全Subagent終了後、成功draftをRuntimeへ一件ずつ直列commitする。Runtime mutationを並列実行しない。
-- 一部のInterpreterが失敗した場合は、成功draftを先に直列commitし、失敗batchだけを同じcontextで再起動する。成功済みbatchを評価し直さず、次waveも先に準備しない。
-- historical re-Screeningでは`context.round_id`が再評価Round、各Review Bundleの`round_id`が元のCLOSED Roundである。この差をエラーとして補正せず、RuntimeがAssessment帰属を記録する。
-- Interpreterは科学計算、Node作成、State更新、評価索引更新をしない。
-- draft拒否時は同じInterpretation Nodeを有限回修正する。別Roundや別Nodeを作らない。
-
-## 探索規則
-
-基本計算後のOperator探索は`exploration`一種類だけである。Runtimeが履歴を除外し、Capability、入力Description／Clustering、scopeの偏りを抑えたseed付き選択を行う。Globalを優先し、人間が`max_additional_nodes`で承認した件数まで同一Round内で25 Node以下ずつ計画する。Wall Timeは件数上限を暗黙に増やさない。
-
-成功Result Cardが発生すると、RuntimeはGlobal、Global–Local、sibling ClusterのReview Bundleを決定論的に作り、次の科学計算前に既定4件の一次評価を要求する。Mainはshort-lived Interpreterへ一batchだけ渡し、評価本文を会話へ転載せずcommit成否だけを受け取る。評価軸は0～3の絶対基準で、合計点を作らない。
-
-Round開始時の`report_mode`は`screening`または`full`である。`screening`はBundle評価索引、Round CSV、compact summary、Auditだけで終了する。`full`はさらに`favorable_clue`と`contextual_clue`から選抜した最大50 Resultで正式Interpretationを作る。0.1.7以前のRunは継続せず、0.1.8では新規Runを開始する。
-
-科学的推論が必要なのは`SCIENTIFIC_DECISION`である。人間priority、Global／Cluster-local変化、兄弟Cluster、独立したDescription family、異なるOperator、反証候補を評価する。Node ID、依存関係、Status、再試行、Round gateはRuntimeへ委ねる。
-
-A014の定型フローは再利用可能なGlobal DBを一件作るだけで、Local screening／detail Nodeを自動計画しない。通常InterpretationへはcompactなGlobal Result Cardだけを渡す。Clusteringと連携したGlobal–Local MMP解釈はRound終了後に人間が`cs-analysis-interpret-mmp`を明示起動する。標準計算範囲は1～2 cuts、radius 0～2、core heavy atoms 8以上、両分子に対するcore fraction 0.5以上、variable heavy atoms 10以下である。
-
-Wall Timeは上限であり早期終了目標ではない。許可済み作業を完了後、`screening`ではcompact summary、`full`では正式Interpretationを作り、いずれもFull Auditと`AWAITING_HUMAN_REVIEW`まで進む。人間の明示指示なしに次Roundを開始しない。
-
-## 読み取り境界
-
-通常読むのは人間依頼、compact response、bounded Working Set、選択したResult Cardだけとする。詳細科学方針が必要な場合だけ`CONDUCTOR_modules/docs/CONDUCTOR_policy.md`の該当箇所を読む。
+Interpretationは定型Report完成後の一回だけ。On-demand依頼は本Round loopへ入れず、`cs-conductor-on-demand-analysis`を使う。

@@ -77,7 +77,11 @@ def load_input(
     endpoint_column: str,
     max_compounds: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
-    frame = pd.read_csv(input_path)
+    # Compound identifiers are opaque strings.  Reading them with Pandas type
+    # inference would turn values such as "001" into "1" and sever MMP rows
+    # from the Runtime membership/Series tables.
+    header = pd.read_csv(input_path, nrows=0)
+    frame = pd.read_csv(input_path, dtype={id_column: "string"} if id_column in header.columns else None)
     missing = [name for name in (id_column, smiles_column, endpoint_column) if name not in frame.columns]
     if missing:
         raise ValueError(f"Missing required input columns: {missing}")
@@ -92,7 +96,7 @@ def load_input(
         raise ValueError(f"Duplicate compound IDs are not allowed: {duplicates[:10]}")
     if len(selected) > max_compounds:
         raise ValueError(f"Input contains {len(selected)} compounds; maximum is {max_compounds}")
-    selected["endpoint"] = pd.to_numeric(selected["endpoint"], errors="coerce")
+    selected["endpoint"] = pd.to_numeric(selected["endpoint"], errors="coerce").replace([np.inf, -np.inf], np.nan)
     selected["valid_smiles"] = selected["smiles"].map(lambda value: Chem.MolFromSmiles(value) is not None)
     selected["heavy_atoms"] = selected["smiles"].map(heavy_atoms)
     warnings: list[str] = []

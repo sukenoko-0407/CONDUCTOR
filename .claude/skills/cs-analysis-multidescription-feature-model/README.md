@@ -1,41 +1,25 @@
-# Multi-Description feature model
+# SKILLの目的
 
-## SKILLの目的
-
-Multi-Description feature modelを実行し、一般利用向け数値結果とCONDUCTOR向けOperator resultを生成する。
+複数Descriptionの少数特徴量を統合し、GlobalとSeriesの説明可能性を比較します。
 
 ## 想定利用シーン
 
-固定した6種類のDescriptionからfold内で特徴量を選び、globalまたは30化合物以上のClusterで簡潔なモデルを比較する場合。
+定型解析における局所モデルの有効性確認です。
 
 ## 環境構築
 
-`scripts/launch.py`を実行すると、`env/pixi.toml`から環境を自動作成または再利用する。Linuxでは共有Pixiを優先し、cacheと環境はこのSkillの`env/`配下に置かれる。
+Pixi環境を自動構築します。
 
 ## 利用例
 
-一般利用（主成果物のみ）:
-
-```bash
-python .claude/skills/cs-analysis-multidescription-feature-model/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv
-```
-
-
-CONDUCTORのState nodeとして利用する場合:
-
-```bash
-python .claude/skills/cs-analysis-multidescription-feature-model/scripts/launch.py --input compounds.csv --property-column pIC50 --higher-is-better --description description.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id NODE_ID --attempt-id ATT0001
-```
+`python scripts/launch.py --conductor-request execution_request.json`
 
 ## 制約事項
 
-- endpoint列と`--higher-is-better`または`--no-higher-is-better`の指定が必要。
-- 数値的観察を出力するOperatorであり、SAR機序や因果関係を確定しない。
-- CONDUCTORモードではState由来のDescription／Clustering Capabilityとsource Node IDを保持し、scope、主要結果、上位個別結果とともに`operator_report.html`へ示す。完全な数値はCSVに保持する。
-- Cluster surveyのOOF予測は、複数Clusterを`cluster_id`で区別する単一`cluster_oof_predictions.csv`に集約される。
+予測製品ではなく探索用OOF評価です。Seriesは30化合物以上を標準とします。
 
 ## 変更履歴
 
 | Version | 変更内容 |
 |---|---|
-| 1.0.0 | 初版。人間向けの目的、利用例、制約事項を整理。Cluster survey OOFを単一Artifactへ統合。 |
+| 1.0.0 | Global/Series batch OOFモデルへ再設計 |

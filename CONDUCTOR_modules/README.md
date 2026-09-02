@@ -1,6 +1,6 @@
 # CONDUCTOR modules
 
-CONDUCTOR 0.1.8の共有定義packageです。Claude Codeが認識するAgent／SkillはProject rootの`.claude/`、Catalog、Policy、schema、Runtime、template、testは`CONDUCTOR_modules/`へ置きます。
+CONDUCTOR 0.1.9の共有定義packageです。Claude Codeが認識するAgent／SkillはProject rootの`.claude/`、Catalog、Policy、schema、Runtime、template、testは`CONDUCTOR_modules/`へ置きます。
 
 ```text
 project/
@@ -17,7 +17,7 @@ project/
 
 `catalog.json`は各Skill metadataから生成しますが、収載対象は人間管理の`included_skills.json`、初手解析範囲は`analysis_profile.json`で決まります。
 
-解析中、このdirectoryと`.claude/`はread-onlyです。Control、DAG、artifact、Interpretation、audit、State report、Concierge responseはすべてRun Rootへ書きます。したがってRun停止中ならpackage一式を同じVersionへ差し替えられます。
+解析中、このdirectoryと`.claude/`はread-onlyです。Control、DAG、artifact、Interpretation、audit、On-demand記録はすべてRun Rootへ書きます。したがってRun停止中ならpackage一式を同じVersionへ差し替えられます。
 
 各Skillは`env/pixi.toml`を持ちます。Linuxでは`/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi`を優先し、cacheとtemporary fileをSkillの`env/`配下へ限定します。
 

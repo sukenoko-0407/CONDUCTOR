@@ -1,7 +1,0 @@
-interface:
-  display_name: "CONDUCTOR Assessment Report"
-  short_description: "Visualize primary assessments without changing the Run"
-  default_prompt: "Use $cs-conductor-assessment-report to summarize the explicitly supplied CONDUCTOR Run Root as a read-only HTML assessment dashboard."
-policy:
-  allow_implicit_invocation: false
-
