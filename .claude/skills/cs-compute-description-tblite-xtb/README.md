@@ -35,7 +35,7 @@ python .claude/skills/cs-compute-description-tblite-xtb/scripts/launch.py --inpu
 - Linuxではworkerを`spawn`で起動し、Scheduler/cpusetで許可されたCPUをworkerごとに重複しない集合へ分割してaffinityを設定する。NumPy・tbliteのimport前にOpenMP上限を設定し、独立したOpenBLAS並列は1 threadに抑える。
 - 4コア割当は使用率を常時400%にする指定ではなく、1 workerが使用できるCPUの上限である。直列区間では使用率が下がる。
 - CONDUCTORではD019を単独実行し、RuntimeがAvailable CPU Coresから原則4コア/化合物で並列数を決める。OrchestratorのNode並列数とは独立している。
-- 高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。
+- ROUND1ではDescription Databaseのmiss化合物だけを追加承認なしで計算する。
 
 ## 変更履歴
 

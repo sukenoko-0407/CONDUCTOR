@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 
-CONDUCTOR_VERSION = "0.1.9"
+CONDUCTOR_VERSION = "0.1.10"
 
 
 def utc_now() -> str:
@@ -46,7 +46,7 @@ def clean_json(value: Any) -> Any:
 
 
 def parse_request() -> tuple[dict[str, Any], Path, dict[str, Any]]:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.9 batch Skill")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.10 batch Skill")
     parser.add_argument("--request", required=True, help="Execution Request JSON")
     args = parser.parse_args()
     request_path = Path(args.request).resolve()
@@ -226,14 +226,71 @@ def image_uri(path: Path) -> str:
 
 
 def html_page(title: str, body: str) -> str:
-    return f"""<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{html.escape(title)}</title><style>
-*{{box-sizing:border-box}}body{{margin:0;background:#f3f1ec;color:#243039;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.6}}main{{max-width:1180px;min-width:0;margin:auto;padding:32px}}h1,h2,h3{{color:#263b45}}.card{{min-width:0;overflow:hidden;background:#fff;border:1px solid #d8d4ca;border-radius:10px;padding:20px;margin:16px 0;box-shadow:0 3px 12px #1d2d3520}}.table-wrap{{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;border:1px solid #e2ded6;border-radius:7px}}table{{border-collapse:collapse;width:max-content;min-width:100%;max-width:none;font-size:.9rem}}th,td{{border-bottom:1px solid #dedbd3;padding:7px;text-align:left;vertical-align:top;white-space:nowrap}}th{{background:#e8eceb;position:sticky;top:0;z-index:1}}.metric-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}}.metric{{background:#f5f6f3;border-radius:7px;padding:10px 12px}}.metric b{{display:block;font-size:1.08rem}}.link-grid{{columns:3 220px}}.good{{color:#7b3f26;font-weight:700}}.warning{{color:#8a5b24;font-weight:700}}.muted{{color:#69767c}}img{{max-width:100%;height:auto}}code{{background:#eef0ed;padding:2px 5px}}a{{color:#315f70}}@media(max-width:700px){{main{{padding:16px}}.card{{padding:14px}}.link-grid{{columns:1}}}}</style></head><body><main>{body}</main></body></html>"""
+    styles = """
+*{box-sizing:border-box}body{margin:0;background:#f3f1ec;color:#243039;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;line-height:1.6}main{max-width:1180px;min-width:0;margin:auto;padding:32px}h1,h2,h3{color:#263b45}.card{min-width:0;overflow:hidden;background:#fff;border:1px solid #d8d4ca;border-radius:10px;padding:20px;margin:16px 0;box-shadow:0 3px 12px #1d2d3520}.table-wrap{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;border:1px solid #e2ded6;border-radius:7px}table{border-collapse:collapse;width:max-content;min-width:100%;max-width:none;font-size:.9rem}th,td{border-bottom:1px solid #dedbd3;padding:7px;text-align:left;vertical-align:top;white-space:nowrap}th{background:#e8eceb;position:sticky;top:0;z-index:1}table.sortable th{cursor:pointer;user-select:none;padding-right:20px}table.sortable th[data-sort-direction='asc']::after{content:' ▲';font-size:.72em}table.sortable th[data-sort-direction='desc']::after{content:' ▼';font-size:.72em}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.metric{background:#f5f6f3;border-radius:7px;padding:10px 12px}.metric b{display:block;font-size:1.08rem}.link-grid{columns:3 220px}.good{color:#7b3f26;font-weight:700}.warning{color:#8a5b24;font-weight:700}.muted{color:#69767c}img{max-width:100%;height:auto}code{background:#eef0ed;padding:2px 5px}a{color:#315f70}details.report-table{margin:10px 0}details.report-table>summary,details.column-help>summary,details.neighbor-structure-gallery>summary{cursor:pointer;color:#315f70;font-weight:650}details.report-table>.table-wrap{margin-top:8px}details.column-help,details.neighbor-structure-gallery{margin:8px 2px 2px}details.column-help dl{display:grid;grid-template-columns:minmax(130px,220px) 1fr;gap:4px 12px;margin:8px 0}details.column-help dt{font-weight:650}details.column-help dd{margin:0}.report-figure{width:100%;max-width:100%;height:auto}.summary-distribution-figure{display:block;width:min(860px,88%);max-width:100%;height:auto;margin:14px auto 24px}.single-target-structure img{width:min(420px,100%)}.neighbor-structure-gallery figure{margin:12px 0}.core-summary-layout{display:grid;grid-template-columns:minmax(220px,360px) minmax(160px,240px);gap:20px;align-items:center}.core-structure-image{width:100%;max-width:340px}.metric-stack{display:grid;gap:10px}@media(max-width:700px){main{padding:16px}.card{padding:14px}.link-grid{columns:1}.summary-distribution-figure{width:100%}.core-summary-layout{grid-template-columns:1fr}details.column-help dl{grid-template-columns:1fr}details.column-help dd{margin:0 0 6px}}
+"""
+    script = r"""
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('table.sortable').forEach(function (table) {
+    var body = table.tBodies[0];
+    if (!body) return;
+    table.querySelectorAll('thead th').forEach(function (header, columnIndex) {
+      header.tabIndex = 0;
+      header.setAttribute('role', 'button');
+      header.setAttribute('title', 'クリックして並べ替え');
+      var sortColumn = function () {
+        var ascending = header.dataset.sortDirection !== 'asc';
+        table.querySelectorAll('thead th').forEach(function (item) {
+          delete item.dataset.sortDirection;
+          item.removeAttribute('aria-sort');
+        });
+        header.dataset.sortDirection = ascending ? 'asc' : 'desc';
+        header.setAttribute('aria-sort', ascending ? 'ascending' : 'descending');
+        var rows = Array.from(body.rows).map(function (row, position) {
+          return {row: row, position: position};
+        });
+        var value = function (row) {
+          var text = (row.cells[columnIndex]?.textContent || '').trim();
+          var normalized = text.replace(/,/g, '');
+          var numeric = /^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(normalized);
+          return {text: text.toLocaleLowerCase('ja'), number: numeric ? Number(normalized) : null};
+        };
+        rows.sort(function (left, right) {
+          var a = value(left.row), b = value(right.row), comparison = 0;
+          if (a.number !== null && b.number !== null) comparison = a.number - b.number;
+          else comparison = a.text.localeCompare(b.text, 'ja', {numeric: true});
+          if (comparison === 0) comparison = left.position - right.position;
+          return ascending ? comparison : -comparison;
+        });
+        rows.forEach(function (item) { body.appendChild(item.row); });
+      };
+      header.addEventListener('click', sortColumn);
+      header.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          sortColumn();
+        }
+      });
+    });
+  });
+});
+</script>
+"""
+    return (
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{html.escape(title)}</title><style>{styles}</style></head>"
+        f"<body><main>{body}</main>{script}</body></html>"
+    )
 
 
 def frame_html(frame: pd.DataFrame, limit: int = 200) -> str:
     if frame.empty:
         return "<p class='muted'>該当結果なし</p>"
-    table = frame.head(limit).to_html(index=False, escape=True, border=0, na_rep="")
+    table = frame.head(limit).to_html(
+        index=False, escape=True, border=0, na_rep="", classes=["sortable"]
+    )
     return f"<div class='table-wrap' role='region' aria-label='表（横スクロール可能）' tabindex='0'>{table}</div>"
 
 

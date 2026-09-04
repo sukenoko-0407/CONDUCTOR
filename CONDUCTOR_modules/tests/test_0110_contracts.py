@@ -4,6 +4,7 @@ import json
 import importlib.util
 import io
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -16,10 +17,34 @@ MODULES = ROOT / "CONDUCTOR_modules"
 SKILLS = ROOT / ".claude" / "skills"
 
 
-class Version019Contracts(unittest.TestCase):
+class Version0110Contracts(unittest.TestCase):
     def setUp(self) -> None:
         self.profile = json.loads((MODULES / "catalog" / "analysis_profile.json").read_text(encoding="utf-8"))
         self.selection = json.loads((MODULES / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
+
+    def test_report_and_runtime_pixi_manifests_declare_import_dependencies(self) -> None:
+        requirements = {
+            "cs-analysis-series-descriptor-contrast": {"matplotlib"},
+            "cs-analysis-multidescription-feature-model": {"matplotlib"},
+            "cs-analysis-series-landscape": {"matplotlib"},
+            "cs-analysis-series-structural-signature": {"matplotlib", "rdkit"},
+            "cs-analysis-series-report": {"matplotlib", "rdkit"},
+            "cs-conductor-runtime": {"rdkit"},
+        }
+        for skill_name, expected in requirements.items():
+            manifest = tomllib.loads(
+                (SKILLS / skill_name / "env" / "pixi.toml").read_text(
+                    encoding="utf-8"
+                )
+            )
+            with self.subTest(skill=skill_name):
+                self.assertTrue(expected.issubset(manifest["dependencies"]))
+        runtime_smoke = tomllib.loads(
+            (SKILLS / "cs-conductor-runtime" / "env" / "pixi.toml").read_text(
+                encoding="utf-8"
+            )
+        )["tasks"]["smoke"]
+        self.assertIn("rdkit", runtime_smoke)
 
     def load_batch_runner(self, module_name: str):
         common_path = MODULES / "tools" / "templates" / "batch_skill_common.py"
@@ -75,6 +100,71 @@ class Version019Contracts(unittest.TestCase):
                 sys.modules["batch_skill_common"] = previous
         return runner
 
+    def make_many_cluster_c012_fixture(self, root: Path) -> dict:
+        """Build 25 valid Clusters whose default Leiden result has 25 units."""
+        dataset = root / "input.csv"
+        dataset.write_text(
+            "compound_id,SMILES,activity\n" + "".join(
+                f"C{index},CC,{index}\n" for index in range(1, 51)
+            ),
+            encoding="utf-8",
+        )
+        cluster_ids = [f"C{index:06d}" for index in range(1, 26)]
+        membership = root / "membership.csv"
+        membership.write_text(
+            "compound_id," + ",".join(cluster_ids) + "\n" + "".join(
+                f"C{compound}," + ",".join(
+                    "True" if compound >= 41 else "False"
+                    for _ in cluster_ids
+                ) + "\n"
+                for compound in range(1, 51)
+            ),
+            encoding="utf-8",
+        )
+        registry = root / "registry.csv"
+        registry.write_text(
+            "cluster_id,source_cluster_id,source_node_id,sample_count\n"
+            + "".join(
+                f"{cluster_id},L{position:06d},N000001,10\n"
+                for position, cluster_id in enumerate(cluster_ids, 1)
+            ),
+            encoding="utf-8",
+        )
+        statistics = root / "statistics.csv"
+        statistics.write_text(
+            "cluster_id,sample_count,favorable_fraction,selected_for_series\n"
+            + "".join(
+                f"{cluster_id},10,1.0,True\n" for cluster_id in cluster_ids
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "inputs": [
+                {"role": "dataset", "path": str(dataset)},
+                {
+                    "role": "cluster_membership_matrix",
+                    "path": str(membership),
+                },
+                {"role": "cluster_registry", "path": str(registry)},
+                {"role": "cluster_profile", "path": str(statistics)},
+                {"role": "cluster_enrichment", "path": str(statistics)},
+            ],
+            "columns": {
+                "compound_id": "compound_id", "smiles": "SMILES",
+                "endpoint": "activity",
+            },
+            "endpoint": {"higher_is_better": True},
+            "parameters": {
+                "parameter_search_enabled": True,
+                "resolution_grid": [1.0, 1.25, 1.5, 2.0, 2.5, 3.0],
+                "min_ff_evaluate_grid": [10, 15, 20, 25, 30],
+                "favorable_fraction_threshold": 0.5,
+                "multi_cluster_favorable_fraction_threshold": 0.4,
+                "max_units_for_auto_standard": 24,
+                "absolute_max_analysis_units": 100,
+            },
+        }
+
     def test_basic_compute_is_all_description_all_vector_clustering(self) -> None:
         basic = self.profile["basic_compute"]
         self.assertEqual(len(basic["description_capabilities"]), 18)
@@ -82,6 +172,16 @@ class Version019Contracts(unittest.TestCase):
         self.assertEqual(basic["vector_clustering_capabilities"], ["C005", "C006", "C007", "C008", "C009", "C010"])
         self.assertEqual(basic["survey_capabilities"], ["A001", "A002"])
         self.assertEqual(basic["series_clustering"], "C012")
+
+    def test_every_description_declares_0110_and_calculation_version(self) -> None:
+        for skill_name in self.selection["description_skills"]:
+            capability = json.loads(
+                (SKILLS / skill_name / "capability.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(capability["version"], "0.1.10", skill_name)
+            self.assertTrue(str(capability.get("calculation_version", "")), skill_name)
 
     def test_standard_operator_ids_are_unique_and_batched(self) -> None:
         expected = ["A003", "A004", "A005", "A006", "A007", "A008", "A009"]
@@ -147,6 +247,9 @@ class Version019Contracts(unittest.TestCase):
         self.assertIn("Target compound ID", basic)
         self.assertIn("Neighbor Endpoint", basic)
         self.assertIn("Favorable Δ (Neighbor → Target)", basic)
+        self.assertIn("<details class='report-table'>", basic)
+        self.assertIn("sortable", basic)
+        self.assertIn("列の説明", basic)
         self.assertIn("Core SMILES", detail)
         self.assertIn("Before fragment (Neighbor)", detail)
         self.assertNotIn("transform_pair_support", basic + detail)
@@ -164,6 +267,27 @@ class Version019Contracts(unittest.TestCase):
         ]
         self.assertEqual(section_positions, sorted(section_positions))
         self.assertIn("Target full SMILES", template)
+        self.assertIn("$target_structure_image", template)
+        self.assertIn("$neighbor_structure_gallery", template)
+        self.assertLess(
+            template.index("$basic_information_table"),
+            template.index("2D構造図に示したTargetとNeighbor"),
+        )
+        self.assertLess(
+            template.index("$mmp_detail_table"),
+            template.index("Targetは表示上常にTo"),
+        )
+        self.assertLess(
+            template.index("$transformation_gallery"),
+            template.index("Attachment pointを含む同一Core"),
+        )
+        self.assertIn('<details class="section-explanation">', template)
+        self.assertIn("詳細CSVリンク", template)
+        overview_template = (
+            SKILLS / "cs-analysis-matched-molecular-pairs" / "templates"
+            / "mmp_overview_report_template.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$target_gallery", overview_template)
 
     def test_mmp_report_keeps_largest_core_and_orients_target_as_to(self) -> None:
         runner = self.load_mmp_runner("mmp_runner_019_minimal_transform_test")
@@ -214,6 +338,136 @@ class Version019Contracts(unittest.TestCase):
             self.assertTrue(artifacts[0].is_file())
             self.assertIn("Neighbor → Target", gallery)
             self.assertIn("MMP_LARGE", gallery)
+
+        neighbor = runner.depiction_molecule("c1ccccc1Cl")
+        target = runner.depiction_molecule("c1ccccc1N")
+        self.assertTrue(
+            runner.align_target_depiction_to_neighbor(
+                neighbor, target, "c1ccccc1[*:1]"
+            )
+        )
+        self.assertEqual(neighbor.GetNumConformers(), 1)
+        self.assertEqual(target.GetNumConformers(), 1)
+        second_neighbor = runner.depiction_molecule("c1ccccc1F")
+        self.assertTrue(
+            runner.align_neighbor_depiction_to_target(
+                target, second_neighbor, "c1ccccc1[*:1]"
+            )
+        )
+        self.assertEqual(second_neighbor.GetNumConformers(), 1)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            target_html, neighbor_html, structure_artifacts = (
+                runner.render_target_neighbor_structures(
+                    "T1", "c1ccccc1N", oriented,
+                    Path(temporary), "target",
+                )
+            )
+            self.assertEqual(len(structure_artifacts), 2)
+            self.assertTrue(all(path.is_file() for path in structure_artifacts))
+        self.assertIn("single-target-structure", target_html)
+        self.assertIn("<details class='neighbor-structure-gallery'>", neighbor_html)
+        self.assertIn("共通する構造を基準に向きを揃え", neighbor_html)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            overview_html, overview_artifacts = runner.render_target_overview_gallery(
+                runner.pd.DataFrame([
+                    {"analysis_unit_id": "C000001", "target_compound_id": "T1"},
+                    {"analysis_unit_id": "S000001", "target_compound_id": "T1"},
+                ]),
+                runner.pd.DataFrame([{
+                    "compound_id": "T1", "SMILES": "c1ccccc1N", "activity": 8.0,
+                }]),
+                "compound_id", "SMILES", "activity", Path(temporary),
+            )
+            overview_svg = overview_artifacts[0].read_text(encoding="utf-8")
+        self.assertIn("各analysis unitのTargetを4列", overview_html)
+        self.assertIn("width='1080px'", overview_svg)
+        self.assertIn("height='230px'", overview_svg)
+
+    def test_mmp_report_keeps_incomparable_maximal_cores(self) -> None:
+        runner = self.load_mmp_runner("mmp_runner_0110_incomparable_core_test")
+        common = {
+            "target_compound_id": "T1", "neighbor_compound_id": "N1",
+            "target_endpoint": 8.0, "neighbor_endpoint": 3.0,
+            "target_smiles": "CCCCN", "neighbor_smiles": "CCCCCl",
+            "variable_neighbor": "[*:1]Cl", "variable_target": "[*:1]N",
+            "favorable_delta_toward_target": 5.0,
+        }
+        frame = runner.pd.DataFrame([
+            {
+                **common, "mmp_id": "MMP_AROMATIC",
+                "exact_core_smiles": "c1ccccc1[*:1]",
+            },
+            {
+                **common, "mmp_id": "MMP_ALIPHATIC",
+                "exact_core_smiles": "C1CCCCC1[*:1]",
+            },
+        ])
+        selected = runner.select_minimal_transform_rows(frame)
+        self.assertEqual(
+            set(selected["mmp_id"]), {"MMP_AROMATIC", "MMP_ALIPHATIC"}
+        )
+
+    def test_mmp_core_group_expands_top_five_and_folds_remaining_rows(self) -> None:
+        runner = self.load_mmp_runner("mmp_runner_0110_core_group_test")
+        frame = runner.pd.DataFrame([
+            {
+                "mmp_id": f"MMP{index:06d}",
+                "target_compound_id": "T1",
+                "neighbor_compound_id": f"N{index}",
+                "target_endpoint": 10.0,
+                "neighbor_endpoint": float(index),
+                "target_smiles": "CCCCN",
+                "neighbor_smiles": "CCCCCl",
+                "exact_core_smiles": "CCCC[*:1]",
+                "variable_neighbor": "[*:1]Cl",
+                "variable_target": "[*:1]N",
+                "favorable_delta_report": float(10 - index),
+            }
+            for index in range(1, 7)
+        ])
+        with tempfile.TemporaryDirectory() as temporary:
+            gallery, artifacts = runner.render_core_group_gallery(
+                frame, Path(temporary), "target"
+            )
+            self.assertEqual(len(artifacts), 7)  # one core + six transformations
+            self.assertTrue(all(path.is_file() for path in artifacts))
+            transformation_svg = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in artifacts if "mmp_transform_" in path.name
+            )
+        self.assertEqual(gallery.count("Core group 1"), 1)
+        self.assertNotIn("Core group 2", gallery)
+        self.assertIn("残り1件を表示", gallery)
+        self.assertIn("Neighbor N1", gallery)
+        self.assertIn("core-summary-layout", gallery)
+        self.assertIn("metric-stack", gallery)
+        self.assertIn("width='1080px'", transformation_svg)
+        source = (
+            SKILLS / "cs-analysis-matched-molecular-pairs" / "scripts" / "run.py"
+        ).read_text(encoding="utf-8")
+        source = source[
+            source.index("def render_transformation_gallery"):
+            source.index("def render_core_group_gallery")
+        ]
+        labels = [
+            "f\"Neighbor {neighbor_id}\"",
+            "f\"Target {getattr(record, 'target_compound_id', '—')}\"",
+            '"Before fragment (Neighbor)"',
+            '"After fragment (Target)"',
+        ]
+        positions = [source.index(label) for label in labels]
+        self.assertEqual(positions, sorted(positions))
+
+        scope = runner.mmp_report_scope_note(frame, frame)
+        self.assertIn("一意MMP 6件をすべて", scope)
+        self.assertIn("上位5件を初期表示", scope)
+        self.assertIn("残り1件", scope)
+        empty_scope = runner.mmp_report_scope_note(frame.iloc[0:0], frame.iloc[0:0])
+        self.assertEqual(
+            empty_scope, "このTargetに接続するMMPは検出されませんでした。"
+        )
 
     def test_mmp_storage_and_effect_direction_are_role_specific(self) -> None:
         source = (SKILLS / "cs-analysis-matched-molecular-pairs" / "scripts" / "run.py").read_text(encoding="utf-8")
@@ -304,6 +558,9 @@ class Version019Contracts(unittest.TestCase):
             self.assertNotIn(">CCCCCl<", target_html)
             self.assertIn("Neighbor → Target", target_html)
             self.assertIn('data-report-section="visual-transformations"', target_html)
+            self.assertIn("一意MMPを2件検出", target_html)
+            self.assertIn("最小変換へ整理した1件", target_html)
+            self.assertIn("詳細CSVリンク", target_html)
             self.assertEqual(
                 len(list(output.glob("mmp_transform_*.svg"))), 1
             )
@@ -321,13 +578,13 @@ class Version019Contracts(unittest.TestCase):
             source = root / "input.csv"
             source.write_text("compound_id,SMILES,activity\nC1,CC,1.0\n", encoding="utf-8")
             control = {
-                "schema_version": "1.0.0", "conductor_version": "0.1.9",
+                "schema_version": "1.0.0", "conductor_version": "0.1.10",
                 "project": "test", "run_id": "RUN019", "input_path": str(source),
                 "input_sha256": runtime.sha256(source),
                 "columns": {"compound_id": "compound_id", "smiles": "SMILES", "endpoint": "activity"},
                 "active_round_id": None, "round_status": "NONE", "revision": 0,
             }
-            dag = {"schema_version": "1.0.0", "conductor_version": "0.1.9", "revision": 0, "nodes": []}
+            dag = {"schema_version": "1.0.0", "conductor_version": "0.1.10", "revision": 0, "nodes": []}
             runtime.atomic_json(runtime.control_path(root), control)
             runtime.atomic_json(runtime.dag_path(root), dag)
             with redirect_stdout(io.StringIO()):
@@ -390,21 +647,35 @@ class Version019Contracts(unittest.TestCase):
             encoding="utf-8"
         )
         required_standard_sections = {
-            "at-a-glance", "report-scope", "endpoint-overview", "selected-clusters",
-            "series-formation", "operator-results", "execution-metadata",
-            "projections", "detail-reports", "full-tables-and-limitations",
+            "summary", "endpoint-distribution", "selected-clusters",
+            "series-formation", "operator-results", "projections",
+            "detail-reports",
         }
         for section in required_standard_sections:
             self.assertIn(f'data-report-section="{section}"', standard)
         self.assertLess(
-            standard.index('data-report-section="at-a-glance"'),
-            standard.index('data-report-section="endpoint-overview"'),
+            standard.index('data-report-section="summary"'),
+            standard.index('data-report-section="endpoint-distribution"'),
         )
+        self.assertNotIn('data-report-section="report-scope"', standard)
+        self.assertNotIn('data-report-section="execution-status"', standard)
+        self.assertNotIn('data-report-section="full-tables-and-limitations"', standard)
+        self.assertIn("$summary_metrics", standard)
+        self.assertNotIn("$at_a_glance_table", standard)
+        self.assertIn('class="summary-distribution-figure"', standard)
         for section in {
             "unit-definition", "projection", "a003", "a005", "a006", "a007",
-            "full-tables-and-limitations",
         }:
             self.assertIn(f'data-report-section="{section}"', detail)
+        self.assertNotIn('data-report-section="full-tables-and-limitations"', detail)
+        self.assertLess(
+            detail.index("$a006_table"), detail.index("$a006_explanation")
+        )
+        self.assertLess(
+            detail.index("$a007_gallery"), detail.index("$a007_explanation")
+        )
+        self.assertIn('<details class="section-explanation">', detail)
+        self.assertIn("$a005_prediction_plot", detail)
 
         frame = runner.pd.DataFrame([{
             "cluster_id": "C000001",
@@ -421,12 +692,72 @@ class Version019Contracts(unittest.TestCase):
         }])
         rendered = runner.compact_table(frame, "selected_clusters")
         self.assertIn("table-wrap", rendered)
+        self.assertIn("<details class='report-table'>", rendered)
+        self.assertIn("sortable", rendered)
+        self.assertIn("列の説明", rendered)
         self.assertIn("Cluster ID", rendered)
         self.assertNotIn("parameters_json", rendered)
         self.assertNotIn("intentionally hidden", rendered)
 
+        unit_info = runner.pd.DataFrame([{
+            "analysis_unit_id": "C000001", "scope_kind": "cluster",
+        }])
+        source_info = runner.source_clusters_for_analysis_unit(
+            "C000001",
+            unit_info,
+            runner.pd.DataFrame([{
+                "series_id": "S000999", "cluster_id": "C000001",
+            }]),
+            runner.pd.DataFrame([{
+                "cluster_id": "C000001", "description_id": "D001",
+                "description_name": "RDKit 2D descriptors",
+                "clustering_id": "C005", "clustering_name": "Vector Butina",
+            }]),
+        )
+        self.assertEqual(source_info["cluster_id"].tolist(), ["C000001"])
+        source_legend = runner.id_legend(source_info)
+        self.assertIn("<summary>特徴量／クラスタリングの説明</summary>", source_legend)
+        self.assertIn("D001", source_legend)
+        self.assertIn("RDKit 2D", source_legend)
+        self.assertIn("C005", source_legend)
+        self.assertIn("Vector Butina", source_legend)
+
+        structural_info = runner.report_cluster_provenance(
+            runner.pd.DataFrame([{
+                "cluster_id": "C000003", "description_id": "D001",
+                "description_name": "RDKit 2D descriptors",
+                "clustering_id": "C001", "clustering_name": "Murcko scaffold",
+            }])
+        )
+        self.assertTrue(structural_info["description_id"].isna().all())
+        structural_legend = runner.id_legend(structural_info)
+        self.assertNotIn("D001", structural_legend)
+        self.assertIn("C001", structural_legend)
+        structural_explanation = runner.structural_signature_explanation(
+            "C000003", unit_info, structural_info
+        )
+        self.assertIn("構造由来（C001：Murcko scaffold）", structural_explanation)
+        self.assertIn("直接定義したKey構造を", structural_explanation)
+        self.assertNotIn("Key構造だけ", structural_explanation)
+        self.assertIn("boundary pair", runner.OPERATOR_EXPLANATIONS["A006"])
+        self.assertIn("活性enrichmentの境界", runner.OPERATOR_EXPLANATIONS["A006"])
+        self.assertIn("unit全体の優位を証明するものではなく", runner.OPERATOR_EXPLANATIONS["A006"])
+        a006_rendered = runner.compact_table(runner.pd.DataFrame([{
+            "analysis_unit_id": "S000001", "sample_count": 20,
+            "status": "succeeded", "boundary_cliff_count": 4,
+            "boundary_favorable_count": 3,
+            "boundary_favorable_direction_fraction": .75,
+        }]), "A006")
+        self.assertIn("Boundary favorable direction", a006_rendered)
+        self.assertIn("3 / 4", a006_rendered)
+        self.assertEqual(
+            runner.section_csv_link("tables/result.csv"),
+            "<p class='muted'><a href='tables/result.csv'>詳細CSVリンク</a></p>",
+        )
+
         a003_frame = runner.pd.DataFrame([{
-            "feature": "MolWt", "sample_count": 12, "pearson_r": .81,
+            "feature": "MolWt", "description_id": "D001",
+            "sample_count": 12, "pearson_r": .81,
             "spearman_r": .78, "max_abs_correlation": .81,
             "correlation_q_bh": .01, "strict_hit": True,
             "median_shift_global_iqr": 1.2, "shift_q_bh": .02,
@@ -434,9 +765,33 @@ class Version019Contracts(unittest.TestCase):
         }])
         a003_rendered = runner.compact_table(a003_frame, "A003_detail")
         self.assertIn("Max |r|", a003_rendered)
-        self.assertIn("Correlation BH q", a003_rendered)
+        self.assertLess(a003_rendered.index("Description ID"), a003_rendered.index("N"))
+        self.assertNotIn("Correlation BH q", a003_rendered)
+        self.assertNotIn("Strict hit", a003_rendered)
         self.assertNotIn("median_shift_global_iqr", a003_rendered)
         self.assertNotIn("global_pearson_r", a003_rendered)
+
+        fallback_row = runner.pd.Series({
+            "cluster_id": runner.pd.NA,
+            "clustering_id": "C001",
+            "method": "fallback_murcko",
+        })
+        self.assertEqual(
+            runner.key_structure_legend(fallback_row, "C000003"),
+            "C000003 (Murcko)",
+        )
+        a007_rendered = runner.compact_table(
+            runner.pd.DataFrame([{
+                "analysis_unit_id": "C000003", "method": "fallback_murcko",
+                "clustering_id": "C001", "cluster_id": runner.pd.NA,
+                "structure": "c1ccccc1", "support_count": 10,
+                "source_member_count": 20, "mcs_canceled": False,
+                "status": "succeeded", "reason": "",
+            }]),
+            "A007",
+        )
+        self.assertIn("Murcko scaffold", a007_rendered)
+        self.assertNotIn("fallback_murcko", a007_rendered)
 
         ranked = runner.rank_a003_correlations(runner.pd.DataFrame([
             {"feature": "B", "pearson_r": -.7, "spearman_r": -.6},
@@ -536,12 +891,20 @@ class Version019Contracts(unittest.TestCase):
             )
             a003 = write(
                 "a003.csv",
-                "analysis_unit_id,feature,sample_count,pearson_r,"
+                "analysis_unit_id,feature,description_id,sample_count,pearson_r,"
                 "spearman_r,correlation_gain,correlation_q_bh,"
-                "median_shift_global_iqr,shift_q_bh,strict_hit,"
+                "median_shift_global_iqr,shift_q_bh,correlation_hit,strict_hit,"
                 "near_miss_score\n"
-                "S000001,MolWt,6,0.3,0.35,0.1,0.08,0.5,0.07,"
+                "S000001,MolWt,D001,6,0.3,0.35,0.1,0.08,0.5,0.07,False,"
                 "False,0.9\n",
+            )
+            a005 = write(
+                "a005.csv",
+                "analysis_unit_id,member_count,model_count,status,oof_r2,"
+                "global_oof_on_same_series_r2,local_minus_global_r2,oof_mae,"
+                "global_minus_local_mae,strict_improvement,near_miss_score,reason\n"
+                "S000001,6,6,succeeded,0.1,0.15,-0.05,1.1,-0.2,False,0.75,"
+                "best available model\n",
             )
             a003_plot = root / "A003_top_correlations_S000001.png"
             a003_plot.write_bytes(b"test-png")
@@ -556,6 +919,38 @@ class Version019Contracts(unittest.TestCase):
                     }],
                 }),
             )
+            a005_plot = root / "A005_oof_comparison_S000001.png"
+            a005_plot.write_bytes(b"test-png")
+            write(
+                "A005_oof_comparison_plots.json",
+                json.dumps({
+                    "schema_version": "1.0.0",
+                    "plots": [{
+                        "analysis_unit_id": "S000001",
+                        "path": a005_plot.name,
+                        "sample_count": 6,
+                    }],
+                }),
+            )
+            mmp_dir = root / "mmp"
+            mmp_dir.mkdir()
+            mmp_report = mmp_dir / "mmp_target_C6.html"
+            mmp_report.write_text(
+                "<html><body><header><h1>MMP C6</h1></header></body></html>",
+                encoding="utf-8",
+            )
+            mmp_index = mmp_dir / "mmp_report_index.json"
+            mmp_index.write_text(json.dumps({
+                "schema_version": "1.0.0",
+                "unit_reports": [{
+                    "analysis_unit_id": "S000001",
+                    "target_compound_id": "C6",
+                    "target_rank": 1,
+                    "target_endpoint": 6.0,
+                    "pair_count": 1,
+                    "report_path": mmp_report.name,
+                }],
+            }), encoding="utf-8")
             request = {
                 "inputs": [
                     {"role": "dataset", "path": str(dataset)},
@@ -580,6 +975,11 @@ class Version019Contracts(unittest.TestCase):
                         "role": "source", "path": str(a003),
                         "source_capability_id": "A003",
                     },
+                    {
+                        "role": "source", "path": str(a005),
+                        "source_capability_id": "A005",
+                    },
+                    {"role": "mmp_report_index", "path": str(mmp_index)},
                 ],
                 "columns": {
                     "compound_id": "compound_id",
@@ -604,22 +1004,42 @@ class Version019Contracts(unittest.TestCase):
                     encoding="utf-8"
                 )
             )
-            self.assertIn('data-report-section="endpoint-overview"', summary_html)
-            self.assertIn('data-report-section="at-a-glance"', summary_html)
+            self.assertIn('data-report-section="endpoint-distribution"', summary_html)
+            self.assertIn('data-report-section="summary"', summary_html)
             self.assertLess(
-                summary_html.index('data-report-section="at-a-glance"'),
-                summary_html.index('data-report-section="endpoint-overview"'),
+                summary_html.index('data-report-section="summary"'),
+                summary_html.index('data-report-section="endpoint-distribution"'),
             )
-            self.assertIn("Criterion-accepted Series", summary_html)
+            self.assertIn("Standard-criterion Series", summary_html)
             self.assertIn("All Clusters", summary_html)
-            self.assertIn("near-miss: MolWt", summary_html)
+            self.assertNotIn("参考・基準未達: MolWt", summary_html)
+            self.assertIn("各analysis unitの最良結果を1件ずつ", summary_html)
+            self.assertIn("best available model", summary_html)
             self.assertIn("tables/A003_full.csv", summary_html)
+            self.assertIn("tables/A005_full.csv", summary_html)
             self.assertNotIn("parameters_json", summary_html)
+            self.assertIn("table.sortable", summary_html)
+            self.assertIn("クリックして並べ替え", summary_html)
+            report_source = (
+                MODULES / "tools" / "templates" / "series_batch_runner.py"
+            ).read_text(encoding="utf-8")
+            self.assertIn('label=f"{label}: {report_value(value)}"', report_source)
+            self.assertIn('label=f"Favorable cutoff:', report_source)
+            self.assertIn('label=f"Unfavorable cutoff:', report_source)
+            self.assertIn("endpoint_boxplot_width = 1080", report_source)
             self.assertIn('data-report-section="a005"', detail_html)
-            self.assertIn("Top feature–Endpoint scatter plots", detail_html)
+            self.assertIn("OOF予測値と実測値", detail_html)
+            self.assertIn("上位3 feature–Endpoint散布図", detail_html)
             self.assertIn("data:image/png;base64", detail_html)
-            self.assertIn("相関係数順に上位1件", detail_html)
-            self.assertIn("成果物なし", detail_html)
+            self.assertNotIn("相関係数順に上位1件", detail_html)
+            self.assertIn("該当結果なし", detail_html)
+            self.assertIn("Type-I MMP Top 1", detail_html)
+            self.assertIn("mmp_reports/mmp_target_C6.html", detail_html)
+            copied_mmp = (
+                output / "mmp_reports" / "mmp_target_C6.html"
+            ).read_text(encoding="utf-8")
+            self.assertIn("../series_S000001.html", copied_mmp)
+            self.assertIn("A009 S000001", copied_mmp)
             self.assertEqual(
                 index["report_template"], "standard_summary_template.html"
             )
@@ -632,6 +1052,7 @@ class Version019Contracts(unittest.TestCase):
                 index["endpoint_overview"]["unfavorable_bottom20_cutoff"], 2.0
             )
             self.assertTrue((output / "tables" / "A003_full.csv").is_file())
+            self.assertTrue((output / "endpoint_analysis_unit_boxplot.png").is_file())
 
     def test_a003_generates_top_three_feature_endpoint_scatter_plots(self) -> None:
         runner = self.load_batch_runner("batch_runner_019_a003_scatter_test")
@@ -640,7 +1061,6 @@ class Version019Contracts(unittest.TestCase):
             output = root / "output"
             output.mkdir()
             dataset = root / "dataset.csv"
-            description = root / "D001.csv"
             membership = root / "membership.csv"
             dataset.write_text(
                 "compound_id,SMILES,activity\n" + "".join(
@@ -648,14 +1068,23 @@ class Version019Contracts(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            description.write_text(
-                "compound_id,feature_a,feature_b,feature_c,feature_d\n"
-                + "".join(
-                    f"C{index},{index},{9-index},{index * index},{index % 3}\n"
-                    for index in range(1, 9)
-                ),
-                encoding="utf-8",
-            )
+            description_specs = {
+                "D001": ("feature_a,feature_b", lambda index: f"{index},{9-index}"),
+                "D012": ("rdkit3d__PBF,rdkit3d__NPR1", lambda index: f"{index * index},{index / 10}"),
+                "D015": ("mordred__nAcid,mordred__nRing,mordred__ABC", lambda index: f"{index % 2},{index % 4},{index * 9}"),
+                "D016": ("mordred__GeomDiameter,mordred__PNSA1,mordred__Mor01", lambda index: f"{index * 1.5},{index * 2},{index * 11}"),
+                "D019": ("xtb__dipole,xtb__homo", lambda index: f"{index / 3},{-index}"),
+            }
+            description_paths = {}
+            for description_id, (header, values) in description_specs.items():
+                description_path = root / f"{description_id}.csv"
+                description_path.write_text(
+                    f"compound_id,{header}\n" + "".join(
+                        f"C{index},{values(index)}\n" for index in range(1, 9)
+                    ),
+                    encoding="utf-8",
+                )
+                description_paths[description_id] = description_path
             membership.write_text(
                 "compound_id,analysis_unit_id,membership_value\n"
                 + "".join(
@@ -666,10 +1095,13 @@ class Version019Contracts(unittest.TestCase):
             request = {
                 "inputs": [
                     {"role": "dataset", "path": str(dataset)},
-                    {
-                        "role": "description", "path": str(description),
-                        "source_capability_id": "D001",
-                    },
+                    *[
+                        {
+                            "role": "description", "path": str(path),
+                            "source_capability_id": description_id,
+                        }
+                        for description_id, path in description_paths.items()
+                    ],
                     {
                         "role": "analysis_unit_membership",
                         "path": str(membership),
@@ -692,12 +1124,176 @@ class Version019Contracts(unittest.TestCase):
             )
             self.assertEqual(plot_index["top_n"], 3)
             self.assertEqual(len(plot_index["plots"]), 1)
+            self.assertTrue(all(
+                record.get("description_id") in runner.A003_DESCRIPTION_PANEL
+                for record in plot_index["plots"][0]["features"]
+            ))
             self.assertEqual(
                 len(plot_index["plots"][0]["features"]), 3
             )
             self.assertTrue(
                 (output / plot_index["plots"][0]["path"]).is_file()
             )
+            result = runner.pd.read_csv(output / "A003_series_descriptor_contrast.csv")
+            self.assertEqual(
+                set(result["description_id"]), set(runner.A003_DESCRIPTION_PANEL)
+            )
+            self.assertNotIn("mordred__ABC", set(result["feature"]))
+            self.assertNotIn("mordred__Mor01", set(result["feature"]))
+
+    def test_a005_generates_local_and_global_oof_comparison_plot(self) -> None:
+        runner = self.load_batch_runner("batch_runner_0110_a005_plot_test")
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            predictions = runner.pd.DataFrame([
+                *[
+                    {
+                        "analysis_unit_id": "GLOBAL", "compound_id": f"C{i}",
+                        "observed": float(i), "oof_prediction": float(i) + .2,
+                    }
+                    for i in range(1, 7)
+                ],
+                *[
+                    {
+                        "analysis_unit_id": "S000001", "compound_id": f"C{i}",
+                        "observed": float(i), "oof_prediction": float(i) + .1,
+                    }
+                    for i in range(1, 7)
+                ],
+            ])
+            metrics = runner.pd.DataFrame([{
+                "analysis_unit_id": "S000001", "oof_r2": .8,
+                "global_oof_on_same_series_r2": .6,
+            }])
+            index_path, plots = runner.render_a005_oof_comparison_plots(
+                predictions, metrics, output
+            )
+            self.assertEqual(len(plots), 1)
+            self.assertTrue(plots[0].is_file())
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            self.assertEqual(index["plots"][0]["analysis_unit_id"], "S000001")
+            self.assertEqual(index["plots"][0]["sample_count"], 6)
+
+    def test_a007_emits_support_ranked_structure_image_index(self) -> None:
+        runner = self.load_batch_runner("batch_runner_0110_a007_images_test")
+        runner.finish = lambda *args, **kwargs: None
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "output"
+            output.mkdir()
+            dataset = root / "dataset.csv"
+            dataset.write_text(
+                "compound_id,SMILES,activity\n"
+                "C1,c1ccccc1C,1\nC2,c1ccccc1N,2\n",
+                encoding="utf-8",
+            )
+            membership = root / "membership.csv"
+            membership.write_text(
+                "compound_id,analysis_unit_id,membership_value\n"
+                "C1,S000001,True\nC2,S000001,True\n",
+                encoding="utf-8",
+            )
+            request = {
+                "inputs": [
+                    {"role": "dataset", "path": str(dataset)},
+                    {
+                        "role": "analysis_unit_membership",
+                        "path": str(membership),
+                    },
+                ],
+                "columns": {
+                    "compound_id": "compound_id", "smiles": "SMILES",
+                    "endpoint": "activity",
+                },
+                "parameters": {"mcs_timeout_seconds": 5},
+            }
+            runner.run_a007(
+                request, output,
+                {"capability_id": "A007", "stage": "analysis"},
+            )
+            index = json.loads(
+                (output / "A007_structure_images.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            image_exists = (
+                output / str(index["images"][0]["path"])
+            ).is_file()
+        self.assertEqual(index["selection"], "support_descending")
+        self.assertEqual(index["top_n"], 5)
+        self.assertEqual(index["images"][0]["analysis_unit_id"], "S000001")
+        self.assertTrue(image_exists)
+
+    def test_a007_uses_direct_keys_only_for_structural_clusters(self) -> None:
+        runner = self.load_batch_runner("batch_runner_0110_a007_origin_test")
+        runner.finish = lambda *args, **kwargs: None
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "output"
+            output.mkdir()
+            dataset = root / "dataset.csv"
+            dataset.write_text(
+                "compound_id,SMILES,activity\n"
+                "C1,c1ccccc1C,1\nC2,c1ccccc1N,2\n"
+                "C3,c1ccccc1O,3\nC4,c1ccccc1F,4\n",
+                encoding="utf-8",
+            )
+            unit_membership = root / "unit_membership.csv"
+            unit_membership.write_text(
+                "compound_id,analysis_unit_id,membership_value\n"
+                + "".join(
+                    f"{compound},CSTR,True\n{compound},CVEC,True\n"
+                    for compound in ("C1", "C2", "C3", "C4")
+                ),
+                encoding="utf-8",
+            )
+            registry = root / "registry.csv"
+            registry.write_text(
+                "cluster_id,source_cluster_id,source_node_id,clustering_id,"
+                "input_kind,sample_count,structure_definition\n"
+                "CSTR,L1,N1,C001,structure,4,c1ccccc1\n"
+                "CVEC,L2,N2,C005,description_vector,4,\n",
+                encoding="utf-8",
+            )
+            cluster_membership = root / "cluster_membership.csv"
+            cluster_membership.write_text(
+                "compound_id,cluster_id,membership_value\n"
+                + "".join(
+                    f"{compound},CVEC,True\n"
+                    for compound in ("C1", "C2", "C3", "C4")
+                ),
+                encoding="utf-8",
+            )
+            request = {
+                "inputs": [
+                    {"role": "dataset", "path": str(dataset)},
+                    {"role": "analysis_unit_membership", "path": str(unit_membership)},
+                    {"role": "cluster_registry", "path": str(registry)},
+                    {"role": "cluster_membership_long", "path": str(cluster_membership)},
+                ],
+                "columns": {
+                    "compound_id": "compound_id", "smiles": "SMILES",
+                    "endpoint": "activity",
+                },
+                "parameters": {"mcs_timeout_seconds": 5},
+            }
+            runner.run_a007(
+                request, output,
+                {"capability_id": "A007", "stage": "analysis"},
+            )
+            result = runner.pd.read_csv(
+                output / "A007_series_structural_signature.csv"
+            )
+        structural = result.loc[result["analysis_unit_id"].eq("CSTR")]
+        vector = result.loc[result["analysis_unit_id"].eq("CVEC")]
+        self.assertEqual(
+            structural["method"].tolist(), ["source_structural_cluster"]
+        )
+        self.assertEqual(structural["structure"].tolist(), ["c1ccccc1"])
+        self.assertEqual(
+            set(vector["method"]), {"fallback_murcko", "fallback_mcs"}
+        )
+        self.assertEqual(set(vector["cluster_id"]), {"CVEC"})
 
     def test_dbscan_auto_eps_is_positive_for_duplicate_d006_vectors(self) -> None:
         runner_path = SKILLS / "cs-compute-clustering-vector-dbscan" / "scripts" / "run.py"
@@ -885,7 +1481,7 @@ class Version019Contracts(unittest.TestCase):
             packets = root / "runtime" / "packets"
             packets.mkdir(parents=True)
             control = {
-                "revision": 0, "conductor_version": "0.1.9", "run_id": "RUN019",
+                "revision": 0, "conductor_version": "0.1.10", "run_id": "RUN019",
                 "round_status": "ACTIVE", "active_round_id": "RND0001",
                 "round_deadline": "2099-01-01T00:00:00+00:00",
                 "lease": {"token": "current", "expires_at": "2099-01-01T00:00:00+00:00"},
@@ -934,6 +1530,11 @@ class Version019Contracts(unittest.TestCase):
                     "round_id": "RND0001", "status": "succeeded",
                     "result": {"primary_path": str(path), "primary_sha256": runtime.sha256(path)},
                 })
+            mmp_index = root / "mmp_report_index.json"
+            mmp_index.write_text(
+                json.dumps({"schema_version": "1.0.0", "unit_reports": []}),
+                encoding="utf-8",
+            )
             report_node = {
                 "node_id": "N000006", "capability_id": "A009",
                 "skill_name": "cs-analysis-series-report", "round_id": "RND0001",
@@ -953,6 +1554,12 @@ class Version019Contracts(unittest.TestCase):
         }
         self.assertIn("A003", source_capabilities)
         self.assertNotIn("A008", source_capabilities)
+        mmp_inputs = [
+            item for item in request["inputs"]
+            if item.get("role") == "mmp_report_index"
+        ]
+        self.assertEqual(len(mmp_inputs), 1)
+        self.assertEqual(Path(mmp_inputs[0]["path"]).name, "mmp_report_index.json")
 
     def test_batch_capabilities_declare_the_dataset_their_code_reads(self) -> None:
         c012 = json.loads(
@@ -1018,7 +1625,7 @@ class Version019Contracts(unittest.TestCase):
         self.assertIn("selected_for_series", result.columns)
         self.assertEqual(summary["selected_cluster_count"], 0)
 
-    def test_c012_rejects_inconsistent_a001_a002_cluster_selection(self) -> None:
+    def test_c012_recomputes_selection_instead_of_using_stale_flags(self) -> None:
         runner = self.load_batch_runner("series_runner_019_consistency_test")
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
@@ -1051,10 +1658,17 @@ class Version019Contracts(unittest.TestCase):
                 ],
                 "columns": {"compound_id": "compound_id", "smiles": "SMILES", "endpoint": "activity"},
                 "endpoint": {"higher_is_better": True},
-                "parameters": {"min_ff_evaluate": 5, "favorable_fraction_threshold": 0.5},
+                "parameters": {"min_ff_evaluate": 2, "favorable_fraction_threshold": 0.5},
             }
-            with self.assertRaisesRegex(ValueError, "A001 profile and A002 enrichment disagree"):
-                runner.run_c012(request, base / "output", {"capability_id": "C012", "stage": "clustering"})
+            runner.finish = lambda *args, **kwargs: None
+            runner.run_c012(
+                request, base / "output",
+                {"capability_id": "C012", "stage": "clustering"},
+            )
+            selected = runner.pd.read_csv(
+                base / "output" / "selected_clusters_effective.csv"
+            )
+            self.assertEqual(selected["cluster_id"].tolist(), ["C000001"])
 
     def test_c012_global_compound_count_is_not_endpoint_valid_count(self) -> None:
         runner = self.load_batch_runner("series_runner_019_global_count_test")
@@ -1196,6 +1810,140 @@ class Version019Contracts(unittest.TestCase):
         self.assertEqual(summary["fallback_cluster_count"], 2)
         self.assertEqual(summary["analysis_unit_count"], 2)
 
+    def test_c012_accepts_multi_cluster_series_at_relaxed_ff_040(self) -> None:
+        runner = self.load_batch_runner("series_runner_0110_relaxed_ff_test")
+        frame = runner.pd.DataFrame({
+            "compound_id": [f"C{index}" for index in range(1, 11)],
+            "activity": list(range(1, 11)),
+        })
+        enrichment = runner.pd.DataFrame([
+            {
+                "cluster_id": "C000001", "sample_count": 4,
+                "favorable_fraction": 0.5,
+            },
+            {
+                "cluster_id": "C000002", "sample_count": 4,
+                "favorable_fraction": 0.5,
+            },
+        ])
+        with mock.patch.object(
+            runner, "leiden_membership", return_value=[0, 0]
+        ):
+            result = runner.evaluate_series_configuration(
+                cluster_sets={
+                    "C000001": {"C1", "C2", "C9", "C10"},
+                    "C000002": {"C1", "C3", "C9", "C10"},
+                },
+                enrichment=enrichment,
+                frame=frame,
+                compound_id_column="compound_id",
+                endpoint_column="activity",
+                higher_is_better=True,
+                min_ff_evaluate=4,
+                resolution=1.0,
+                random_seed=61453,
+                cluster_ff_threshold=0.5,
+                multi_cluster_ff_threshold=0.4,
+            )
+        row = result["series_rows"][0]
+        self.assertTrue(row["accepted"])
+        self.assertAlmostEqual(row["favorable_fraction"], 0.4)
+        self.assertEqual(row["applied_ff_threshold"], 0.4)
+        self.assertEqual(row["acceptance_basis"], "multi_cluster_relaxed_0.40")
+        self.assertAlmostEqual(row["global_favorable_fraction"], 0.2)
+        self.assertAlmostEqual(row["ff_delta_from_global"], 0.2)
+        self.assertAlmostEqual(row["ff_enrichment_ratio"], 2.0)
+        self.assertEqual(result["summary"]["relaxed_series_count"], 1)
+
+    def test_c012_resolution_search_auto_selects_first_condition_at_24_or_less(self) -> None:
+        runner = self.load_batch_runner("series_runner_0110_auto_search_test")
+        runner.finish = lambda *args, **kwargs: None
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "output"
+            output.mkdir()
+            request = self.make_many_cluster_c012_fixture(root)
+
+            def membership(vertex_count, edges, weights, resolution, seed):
+                return (
+                    list(range(vertex_count)) if resolution < 1.25
+                    else [0] * vertex_count
+                )
+
+            with mock.patch.object(
+                runner, "leiden_membership", side_effect=membership
+            ):
+                runner.run_c012(
+                    request, output,
+                    {"capability_id": "C012", "stage": "clustering"},
+                )
+            search = json.loads(
+                (output / "series_parameter_search.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            summary = json.loads(
+                (output / "series_summary.json").read_text(encoding="utf-8")
+            )
+            canonical_series_exists = (output / "series_registry.csv").is_file()
+        self.assertEqual(
+            search["chosen_condition"],
+            {"min_ff_evaluate": 10, "leiden_resolution": 1.25},
+        )
+        self.assertTrue(search["automatic_selection"])
+        self.assertFalse(search["selection_required"])
+        self.assertEqual(summary["analysis_unit_count"], 1)
+        self.assertTrue(canonical_series_exists)
+
+    def test_c012_emits_30_condition_session_matrix_without_canonical_preview(self) -> None:
+        runner = self.load_batch_runner("series_runner_0110_human_matrix_test")
+        runner.finish = lambda *args, **kwargs: None
+        runner.leiden_membership = (
+            lambda vertex_count, edges, weights, resolution, seed:
+            list(range(vertex_count))
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "output"
+            output.mkdir()
+            request = self.make_many_cluster_c012_fixture(root)
+            runner.run_c012(
+                request, output,
+                {"capability_id": "C012", "stage": "clustering"},
+            )
+            search = json.loads(
+                (output / "series_parameter_search.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            summary = json.loads(
+                (output / "series_summary.json").read_text(encoding="utf-8")
+            )
+            files = {path.name for path in output.iterdir()}
+        self.assertTrue(search["selection_required"])
+        self.assertEqual(search["status"], "awaiting_human_selection")
+        self.assertEqual(len(search["evaluations"]), 30)
+        default = next(
+            row for row in search["evaluations"]
+            if row["min_ff_evaluate"] == 10
+            and row["leiden_resolution"] == 1.0
+        )
+        filtered = next(
+            row for row in search["evaluations"]
+            if row["min_ff_evaluate"] == 15
+            and row["leiden_resolution"] == 1.0
+        )
+        self.assertEqual(default["analysis_unit_count"], 25)
+        self.assertEqual(default["cluster_coverage"], 1.0)
+        self.assertEqual(default["compound_coverage"], 1.0)
+        self.assertEqual(filtered["analysis_unit_count"], 0)
+        self.assertEqual(filtered["cluster_coverage"], 0.0)
+        self.assertEqual(filtered["compound_coverage"], 0.0)
+        self.assertTrue(summary["selection_required"])
+        self.assertNotIn("series_registry.csv", files)
+        self.assertNotIn("analysis_unit_registry.csv", files)
+        self.assertNotIn("clustering_report.html", files)
+
     def test_runtime_creates_and_passes_canonical_description_result(self) -> None:
         controller_path = MODULES / "tools" / "runtime_controller.py"
         specification = importlib.util.spec_from_file_location("runtime_019_description_contract_test", controller_path)
@@ -1207,7 +1955,7 @@ class Version019Contracts(unittest.TestCase):
             primary = result_dir / "D001_rdkit_2d.csv"
             primary.write_text("compound_id,desc_a\nC1,1.0\n", encoding="utf-8")
             (result_dir / "description_manifest.json").write_text(json.dumps({
-                "schema_version": "2.0.0", "conductor_version": "0.1.9",
+                "schema_version": "2.0.0", "conductor_version": "0.1.10",
                 "artifact_stage": "description", "capability_id": "D001",
                 "node_id": "N000001", "attempt_id": "ATT0001",
                 "skill_name": "cs-compute-description-rdkit-2d",
@@ -1269,7 +2017,7 @@ class Version019Contracts(unittest.TestCase):
         self.assertEqual(arguments[position + 1], "compound_id")
         self.assertNotIn("CHEMBL_ID", arguments)
 
-    def test_declining_high_cost_does_not_cancel_cluster_surveys(self) -> None:
+    def test_round1_has_no_description_high_cost_approval_branch(self) -> None:
         controller_path = MODULES / "tools" / "runtime_controller.py"
         specification = importlib.util.spec_from_file_location("runtime_019_high_cost_test", controller_path)
         runtime = importlib.util.module_from_spec(specification)
@@ -1292,11 +2040,19 @@ class Version019Contracts(unittest.TestCase):
             control = runtime.read_json(runtime.control_path(run_root))
             with redirect_stdout(io.StringIO()):
                 runtime.cmd_plan_basic(SimpleNamespace(run_root=str(run_root), lease_token=control["lease"]["token"]))
-                runtime.cmd_approve_high_cost(SimpleNamespace(run_root=str(run_root), control_key=key, approve=False, rationale="test decline"))
             _, dag = runtime.load_state(run_root)
-        table = {node["capability_id"]: node for node in runtime.nodes(dag) if node["capability_id"] in {"A001", "A002", "C012"}}
-        self.assertEqual({key: value["status"] for key, value in table.items()}, {"A001": "pending", "A002": "pending", "C012": "pending"})
-        self.assertTrue(all(node["status"] == "cancelled" for node in runtime.nodes(dag) if node["capability_id"] in runtime.HIGH_COST))
+        table = {
+            node["capability_id"]: node for node in runtime.nodes(dag)
+            if node["capability_id"] in {"D016", "D019", "D020"}
+        }
+        self.assertEqual(
+            {item: table[item]["status"] for item in table},
+            {"D016": "pending", "D019": "pending", "D020": "pending"},
+        )
+        self.assertFalse(hasattr(runtime, "cmd_approve_high_cost"))
+        self.assertNotIn(
+            "approve-high-cost", controller_path.read_text(encoding="utf-8")
+        )
 
     def test_preparation_failure_becomes_failed_node_with_diagnostic(self) -> None:
         controller_path = MODULES / "tools" / "runtime_controller.py"
@@ -1378,11 +2134,11 @@ class Version019Contracts(unittest.TestCase):
             key = "control-key"
             (root / "runtime" / "control_authority.key").write_text(key + "\n", encoding="utf-8")
             control = {
-                "schema_version": "1.0.0", "conductor_version": "0.1.9", "run_id": "RUN019",
+                "schema_version": "1.0.0", "conductor_version": "0.1.10", "run_id": "RUN019",
                 "active_round_id": "RND0001", "round_status": "ACTIVE", "revision": 0,
                 "lease": {"token": "expired", "expires_at": "2000-01-01T00:00:00+00:00"},
             }
-            dag = {"schema_version": "1.0.0", "conductor_version": "0.1.9", "revision": 0, "nodes": [{
+            dag = {"schema_version": "1.0.0", "conductor_version": "0.1.10", "revision": 0, "nodes": [{
                 "node_id": "N000001", "round_id": "RND0001", "status": "running",
                 "attempts": [{"attempt_id": "ATT0001", "status": "running", "runtime_pid": 12345, "runtime_host": runtime.socket.gethostname()}],
             }]}

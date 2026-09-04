@@ -32,7 +32,7 @@ python .claude/skills/cs-compute-description-mordred-3d/scripts/launch.py --inpu
 - 入力分子の標準化は行わない。重複IDはerror、invalid SMILESは行を保持して警告対象とする。
 - 入力SMILESからconformerを生成するため、結果と計算時間は3D生成条件の影響を受ける。
 - 化合物単位で最大8 processを使う。各workerは1 CPU threadで、指定したAvailable CPU Coresを超えない。
-- 高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。
+- ROUND1ではDescription Databaseのmiss化合物だけを追加承認なしで計算する。
 
 ## 変更履歴
 

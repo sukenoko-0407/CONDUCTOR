@@ -1,7 +1,7 @@
 {
   "schema_version": "4.0.0",
-  "conductor_version": "0.1.9",
-  "profile_id": "enrichment-series-0.1.9",
+  "conductor_version": "0.1.10",
+  "profile_id": "enrichment-series-0.1.10",
   "managed_by": "human",
   "description": "全Descriptionと全標準Clusteringを基本計算し、FF濃縮Clusterをweighted LeidenでSeries化して定型解析する。",
   "basic_compute": {
@@ -11,17 +11,22 @@
     "vector_clustering_representations": ["D001", "D002", "D003", "D004", "D005", "D006", "D007", "D008", "D009", "D010", "D011", "D012", "D013", "D014", "D015", "D016", "D019", "D020"],
     "series_clustering": "C012",
     "survey_capabilities": ["A001", "A002"],
-    "high_cost_bundle": ["D016", "D019", "D020"],
     "min_cluster_size": 5,
     "min_ff_evaluate": 10,
     "favorable_fraction_threshold": 0.5,
+    "multi_cluster_favorable_fraction_threshold": 0.4,
     "leiden_resolution": 1.0,
+    "leiden_resolution_grid": [1.0, 1.25, 1.5, 2.0, 2.5, 3.0],
+    "min_ff_evaluate_grid": [10, 15, 20, 25, 30],
     "leiden_seed": 61453,
-    "max_series_for_auto_standard": 24
+    "max_series_for_auto_standard": 24,
+    "analysis_unit_review_guideline": 50,
+    "absolute_max_analysis_units": 100
   },
   "standard_analysis": {
     "capabilities": ["A003", "A004", "A005", "A006", "A007", "A008", "A009"],
-    "descriptor_contrast_description": "D001",
+    "descriptor_contrast_descriptions": ["D001", "D012", "D015", "D016", "D019"],
+    "a003_correlation_threshold": 0.6,
     "landscape_description": "D002",
     "model_description_panel": ["D001", "D002", "D006", "D013", "D016", "D019"],
     "minimum_local_model_samples": 30,

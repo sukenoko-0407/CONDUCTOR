@@ -31,7 +31,7 @@ python .claude/skills/cs-compute-description-chemberta-embedding/scripts/launch.
 
 - 入力分子の標準化は行わない。重複IDはerror、invalid SMILESは行を保持して警告対象とする。
 - model weightを自動downloadしない。`--model-dir`で完全なlocal model directoryを指定し、CPUだけを使用する。
-- 高コスト計算として、CONDUCTORでは実行前に人間の承認が必要。
+- ROUND1ではDescription Databaseのmiss化合物だけを追加承認なしで計算する。
 
 ## 変更履歴
 

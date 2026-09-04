@@ -1,6 +1,6 @@
 # SKILLの目的
 
-GlobalとSeriesのLandscape平滑性、内部Cliff、境界Cliffを比較し、条件を満たすCliff pairを完全CSVへ保存します。
+GlobalとSeriesのLandscape平滑性、内部Cliff、境界CliffをD002 ECFP4で比較し、Tanimoto similarity 0.75以上かつabsolute Endpoint差がGlobal Endpoint IQR以上のCliff pairを詳細CSVへ保存します。
 
 ## 想定利用シーン
 
@@ -22,4 +22,5 @@ D002/Tanimoto固定の定型解析です。
 
 | Version | 変更内容 |
 |---|---|
+| 0.1.10 | Tanimoto閾値を0.75へ変更し、Boundary favorable directionの件数表示を追加 |
 | 1.0.0 | Series batch Landscapeとして新設 |

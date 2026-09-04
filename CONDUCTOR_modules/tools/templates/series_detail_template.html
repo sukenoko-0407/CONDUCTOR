@@ -2,15 +2,21 @@
   <p><a href="standard_summary.html">← Standard Summary</a></p>
   <p class="muted">A009 / deterministic analysis-unit detail</p>
   <h1>Analysis unit $analysis_unit_id</h1>
+  $mmp_navigation
 </header>
 
 <section class="card" data-report-section="unit-definition">
-  <h2>1. Analysis unit definition</h2>
+  <h2>1. Analysis unitの定義</h2>
   $unit_information
-  <h3>Source Clusters</h3>
+  <h3>Source Cluster</h3>
   $source_clusters
-  <h3>Membership support</h3>
-  $membership_support
+  $source_cluster_legend
+  <h3>所属化合物の構造例</h3>
+  $compound_gallery
+  <details class="section-explanation"><summary>表示内容の説明</summary>
+    <p>$compound_gallery_note</p>
+  </details>
+  $unit_membership_link
 </section>
 
 <section class="card" data-report-section="projection">
@@ -19,35 +25,43 @@
 </section>
 
 <section class="card" data-report-section="a003">
-  <h2>3. A003 D001 descriptor contrast</h2>
-  $a003_note
+  <h2>3. A003 Interpretable descriptor contrast</h2>
   $a003_table
-  <h3>Top feature–Endpoint scatter plots</h3>
+  <h3>上位3 feature–Endpoint散布図</h3>
   $a003_scatter_plots
+  <details class="section-explanation"><summary>解析内容</summary>
+    <p>$a003_explanation</p>
+    <p>判定条件: $a003_criteria。</p>
+  </details>
+  $a003_full_link
 </section>
 
 <section class="card" data-report-section="a005">
-  <h2>4. A005 feature model</h2>
-  <p class="muted">$selection_bias_note</p>
-  $a005_note
+  <h2>4. A005 Multi-Description feature model</h2>
   $a005_table
+  $a005_status_note
+  $a005_prediction_plot
+  <details class="section-explanation"><summary>解析内容</summary>
+    <p>$a005_explanation</p>
+    <p>判定条件: $a005_criteria。</p>
+  </details>
+  $a005_full_link
 </section>
 
 <section class="card" data-report-section="a006">
-  <h2>5. A006 SALI and Cliff landscape</h2>
-  $a006_note
+  <h2>5. A006 SALI / activity-cliff landscape</h2>
   $a006_table
+  <details class="section-explanation"><summary>解析内容</summary>
+    <p>$a006_explanation</p>
+    <p>判定条件: $a006_criteria。</p>
+  </details>
+  $a006_full_link
 </section>
 
 <section class="card" data-report-section="a007">
-  <h2>6. A007 structural signature</h2>
-  $a007_note
+  <h2>6. A007 Structural signature</h2>
+  $a007_gallery
+  <p>$a007_explanation</p>
   $a007_table
-</section>
-
-<section class="card" data-report-section="full-tables-and-limitations">
-  <h2>7. Full tables and limitations</h2>
-  <p>完全表はSummaryと同じCSVを参照し、<code>analysis_unit_id</code>で絞り込んでください。MMPはA008専用レポートに分離されています。</p>
-  $full_table_links
-  $limitations
+  $a007_full_link
 </section>

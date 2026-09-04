@@ -16,7 +16,7 @@ Pixiが`python-igraph`と`leidenalg`を含む環境を自動構築します。
 
 ## 制約事項
 
-Seriesは排他的な化合物partitionではなく、同一化合物が複数Seriesに属し得ます。
+Seriesは排他的な化合物partitionではなく、同一化合物が複数Seriesに属し得ます。複数Cluster SeriesはFF 0.40、単独SeriesはFF 0.50を基準とし、resolution自動探索で24件以下にならなければcoverage付きMatrixから人間が条件を選びます。
 
 ## 変更履歴
 

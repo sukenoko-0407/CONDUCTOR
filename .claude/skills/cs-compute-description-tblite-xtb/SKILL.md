@@ -24,7 +24,7 @@ CSVまたは1件以上のSMILESからGFN2-xTB quantum descriptorsを計算する
 
 ## Algorithm-specific options
 
-`--num-confs`、`--random-seed`、必要に応じて`--charge`と`--uhf`を指定する。一般利用では`--compound-workers`で同時計算する化合物数、`--cores-per-compound`で各xTB計算のCPU数、`--available-cpu-cores`でNode全体のCPU予算を指定する。積が予算を超える指定は計算前に拒否する。非常に高コストのため人間承認後に実行する。
+`--num-confs`、`--random-seed`、必要に応じて`--charge`と`--uhf`を指定する。一般利用では`--compound-workers`で同時計算する化合物数、`--cores-per-compound`で各xTB計算のCPU数、`--available-cpu-cores`でNode全体のCPU予算を指定する。積が予算を超える指定は計算前に拒否する。ROUND1ではDescription Databaseのmiss化合物だけを、追加承認なしで実行する。
 
 CONDUCTOR Runtime経由では人間が宣言した`available_cpu_cores`を正本とし、D019を他Nodeと同時実行しない。Runtimeは原則として1化合物4コア、化合物並列数`floor(available_cpu_cores / 4)`を設定する。割当が4コア未満の場合だけ、1化合物を割当全コアで処理する。この内部並列数はOrchestratorのNode `parallel_limit`とは別概念である。
 
@@ -72,11 +72,15 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id ge
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001 --compound-workers 2 --cores-per-compound 4 --available-cpu-cores 8
 ```
 
+## Description Database
+
+CONDUCTOR 0.1.10ではRuntimeが`project`別Databaseを検索し、同じcompound ID、canonical構造、`calculation_version`、計算条件signatureが一致する行を再利用する。このSkillはRuntimeから渡されたcache miss入力だけを計算し、Database自体は更新しない。
+
 ## Boundaries
 
 - 最終的なSAR機序を断定しない。
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
-- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+- ROUND1の定型NodeはRound全体の承認後にRuntime契約に従って実行する。Descriptionごとの高コスト承認分岐は設けない。
 - 一般利用でも`--available-cpu-cores`を指定すれば、`compound_workers × cores_per_compound`の事前検証とLinux affinity制御を利用できる。CONDUCTOR利用ではRuntimeが必ず総予算を明示する。

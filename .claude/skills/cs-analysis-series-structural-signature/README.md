@@ -16,7 +16,7 @@ PixiがRDKitを準備します。
 
 ## 制約事項
 
-構造由来Clusterがある場合、fallback MCSは実行しません。fallback MCSは全有効化合物を対象とし、timeout到達を明示します。
+構造由来Clusterは登録済みKey構造だけを示します。vector由来Clusterに限り、そのSource Cluster所属の全有効化合物から代表Murcko scaffoldとMCSを導出し、timeout到達を明示します。
 
 ## 変更履歴
 

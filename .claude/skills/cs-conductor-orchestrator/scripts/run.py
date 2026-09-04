@@ -19,8 +19,8 @@ if not arguments:
 command_name = arguments[0]
 needs_authority = command_name in {
     "authorize-round", "resume-round", "continue-round", "accept-round",
-    "approve-high-cost", "approve-series", "retry-node", "waive-node",
-    "revise-series",
+    "approve-series", "select-series-configuration", "retry-node",
+    "waive-node", "revise-series",
 }
 if needs_authority and "--control-key" not in arguments:
     try:

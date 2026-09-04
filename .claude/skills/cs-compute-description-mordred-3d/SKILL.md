@@ -24,7 +24,7 @@ CSVまたは1件以上のSMILESからMordred 3D descriptorsを計算する。
 
 ## Algorithm-specific options
 
-`--num-confs`と`--random-seed`でconformer探索を制御する。化合物単位のprocess並列を使い、`--compound-workers`は最大8かつ`--available-cpu-cores`以下に制限する。各workerは1 CPU threadでconformer生成からMordred計算までを完結し、出力行は入力順へ戻す。高コストのため人間承認後に実行する。
+`--num-confs`と`--random-seed`でconformer探索を制御する。化合物単位のprocess並列を使い、`--compound-workers`は最大8かつ`--available-cpu-cores`以下に制限する。各workerは1 CPU threadでconformer生成からMordred計算までを完結し、出力行は入力順へ戻す。ROUND1ではDescription Databaseのmiss化合物だけを、追加承認なしで実行する。
 
 `--help`にはこのSkillで有効なoptionだけを表示する。CONDUCTORで同じcapabilityの異なるvariantまたはparameter setを比較する場合は、それぞれを別nodeとしてStateへ登録し、nodeの`parameters`と実行引数を一致させる。一般利用で比較する場合もrun IDまたは`--output-dir`を分ける。
 
@@ -68,10 +68,14 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id ge
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001 --available-cpu-cores 8 --compound-workers 8
 ```
 
+## Description Database
+
+CONDUCTOR 0.1.10ではRuntimeが`project`別Databaseを検索し、同じcompound ID、canonical構造、`calculation_version`、計算条件signatureが一致する行を再利用する。このSkillはRuntimeから渡されたcache miss入力だけを計算し、Database自体は更新しない。
+
 ## Boundaries
 
 - 最終的なSAR機序を断定しない。
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
-- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+- ROUND1の定型NodeはRound全体の承認後にRuntime契約に従って実行する。Descriptionごとの高コスト承認分岐は設けない。

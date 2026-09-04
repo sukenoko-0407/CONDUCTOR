@@ -70,6 +70,28 @@ MMP_REPORT_LABELS = {
     "variable_target": "After fragment (Target)",
 }
 
+MMP_REPORT_TITLES = {
+    "overview": "Target別MMP概要Table",
+    "basic": "MMP基本情報Table",
+    "detail": "MMP変換詳細Table",
+}
+
+MMP_REPORT_COLUMN_HELP = {
+    "analysis_unit_id": "Targetを選抜したSeriesまたはfallback Cluster ID。",
+    "target_compound_id": "定型解析ではanalysis unit内Endpoint上位1化合物。",
+    "target_endpoint": "Target化合物のEndpoint値。",
+    "neighbor_compound_id": "Targetとmatched molecular pairを形成する化合物ID。",
+    "neighbor_endpoint": "Neighbor化合物のEndpoint値。",
+    "favorable_delta_report": "NeighborからTargetへの変換に伴う方向正規化済みEndpoint差。正値ほどFavorable。",
+    "mmp_pair_count": "Targetに接続するMMP件数。",
+    "effect_summary": "観測された変換効果の要約。",
+    "underexplored": "MMPが少なく追加調査余地があることを示す補助flag。",
+    "mmp_id": "MMP Database内の一意ID。",
+    "exact_core_smiles": "Attachment pointを保持した共通Core。",
+    "variable_neighbor": "Neighbor側の置換前fragment。",
+    "variable_target": "Target側の置換後fragment。",
+}
+
 
 def render_mmp_template(name: str, values: dict[str, Any]) -> str:
     path = SKILL_DIR / "templates" / name
@@ -110,7 +132,19 @@ def compact_mmp_table(
     for column in view.columns:
         view[column] = view[column].map(display_value)
     view = view.rename(columns=MMP_REPORT_LABELS)
-    return frame_html(view, limit)
+    table = frame_html(view, limit)
+    help_items = "".join(
+        f"<dt>{html.escape(MMP_REPORT_LABELS.get(column, column))}</dt>"
+        f"<dd>{html.escape(MMP_REPORT_COLUMN_HELP.get(column, '補助出力列。'))}</dd>"
+        for column in columns
+    )
+    return (
+        "<details class='report-table'><summary>"
+        f"{html.escape(MMP_REPORT_TITLES[table_kind])}を表示"
+        f"（{min(len(view), limit)}件）</summary>{table}"
+        "<details class='column-help'><summary>列の説明</summary>"
+        f"<dl>{help_items}</dl></details></details>"
+    )
 
 
 def mmp_metric_grid(items: list[tuple[str, Any]]) -> str:
@@ -120,6 +154,15 @@ def mmp_metric_grid(items: list[tuple[str, Any]]) -> str:
         for label, value in items
     )
     return f"<div class='metric-grid'>{cards}</div>"
+
+
+def mmp_metric_stack(items: list[tuple[str, Any]]) -> str:
+    cards = "".join(
+        f"<div class='metric'><span class='muted'>{html.escape(label)}</span>"
+        f"<b>{html.escape(display_value(value))}</b></div>"
+        for label, value in items
+    )
+    return f"<div class='metric-stack'>{cards}</div>"
 
 
 def select_type_i_targets(
@@ -198,7 +241,8 @@ def select_minimal_transform_rows(frame: pd.DataFrame) -> pd.DataFrame:
     A row is dominated when its exact core is a proper substructure of another
     row's core for the same compound pair.  The larger core represents the
     smaller variable transformation.  Incomparable maxima are resolved by
-    core size and then stable identifiers so HTML remains one row per pair.
+    core size and then stable identifiers.  Incomparable maximal cores are all
+    retained because they express distinct attachment-aware transformations.
     The canonical CSV/database is intentionally left untouched.
     """
     if frame.empty:
@@ -236,16 +280,15 @@ def select_minimal_transform_rows(frame: pd.DataFrame) -> pd.DataFrame:
                         break
             if not dominated:
                 maximal.append(candidate)
-        pool = maximal or records
-        chosen = sorted(
-            pool,
+        pool = sorted(
+            maximal or records,
             key=lambda item: (
                 -item[2][0], -item[2][1], -item[2][2], item[2][3],
                 str(frame.at[item[0], "mmp_id"])
                 if "mmp_id" in frame else str(item[0]),
             ),
-        )[0]
-        chosen_indices.append(chosen[0])
+        )
+        chosen_indices.extend(item[0] for item in pool)
     return frame.loc[chosen_indices].sort_values(
         ["neighbor_compound_id", "mmp_id"]
         if "mmp_id" in frame else ["neighbor_compound_id"],
@@ -278,10 +321,236 @@ def orient_report_rows_target_to(frame: pd.DataFrame) -> pd.DataFrame:
     return oriented
 
 
+def canonical_core_key(value: Any) -> str:
+    """Canonicalize a core while retaining dummy atoms and attachment labels."""
+    from rdkit import Chem
+
+    molecule = depiction_molecule(value)
+    if molecule is None:
+        return str(value or "")
+    return Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=True)
+
+
+def align_depiction_to_reference(
+    reference: Any, molecule: Any, core_value: Any = None,
+) -> bool:
+    """Align one molecule to an existing reference depiction through a core."""
+    from rdkit import Chem
+    from rdkit.Chem import rdDepictor, rdFMCS
+
+    if reference is None or molecule is None:
+        return False
+    try:
+        if reference.GetNumConformers() == 0:
+            rdDepictor.Compute2DCoords(reference)
+        core = depiction_molecule(core_value)
+        if (
+            core is None
+            or not reference.HasSubstructMatch(core)
+            or not molecule.HasSubstructMatch(core)
+        ):
+            match = rdFMCS.FindMCS(
+                [reference, molecule], timeout=2,
+                ringMatchesRingOnly=True, completeRingsOnly=True,
+            )
+            core = (
+                Chem.MolFromSmarts(match.smartsString)
+                if match.numAtoms > 0 else None
+            )
+        if core is None:
+            return False
+        parameters = rdDepictor.ConstrainedDepictionParams()
+        parameters.acceptFailure = False
+        mapping = rdDepictor.GenerateDepictionMatching2DStructure(
+            molecule, reference, refPatt=core, params=parameters,
+        )
+        return bool(mapping)
+    except (RuntimeError, ValueError):
+        return False
+
+
+def align_target_depiction_to_neighbor(
+    neighbor: Any, target: Any, core_value: Any = None,
+) -> bool:
+    """Align Target 2D coordinates to Neighbor using their common structure."""
+    return align_depiction_to_reference(neighbor, target, core_value)
+
+
+def align_neighbor_depiction_to_target(
+    target: Any, neighbor: Any, core_value: Any = None,
+) -> bool:
+    """Align a Neighbor depiction to the fixed Target orientation."""
+    return align_depiction_to_reference(target, neighbor, core_value)
+
+
+def mmp_report_scope_note(
+    detected_rows: pd.DataFrame, report_rows: pd.DataFrame,
+    expanded_per_core: int = 5,
+) -> str:
+    """Describe exactly how much of the detected MMP result HTML displays."""
+    detected_unique = (
+        int(detected_rows["mmp_id"].nunique())
+        if "mmp_id" in detected_rows else len(detected_rows)
+    )
+    report_unique = (
+        int(report_rows["mmp_id"].nunique())
+        if "mmp_id" in report_rows else len(report_rows)
+    )
+    connection_rows = len(detected_rows)
+    folded = 0
+    if len(report_rows) and "exact_core_smiles" in report_rows:
+        keys = report_rows["exact_core_smiles"].map(canonical_core_key)
+        folded = int(sum(
+            max(0, int(count) - expanded_per_core)
+            for count in keys.value_counts(dropna=False)
+        ))
+
+    if detected_unique == 0:
+        selection = "このTargetに接続するMMPは検出されませんでした。"
+    elif detected_unique == report_unique:
+        selection = (
+            f"検出した一意MMP {detected_unique}件をすべて本レポートに掲載しています。"
+        )
+    else:
+        selection = (
+            f"一意MMPを{detected_unique}件検出し、同一Target–Neighborに複数のCoreがある場合は"
+            f"最小変換へ整理した{report_unique}件を本レポートに掲載しています。"
+        )
+    if connection_rows != detected_unique:
+        selection += (
+            f" 同じTargetが複数のanalysis unitに属するため、詳細CSVでは"
+            f"{connection_rows}接続行として記録されています。"
+        )
+    if folded:
+        selection += (
+            f" 各CoreのFavorable Δ上位{expanded_per_core}件を初期表示し、"
+            f"残り{folded}件はCore内で折りたたんでいます。"
+        )
+    elif report_unique:
+        selection += " 掲載対象はすべて初期表示しています。"
+    if detected_unique:
+        selection += " 全列と整理前の全接続行は詳細CSVを参照してください。"
+    return selection
+
+
+def render_target_overview_gallery(
+    targets: pd.DataFrame, data: pd.DataFrame, compound_id_column: str,
+    smiles_column: str, endpoint_column: str, output: Path,
+) -> tuple[str, list[Path]]:
+    """Show one Target structure for every analysis unit, four per row."""
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+
+    if targets.empty:
+        return "<p class='muted'>Target構造なし</p>", []
+    lookup = data.drop_duplicates(compound_id_column).set_index(
+        compound_id_column
+    )
+    molecules = []
+    legends = []
+    ordered = targets.sort_values(
+        ["analysis_unit_id", "target_compound_id"], kind="mergesort"
+    )
+    for record in ordered.itertuples():
+        target_id = str(getattr(record, "target_compound_id"))
+        if target_id not in lookup.index:
+            continue
+        molecule = Chem.MolFromSmiles(str(lookup.at[target_id, smiles_column]))
+        if molecule is None:
+            continue
+        endpoint_value = lookup.at[target_id, endpoint_column]
+        molecules.append(molecule)
+        legends.append(
+            f"{getattr(record, 'analysis_unit_id')}\n{target_id}\n"
+            f"Endpoint={display_value(endpoint_value)}"
+        )
+    if not molecules:
+        return "<p class='muted'>描画可能なTarget構造なし</p>", []
+    path = output / "mmp_target_overview.svg"
+    path.write_text(str(Draw.MolsToGridImage(
+        molecules, molsPerRow=4, subImgSize=(270, 230),
+        legends=legends, useSVG=True,
+    )), encoding="utf-8")
+    return (
+        f"<figure><img class='report-figure' src='{image_uri(path)}' "
+        "alt='Target structures by analysis unit'><figcaption>"
+        "各analysis unitのTargetを4列で表示しています。</figcaption></figure>",
+        [path],
+    )
+
+
+def render_target_neighbor_structures(
+    target_id: str, target_smiles: str, report_pairs: pd.DataFrame,
+    output: Path, filename_prefix: str,
+) -> tuple[str, str, list[Path]]:
+    """Render Target alone, then an initially collapsed aligned Neighbor grid."""
+    from rdkit.Chem import Draw, rdDepictor
+
+    artifacts: list[Path] = []
+    target_molecule = depiction_molecule(target_smiles)
+    if target_molecule is None:
+        target_html = "<p class='muted'>Target構造を描画できませんでした。</p>"
+    else:
+        rdDepictor.Compute2DCoords(target_molecule)
+        target_path = output / f"mmp_target_structure_{filename_prefix}.svg"
+        target_path.write_text(str(Draw.MolsToGridImage(
+            [target_molecule], molsPerRow=1, subImgSize=(420, 270),
+            legends=[f"TARGET {target_id}"], useSVG=True,
+        )), encoding="utf-8")
+        artifacts.append(target_path)
+        target_html = (
+            f"<figure class='single-target-structure'><img src='"
+            f"{image_uri(target_path)}' alt='Target {html.escape(target_id)}'>"
+            "</figure>"
+        )
+
+    neighbor_molecules = []
+    neighbor_legends = []
+    if len(report_pairs):
+        neighbors = report_pairs.sort_values(
+            ["favorable_delta_report", "neighbor_compound_id", "mmp_id"],
+            ascending=[False, True, True], na_position="last", kind="mergesort",
+        ).drop_duplicates("neighbor_compound_id")
+        for record in neighbors.itertuples():
+            neighbor_id = str(getattr(record, "neighbor_compound_id", "—"))
+            neighbor = depiction_molecule(getattr(record, "neighbor_smiles", None))
+            if neighbor is None:
+                continue
+            align_neighbor_depiction_to_target(
+                target_molecule, neighbor,
+                getattr(record, "exact_core_smiles", None),
+            )
+            delta = display_value(
+                getattr(record, "favorable_delta_report", None)
+            )
+            neighbor_molecules.append(neighbor)
+            neighbor_legends.append(
+                f"{neighbor_id}\nFavorable Δ={delta}"
+            )
+    if neighbor_molecules:
+        neighbor_path = output / f"mmp_neighbor_structures_{filename_prefix}.svg"
+        neighbor_path.write_text(str(Draw.MolsToGridImage(
+            neighbor_molecules, molsPerRow=4, subImgSize=(270, 230),
+            legends=neighbor_legends, useSVG=True,
+        )), encoding="utf-8")
+        artifacts.append(neighbor_path)
+        neighbor_html = (
+            "<details class='neighbor-structure-gallery'><summary>"
+            f"Neighbor構造を表示（{len(neighbor_molecules)}件）</summary>"
+            f"<figure><img src='{image_uri(neighbor_path)}' "
+            "alt='Target-aligned Neighbor structures'><figcaption>"
+            "各Neighborは上のTargetと共通する構造を基準に向きを揃えています。"
+            "</figcaption></figure></details>"
+        )
+    else:
+        neighbor_html = "<p class='muted'>Neighbor構造なし</p>"
+    return target_html, neighbor_html, artifacts
+
+
 def render_transformation_gallery(
     frame: pd.DataFrame, output: Path, filename_prefix: str,
 ) -> tuple[str, list[Path]]:
-    """Render one three-structure row for every report-visible MMP."""
+    """Render Neighbor → Target → Before → After for report-visible MMPs."""
     from rdkit import Chem
     from rdkit.Chem import Draw
 
@@ -293,8 +562,19 @@ def render_transformation_gallery(
     for position, record in enumerate(frame.itertuples(), 1):
         mmp_id = str(getattr(record, "mmp_id", f"MMP-{position}"))
         neighbor_id = str(getattr(record, "neighbor_compound_id", "—"))
+        neighbor_molecule = depiction_molecule(
+            getattr(record, "neighbor_smiles", None)
+        )
+        target_molecule = depiction_molecule(
+            getattr(record, "target_smiles", None)
+        )
+        align_target_depiction_to_neighbor(
+            neighbor_molecule, target_molecule,
+            getattr(record, "exact_core_smiles", None),
+        )
         molecules = [
-            depiction_molecule(getattr(record, "neighbor_smiles", None)),
+            neighbor_molecule,
+            target_molecule,
             depiction_molecule(getattr(record, "variable_neighbor", None)),
             depiction_molecule(getattr(record, "variable_target", None)),
         ]
@@ -307,9 +587,10 @@ def render_transformation_gallery(
         )
         image_path.write_text(
             str(Draw.MolsToGridImage(
-                molecules, molsPerRow=3, subImgSize=(300, 230),
+                molecules, molsPerRow=4, subImgSize=(270, 220),
                 legends=[
                     f"Neighbor {neighbor_id}",
+                    f"Target {getattr(record, 'target_compound_id', '—')}",
                     "Before fragment (Neighbor)",
                     "After fragment (Target)",
                 ],
@@ -326,11 +607,90 @@ def render_transformation_gallery(
             "<p class='muted'>Neighbor → Target / Favorable Δ: "
             f"{html.escape(delta)}</p>"
             f"<img src='{image_uri(image_path)}' "
-            "alt='Neighbor, before fragment, and after fragment structures'>"
+            "alt='Neighbor, Target, before fragment, and after fragment structures'>"
             "</article>"
         )
         artifacts.append(image_path)
     return "".join(rows), artifacts
+
+
+def render_core_group_gallery(
+    frame: pd.DataFrame, output: Path, filename_prefix: str,
+) -> tuple[str, list[Path]]:
+    """Group MMP transformations into attachment-aware exact-core cards."""
+    from rdkit.Chem import Draw
+
+    if frame.empty:
+        return "<p class='muted'>表示対象のMMP変換なし</p>", []
+    grouped = frame.copy()
+    grouped["_core_group_key"] = grouped["exact_core_smiles"].map(
+        canonical_core_key
+    )
+    grouped["_delta_sort"] = pd.to_numeric(
+        grouped.get("favorable_delta_report"), errors="coerce"
+    )
+    core_order = (
+        grouped.groupby("_core_group_key", dropna=False)["_delta_sort"]
+        .max().sort_values(ascending=False, na_position="last").index
+    )
+    cards: list[str] = []
+    artifacts: list[Path] = []
+    for core_position, core_key in enumerate(core_order, 1):
+        part = grouped.loc[grouped["_core_group_key"].eq(core_key)].sort_values(
+            ["_delta_sort", "neighbor_compound_id", "mmp_id"],
+            ascending=[False, True, True], na_position="last", kind="mergesort",
+        )
+        core_molecule = depiction_molecule(core_key)
+        core_path = output / (
+            f"mmp_core_{filename_prefix}_{core_position:03d}.svg"
+        )
+        core_image = "<p class='muted'>Coreを描画できませんでした。</p>"
+        if core_molecule is not None:
+            core_path.write_text(
+                str(Draw.MolsToGridImage(
+                    [core_molecule], molsPerRow=1, subImgSize=(320, 200),
+                    legends=[f"Core group {core_position}"], useSVG=True,
+                )),
+                encoding="utf-8",
+            )
+            artifacts.append(core_path)
+            core_image = (
+                f"<img class='core-structure-image' src='{image_uri(core_path)}' "
+                f"alt='Common core group {core_position}'>"
+            )
+        expanded = part.head(5)
+        folded = part.iloc[5:]
+        expanded_gallery, expanded_artifacts = render_transformation_gallery(
+            expanded, output, f"{filename_prefix}_core{core_position:03d}_top"
+        )
+        artifacts.extend(expanded_artifacts)
+        folded_html = ""
+        if len(folded):
+            folded_gallery, folded_artifacts = render_transformation_gallery(
+                folded, output,
+                f"{filename_prefix}_core{core_position:03d}_remaining",
+            )
+            artifacts.extend(folded_artifacts)
+            folded_html = (
+                f"<details><summary>残り{len(folded)}件を表示</summary>"
+                f"{compact_mmp_table(folded, 'basic', len(folded))}"
+                f"{folded_gallery}</details>"
+            )
+        max_delta = part["_delta_sort"].max()
+        cards.append(
+            "<article class='card' style='margin-top:16px'>"
+            f"<h3>Core group {core_position}</h3>"
+            f"<p><b>Canonical core:</b> <code style='white-space:normal;"
+            f"overflow-wrap:anywhere'>{html.escape(str(core_key))}</code></p>"
+            "<div class='core-summary-layout'>"
+            f"<div>{core_image}</div>"
+            f"{mmp_metric_stack([('MMP rows', len(part)), ('Max Favorable Δ', max_delta)])}"
+            "</div>"
+            f"<h4>Favorable Δ 上位{len(expanded)}件</h4>"
+            f"{compact_mmp_table(expanded, 'basic', 5)}"
+            f"{expanded_gallery}{folded_html}</article>"
+        )
+    return "".join(cards), artifacts
 
 
 def fragment_job_count(available_cpu_cores: int, requested_jobs: int | None) -> int:
@@ -507,7 +867,7 @@ def global_build(args: argparse.Namespace, outdir: Path, *, persist_database: bo
 
 
 def run_execution_request() -> int:
-    """Execute the 0.1.9 human-centred MMP contract.
+    """Execute the 0.1.10 human-centred MMP contract.
 
     Type-I and Type-II expose only target-connected one-cut pairs.  They still
     fragment the Run dataset so every observed neighbour can be found, but do
@@ -523,7 +883,7 @@ def run_execution_request() -> int:
     higher_is_better = bool(request.get("endpoint", {}).get("higher_is_better"))
     cuts = int(parameters.get("cuts", 1))
     if cuts != 1:
-        raise ValueError("CONDUCTOR 0.1.9 MMP Type-I/II/III require cuts=1 for interpretability")
+        raise ValueError("CONDUCTOR 0.1.10 MMP Type-I/II/III require cuts=1 for interpretability")
     radius_min = int(parameters.get("radius_min", 0)); radius_max = int(parameters.get("radius_max", 2))
     if not (0 <= radius_min <= radius_max <= 2):
         raise ValueError("MMP radius must satisfy 0 <= radius_min <= radius_max <= 2")
@@ -560,7 +920,7 @@ def run_execution_request() -> int:
         if str(database_metadata.get("endpoint_column")) != endpoint or bool(database_metadata.get("higher_is_better")) != higher_is_better:
             raise ValueError("Explicit Type-III MMP database endpoint contract does not match this Run")
         if database_metadata.get("schema_version") != "1.0.0" or int(database_metadata.get("fragment_policy", {}).get("num_cuts", 0)) != 1:
-            raise ValueError("Explicit Type-III MMP database is not a CONDUCTOR 0.1.9 one-cut database")
+            raise ValueError("Explicit Type-III MMP database is not a CONDUCTOR 0.1.10 one-cut database")
         database_radius = [int(value) for value in database_metadata.get("environment_radius", [])]
         if database_radius != [radius_min, radius_max]:
             raise ValueError(
@@ -742,6 +1102,7 @@ def run_execution_request() -> int:
     report = outdir / "mmp_report.html"
     target_report_links = []
     transformation_artifacts: list[Path] = []
+    structure_artifacts: list[Path] = []
     if role != "type-iii":
         from rdkit import Chem
         from rdkit.Chem import Draw
@@ -777,7 +1138,6 @@ def run_execution_request() -> int:
                 f"{safe_prefix}_"
                 f"{hashlib.sha256(target_id.encode('utf-8')).hexdigest()[:12]}"
             )
-            svg_path = outdir / f"mmp_map_{safe}.svg"
             display_effect = "favorable_delta_report"
             display_label = "Δ neighbor→target"
             target_smiles = str(
@@ -785,62 +1145,21 @@ def run_execution_request() -> int:
                     data[compound_id].astype(str).eq(target_id), smiles
                 ].iloc[0]
             )
-            display = (
-                report_pairs.sort_values(
-                    [display_effect, "neighbor_compound_id", "mmp_id"],
-                    ascending=[False, True, True],
-                    na_position="last",
-                ).drop_duplicates("neighbor_compound_id").head(11)
-                if len(report_pairs) else report_pairs
+            target_structure_html, neighbor_structure_html, structure_paths = (
+                render_target_neighbor_structures(
+                    target_id, target_smiles, report_pairs, outdir, safe
+                )
             )
-            molecules = [
-                Chem.MolFromSmiles(target_smiles),
-                *[
-                    Chem.MolFromSmiles(str(value))
-                    for value in display.get(
-                        "neighbor_smiles", pd.Series(dtype=str)
-                    )
-                ],
-            ]
-            legends = [
-                f"TARGET {target_id}",
-                *[
-                    (
-                        f"{row.neighbor_compound_id}\n"
-                        f"{display_label}={getattr(row, display_effect):.3g}"
-                    )
-                    if pd.notna(getattr(row, display_effect))
-                    else str(row.neighbor_compound_id)
-                    for row in display.itertuples()
-                ],
-            ]
-            valid = [
-                (molecule, legend)
-                for molecule, legend in zip(molecules, legends)
-                if molecule is not None
-            ]
-            if valid:
-                svg_path.write_text(str(Draw.MolsToGridImage(
-                    [item[0] for item in valid],
-                    molsPerRow=4,
-                    subImgSize=(260, 220),
-                    legends=[item[1] for item in valid],
-                    useSVG=True,
-                )), encoding="utf-8")
-            visible_pairs = display.sort_values(
+            structure_artifacts.extend(structure_paths)
+            visible_pairs = report_pairs.sort_values(
                 ["neighbor_compound_id", "mmp_id"],
                 ascending=[True, True],
-            ) if len(display) else display
+                kind="mergesort",
+            ) if len(report_pairs) else report_pairs
             transformation_gallery, gallery_artifacts = (
-                render_transformation_gallery(visible_pairs, outdir, safe)
+                render_core_group_gallery(visible_pairs, outdir, safe)
             )
             transformation_artifacts.extend(gallery_artifacts)
-            image = (
-                f"<img src='{image_uri(svg_path)}' "
-                "alt='Target and MMP neighbor structures'>"
-                if svg_path.is_file()
-                else "<p>構造図を生成できませんでした。</p>"
-            )
             direction_note = (
                 f"{display_label}が正なら、NeighborからTargetへの変換が"
                 "Favorableです。Targetは表示上常にToへ正規化しています。"
@@ -853,7 +1172,8 @@ def run_execution_request() -> int:
                     "target_id": html.escape(target_id),
                     "analysis_units": html.escape(unit_labels),
                     "target_smiles": html.escape(target_smiles),
-                    "structure_image": image,
+                    "target_structure_image": target_structure_html,
+                    "neighbor_structure_gallery": neighbor_structure_html,
                     "basic_information_table": compact_mmp_table(
                         visible_pairs, "basic", 100
                     ),
@@ -862,6 +1182,9 @@ def run_execution_request() -> int:
                     ),
                     "direction_note": html.escape(direction_note),
                     "transformation_gallery": transformation_gallery,
+                    "display_scope_note": html.escape(
+                        mmp_report_scope_note(part, visible_pairs)
+                    ),
                     "full_csv_path": html.escape(primary.name, quote=True),
                 },
             )
@@ -870,14 +1193,46 @@ def run_execution_request() -> int:
                 html_page(f"MMP target {target_id}", target_body),
                 encoding="utf-8",
             )
-            target_report_links.append((
-                target_id, page_path,
-                svg_path if svg_path.is_file() else None,
-            ))
+            target_report_links.append((target_id, page_path))
+        report_index_path = outdir / "mmp_report_index.json"
+        report_records = []
+        for target_id, page_path in target_report_links:
+            target_summary_row = target_summary.loc[
+                target_summary["target_compound_id"].astype(str).eq(target_id)
+            ].head(1)
+            target_endpoint_value = (
+                target_summary_row.iloc[0].get("target_endpoint")
+                if len(target_summary_row) else None
+            )
+            pair_count = (
+                int(target_summary_row.iloc[0].get("mmp_pair_count", 0))
+                if len(target_summary_row) else 0
+            )
+            for unit_id in sorted(set(
+                targets.loc[
+                    targets["target_compound_id"].astype(str).eq(target_id),
+                    "analysis_unit_id",
+                ].astype(str)
+            )):
+                report_records.append({
+                    "analysis_unit_id": unit_id,
+                    "target_compound_id": target_id,
+                    "target_rank": 1,
+                    "target_endpoint": target_endpoint_value,
+                    "mmp_pair_count": pair_count,
+                    "report_path": page_path.name,
+                })
+        write_json(report_index_path, {
+            "schema_version": "1.0.0",
+            "role": role,
+            "unit_reports": report_records,
+            "overview_path": report.name,
+        })
+        extra_artifacts.append(report_index_path)
     links = "".join(
         f"<li><a href='{html.escape(path.name, quote=True)}'>"
         f"{html.escape(target_id)}</a></li>"
-        for target_id, path, _ in target_report_links
+        for target_id, path in target_report_links
     )
     report_target_summary = target_summary.copy()
     if role != "type-iii" and len(report_target_summary):
@@ -907,6 +1262,14 @@ def run_execution_request() -> int:
             if role == "type-i" else ""
         )
     )
+    target_gallery, target_gallery_artifacts = (
+        render_target_overview_gallery(
+            targets, data, compound_id, smiles, endpoint, outdir
+        ) if role != "type-iii" else (
+            "<p class='muted'>Type-IIIにはTarget選抜がありません。</p>", []
+        )
+    )
+    structure_artifacts.extend(target_gallery_artifacts)
     overview_body = render_mmp_template(
         "mmp_overview_report_template.html",
         {
@@ -922,6 +1285,7 @@ def run_execution_request() -> int:
                 report_target_summary, "overview",
                 max(1, len(report_target_summary))
             ),
+            "target_gallery": target_gallery,
             "target_links": (
                 f"<ul>{links}</ul>"
                 if links else "<p class='muted'>対象別レポートなし</p>"
@@ -932,13 +1296,13 @@ def run_execution_request() -> int:
     report.write_text(
         html_page("MMP analysis", overview_body), encoding="utf-8"
     )
-    extra_artifacts.extend([path for _,path,_ in target_report_links]); extra_artifacts.extend([svg for _,_,svg in target_report_links if svg is not None]); extra_artifacts.extend(transformation_artifacts)
+    extra_artifacts.extend([path for _, path in target_report_links]); extra_artifacts.extend(structure_artifacts); extra_artifacts.extend(transformation_artifacts)
     if role == "type-iii":
         extra_artifacts.extend(path for path in outdir.iterdir() if path.is_file() and path not in {primary,report})
     else:
         # Type-I/II are human-centred target analyses. The complete database and
         # global summary exports belong exclusively to explicit Type-III.
-        keep={primary.name,targets_path.name,target_summary_path.name,"mmp_target_transform_summary.csv","mmp_target_core_summary.csv","mmp_near_core_references.csv","mmp_report.html",*[path.name for _,path,_ in target_report_links],*[svg.name for _,_,svg in target_report_links if svg is not None],*[path.name for path in transformation_artifacts]}
+        keep={primary.name,targets_path.name,target_summary_path.name,"mmp_target_transform_summary.csv","mmp_target_core_summary.csv","mmp_near_core_references.csv","mmp_report.html","mmp_report_index.json",*[path.name for _, path in target_report_links],*[path.name for path in structure_artifacts],*[path.name for path in transformation_artifacts]}
         for path in list(outdir.iterdir()):
             if path.name not in keep:
                 if path.is_dir(): shutil.rmtree(path,ignore_errors=True)

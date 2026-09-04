@@ -25,7 +25,9 @@ build/
 dist/
 *.egg-info/
 
-# Skill-local Pixi runtime data. env/pixi.toml and env/pixi.lock stay tracked.
+# Skill-local Pixi runtime data. These are disposable machine-local files.
+# env/pixi.toml and env/pixi.lock are intentionally not ignored: manifests and
+# locks are reproducibility inputs and must remain reviewable in Git.
 .claude/skills/*/env/.pixi/
 .claude/skills/*/env/cache/
 .claude/skills/*/env/config/
@@ -34,11 +36,14 @@ dist/
 .claude/skills/*/env/tmp/
 .claude/skills/*/env/pixi-home/
 .claude/skills/*/env/.environment-ready
+.claude/skills/*/env/.environment-ready.*
 .claude/skills/*/env/.bootstrap.lock
+.claude/skills/*/env/.bootstrap.lock.*
 
 # Generated CONDUCTOR results and archived working data
 /Archive/
 /CONDUCTOR_modules/Archive/
+/data/description_database/
 results/
 outputs/*
 !outputs/.gitkeep
@@ -49,6 +54,9 @@ analysis/
 # Repository-local smoke tests and temporary validation environments
 .smoke-*/
 .validation-site/
+/.validation-*/
+/test-results/
+/CONDUCTOR_modules/test-results/
 
 # OS, editor, and Office temporary files
 .DS_Store

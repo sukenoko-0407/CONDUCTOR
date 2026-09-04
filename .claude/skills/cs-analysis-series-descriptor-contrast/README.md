@@ -1,6 +1,6 @@
 # SKILLの目的
 
-解釈可能なD001特徴量についてGlobalとSeriesの差を調べ、各解析単位の相関上位3特徴量を単一特徴量–Endpoint散布図として保存します。
+解釈可能なD001・D012・D015・D016・D019特徴量についてGlobalと各analysis unitの差を調べ、相関上位3特徴量を単一特徴量–Endpoint散布図として保存します。D015はacid/base・元素組成・芳香族性・ring count・polarizability、D016は分子geometry・部分表面積に厳選します。
 
 ## 想定利用シーン
 
@@ -22,4 +22,5 @@ Pixi環境を自動構築します。
 
 | Version | 変更内容 |
 |---|---|
+| 0.1.10 | 固定Description panelへ拡張し、Description ID付き結果と上位3散布図を追加 |
 | 1.0.0 | Series batch Operatorとして新設 |

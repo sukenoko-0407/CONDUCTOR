@@ -20,13 +20,25 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
+TOOLS_DIRECTORY = Path(__file__).resolve().parent
+if str(TOOLS_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIRECTORY))
 
-VERSION = "0.1.9"
-PROTOCOL_VERSION = "0.1.9"
+from description_database import (
+    database_path as description_database_path,
+    finalize_cached_output,
+    inspect_records as inspect_description_records,
+    invalidate_records as invalidate_description_records,
+    prepare_cache_plan,
+    register_misses as register_description_misses,
+)
+
+
+VERSION = "0.1.10"
+PROTOCOL_VERSION = "0.1.10"
 NODE_STATES = {"pending", "running", "succeeded", "failed", "cancelled"}
 DEFAULT_CPU_CORES = 8
 DEFAULT_LEASE_MINUTES = 360
-HIGH_COST = {"D016", "D019", "D020"}
 
 
 def now() -> str:
@@ -320,7 +332,7 @@ def add_node(control: dict[str, Any], dag: dict[str, Any], capability_id: str, d
         if str(table[node_id].get("round_id")) != round_id
     ]
     if foreign_dependencies:
-        raise ValueError(f"Cross-Round dependencies are not allowed in 0.1.9: {foreign_dependencies}")
+        raise ValueError(f"Cross-Round dependencies are not allowed in 0.1.10: {foreign_dependencies}")
     cap = caps[capability_id]
     # Store the complete effective parameter contract in the Node.  Runtime
     # overrides remain explicit, while untouched values come from the selected
@@ -416,6 +428,35 @@ def series_gate(root: Path, control: dict[str, Any], dag: dict[str, Any]) -> dic
         summary.get("analysis_unit_count", accepted_series_count)
     )
     limit = int(profile()["basic_compute"]["max_series_for_auto_standard"])
+    absolute_limit = int(
+        profile()["basic_compute"].get("absolute_max_analysis_units", 100)
+    )
+    review_guideline = int(
+        profile()["basic_compute"].get("analysis_unit_review_guideline", 50)
+    )
+    search_path = Path((c012.get("result") or {}).get("result_dir", "")) / "series_parameter_search.json"
+    search = read_json(search_path) if search_path.is_file() else {}
+    if bool(summary.get("selection_required")):
+        return {
+            "selected_cluster_count": int(summary.get("selected_cluster_count", 0)),
+            "accepted_series_count": accepted_series_count,
+            "rejected_series_count": int(summary.get("rejected_series_count", 0)),
+            "fallback_cluster_count": int(summary.get("fallback_cluster_count", 0)),
+            "analysis_unit_count": analysis_unit_count,
+            "limit": limit,
+            "review_guideline": review_guideline,
+            "absolute_limit": absolute_limit,
+            "review_basis": "parameter_grid",
+            "series_parameter_search": search,
+            "matrix_columns": [
+                "analysis_unit_count", "cluster_coverage",
+                "compound_coverage", "fallback_cluster_count",
+            ],
+            "human_actions": [
+                "select-series-configuration --min-ff-evaluate ... --leiden-resolution ...",
+            ],
+            "c012_node_id": c012["node_id"],
+        }
     if (
         analysis_unit_count > limit
         and control.get("series_gate_revision") != c012["node_id"]
@@ -433,6 +474,8 @@ def series_gate(root: Path, control: dict[str, Any], dag: dict[str, Any]) -> dic
             ),
             "analysis_unit_count": analysis_unit_count,
             "limit": limit,
+            "review_guideline": review_guideline,
+            "absolute_limit": absolute_limit,
             "review_basis": "analysis_unit_count",
             "current_parameters": {
                 "min_ff_evaluate": int(
@@ -448,10 +491,13 @@ def series_gate(root: Path, control: dict[str, Any], dag: dict[str, Any]) -> dic
                     )
                 ),
             },
-            "human_actions": [
-                "approve-series",
-                "revise-series --min-ff-evaluate ... --leiden-resolution ...",
-            ],
+            "human_actions": (
+                ["revise-series --min-ff-evaluate ... --leiden-resolution ..."]
+                if analysis_unit_count > absolute_limit else [
+                    "approve-series",
+                    "revise-series --min-ff-evaluate ... --leiden-resolution ...",
+                ]
+            ),
             "c012_node_id": c012["node_id"],
         }
     return None
@@ -476,8 +522,6 @@ def required_action(root: Path, control: dict[str, Any], dag: dict[str, Any]) ->
     basic = [node for node in nodes(dag) if node["round_id"] == control.get("active_round_id") and node["wave"] == "basic"]
     if not basic:
         return {"code": "PLAN_BASIC"}
-    if not control.get("high_cost_approved") and any(node["capability_id"] in HIGH_COST and node["status"] == "pending" for node in basic):
-        return {"code": "HUMAN_APPROVAL_REQUIRED", "bundle": sorted(HIGH_COST)}
     ready = runnable(dag, control.get("active_round_id"))
     if ready:
         return {"code": "EXECUTE_RUNNABLE_BATCH", "runnable_count": len(ready), "node_ids": [node["node_id"] for node in ready[:20]]}
@@ -612,7 +656,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "higher_is_better": bool(args.higher_is_better), "endpoint_unit": args.endpoint_unit,
         "parallel_limit": args.parallel_limit, "available_cpu_cores": args.available_cpu_cores,
         "round_status": "NONE", "active_round_id": None, "next_round_number": 1, "next_node_number": 1,
-        "revision": 0, "lease": None, "high_cost_approved": False, "series_gate_revision": None,
+        "revision": 0, "lease": None, "series_gate_revision": None,
         "audited_round_id": None, "created_at": now(), "updated_at": now(),
     }
     dag = {"schema_version": "1.0.0", "conductor_version": VERSION, "revision": 0, "nodes": []}
@@ -655,7 +699,7 @@ def cmd_prepare_round(args: argparse.Namespace) -> int:
             "walltime_minutes": args.walltime_minutes, "parallel_limit": effective_parallel,
             "available_cpu_cores": effective_cpu_cores,
             "min_ff_evaluate": args.min_ff_evaluate, "leiden_resolution": args.leiden_resolution,
-            "approve_high_cost": bool(args.approve_high_cost), "authorization_token": token, "created_at": now(),
+            "authorization_token": token, "created_at": now(),
         }
         path = root / "runtime" / "rounds" / round_id / "request.json"
         atomic_json(path, request)
@@ -677,7 +721,7 @@ def cmd_authorize_round(args: argparse.Namespace) -> int:
         control.update({
             "round_status": "ACTIVE", "round_deadline": (datetime.now(timezone.utc) + timedelta(minutes=int(request["walltime_minutes"]))).isoformat(),
             "parallel_limit": int(request["parallel_limit"]), "available_cpu_cores": int(request["available_cpu_cores"]),
-            "high_cost_approved": bool(request["approve_high_cost"]), "current_parameters": {
+            "current_parameters": {
                 "min_ff_evaluate": int(request["min_ff_evaluate"]), "leiden_resolution": float(request["leiden_resolution"])
             }, "pending_round_request": None, "audited_round_id": None,
         })
@@ -760,47 +804,6 @@ def cmd_continue_round(args: argparse.Namespace) -> int:
     return emit(root, control, dag)
 
 
-def cmd_approve_high_cost(args: argparse.Namespace) -> int:
-    root = resolve_root(args.run_root)
-    require_control_key(root, args.control_key)
-    with writer_lock(root):
-        control, dag = load_state(root)
-        if control.get("round_status") != "ACTIVE" or not control.get("active_round_id"):
-            raise ValueError("A high-cost decision requires an ACTIVE Round")
-        current_round = control["active_round_id"]
-        approved = bool(args.approve)
-        control["high_cost_approved"] = approved
-        omitted: list[str] = []
-        if not approved:
-            for node in nodes(dag):
-                if node.get("round_id") == current_round and node["capability_id"] in HIGH_COST and node["status"] == "pending":
-                    node["status"] = "cancelled"
-                    node["waived"] = True
-                    node["waiver_reason"] = f"high-cost bundle declined: {args.rationale}"
-                    node["updated_at"] = now()
-                    omitted.append(node["node_id"])
-            declined_descriptions = set(omitted)
-            # Only the vector-Clustering Nodes that directly consume a declined
-            # Description are impossible.  A001/A002/C012 deliberately retain
-            # the remaining Cluster results and must not be transitively waived.
-            for child in nodes(dag):
-                if (
-                    child.get("round_id") == current_round
-                    and child["status"] == "pending"
-                    and child.get("stage") == "clustering"
-                    and any(parent in declined_descriptions for parent in child.get("dependencies", []))
-                ):
-                    child["status"] = "cancelled"
-                    child["waived"] = True
-                    child["waiver_reason"] = "required high-cost Description was declined"
-                    child["updated_at"] = now()
-                    omitted.append(child["node_id"])
-            if clustering_nodes_terminal(dag, current_round):
-                rebuild_cluster_registry(root, control, dag, current_round)
-        save_state(root, control, dag, "HIGH_COST_DECISION", {"approved": approved, "rationale": args.rationale, "omitted_node_ids": omitted})
-    return emit(root, control, dag)
-
-
 def cmd_approve_series(args: argparse.Namespace) -> int:
     root = resolve_root(args.run_root)
     require_control_key(root, args.control_key)
@@ -811,9 +814,101 @@ def cmd_approve_series(args: argparse.Namespace) -> int:
         c012 = latest(dag, "C012", status="succeeded", round_id=control.get("active_round_id"))
         if not c012:
             raise ValueError("No succeeded C012 Node exists")
+        summary = read_json(Path(c012["result"]["result_dir"]) / "series_summary.json")
+        if summary.get("selection_required"):
+            raise ValueError(
+                "C012 is a parameter-search preview; choose its current or another Matrix cell "
+                "with select-series-configuration"
+            )
+        absolute_limit = int(profile()["basic_compute"].get("absolute_max_analysis_units", 100))
+        if int(summary.get("analysis_unit_count", 0)) > absolute_limit:
+            raise ValueError(
+                f"Series approval cannot exceed the absolute limit of {absolute_limit} analysis units"
+            )
         control["series_gate_revision"] = c012["node_id"]
-        save_state(root, control, dag, "SERIES_GATE_APPROVED", {"c012_node_id": c012["node_id"]})
+        save_state(root, control, dag, "SERIES_GATE_APPROVED", {
+            "c012_node_id": c012["node_id"],
+            "node_signature": c012["signature"],
+            "analysis_unit_count": int(summary.get("analysis_unit_count", 0)),
+        })
     return emit(root, control, dag)
+
+
+def cmd_select_series_configuration(args: argparse.Namespace) -> int:
+    root = resolve_root(args.run_root)
+    require_control_key(root, args.control_key)
+    with writer_lock(root):
+        control, dag = load_state(root)
+        current_round = control.get("active_round_id")
+        if control.get("round_status") != "ACTIVE" or not current_round:
+            raise ValueError("Series configuration selection requires an ACTIVE Round")
+        if any(
+            node["round_id"] == current_round and node["wave"] == "standard"
+            for node in nodes(dag)
+        ):
+            raise ValueError("Series configuration cannot change after standard analysis was planned")
+        preview = latest(dag, "C012", status="succeeded", round_id=current_round)
+        if not preview:
+            raise ValueError("No succeeded C012 parameter-search preview exists")
+        result_dir = Path(preview["result"]["result_dir"])
+        summary = read_json(result_dir / "series_summary.json")
+        search = read_json(result_dir / "series_parameter_search.json")
+        if not summary.get("selection_required"):
+            raise ValueError("The latest C012 result is not awaiting Matrix selection")
+        selected = next((
+            row for row in search.get("evaluations", [])
+            if int(row["min_ff_evaluate"]) == int(args.min_ff_evaluate)
+            and math.isclose(float(row["leiden_resolution"]), float(args.leiden_resolution))
+        ), None)
+        if selected is None:
+            raise ValueError("The requested condition is not a cell in the C012 Matrix")
+        absolute_limit = int(search.get("absolute_limit", 100))
+        unit_count = int(selected["analysis_unit_count"])
+        if unit_count > absolute_limit:
+            raise ValueError(
+                f"The selected Matrix cell has {unit_count} units and exceeds the absolute limit {absolute_limit}"
+            )
+        parameters = {
+            "min_ff_evaluate": int(args.min_ff_evaluate),
+            "leiden_resolution": float(args.leiden_resolution),
+            "favorable_fraction_threshold": float(
+                profile()["basic_compute"]["favorable_fraction_threshold"]
+            ),
+            "multi_cluster_favorable_fraction_threshold": float(
+                profile()["basic_compute"]["multi_cluster_favorable_fraction_threshold"]
+            ),
+            "random_seed": int(profile()["basic_compute"]["leiden_seed"]),
+            "parameter_search_enabled": False,
+            "configuration_confirmed": True,
+            "max_units_for_auto_standard": int(
+                profile()["basic_compute"]["max_series_for_auto_standard"]
+            ),
+            "absolute_max_analysis_units": absolute_limit,
+        }
+        c012, added = add_node(
+            control, dag, "C012", list(preview["dependencies"]), "basic", parameters
+        )
+        if not added:
+            raise ValueError("The selected C012 configuration already exists")
+        control["current_parameters"] = {
+            "min_ff_evaluate": int(args.min_ff_evaluate),
+            "leiden_resolution": float(args.leiden_resolution),
+        }
+        # Selecting a 25–100-unit Matrix cell is both parameter selection and
+        # explicit approval of its unit count. The approval is bound to this
+        # newly created deterministic C012 Node.
+        control["series_gate_revision"] = c012["node_id"]
+        save_state(root, control, dag, "SERIES_MATRIX_CONFIGURATION_SELECTED", {
+            "preview_c012_node_id": preview["node_id"],
+            "c012_node_id": c012["node_id"],
+            "node_signature": c012["signature"],
+            "min_ff_evaluate": int(args.min_ff_evaluate),
+            "leiden_resolution": float(args.leiden_resolution),
+            "analysis_unit_count": unit_count,
+            "cluster_coverage": selected.get("cluster_coverage"),
+            "compound_coverage": selected.get("compound_coverage"),
+        })
+    return emit(root, control, dag, selected_c012_node_id=c012["node_id"])
 
 
 def cmd_revise_series(args: argparse.Namespace) -> int:
@@ -838,29 +933,29 @@ def cmd_revise_series(args: argparse.Namespace) -> int:
             and float(current_parameters.get("leiden_resolution", -1.0)) == float(args.leiden_resolution)
         ):
             raise ValueError("Series revision parameters are unchanged; no new scientific Node would be created")
-        clustering_nodes = [
-            node["node_id"] for node in nodes(dag)
-            if node["round_id"] == current_round and node["capability_id"] in {"C001", "C002", "C003", "C004", "C005", "C006", "C007", "C008", "C009", "C010"}
-        ]
-        if not clustering_nodes or any(lookup(dag)[node_id]["status"] not in {"succeeded", "cancelled"} for node_id in clustering_nodes):
-            raise ValueError("All planned C001-C010 Nodes must be terminal before revising Series parameters")
+        previous_c012 = latest(dag, "C012", status="succeeded", round_id=current_round)
+        if not previous_c012:
+            raise ValueError("A succeeded C012 Node is required before custom Series revision")
         parameters = {
             "min_ff_evaluate": int(args.min_ff_evaluate),
             "favorable_fraction_threshold": float(profile()["basic_compute"]["favorable_fraction_threshold"]),
-            "high_quantile": 0.8, "low_quantile": 0.2,
-        }
-        a001, _ = add_node(control, dag, "A001", clustering_nodes, "basic", parameters)
-        a002, _ = add_node(control, dag, "A002", clustering_nodes, "basic", parameters)
-        c012, _ = add_node(control, dag, "C012", [a001["node_id"], a002["node_id"]], "basic", {
-            "min_ff_evaluate": parameters["min_ff_evaluate"],
-            "favorable_fraction_threshold": parameters["favorable_fraction_threshold"],
+            "multi_cluster_favorable_fraction_threshold": float(profile()["basic_compute"]["multi_cluster_favorable_fraction_threshold"]),
             "leiden_resolution": float(args.leiden_resolution),
             "random_seed": profile()["basic_compute"]["leiden_seed"],
-        })
+            "parameter_search_enabled": False,
+            "configuration_confirmed": True,
+            "max_units_for_auto_standard": int(profile()["basic_compute"]["max_series_for_auto_standard"]),
+            "absolute_max_analysis_units": int(profile()["basic_compute"].get("absolute_max_analysis_units", 100)),
+        }
+        c012, added = add_node(
+            control, dag, "C012", list(previous_c012["dependencies"]), "basic", parameters
+        )
+        if not added:
+            raise ValueError("The requested custom Series configuration already exists")
         control["current_parameters"] = {"min_ff_evaluate": int(args.min_ff_evaluate), "leiden_resolution": float(args.leiden_resolution)}
         control["series_gate_revision"] = None
-        save_state(root, control, dag, "SERIES_REVISION_PLANNED", {"a001_node_id": a001["node_id"], "a002_node_id": a002["node_id"], "c012_node_id": c012["node_id"], "reason": args.reason})
-    return emit(root, control, dag, revised_node_ids=[a001["node_id"], a002["node_id"], c012["node_id"]])
+        save_state(root, control, dag, "SERIES_REVISION_PLANNED", {"source_c012_node_id": previous_c012["node_id"], "c012_node_id": c012["node_id"], "reason": args.reason})
+    return emit(root, control, dag, revised_node_ids=[c012["node_id"]])
 
 
 def cmd_plan_basic(args: argparse.Namespace) -> int:
@@ -900,7 +995,14 @@ def cmd_plan_basic(args: argparse.Namespace) -> int:
         if added: created.append(a002["node_id"])
         c012, added = add_node(control, dag, "C012", [a001["node_id"], a002["node_id"]], "basic", {
             "min_ff_evaluate": parameters["min_ff_evaluate"], "favorable_fraction_threshold": parameters["favorable_fraction_threshold"],
-            "leiden_resolution": float(control["current_parameters"]["leiden_resolution"]), "random_seed": basic["leiden_seed"]
+            "multi_cluster_favorable_fraction_threshold": float(basic["multi_cluster_favorable_fraction_threshold"]),
+            "leiden_resolution": float(control["current_parameters"]["leiden_resolution"]),
+            "resolution_grid": list(basic["leiden_resolution_grid"]),
+            "min_ff_evaluate_grid": list(basic["min_ff_evaluate_grid"]),
+            "max_units_for_auto_standard": int(basic["max_series_for_auto_standard"]),
+            "absolute_max_analysis_units": int(basic["absolute_max_analysis_units"]),
+            "parameter_search_enabled": True,
+            "random_seed": basic["leiden_seed"]
         })
         if added: created.append(c012["node_id"])
         save_state(root, control, dag, "BASIC_PLANNED", {"created_node_ids": created})
@@ -921,8 +1023,9 @@ def cmd_plan_standard(args: argparse.Namespace) -> int:
         d = {capability_id: latest(dag, capability_id, status="succeeded", round_id=current_round) for capability_id in profile()["basic_compute"]["description_capabilities"]}
         created: list[str] = []
         specifications=[]
-        if d.get("D001"):
-            specifications.append(("A003", [d["D001"]["node_id"], c012["node_id"], a001["node_id"], a002["node_id"]], {"description_id": "D001"}))
+        a003_panel = prof["descriptor_contrast_descriptions"]
+        if all(d.get(item) for item in a003_panel):
+            specifications.append(("A003", [*[d[item]["node_id"] for item in a003_panel], c012["node_id"], a001["node_id"], a002["node_id"]], {"description_ids": a003_panel, "correlation_threshold": prof["a003_correlation_threshold"]}))
         if d.get("D002"):
             specifications.extend([
                 ("A004", [d["D002"]["node_id"], c012["node_id"]], {"description_id": "D002", "random_seed": 61453}),
@@ -1129,10 +1232,14 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
             if source.get("status") != "succeeded":
                 continue
             # A008 remains an A009 dependency so the deterministic standard
-            # workflow waits for MMP Type-I.  MMP has a dedicated report and is
-            # intentionally not integrated into the standard Series report;
-            # do not load its potentially large pair table merely to discard it.
+            # workflow waits for MMP Type-I.  Pass only the compact navigation
+            # index; the potentially large pair table remains in the A008 node.
             if capability_id == "A009" and source.get("capability_id") == "A008":
+                mmp_index = primary_path(source).parent / "mmp_report_index.json"
+                if mmp_index.is_file():
+                    input_values.append(
+                        artifact("mmp_report_index", mmp_index, source)
+                    )
                 continue
             role = "source"
             if source["capability_id"].startswith("D"): role = "description"
@@ -1140,7 +1247,12 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
             elif source["capability_id"] == "A001": role = "cluster_profile"
             elif source["capability_id"] == "A002": role = "cluster_enrichment"
             input_values.append(artifact(role, primary_path(source), source))
-        for role, name in (("cluster_registry", "cluster_registry.csv"), ("series_registry", "series_registry.csv"), ("series_summary", "series_summary.json"), ("analysis_unit_membership", "analysis_unit_membership.csv"), ("analysis_unit_registry", "analysis_unit_registry.csv"), ("series_cluster_membership", "series_cluster_membership.csv"), ("compound_series_support", "compound_series_support.csv")):
+        if capability_id == "A007" and runtime_files["cluster_membership_long"].is_file():
+            input_values.append(artifact(
+                "cluster_membership_long",
+                runtime_files["cluster_membership_long"],
+            ))
+        for role, name in (("cluster_registry", "cluster_registry.csv"), ("series_registry", "series_registry.csv"), ("series_summary", "series_summary.json"), ("analysis_unit_membership", "analysis_unit_membership.csv"), ("analysis_unit_registry", "analysis_unit_registry.csv"), ("series_cluster_membership", "series_cluster_membership.csv"), ("compound_series_support", "compound_series_support.csv"), ("selected_clusters_effective", "selected_clusters_effective.csv")):
             path = root / "runtime" / name
             if path.is_file(): input_values.append(artifact(role, path))
     available_cpu = int(control["available_cpu_cores"])
@@ -1177,10 +1289,13 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
                 "node_id": dependency["node_id"],
                 "node_status": node_status,
                 "duration_seconds": duration_seconds,
+                "reason": dependency.get("waiver_reason")
+                or (dependency.get("error") or {}).get("message"),
             })
         subject["report_execution"] = report_execution
     request = {
         "schema_version": "1.0.0",
+        "conductor_version": VERSION,
         "identity": {"project": control["project"], "run_id": control["run_id"], "round_id": node["round_id"], "node_id": node["node_id"], "attempt_id": attempt_id, "capability_id": capability_id, "skill_name": node["skill_name"]},
         "inputs": input_values,
         "columns": control["columns"],
@@ -1191,6 +1306,29 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
         "output": {"directory": str((scratch / "skill_output").resolve()), "overwrite": False},
         "created_at": now(),
     }
+    if cap["stage"] == "description":
+        cache_plan = prepare_cache_plan(
+            project_root=project_root(),
+            program_name=control["project"],
+            dataset_path=dataset_path,
+            id_column=str(control["columns"]["compound_id"]),
+            smiles_column=str(control["columns"]["smiles"]),
+            capability=cap,
+            parameters=node.get("parameters", {}),
+            scratch=scratch,
+            source_run_id=control["run_id"],
+        )
+        request["description_cache"] = {
+            key: value for key, value in cache_plan.items()
+            if key != "subset_path"
+        }
+        request["description_cache"]["subset_path"] = cache_plan.get("subset_path")
+        if cache_plan.get("subset_path"):
+            request["inputs"] = [
+                artifact("dataset", Path(str(cache_plan["subset_path"])))
+                if item.get("role") == "dataset" else item
+                for item in request["inputs"]
+            ]
     required_roles = set(cap.get("conductor_request", {}).get("required_input_roles", []))
     supplied_roles = {str(item.get("role")) for item in input_values}
     missing_roles = sorted(required_roles - supplied_roles)
@@ -1333,7 +1471,7 @@ def rebuild_cluster_registry(root: Path, control: dict[str, Any], dag: dict[str,
 
 
 def promote_series_runtime(root: Path, result_dir: Path) -> None:
-    names = ("series_registry.csv", "series_cluster_membership.csv", "compound_series_support.csv", "analysis_unit_membership.csv", "analysis_unit_registry.csv", "series_summary.json")
+    names = ("series_registry.csv", "series_cluster_membership.csv", "compound_series_support.csv", "analysis_unit_membership.csv", "analysis_unit_registry.csv", "series_summary.json", "selected_clusters_effective.csv")
     missing = [name for name in names if not (result_dir / name).is_file()]
     if missing:
         raise FileNotFoundError(f"C012 is missing required Series artifacts: {missing}")
@@ -1392,13 +1530,29 @@ def run_node(root: Path, node_id: str) -> dict[str, Any]:
             "CONDUCTOR_NODE_CPU_CORES": str(resources.get("node_cpu_cores", 1)),
             "CONDUCTOR_ATTEMPT_TMP": str((scratch / "tmp").resolve()),
         })
-        with log_path.open("w", encoding="utf-8") as log:
-            completed = subprocess.run(command, cwd=project_root(), env=environment, stdout=log, stderr=subprocess.STDOUT)
         output = scratch / "skill_output"
-        event_path = output / "execution_event.json"
-        if completed.returncode != 0:
+        cache_plan = request.get("description_cache") if node["stage"] == "description" else None
+        if cache_plan and int(cache_plan.get("miss_count", 0)) == 0:
+            output.mkdir(parents=True, exist_ok=False)
+            log_path.write_text(
+                "Description calculation skipped: all compounds were restored from the Program cache.\n",
+                encoding="utf-8",
+            )
+            completed = None
+        else:
+            with log_path.open("w", encoding="utf-8") as log:
+                completed = subprocess.run(command, cwd=project_root(), env=environment, stdout=log, stderr=subprocess.STDOUT)
+        if completed is not None and completed.returncode != 0:
             tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
             raise RuntimeError(f"Skill exited with code {completed.returncode}. {tail}")
+        if cache_plan:
+            finalize_cached_output(
+                plan=cache_plan,
+                output=output,
+                request=request,
+                capability=cap,
+            )
+        event_path = output / "execution_event.json"
         if not event_path.is_file():
             raise FileNotFoundError("Skill did not produce execution_event.json")
         event = read_json(event_path)
@@ -1461,9 +1615,45 @@ def run_node(root: Path, node_id: str) -> dict[str, Any]:
                 dtype={input_id_column: "string"} if input_id_column in input_header.columns else None,
             )[input_id_column].astype(str).tolist()
             description_result = create_description_result(final_dir, node, cap, primary, input_ids)
+            cache_plan = request.get("description_cache") or {}
+            registered_count = register_description_misses(
+                plan=cache_plan,
+                payload_path=primary,
+                manifest=read_json(final_dir / "description_manifest.json"),
+                identity=request["identity"],
+            )
+            manifest_path = final_dir / "description_manifest.json"
+            description_manifest = read_json(manifest_path)
+            description_manifest.setdefault("cache", {})["registered_count"] = registered_count
+            atomic_json(manifest_path, description_manifest)
+            execution_event_path = final_dir / "execution_event.json"
+            execution_event = read_json(execution_event_path)
+            for item in execution_event.get("artifacts", []):
+                if item.get("path") == manifest_path.name:
+                    item["sha256"] = sha256(manifest_path)
+            atomic_json(execution_event_path, execution_event)
             result_value.update({
                 "description_result_path": str(description_result),
                 "description_result_sha256": sha256(description_result),
+                "execution_event_sha256": sha256(execution_event_path),
+                "description_cache": {
+                    "program_name": cache_plan.get("program_name"),
+                    "database_path": cache_plan.get("database_path"),
+                    "hit_count": int(cache_plan.get("hit_count", 0)),
+                    "miss_count": int(cache_plan.get("miss_count", 0)),
+                    "registered_count": registered_count,
+                    "version_mismatch_count": int(
+                        cache_plan.get("version_mismatch_count", 0)
+                    ),
+                    "configuration_mismatch_count": int(
+                        cache_plan.get("configuration_mismatch_count", 0)
+                    ),
+                    "cache_source_versions": cache_plan.get(
+                        "cache_source_versions", {}
+                    ),
+                    "calculation_version": cache_plan.get("calculation_version"),
+                    "configuration_signature": cache_plan.get("configuration_signature"),
+                },
             })
         with writer_lock(root):
             control, dag = load_state(root)
@@ -1481,7 +1671,12 @@ def run_node(root: Path, node_id: str) -> dict[str, Any]:
             if node["stage"] == "clustering" and node["capability_id"] != "C012" and clustering_nodes_terminal(dag, node["round_id"]):
                 rebuild_cluster_registry(root, control, dag, node["round_id"])
             if node["capability_id"] == "C012":
-                promote_series_runtime(root, final_dir)
+                series_summary = read_json(final_dir / "series_summary.json")
+                search_source = final_dir / "series_parameter_search.json"
+                if search_source.is_file():
+                    shutil.copy2(search_source, root / "runtime" / "series_parameter_search.json")
+                if not bool(series_summary.get("selection_required")):
+                    promote_series_runtime(root, final_dir)
             save_state(root, control, dag, "NODE_SUCCEEDED", {"node_id": node_id, "attempt_id": attempt_id})
         return {"node_id": node_id, "status": "succeeded"}
     except Exception as exc:
@@ -1995,17 +2190,63 @@ def cmd_query(args: argparse.Namespace) -> int:
     return emit(root, control, dag)
 
 
+def description_cache_target(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
+    capability_id = str(args.capability_id).upper()
+    cap = capabilities().get(capability_id)
+    if cap is None or cap.get("stage") != "description":
+        raise ValueError(f"Unknown Description capability: {capability_id}")
+    program_name = safe_path_component(args.project, "--project")
+    path = description_database_path(
+        project_root(), program_name, capability_id, cap["skill_name"]
+    )
+    return cap, path
+
+
+def cmd_description_cache_inspect(args: argparse.Namespace) -> int:
+    cap, path = description_cache_target(args)
+    records = inspect_description_records(path, args.compound_id)
+    print(json.dumps({
+        "protocol_version": PROTOCOL_VERSION,
+        "program_name": args.project,
+        "capability_id": cap["capability_id"],
+        "skill_name": cap["skill_name"],
+        "database_path": str(path.resolve()),
+        "record_count": len(records),
+        "records": records,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_description_cache_invalidate(args: argparse.Namespace) -> int:
+    cap, path = description_cache_target(args)
+    record_ids = invalidate_description_records(
+        path,
+        compound_id=args.compound_id,
+        reason=args.reason,
+        operator=args.operator,
+    )
+    print(json.dumps({
+        "protocol_version": PROTOCOL_VERSION,
+        "program_name": args.project,
+        "capability_id": cap["capability_id"],
+        "skill_name": cap["skill_name"],
+        "compound_id": args.compound_id,
+        "invalidated_record_ids": record_ids,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.9 deterministic Runtime Controller")
+    parser = argparse.ArgumentParser(description="CONDUCTOR 0.1.10 deterministic Runtime Controller")
     sub = parser.add_subparsers(dest="command", required=True)
     item = sub.add_parser("init"); item.add_argument("--input", required=True); item.add_argument("--id-column"); item.add_argument("--smiles-column"); item.add_argument("--endpoint", required=True); item.add_argument("--higher-is-better", action=argparse.BooleanOptionalAction, required=True); item.add_argument("--endpoint-unit"); item.add_argument("--project", required=True); item.add_argument("--parallel-limit", type=int, required=True); item.add_argument("--available-cpu-cores", type=int, default=DEFAULT_CPU_CORES); item.add_argument("--run-id"); item.add_argument("--output-dir"); item.set_defaults(function=cmd_init)
-    item = sub.add_parser("prepare-round"); item.add_argument("--run-root", required=True); item.add_argument("--objective", required=True); item.add_argument("--walltime-minutes", type=int, default=480); item.add_argument("--parallel-limit", type=int); item.add_argument("--available-cpu-cores", type=int); item.add_argument("--min-ff-evaluate", type=int, default=10); item.add_argument("--leiden-resolution", type=float, default=1.0); item.add_argument("--approve-high-cost", action="store_true"); item.set_defaults(function=cmd_prepare_round)
+    item = sub.add_parser("prepare-round"); item.add_argument("--run-root", required=True); item.add_argument("--objective", required=True); item.add_argument("--walltime-minutes", type=int, default=480); item.add_argument("--parallel-limit", type=int); item.add_argument("--available-cpu-cores", type=int); item.add_argument("--min-ff-evaluate", type=int, default=10); item.add_argument("--leiden-resolution", type=float, default=1.0); item.set_defaults(function=cmd_prepare_round)
     item = sub.add_parser("authorize-round"); item.add_argument("--run-root", required=True); item.add_argument("--control-key", required=True); item.add_argument("--authorization-token", required=True); item.set_defaults(function=cmd_authorize_round)
     item = sub.add_parser("resume-round"); item.add_argument("--run-root", required=True); item.add_argument("--control-key", required=True); item.add_argument("--owner-id", required=True); item.add_argument("--lease-minutes", type=int, default=DEFAULT_LEASE_MINUTES); item.add_argument("--confirm-interrupted-running", action="store_true", help="After human/operator confirmation, recover running Nodes whose originating host cannot be verified"); item.set_defaults(function=cmd_resume_round)
     item = sub.add_parser("release-lease"); item.add_argument("--run-root", required=True); item.add_argument("--lease-token", required=True); item.add_argument("--reason", required=True); item.set_defaults(function=cmd_release_lease)
     item = sub.add_parser("continue-round"); item.add_argument("--run-root", required=True); item.add_argument("--control-key", required=True); item.add_argument("--additional-walltime-minutes", type=int, required=True); item.add_argument("--reason", required=True); item.set_defaults(function=cmd_continue_round)
-    item = sub.add_parser("approve-high-cost"); item.add_argument("--run-root", required=True); item.add_argument("--control-key", required=True); item.add_argument("--rationale", required=True); item.add_argument("--approve", action=argparse.BooleanOptionalAction, default=True); item.set_defaults(function=cmd_approve_high_cost)
     item = sub.add_parser("approve-series"); item.add_argument("--run-root", required=True); item.add_argument("--control-key", required=True); item.set_defaults(function=cmd_approve_series)
+    item = sub.add_parser("select-series-configuration"); item.add_argument("--run-root", required=True); item.add_argument("--control-key", required=True); item.add_argument("--min-ff-evaluate", type=int, required=True); item.add_argument("--leiden-resolution", type=float, required=True); item.set_defaults(function=cmd_select_series_configuration)
     item = sub.add_parser("revise-series"); item.add_argument("--run-root", required=True); item.add_argument("--lease-token", required=True); item.add_argument("--control-key", required=True); item.add_argument("--min-ff-evaluate", type=int, required=True); item.add_argument("--leiden-resolution", type=float, required=True); item.add_argument("--reason", required=True); item.set_defaults(function=cmd_revise_series)
     for name, function in (("plan-basic", cmd_plan_basic), ("plan-standard", cmd_plan_standard), ("prepare-execution-packet", cmd_prepare_execution_packet), ("prepare-interpretation", cmd_prepare_interpretation), ("complete-finalizing", cmd_complete_finalizing)):
         item = sub.add_parser(name); item.add_argument("--run-root", required=True); item.add_argument("--lease-token", required=True); item.set_defaults(function=function)
@@ -2017,6 +2258,8 @@ def build_parser() -> argparse.ArgumentParser:
     item = sub.add_parser("audit"); item.add_argument("--run-root", required=True); item.add_argument("--mode", choices=["quick", "full"], default="full"); item.add_argument("--register", action="store_true"); item.add_argument("--lease-token"); item.set_defaults(function=cmd_audit)
     item = sub.add_parser("accept-round"); item.add_argument("--run-root", required=True); item.add_argument("--control-key", required=True); item.add_argument("--note", default=""); item.set_defaults(function=cmd_accept_round)
     item = sub.add_parser("query"); item.add_argument("--run-root", required=True); item.add_argument("--node-id"); item.set_defaults(function=cmd_query)
+    item = sub.add_parser("description-cache-inspect"); item.add_argument("--project", required=True); item.add_argument("--capability-id", required=True); item.add_argument("--compound-id"); item.set_defaults(function=cmd_description_cache_inspect)
+    item = sub.add_parser("description-cache-invalidate"); item.add_argument("--project", required=True); item.add_argument("--capability-id", required=True); item.add_argument("--compound-id", required=True); item.add_argument("--reason", required=True); item.add_argument("--operator", required=True); item.set_defaults(function=cmd_description_cache_invalidate)
     return parser
 
 

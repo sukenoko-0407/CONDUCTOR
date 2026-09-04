@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "conductor_version": "0.1.9",
+  "conductor_version": "0.1.10",
   "selection_managed_by": "human",
   "description_skills": [
     "cs-compute-description-rdkit-2d", "cs-compute-description-morgan",

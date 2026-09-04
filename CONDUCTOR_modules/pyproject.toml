@@ -1,6 +1,6 @@
 [project]
 name = "conductor-workspace"
-version = "0.1.9"
+version = "0.1.10"
 description = "CONDUCTOR deterministic enrichment-to-Series SAR analysis runtime"
 requires-python = ">=3.12,<3.13"
 dependencies = [

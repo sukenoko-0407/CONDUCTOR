@@ -75,4 +75,4 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input path/to/description.csv -
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
-- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+- ROUND1の定型NodeはRound全体の承認後にRuntime契約に従って実行する。Descriptionごとの高コスト承認分岐は設けない。

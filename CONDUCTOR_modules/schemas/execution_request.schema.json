@@ -1,1 +1,63 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"CONDUCTOR 0.1.9 Skill Execution Request","type":"object","required":["schema_version","identity","inputs","columns","endpoint","subject","parameters","resources","output"],"properties":{"schema_version":{"const":"1.0.0"},"identity":{"type":"object","required":["project","run_id","round_id","node_id","attempt_id","capability_id","skill_name"]},"inputs":{"type":"array","items":{"type":"object","required":["role","path","sha256"],"properties":{"role":{"type":"string","minLength":1},"path":{"type":"string","minLength":1},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"result_path":{"type":"string","minLength":1},"result_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}},"dependentRequired":{"result_path":["result_sha256"],"result_sha256":["result_path"]},"additionalProperties":true}},"columns":{"type":"object","required":["compound_id","smiles","endpoint"]},"endpoint":{"type":"object","required":["higher_is_better"]},"subject":{"type":"object"},"parameters":{"type":"object"},"resources":{"type":"object"},"output":{"type":"object","required":["directory"]}},"additionalProperties":false}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CONDUCTOR 0.1.10 Skill Execution Request",
+  "type": "object",
+  "required": [
+    "schema_version", "conductor_version", "identity", "inputs", "columns", "endpoint",
+    "subject", "parameters", "resources", "output"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "conductor_version": {"const": "0.1.10"},
+    "identity": {
+      "type": "object",
+      "required": [
+        "project", "run_id", "round_id", "node_id", "attempt_id",
+        "capability_id", "skill_name"
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["role", "path", "sha256"],
+        "properties": {
+          "role": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "result_path": {"type": "string", "minLength": 1},
+          "result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "dependentRequired": {
+          "result_path": ["result_sha256"],
+          "result_sha256": ["result_path"]
+        },
+        "additionalProperties": true
+      }
+    },
+    "columns": {
+      "type": "object",
+      "required": ["compound_id", "smiles", "endpoint"]
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["higher_is_better"]
+    },
+    "subject": {"type": "object"},
+    "parameters": {"type": "object"},
+    "resources": {"type": "object"},
+    "description_cache": {
+      "type": "object",
+      "required": [
+        "program_name", "database_path", "calculation_version",
+        "configuration_signature", "hit_count", "miss_count"
+      ],
+      "additionalProperties": true
+    },
+    "output": {
+      "type": "object",
+      "required": ["directory"]
+    }
+  },
+  "additionalProperties": false
+}

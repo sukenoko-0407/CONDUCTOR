@@ -2,7 +2,7 @@
 
 > 収載対象は人間管理の`included_skills.json`、実行範囲は`analysis_profile.json`を正本とする。
 
-CONDUCTOR: `0.1.9`
+CONDUCTOR: `0.1.10`
 
 ## Description
 
@@ -49,13 +49,13 @@ CONDUCTOR: `0.1.9`
 |---|---|---|---|
 | A001 | All-Cluster profile survey | 全ClusterのEndpoint分布とFavorable Fractionを一括計算する。 | low |
 | A002 | All-Cluster enrichment survey | 全ClusterのFavorable enrichmentと単純な多重比較補正を一括計算する。 | low |
-| A003 | Series descriptor contrast | D001についてGlobal、Series、non-Seriesの相関とrobust shiftを一括比較する。 | low |
+| A003 | Interpretable descriptor contrast | D001・D012・D015・D016・D019の解釈可能特徴量についてGlobalと各analysis unitの相関を一括比較する。 | low |
 | A004 | Series PCA and UMAP projection panel | Global座標上へ各Seriesを重ね、PCA／UMAP画像とcontact sheetを生成する。 | medium |
 | A005 | Series multi-Description feature model | 固定6 Description panelでGlobalと全SeriesのOOFモデルを一括比較する。 | high |
-| A006 | Series SALI and Cliff landscape | D002/Tanimoto空間でGlobal、SeriesのSALIとinternal／boundary Cliffを一括評価する。 | medium |
-| A007 | Series structural signature | 構造由来Cluster provenanceを優先し、必要なSeriesだけMurcko／MCS fallbackを行う。 | medium |
+| A006 | Series SALI and Cliff landscape | D002 ECFP4/Tanimoto空間でGlobal、SeriesのSALIとinternal／boundary Cliffを一括評価する。 | medium |
+| A007 | Series structural signature | 構造由来Clusterは登録済みKey構造を使い、vector由来ClusterだけMurcko／MCSを導出する。 | medium |
 | A008 | Human-centered matched molecular pair analysis | 1-cut MMPをType-I top compound、Type-II Hit-to-Lead、Type-III databaseとして提供する。 | high |
-| A009 | CONDUCTOR standard Series report | Enriched Cluster一覧、Endpoint概要、Series map、Series詳細を決定論的HTMLへ描画する。 | low |
+| A009 | CONDUCTOR standard Series report | 7 Section Summary、中央配置のEndpoint図、analysis unit構造gallery、A003／A005図、MMP導線を決定論的HTMLへ描画する。 | low |
 
 ## Interpretation
 

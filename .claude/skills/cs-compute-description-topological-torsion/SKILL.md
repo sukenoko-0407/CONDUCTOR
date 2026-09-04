@@ -68,10 +68,14 @@ python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --run-id ge
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" --input compounds.csv --conductor --project PROJECT --run-id RUN_ID --round-id RND0001 --node-id N000001 --attempt-id ATT0001
 ```
 
+## Description Database
+
+CONDUCTOR 0.1.10ではRuntimeが`project`別Databaseを検索し、同じcompound ID、canonical構造、`calculation_version`、計算条件signatureが一致する行を再利用する。このSkillはRuntimeから渡されたcache miss入力だけを計算し、Database自体は更新しない。
+
 ## Boundaries
 
 - 最終的なSAR機序を断定しない。
 - 入力CSVを変更しない。
 - 重複IDを自動修正しない。
 - invalid SMILESを黙って除外しない。
-- 高コストcapabilityは人間が計算資源を明示承認するまで実行しない。CONDUCTORではOrchestratorの承認手順に従う。
+- ROUND1の定型NodeはRound全体の承認後にRuntime契約に従って実行する。Descriptionごとの高コスト承認分岐は設けない。

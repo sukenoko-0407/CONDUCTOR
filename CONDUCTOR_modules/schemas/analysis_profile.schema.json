@@ -1,1 +1,58 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"CONDUCTOR 0.1.9 analysis profile","type":"object","required":["schema_version","conductor_version","profile_id","basic_compute","standard_analysis","on_demand"],"properties":{"schema_version":{"const":"4.0.0"},"conductor_version":{"const":"0.1.9"},"profile_id":{"type":"string"},"basic_compute":{"type":"object"},"standard_analysis":{"type":"object"},"on_demand":{"type":"object"}},"additionalProperties":true}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CONDUCTOR 0.1.10 analysis profile",
+  "type": "object",
+  "required": [
+    "schema_version", "conductor_version", "profile_id",
+    "basic_compute", "standard_analysis", "on_demand"
+  ],
+  "properties": {
+    "schema_version": {"const": "4.0.0"},
+    "conductor_version": {"const": "0.1.10"},
+    "profile_id": {"type": "string", "minLength": 1},
+    "basic_compute": {
+      "type": "object",
+      "required": [
+        "description_capabilities", "vector_clustering_capabilities",
+        "vector_clustering_representations", "series_clustering",
+        "min_ff_evaluate", "favorable_fraction_threshold",
+        "multi_cluster_favorable_fraction_threshold",
+        "leiden_resolution", "leiden_resolution_grid",
+        "min_ff_evaluate_grid", "max_series_for_auto_standard",
+        "analysis_unit_review_guideline", "absolute_max_analysis_units"
+      ],
+      "properties": {
+        "min_ff_evaluate": {"const": 10},
+        "favorable_fraction_threshold": {"const": 0.5},
+        "multi_cluster_favorable_fraction_threshold": {"const": 0.4},
+        "leiden_resolution": {"const": 1.0},
+        "leiden_resolution_grid": {
+          "const": [1.0, 1.25, 1.5, 2.0, 2.5, 3.0]
+        },
+        "min_ff_evaluate_grid": {"const": [10, 15, 20, 25, 30]},
+        "max_series_for_auto_standard": {"const": 24},
+        "analysis_unit_review_guideline": {"const": 50},
+        "absolute_max_analysis_units": {"const": 100}
+      },
+      "additionalProperties": true
+    },
+    "standard_analysis": {
+      "type": "object",
+      "required": [
+        "capabilities", "descriptor_contrast_descriptions", "a003_correlation_threshold",
+        "minimum_local_model_samples", "mmp_type_i_top_k"
+      ],
+      "properties": {
+        "descriptor_contrast_descriptions": {
+          "const": ["D001", "D012", "D015", "D016", "D019"]
+        },
+        "a003_correlation_threshold": {"const": 0.6},
+        "minimum_local_model_samples": {"const": 30},
+        "mmp_type_i_top_k": {"const": 1}
+      },
+      "additionalProperties": true
+    },
+    "on_demand": {"type": "object"}
+  },
+  "additionalProperties": true
+}

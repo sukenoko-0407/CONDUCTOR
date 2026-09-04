@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MODULES = ROOT / "CONDUCTOR_modules"
 SKILLS = ROOT / ".claude" / "skills"
-VERSION = "0.1.9"
+VERSION = "0.1.10"
 OBSOLETE_CONDUCTOR_SKILLS = {
     "cs-analysis-activity-cliff", "cs-analysis-activity-distribution",
     "cs-analysis-cluster-overlap", "cs-analysis-cluster-structural-diversity",
@@ -46,7 +46,7 @@ def normalized_source(path: Path) -> str:
 
 def main() -> int:
     errors: list[str] = []
-    if (MODULES / "VERSION").read_text(encoding="utf-8").strip() != VERSION: errors.append("VERSION is not 0.1.9")
+    if (MODULES / "VERSION").read_text(encoding="utf-8").strip() != VERSION: errors.append("VERSION is not 0.1.10")
     selection = json.loads((MODULES / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
     names = [name for key in ("description_skills","clustering_skills","analysis_skills","interpretation_skills","support_skills") for name in selection.get(key, [])]
     if len(names) != len(set(names)): errors.append("included Skill names are not unique")
@@ -83,6 +83,8 @@ def main() -> int:
                 cap=json.loads(cap_path.read_text(encoding="utf-8")); ids.append(cap["capability_id"])
                 if cap.get("skill_name")!=name: errors.append(f"{name}: skill_name mismatch")
                 if cap.get("version")!=VERSION: errors.append(f"{name}: product version mismatch")
+                if cap.get("stage") == "description" and not cap.get("calculation_version"):
+                    errors.append(f"{name}: missing calculation_version")
                 request_contract = cap.get("conductor_request")
                 if cap.get("stage") not in {"interpretation", "orchestration"}:
                     if not isinstance(request_contract, dict) or not request_contract.get("adapter"):
@@ -180,26 +182,36 @@ def main() -> int:
     standard_template_source = (
         MODULES / "tools" / "templates" / "standard_summary_template.html"
     ).read_text(encoding="utf-8")
-    at_a_glance_token = 'data-report-section="at-a-glance"'
-    endpoint_token = 'data-report-section="endpoint-overview"'
+    at_a_glance_token = 'data-report-section="summary"'
+    endpoint_token = 'data-report-section="endpoint-distribution"'
     if at_a_glance_token not in standard_template_source:
-        errors.append("A009 template is missing the at-a-glance section")
+        errors.append("A009 template is missing the summary section")
     elif (
         endpoint_token not in standard_template_source
         or standard_template_source.index(at_a_glance_token)
         > standard_template_source.index(endpoint_token)
     ):
-        errors.append("A009 at-a-glance section must precede Endpoint overview")
+        errors.append("A009 summary section must precede Endpoint distribution")
+    for obsolete_section in (
+        "report-scope", "execution-status", "full-tables-and-limitations",
+    ):
+        if f'data-report-section="{obsolete_section}"' in standard_template_source:
+            errors.append(f"A009 template retains obsolete section: {obsolete_section}")
     series_detail_template_source = (
         MODULES / "tools" / "templates" / "series_detail_template.html"
     ).read_text(encoding="utf-8")
     if "$a003_scatter_plots" not in series_detail_template_source:
         errors.append("A009 detail template is missing A003 scatter plots")
+    if "$a005_prediction_plot" not in series_detail_template_source:
+        errors.append("A009 detail template is missing A005 OOF comparison plot")
     for token in (
         '"A003_detail": [',
         "def rank_a003_correlations(",
         "def render_a003_correlation_plots(",
         '"A003_top_correlation_plots.json"',
+        'A003_DESCRIPTION_PANEL = ("D001", "D012", "D015", "D016", "D019")',
+        '"A005_oof_comparison_plots.json"',
+        'similarity_threshold", .75',
     ):
         if token not in batch_runner_template.decode("utf-8"):
             errors.append(f"canonical batch runner is missing {token}")
@@ -244,6 +256,8 @@ def main() -> int:
         "select_minimal_transform_rows(",
         "orient_report_rows_target_to(",
         "render_transformation_gallery(",
+        "render_core_group_gallery(",
+        '"mmp_report_index.json"',
     ):
         if token not in mmp_source:
             errors.append(f"MMP report implementation is missing {token}")
@@ -252,7 +266,31 @@ def main() -> int:
     if profile.get("basic_compute",{}).get("min_cluster_size")!=5: errors.append("min_cluster_size must be 5")
     if profile.get("basic_compute",{}).get("min_ff_evaluate")!=10: errors.append("min_ff_evaluate must default to 10")
     if profile.get("standard_analysis",{}).get("capabilities")!=["A003","A004","A005","A006","A007","A008","A009"]: errors.append("standard capability order mismatch")
+    if profile.get("standard_analysis",{}).get("a003_correlation_threshold")!=0.6: errors.append("A003 correlation threshold must be 0.6")
+    if profile.get("standard_analysis",{}).get("descriptor_contrast_descriptions") != ["D001","D012","D015","D016","D019"]:
+        errors.append("A003 interpretable Description panel mismatch")
     if profile.get("standard_analysis",{}).get("mmp_type_i_top_k")!=1: errors.append("standard MMP Type-I must use Top 1")
+    a006_capability = json.loads(
+        (SKILLS / "cs-analysis-series-landscape" / "capability.json")
+        .read_text(encoding="utf-8")
+    )
+    if a006_capability.get("default_parameters", {}).get("similarity_threshold") != 0.75:
+        errors.append("A006 Tanimoto similarity threshold must default to 0.75")
+    basic = profile.get("basic_compute", {})
+    if basic.get("multi_cluster_favorable_fraction_threshold") != 0.4:
+        errors.append("multi-Cluster Series FF threshold must be 0.4")
+    if basic.get("leiden_resolution_grid") != [1.0,1.25,1.5,2.0,2.5,3.0]:
+        errors.append("Leiden resolution grid mismatch")
+    if basic.get("min_ff_evaluate_grid") != [10,15,20,25,30]:
+        errors.append("min_ff_evaluate grid mismatch")
+    if basic.get("max_series_for_auto_standard") != 24:
+        errors.append("automatic Series unit limit must be 24")
+    if basic.get("analysis_unit_review_guideline") != 50:
+        errors.append("analysis-unit review guideline must be 50")
+    if basic.get("absolute_max_analysis_units") != 100:
+        errors.append("absolute analysis-unit limit must be 100")
+    if not (MODULES / "tools" / "description_database.py").is_file():
+        errors.append("Description Database implementation is missing")
     obsolete=("cs-conductor-executor.md",)
     for name in obsolete:
         if (ROOT/".claude"/"agents"/name).exists(): errors.append(f"obsolete Agent remains: {name}")

@@ -1,6 +1,6 @@
 ---
 name: cs-analysis-interpret-results
-description: Produce one compact Japanese Interpretation after the deterministic 0.1.9 standard reports are complete.
+description: Produce one compact Japanese Interpretation after the deterministic 0.1.10 standard reports are complete.
 allowed-tools: Read, Write
 ---
 

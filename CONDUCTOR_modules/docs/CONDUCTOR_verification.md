@@ -1,8 +1,8 @@
-# CONDUCTOR 0.1.9 検証
+# CONDUCTOR 0.1.10 検証
 
 ```bash
 python CONDUCTOR_modules/tools/verify_package_layout.py
-python -m unittest CONDUCTOR_modules.tests.test_019_contracts
+uv run pytest -q tests/test_0110_contracts.py tests/test_0110_description_database.py
 python .claude/skills/cs-conductor-runtime/scripts/build_catalog.py --check
 ```
 

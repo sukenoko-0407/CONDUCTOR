@@ -1,70 +1,48 @@
 <header class="report-header">
   <p class="muted">A009 / deterministic standard report</p>
-  <h1>CONDUCTOR 定型解析 Summary</h1>
-  <p>このHTMLは固定テンプレートへcanonical artifactの値を差し込んで生成しています。科学的な追加推論は行いません。</p>
+  <h1>CONDUCTOR 定型解析Summary</h1>
 </header>
 
-<section class="card" data-report-section="at-a-glance">
-  <h2>1. At-a-glance summary</h2>
-  <p>Cluster選抜、Series採否、fallback後の実解析単位数を最小限の表にまとめます。</p>
-  $at_a_glance_table
+<section class="card" data-report-section="summary">
+  <h2>1. 概要</h2>
+  $summary_metrics
+  $summary_metric_help
 </section>
 
-<section class="card" data-report-section="endpoint-overview">
-  <h2>2. Endpoint overview</h2>
+<section class="card" data-report-section="endpoint-distribution">
+  <h2>2. Endpoint分布</h2>
   $endpoint_metrics
-  <p>$endpoint_definition</p>
-  <img src="$endpoint_histogram_uri" alt="Endpoint distribution histogram">
-</section>
-
-<section class="card" data-report-section="report-scope">
-  <h2>3. Report scope</h2>
-  $report_scope
+  <img class="summary-distribution-figure" src="$endpoint_histogram_uri" alt="Endpoint分布histogram">
+  <img class="summary-distribution-figure" src="$endpoint_boxplot_uri" alt="Global、Series、fallback ClusterのEndpoint boxplot">
 </section>
 
 <section class="card" data-report-section="selected-clusters">
-  <h2>4. Endpoint-enriched Clusters</h2>
-  <p>選抜Clusterを由来、N、Favorable Fraction、enrichment統計、Seriesまたはfallback先とともに示します。</p>
-  <p class="muted">$selection_bias_note</p>
+  <h2>3. Selected Cluster</h2>
   $cluster_metrics
   $selected_clusters_table
-  <p class="muted">$selected_clusters_note</p>
+  $description_clustering_legend
+  $selected_clusters_full_link
 </section>
 
 <section class="card" data-report-section="series-formation">
-  <h2>5. Series formation and fallback</h2>
+  <h2>4. Series</h2>
   $series_metrics
-  <img src="$series_map_uri" alt="Accepted Series favorable fraction">
-  <h3>Candidate Series map</h3>
-  $series_table
-  <h3>Active analysis units</h3>
-  $analysis_units_table
+  $series_metric_help
+  $candidate_series_table
+  $series_full_link
 </section>
 
 <section class="card" data-report-section="operator-results">
-  <h2>6. Standard operator results</h2>
-  <p>厳格hitを優先し、hitがない場合は決定論的near-missを1件だけ表示します。</p>
+  <h2>5. 標準解析結果</h2>
   $operator_sections
 </section>
 
-<section class="card" data-report-section="execution-metadata">
-  <h2>7. Execution metadata</h2>
-  $execution_table
-</section>
-
 <section class="card" data-report-section="projections">
-  <h2>8. PCA / UMAP contact sheets</h2>
+  <h2>6. PCA / UMAP一覧</h2>
   $projection_gallery
 </section>
 
 <section class="card" data-report-section="detail-reports">
-  <h2>9. Analysis unit detail reports</h2>
+  <h2>7. 個別analysis unitレポート</h2>
   $detail_links
-</section>
-
-<section class="card" data-report-section="full-tables-and-limitations">
-  <h2>10. Full tables and limitations</h2>
-  <p>HTML内の表は読みやすさのため表示列を固定しています。省略していない完全データはCSVを参照してください。</p>
-  $full_table_links
-  $limitations
 </section>

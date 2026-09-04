@@ -1,6 +1,6 @@
 # SKILLの目的
 
-複数Descriptionの少数特徴量を統合し、GlobalとSeriesの説明可能性を比較します。
+複数Descriptionの少数特徴量を統合し、GlobalとSeriesの説明可能性を比較します。各analysis unitではLocal（左）とGlobal（右）のOOF予測値対実測値を同じ軸で図示します。
 
 ## 想定利用シーン
 
@@ -22,4 +22,5 @@ Pixi環境を自動構築します。
 
 | Version | 変更内容 |
 |---|---|
+| 0.1.10 | Local／Global OOF予測値対実測値の比較図とJSON索引を追加 |
 | 1.0.0 | Global/Series batch OOFモデルへ再設計 |

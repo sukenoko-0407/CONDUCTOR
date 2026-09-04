@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-VERSION = "0.1.9"
+VERSION = "0.1.10"
 REQUEST_PATTERN = re.compile(r"^REQ(\d{6,})$")
 FOCUS_PATTERN = re.compile(r"^[A-Z][A-Z0-9_-]*\d+$")
 MAX_FOCUS_MATCHES = 100

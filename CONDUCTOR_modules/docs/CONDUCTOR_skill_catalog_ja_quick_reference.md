@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.9 Capability早見表
+# CONDUCTOR 0.1.10 Capability早見表
 
 ## Description
 
@@ -23,6 +23,8 @@
 | D019 | xTB | 量子化学特徴量 |
 | D020 | ChemBERTa | CPUで生成するpretrained embedding |
 
+全Descriptionは`project`（Program）別Databaseを利用し、計算条件signatureが一致するcompound IDを再利用します。別Programとは共有せず、同一Programの同一ID・異構造はfail-fastです。
+
 ## Clustering
 
 | ID | 名称 | 主な特徴 |
@@ -34,7 +36,7 @@
 | C008 | Vector Louvain | weighted mutual-kNN graph |
 | C009 | Vector Leiden | weighted mutual-kNN graph |
 | C010 | Vector Connected components | 距離graphの連結成分 |
-| C012 | weighted Leiden Series | 濃縮ClusterのJaccard重複graph |
+| C012 | weighted Leiden Series | 複数ClusterはFF≥0.40、単独はFF≥0.50。resolution自動探索とhuman Matrix選択 |
 
 ## Analysis
 
@@ -42,13 +44,13 @@
 |---|---|---|
 | A001 | Cluster profile | 全ClusterのEndpoint/FF |
 | A002 | Cluster enrichment | OR、Fisher p、BH q |
-| A003 | Descriptor contrast | D001 Global vs Series、相関上位3散布図 |
+| A003 | Descriptor contrast | D001・D012・D015・D016・D019の解釈可能特徴量、相関基準0.60、Description ID付き上位3散布図 |
 | A004 | Projection panel | D002 PCA/UMAP |
 | A005 | Multi-Description model | 固定6表現、OOF低容量model |
-| A006 | Landscape | D002 SALI、内部/境界Cliff |
-| A007 | Structural signature | 構造由来Cluster、Murcko/MCS fallback |
+| A006 | Landscape | D002 ECFP4、Tanimoto 0.75以上のunit内外cliffとBoundary favorable件数 |
+| A007 | Structural signature | 構造由来は登録Keyのみ、vector由来だけSource Cluster別Murcko/MCS |
 | A008 | MMP | Type-I/II/III、1-cut |
-| A009 | Standard report | 全体・Series別HTML、コンパクトA003表 |
+| A009 | Standard report | 7 Section全体HTML、中央配置Endpoint図、A003／A005図、構造gallery、MMP導線 |
 
 ## Interpretation / Control
 
