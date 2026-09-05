@@ -19,6 +19,7 @@
     "configuration": {"type": "object"},
     "artifacts": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "required": ["type", "path", "sha256"],

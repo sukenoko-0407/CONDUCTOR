@@ -2,7 +2,7 @@
 
 ## 1. 文書の位置づけ
 
-本書は、CONDUCTOR 0.1.10について事前協議で承認された内容を、実装契約として記録する仕様概要書である。2026-09-04の実装開始指示に基づき、本文の仕様をコード、Skill、Runtime、schema、testへ反映した。
+本書は、CONDUCTOR 0.1.10について事前協議で承認された内容を、実装契約として記録する仕様概要書である。2026-09-04までに実装したbaselineへ、2026-09-06に承認された追補仕様と実装結果を統合している。追補部分は[`CONDUCTOR_0.1.10_patch_plan.md`](CONDUCTOR_0.1.10_patch_plan.md)に従って実装・検証済みである。
 
 0.1.10の主要な変更点は次の3点である。
 
@@ -10,7 +10,9 @@
 2. A009およびMMPのレポート品質向上
 3. Cluster-of-ClustersによるSeries形成手順の改変
 
-本書に未決定の設計事項は残していない。将来この仕様を変更する場合も、コードへ先行反映せず人間へ確認する。
+本書に未決定の設計事項は残していない。将来この仕様を変更する場合も、コードへ先行反映せず人間へ確認する。本書と過去の実装記録が異なる場合、2026-09-06追補を反映した本書と追補修正計画を現行0.1.10契約として優先する。
+
+> **Version境界（2026-09-06）:** 本書に記録されたMMP Reportは、0.1.10で実装済みのbaseline仕様である。2 Mode化、Global Top 1、Transformation evidence、1/2-cut、情報抽出、Interactive visualization等の追加改修は0.1.10追補から外し、0.1.11のMMP専用更新へ移管した。本書の履歴上のMMP記録は削除せず、0.1.11の追加仕様とは区別する。
 
 ## 2. 互換性方針
 
@@ -175,8 +177,8 @@ ROUND1では高コストDescriptionも含めて定型実行し、Database利用�
 - 登録された全Cluster数
 - 一次選抜基準を満たしたCluster数
 - 形成されたCandidate Series数
-- 通常基準を満たしたSeries数（FF 0.50以上）
-- 緩和基準で採用された複数Cluster Series数（FF 0.40以上0.50未満）
+- Standard acceptanceを満たしたSeries数（Union FF 0.50以上）
+- Supported Core rescueで採用されたSeries数
 - fallbackとなったCluster数
 - 最終的なlocal analysis unit数
 - 使用した`min_ff_evaluate`とLeiden resolution
@@ -243,11 +245,11 @@ P値や完全なprovenance列はCSVに残し、Summary Tableからは外す。
 - source Cluster数
 - 和集合の化合物数
 - 和集合Favorable Fraction
-- 適用されたSeries FF基準
-- 採用／不採用
+- Supported CoreのEndpoint-valid NとFavorable Fraction
+- acceptance mode（Standard／Supported Core rescue／Rejected）
 - 最終的なSeriesまたはfallback先
 
-source Cluster ID一覧は各行の折り畳み領域へ表示し、Tableを横長にしない。完全な対応関係はCSVにも残す。
+source Cluster ID一覧とCross-representation Core／Core／Fringeの各N・FFは各行の折り畳み領域へ表示し、Tableを横長にしない。詳細な対応関係はCSVにも残す。
 
 metric card直下には各itemの意味を説明する折り畳み領域を置く。固定の`Candidate Series map`小見出しと、重複するSeries形成／fallback説明は置かない。
 
@@ -267,12 +269,9 @@ metric card直下には各itemの意味を説明する折り畳み領域を置�
 2. 対応するGlobalの絶対相関より`>= 0.20`大きい
 3. 対応するBH補正q値`<= 0.05`
 
-median shiftの条件は次を維持する。
+正式通過判定は上記3条件をまとめた`correlation_hit`だけとし、出力上の名称は`criteria_pass`とする。旧`strict_hit`およびmedian shift関連の計算、判定、出力、説明は削除する。`sample_count`は各featureについてEndpointとfeature値の両方がfiniteなpair数とし、実際に相関とp値を計算したNへ一致させる。
 
-1. `abs(local median - non-local median) / Global IQR >= 0.75`
-2. BH補正q値`<= 0.05`
-
-HTML本文の解析内容には目的と相関判定条件だけを記載し、評価件数やnear-miss文は表示しない。全統計とmedian shiftは詳細CSVへ保持する。
+HTML本文の解析内容には目的と相関判定条件だけを記載し、評価件数やnear-miss文は表示しない。
 
 #### A005: Multi-description feature model
 
@@ -352,7 +351,7 @@ HTML Tableは次の6列に限定する。
 - Spearman r
 - Max absolute correlation
 
-`Correlation BH q`、`Strict hit`、`median_shift_global_iqr`はHTMLから削除する。q値、median shift、および全判定列は詳細CSVに残す。BH qは多数のfeatureを同時評価したときの偽陽性増加を抑える補正済みp値である。HTMLで残す専門列を含め、各Tableの直下には列の意味を説明する折り畳み領域を置く。
+`Correlation BH q`はHTMLから外すが、相関判定の根拠として詳細CSVに残す。旧`Strict hit`は`criteria_pass`へ改称し、median shift関連列はHTMLと詳細CSVの両方から削除する。BH qは多数のfeatureを同時評価したときの偽陽性増加を抑える補正済みp値である。HTMLで残す専門列を含め、各Tableの直下には列の意味を説明する折り畳み領域を置く。
 
 各analysis unitについて、相関の絶対値が大きい上位3特徴量の`feature vs Endpoint`散布図を表示する。対象analysis unit内の点だけを簡潔に表示し、Globalとの比較overlayなどの追加装飾は行わない。
 
@@ -399,7 +398,20 @@ SALI、internal cliff、boundary cliffの意味を簡潔に説明し、4.7節の
 
 個別A009の末尾に独立した`Full tables and limitations` Sectionは作らない。詳細CSVへの小さなlinkが必要な場合は、対応する各Sectionへ`詳細CSVリンク`として配置する。各Sectionは主要Table／画像を見出し直後に置き、説明文と判定条件はその下の折り畳みに置く。
 
-## 6. MMPレポート
+### 5.8 Template契約と自動監査
+
+A009全体／個別Reportは承認済みTemplateを唯一のSection構成・表示順・Table構成とし、`Template.substitute()`から生成する。full HTMLを別経路で組み立てない。必須placeholderの欠落、重複、未解決placeholder、Template metadata不整合があればA009を失敗させる。Report indexには`template_id`、`template_version`、`template_sha256`を記録する。
+
+生成後監査は次の二つだけを行う。
+
+1. local `href`／`src`、Report index登録先、埋込みdataのlink確認
+2. canonical CSV／JSONとHTMLに表示した主要件数の照合
+
+対象件数にはCluster、Selected Cluster、Candidate／Standard accepted／Supported Core rescue／Rejected Series、fallback、最終analysis unit、3 member class、個別Report indexを含める。結果はA009配下の`report_audit.json`へ保存する。link切れ、directory traversal、件数不一致が1件でもあればA009を成功確定せず、Runtime Full AuditもFAILとする。監査はReportを自動修正しない。
+
+LLM Vision、Screenshot比較、AIによる外観評価は使用しない。Template変更時は人間が一度表示を確認し、その後はTemplate hashとcontract testで固定する。
+
+## 6. MMPレポート（実装済baseline・追補対象外）
 
 ### 6.1 既存方針の維持
 
@@ -483,36 +495,60 @@ MMP IDが異なってもExact Coreが同じ行は、一つの`Core group`とし�
 
 大きなcommunityでは和集合によりFavorable Fractionが低下しやすい。その結果、多数のSeriesが不採用となり、元のClusterが個別analysis unitとして復活して、最終unit数が24を超える事例がある。
 
-### 7.2 複数Cluster SeriesのFF基準
+### 7.2 Series member分類と採否基準
 
-採用基準は次のとおりである。
+Candidate Seriesを構成するSelected Clusterのmembershipから、Union内の各化合物を次の3分類へ排他的に割り当てる。
 
-- source Clusterが2件以上のCandidate Series: `Favorable Fraction >= 0.40`
-- source Clusterが1件のCandidate Seriesまたは一次選抜Cluster: `Favorable Fraction >= 0.50`
+```text
+Series
+├─ Supported Core
+│  ├─ Cross-representation Core
+│  └─ Core
+└─ Fringe
+```
 
-#### Pros
+- `Cross-representation Core`: 2種類以上のrepresentationから支持される化合物
+- `Core`: 同一representation内の2種類以上のClustering手法から支持される化合物
+- `Fringe`: Selected Cluster 1件だけから支持される化合物
+- `Supported Core`: Cross-representation CoreとCoreの重複なし和集合
 
-- 和集合による自然な希釈だけでSeriesが棄却されるケースを減らせる。
-- fallback Clusterの急増を抑え、後続解析単位数を減らせる可能性がある。
-- Global Favorable Fractionがおおむね0.20であるため、0.40でもGlobalより十分濃縮された集合になりやすい。
-- 複数のDescription／Clustering手法が支持する重複構造を、一つの解析単位として保ちやすい。
+Vector clusteringではDescription IDをrepresentation keyとする。Murcko、MCS、BRICS、RECAP等の構造由来Clusterでは、それぞれの構造分類Capabilityをrepresentation keyとする。判定前に`compound_id × source Cluster ID`を一意化し、同じmembershipを二重計上しない。
 
-#### Cons
+各化合物についてsupport Cluster数、support representation数、sort済みrepresentation key一覧、member classを保存する。Cross-representation Core、Core、Fringeのcompound count合計はUnion compound countと一致しなければならない。
 
-- 0.50基準よりEndpoint濃縮の弱いSeriesを後続解析へ含める。
-- 単独Clusterと複数Clusterで異なる基準となり、説明が複雑になる。
-- 大きなSeriesを残すための便宜的な緩和に見える可能性がある。
-- DatasetによってGlobal Favorable Fractionがtieの影響で0.20を超えるため、0.40の相対的な強さは一定ではない。
-- unit数が減る保証はなく、Leiden partitionとの相互作用は非単調である。
+#### FFの共通定義
 
-#### 採用時の安全策
+Cross-representation Core、Core、Fringe、Supported Core、Unionの各集合について、次を計算する。
 
-- 0.40を適用したSeriesには`multi_cluster_ff_threshold=0.40`を明記する。
-- source ClusterごとのFF、和集合FF、source平均からの低下量を保存・表示する。
-- 0.40以上0.50未満のSeriesを「高濃縮」と表現せず、「緩和基準で採用」と識別する。
-- Global Favorable Fractionとの比または差も診断値として残す。
+```text
+Endpoint-valid N = finiteなEndpointを持つ化合物数
+Favorable N = Endpoint-validかつFavorable cutoffを満たす化合物数
+FF = Favorable N / Endpoint-valid N
+```
 
-0.40は固定値として扱い、Global FFに連動する追加条件は設けない。
+Endpoint-valid Nが0の場合、FFは`null`とし、採否条件を満たさない。Cross-representation Core、Core、Fringeの3種類のFFはReport用の層別統計であり、Supported Core FFとUnion FFはSeries採否にも使用する。
+
+#### Standard acceptance
+
+```text
+Union FF >= 0.50
+```
+
+#### Supported Core rescue
+
+```text
+Union FF >= 0.30
+AND Supported Core Endpoint-valid N >= min_ff_evaluate
+AND Supported Core FF >= 0.50
+```
+
+両条件を満たす場合はStandard acceptanceを優先する。いずれかで採用された場合もFringeを除外せず、Union全体をanalysis unitとする。いずれも満たさない場合はCandidate Seriesを棄却し、source Clusterを個別のfallback analysis unitへ戻す。従来のmulti-Cluster一律`Union FF >= 0.40`は使用しない。
+
+#### Report表示
+
+A009全体ではStandard accepted、Supported Core rescue、Rejected、fallbackを区別する。Candidate Series Table本体はUnion N／FF、Supported Core Endpoint-valid N／FF、acceptance modeをcompactに示し、3 member classのN／FFは折り畳み詳細または個別Reportへ置く。
+
+A009個別Series ReportではCross-representation Core、Core、FringeのN／FFを示し、membershipとPCA／UMAPをCross-representation Core=`#c2185b`、Core=`#ff7f0e`、Fringe=`#7f7f7f`の固定3色と凡例で区別する。Global背景点は`#d9d9d9`とする。fallback Cluster ReportではSeries member classを流用せず、従来の単一analysis unit表示を維持する。
 
 ### 7.3 自動parameter search
 
@@ -546,7 +582,7 @@ C012は二段階で処理する。探索段階では候補条件の要約だけ�
 2. 低いresolution
 3. final local analysis unit数が24以下
 4. 同順位ならfallback Cluster数が少ない
-5. さらに同順位ならSeries FF中央値が高い
+5. さらに同順位なら、採用SeriesのUnion FF中央値が高い
 
 各条件について次をRuntime内部のdecision stateに保持し、AgentがSession内のTableへ整形する。
 
@@ -554,16 +590,18 @@ C012は二段階で処理する。探索段階では候補条件の要約だけ�
 - Leiden resolution
 - 一次選抜Cluster数
 - Candidate Series数
-- accepted Series数
-- 0.40緩和基準でのみ採用されたSeries数
+- Standard accepted Series数
+- Supported Core rescue Series数
 - rejected Series数
 - fallback Cluster数
 - final local analysis unit数
 - Seriesのcompound coverage
 - Default選抜Clusterに対するCluster coverage
 - Default選抜Cluster和集合に対するCompound coverage
-- FF中央値およびsource平均からの低下量
+- 採用SeriesのUnion FF中央値およびsource平均からの低下量
 - 24件以下か否か
+
+Session内Matrixのcell形式`final unit数 / Cluster coverage / Compound coverage / fallback数`は変更しない。採用Seriesの有限なUnion FFがない場合、Union FF中央値はconfiguration比較上の最低値として扱う。
 
 ### 7.5 24件を超える場合のhuman gate
 
@@ -592,11 +630,22 @@ run_root/runtime/
 ├── series_parameter_search.json     # 途中判断用の内部state。A009には掲載しない
 └── series_summary.json              # chosen parameterと探索要約を追加
 
+C012 result/
+├── series_registry.csv              # 5集合のN／FFとacceptance mode
+├── compound_series_support.csv      # support数、representation、member class
+├── analysis_unit_membership.csv     # 採用SeriesはUnion全体とmember classを保持
+└── analysis_unit_registry.csv       # final unit種別とSeries採否由来
+
+A009 result/
+└── report_audit.json                # Template、local link、主要件数の監査結果
+
 A008 result/
 └── mmp_report_index.csv             # analysis unitからMMP HTMLへの導線
 ```
 
 `series_parameter_search.json`は中断・再開と判断監査のためのRuntime内部stateであり、解析結果ArtifactやHTMLレポートには含めない。AgentはこのJSONからSession内にMarkdown Tableを表示する。`selected_clusters_effective.csv`は、人間または自動処理が最終的に採用した条件における一次選抜Clusterの正本とする。A009は0.1.9の初期条件列ではなく、このeffective結果を表示する。
+
+`compound_series_support.csv`にはCandidate Series ID、compound ID、support Cluster count、support representation count、sort済みrepresentation key一覧、member class、Endpoint-valid flag、Favorable flagを保存する。`series_registry.csv`と`series_summary.json`にはCross-representation Core、Core、Fringe、Supported Core、Unionのcompound count、Endpoint-valid N、Favorable N、FF、Supported Core coverage、source Cluster count、representation count、`acceptance_mode`を保存する。`acceptance_mode`は`standard`、`supported_core_rescue`、`rejected`のいずれかとする。
 
 ## 9. 事前協議で確定した設計判断
 
@@ -606,7 +655,7 @@ A008 result/
 2. Description DatabaseをSkillごとのSQLiteとし、Localで最大5,000化合物を扱う。
 3. `skill_version`はprovenanceだけに使い、`calculation_version`、計算条件signature、canonical SMILESを再利用判定に使い、同一ID・異構造はfail-fastとする。
 4. 高コスト計算の人間承認processを撤去する。
-5. 複数Cluster SeriesだけFF基準を0.40へ緩和する。
+5. SeriesはUnion FF 0.50以上をStandard acceptanceとし、Union FF 0.30以上、Supported Core Endpoint-valid Nが`min_ff_evaluate`以上、Supported Core FF 0.50以上をすべて満たす場合だけSupported Core rescueで採用する。
 6. Leiden resolution gridを`1.00–3.00`の6段階とする。
 7. resolutionは自動探索し、`min_ff_evaluate`変更時はSession内Matrixから人間が選択する。
 8. 24件以下は自動進行、25～100件は人間承認、101件以上は進行不可とする。
@@ -628,11 +677,19 @@ A008 result/
 - 同一`program_name`、同一calculation version、同一計算条件、同一ID／canonical SMILESの2回目RunでDescriptionがcache hitする。
 - 一部だけ新規化合物を含むRunで、新規化合物だけを計算し、全件Artifactを正しい入力順で生成する。
 - calculation version、条件、canonical SMILESのいずれかが異なるレコードを誤再利用せず、同一ID・異構造をfail-fastにする。
+- 全Description Capabilityが正の整数文字列の`calculation_version`を明示し、欠落・不正形式をpackage verificationとRuntimeの両方がfail-fastする。
+- Runtimeが依存するcore JSON SchemaとFull Auditの要求が一致し、不正fixtureをNode成功登録前に拒否する。
+- A003の正式通過が`criteria_pass = correlation_hit`だけで決まり、feature別`sample_count`がfiniteなEndpoint／feature pair数と一致する。
 - A009 Standard Summaryが指定Section構成、明示的基準、compact Tableを満たす。
+- A009全体／個別が承認済みTemplateだけから生成され、Template ID／Version／hashを追跡できる。
+- A009のlocal linkと主要件数の生成後監査がPASSし、不合格時にA009とRuntime Full Auditを成功扱いにしない。
 - A009に横長のEndpoint Boxplotがあり、Global、採用Series、fallback Clusterを色分けして比較できる。
 - 個別A009に20化合物gallery、A003散布図、A007構造画像、MMP linkが表示される。
 - MMP visual transformationが4画像順であり、同一coreがgroup化される。
 - MMP 0件のtargetにも`MMP該当なし`レポートとA009からのlinkが生成される。
 - C012のparameter候補をRuntime内部stateからSession内Matrixとして提示でき、選択規則を決定的に再現できる。
 - parameter変更またはC012再計算後にhuman approvalが誤って引き継がれない。
+- Cross-representation Core、Core、Fringeが排他的に分類され、3分類およびSupported Core／UnionのNとFFを再現できる。
+- Standard acceptanceとSupported Core rescueが確定基準で判定され、救済採用でもFringeを含むUnion全体がanalysis unitになる。
+- 日常／特別Promptに実在しないSkill、Runtime subcommand、required action、parameterがなく、Round完走後の終了処理を再現できる。
 - package verification、unit test、integration test、report renderer testがすべて成功する。

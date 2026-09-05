@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -83,8 +84,15 @@ def main() -> int:
                 cap=json.loads(cap_path.read_text(encoding="utf-8")); ids.append(cap["capability_id"])
                 if cap.get("skill_name")!=name: errors.append(f"{name}: skill_name mismatch")
                 if cap.get("version")!=VERSION: errors.append(f"{name}: product version mismatch")
-                if cap.get("stage") == "description" and not cap.get("calculation_version"):
-                    errors.append(f"{name}: missing calculation_version")
+                if cap.get("stage") == "description":
+                    calculation_version = cap.get("calculation_version")
+                    if not isinstance(calculation_version, str) or not re.fullmatch(
+                        r"[1-9][0-9]*", calculation_version
+                    ):
+                        errors.append(
+                            f"{name}: calculation_version must be an explicit "
+                            "positive-integer string"
+                        )
                 request_contract = cap.get("conductor_request")
                 if cap.get("stage") not in {"interpretation", "orchestration"}:
                     if not isinstance(request_contract, dict) or not request_contract.get("adapter"):
@@ -216,11 +224,14 @@ def main() -> int:
         if token not in batch_runner_template.decode("utf-8"):
             errors.append(f"canonical batch runner is missing {token}")
     mmp_source = (SKILLS / "cs-analysis-matched-molecular-pairs" / "scripts" / "run.py").read_text(encoding="utf-8")
+    if "def render_mmp_relationship_map(" not in mmp_source:
+        errors.append("MMP implementation is missing the target relationship map renderer")
     for obsolete_role in ("global-build", "local-screen", "local-detail"):
         if obsolete_role in mmp_source:
             errors.append(f"MMP implementation retains obsolete role: {obsolete_role}")
     mmp_template_contract = {
         "mmp_target_report_template.html": (
+            "$relationship_map",
             'data-report-section="structures"',
             'data-report-section="basic-information"',
             'data-report-section="mmp-details"',
@@ -277,8 +288,10 @@ def main() -> int:
     if a006_capability.get("default_parameters", {}).get("similarity_threshold") != 0.75:
         errors.append("A006 Tanimoto similarity threshold must default to 0.75")
     basic = profile.get("basic_compute", {})
-    if basic.get("multi_cluster_favorable_fraction_threshold") != 0.4:
-        errors.append("multi-Cluster Series FF threshold must be 0.4")
+    if basic.get("supported_core_union_ff_floor") != 0.3:
+        errors.append("Supported Core rescue Union FF floor must be 0.3")
+    if basic.get("supported_core_favorable_fraction_threshold") != 0.5:
+        errors.append("Supported Core FF threshold must be 0.5")
     if basic.get("leiden_resolution_grid") != [1.0,1.25,1.5,2.0,2.5,3.0]:
         errors.append("Leiden resolution grid mismatch")
     if basic.get("min_ff_evaluate_grid") != [10,15,20,25,30]:

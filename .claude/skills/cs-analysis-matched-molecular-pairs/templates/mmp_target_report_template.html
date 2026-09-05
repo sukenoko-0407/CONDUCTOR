@@ -1,9 +1,85 @@
+<style>
+  .mmp-map-scroll { max-width: 100%; overflow-x: auto; }
+  .mmp-relation-map {
+    position: relative; width: 100%; min-width: 900px; aspect-ratio: 14 / 9;
+    overflow: hidden; background: linear-gradient(180deg, #fbfcfd 0%, #f5f8f9 100%);
+    border: 1px solid #e2e7e9; border-radius: 8px;
+  }
+  .mmp-map-links { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; }
+  .mmp-map-target, .mmp-map-core, .mmp-map-neighbor, .mmp-map-legend, .mmp-map-note {
+    position: absolute; z-index: 2; background: #fff;
+  }
+  .mmp-map-target {
+    left: 36.61%; top: 39.58%; width: 26.79%; height: 34.72%;
+    border: 4px solid #174a7e; border-radius: 31px;
+    box-shadow: 0 9px 23px rgba(32,61,80,.15); text-align: center;
+  }
+  .mmp-map-target .role {
+    margin-top: 7px; color: #174a7e; font-size: .86rem;
+    font-weight: 750; letter-spacing: .05em;
+  }
+  .mmp-map-target img {
+    display: block; width: 83.3%; height: 58.4%; margin: 0 auto -3px; object-fit: contain;
+  }
+  .mmp-map-target .identity { font-size: .94rem; font-weight: 750; }
+  .mmp-map-target .endpoint { color: #536975; font-size: .72rem; }
+  .mmp-map-target .scope { margin-top: 4px; color: #5c6e77; font-size: .56rem; }
+  .mmp-map-core {
+    width: 16.96%; height: 21.53%; border: 3px solid #2b8051;
+    border-radius: 23px; box-shadow: 0 7px 17px rgba(43,128,81,.13); text-align: center;
+  }
+  .mmp-map-core .role { margin-top: 5px; color: #247047; font-size: .68rem; font-weight: 750; }
+  .mmp-map-core img {
+    display: block; width: 78.9%; height: 65.2%; margin: 0 auto -4px; object-fit: contain;
+  }
+  .mmp-map-core .identity { font-size: .58rem; font-weight: 750; }
+  .mmp-map-core .metric { padding: 0; background: transparent; color: #61776b; font-size: .5rem; }
+  .mmp-map-neighbor {
+    display: grid; grid-template-columns: 33% 1fr; grid-template-rows: auto auto auto auto;
+    column-gap: 6px; align-items: center; width: 17.41%; height: 14.58%; padding: 5px 8px;
+    border: 2px solid #e29a59; border-radius: 15px;
+    box-shadow: 0 4px 12px rgba(153,86,25,.10);
+  }
+  .mmp-map-neighbor::before {
+    content: ''; position: absolute; left: -6px; top: 43%; width: 10px; height: 10px;
+    border-radius: 50%; background: #e67e22; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #e67e22;
+  }
+  .mmp-map-neighbor img {
+    grid-column: 1; grid-row: 1 / 5; width: 100%; height: 62%; object-fit: contain;
+  }
+  .mmp-map-neighbor .identity { grid-column: 2; color: #ad5417; font-size: .68rem; font-weight: 750; }
+  .mmp-map-neighbor .endpoint { grid-column: 2; color: #526975; font-size: .75rem; line-height: 1.15; }
+  .mmp-map-neighbor .delta { grid-column: 2; color: #177144; font-size: .83rem; line-height: 1.1; font-weight: 750; }
+  .mmp-map-neighbor .mmp { grid-column: 2; color: #7a8990; font-size: .48rem; }
+  .mmp-map-legend {
+    left: 38.84%; bottom: 5%; width: 22.32%; padding: 8px 10px;
+    border: 1px solid #c9d4da; border-radius: 12px;
+    box-shadow: 0 4px 11px rgba(38,55,64,.08); text-align: center; font-size: .5rem;
+  }
+  .mmp-map-legend span {
+    display: inline-block; width: 12px; height: 12px; margin: 0 6px 0 15px;
+    border-radius: 50%; vertical-align: -1px;
+  }
+  .mmp-map-legend span:first-child { margin-left: 0; }
+  .mmp-map-target-key { background: #174a7e; }
+  .mmp-map-core-key { background: #2b8051; }
+  .mmp-map-neighbor-key { background: #e67e22; }
+  .mmp-map-note {
+    left: 20%; bottom: 1%; width: 60%; color: #7a6a5c;
+    background: transparent; text-align: center; font-size: .52rem;
+  }
+  .mmp-map-caption { margin: 8px 2px 0; color: #69767c; font-size: .86rem; }
+</style>
+
 <header>
   <p><a href="mmp_report.html">← MMP overview</a></p>
   <p class="muted">$role_label / deterministic target report</p>
   <h1>MMP target $target_id</h1>
   <p>Analysis unit: $analysis_units</p>
 </header>
+
+$relationship_map
 
 <section class="card" data-report-section="structures">
   <h2>1. Target / Neighbor structures</h2>

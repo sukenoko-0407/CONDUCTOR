@@ -41,6 +41,39 @@ DEFAULT_CPU_CORES = 8
 DEFAULT_LEASE_MINUTES = 360
 
 
+class ContractValidationError(ValueError):
+    """Raised when a Runtime boundary document violates its JSON Schema."""
+
+
+def validate_contract(instance: Any, schema_name: str, label: str) -> None:
+    import jsonschema
+
+    path = project_root() / "CONDUCTOR_modules" / "schemas" / schema_name
+    schema = read_json(path)
+    # Validation is intentionally offline; schema identifiers are metadata only.
+    schema.pop("$schema", None)
+    schema.pop("$id", None)
+    validator = jsonschema.Draft202012Validator(
+        schema, format_checker=jsonschema.FormatChecker()
+    )
+    errors = sorted(validator.iter_errors(instance), key=lambda item: list(item.path))
+    if errors:
+        issue = errors[0]
+        location = ".".join(str(part) for part in issue.absolute_path) or "<root>"
+        raise ContractValidationError(
+            f"{label} violates {schema_name} at {location}: {issue.message}"
+        )
+
+
+def validate_runtime_state(control: dict[str, Any], dag: dict[str, Any]) -> None:
+    validate_contract(control, "conductor_control.schema.json", "conductor_control")
+    raw_nodes = dag.get("nodes", [])
+    if not isinstance(raw_nodes, list):
+        raise ContractValidationError("runtime DAG nodes must be an array")
+    for index, node in enumerate(raw_nodes):
+        validate_contract(node, "node_record.schema.json", f"DAG node[{index}]")
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -216,9 +249,11 @@ def save_state(root: Path, control: dict[str, Any], dag: dict[str, Any], event: 
     atomic_json(control_path(root), control)
     atomic_json(dag_path(root), dag)
     transaction.unlink(missing_ok=True)
-    append_jsonl(root / "runtime" / "events.jsonl", {
+    runtime_event = {
         "revision": dag["revision"], "timestamp": now(), "event": event, "round_id": control.get("active_round_id"), "payload": payload or {}
-    })
+    }
+    validate_contract(runtime_event, "runtime_event.schema.json", "runtime event")
+    append_jsonl(root / "runtime" / "events.jsonl", runtime_event)
 
 
 @lru_cache(maxsize=1)
@@ -362,6 +397,7 @@ def add_node(control: dict[str, Any], dag: dict[str, Any], capability_id: str, d
         "created_at": now(),
         "updated_at": now(),
     }
+    validate_contract(node, "node_record.schema.json", "new DAG node")
     nodes(dag).append(node)
     return node, True
 
@@ -660,9 +696,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         "audited_round_id": None, "created_at": now(), "updated_at": now(),
     }
     dag = {"schema_version": "1.0.0", "conductor_version": VERSION, "revision": 0, "nodes": []}
+    validate_runtime_state(control, dag)
     atomic_json(control_path(root), control)
     atomic_json(dag_path(root), dag)
-    append_jsonl(root / "runtime" / "events.jsonl", {"revision": 0, "timestamp": now(), "event": "RUN_INITIALIZED", "payload": {"input": str(input_path)}})
+    initialized_event = {"revision": 0, "timestamp": now(), "event": "RUN_INITIALIZED", "payload": {"input": str(input_path)}}
+    validate_contract(initialized_event, "runtime_event.schema.json", "runtime event")
+    append_jsonl(root / "runtime" / "events.jsonl", initialized_event)
     return emit(root, control, dag, control_key_path=str(root / "runtime" / "control_authority.key"))
 
 
@@ -874,8 +913,13 @@ def cmd_select_series_configuration(args: argparse.Namespace) -> int:
             "favorable_fraction_threshold": float(
                 profile()["basic_compute"]["favorable_fraction_threshold"]
             ),
-            "multi_cluster_favorable_fraction_threshold": float(
-                profile()["basic_compute"]["multi_cluster_favorable_fraction_threshold"]
+            "supported_core_union_ff_floor": float(
+                profile()["basic_compute"]["supported_core_union_ff_floor"]
+            ),
+            "supported_core_ff_threshold": float(
+                profile()["basic_compute"][
+                    "supported_core_favorable_fraction_threshold"
+                ]
             ),
             "random_seed": int(profile()["basic_compute"]["leiden_seed"]),
             "parameter_search_enabled": False,
@@ -939,7 +983,8 @@ def cmd_revise_series(args: argparse.Namespace) -> int:
         parameters = {
             "min_ff_evaluate": int(args.min_ff_evaluate),
             "favorable_fraction_threshold": float(profile()["basic_compute"]["favorable_fraction_threshold"]),
-            "multi_cluster_favorable_fraction_threshold": float(profile()["basic_compute"]["multi_cluster_favorable_fraction_threshold"]),
+            "supported_core_union_ff_floor": float(profile()["basic_compute"]["supported_core_union_ff_floor"]),
+            "supported_core_ff_threshold": float(profile()["basic_compute"]["supported_core_favorable_fraction_threshold"]),
             "leiden_resolution": float(args.leiden_resolution),
             "random_seed": profile()["basic_compute"]["leiden_seed"],
             "parameter_search_enabled": False,
@@ -995,7 +1040,8 @@ def cmd_plan_basic(args: argparse.Namespace) -> int:
         if added: created.append(a002["node_id"])
         c012, added = add_node(control, dag, "C012", [a001["node_id"], a002["node_id"]], "basic", {
             "min_ff_evaluate": parameters["min_ff_evaluate"], "favorable_fraction_threshold": parameters["favorable_fraction_threshold"],
-            "multi_cluster_favorable_fraction_threshold": float(basic["multi_cluster_favorable_fraction_threshold"]),
+            "supported_core_union_ff_floor": float(basic["supported_core_union_ff_floor"]),
+            "supported_core_ff_threshold": float(basic["supported_core_favorable_fraction_threshold"]),
             "leiden_resolution": float(control["current_parameters"]["leiden_resolution"]),
             "resolution_grid": list(basic["leiden_resolution_grid"]),
             "min_ff_evaluate_grid": list(basic["min_ff_evaluate_grid"]),
@@ -1337,6 +1383,7 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
             f"Runtime could not prepare required input role(s) for {capability_id}: "
             + ", ".join(missing_roles)
         )
+    validate_contract(request, "execution_request.schema.json", "execution request")
     return request
 
 
@@ -1556,6 +1603,16 @@ def run_node(root: Path, node_id: str) -> dict[str, Any]:
         if not event_path.is_file():
             raise FileNotFoundError("Skill did not produce execution_event.json")
         event = read_json(event_path)
+        validate_contract(event, "execution_event.schema.json", "Skill execution_event")
+        for manifest_name in ("analysis_manifest.json", "clustering_manifest.json"):
+            manifest_path = output / manifest_name
+            if manifest_path.is_file():
+                manifest_value = read_json(manifest_path)
+                if manifest_value.get("schema_version") == "1.0.0":
+                    validate_contract(
+                        manifest_value, "artifact_manifest.schema.json",
+                        f"Skill {manifest_name}",
+                    )
         if event.get("status") != "succeeded":
             raise RuntimeError(f"Skill event status is not succeeded: {event.get('status')}")
         expected_identity = request["identity"]
@@ -1688,7 +1745,11 @@ def run_node(root: Path, node_id: str) -> dict[str, Any]:
             node["status"] = "failed"
             node["result"] = None
             node["error"] = {
-                "code": "SKILL_EXECUTION_FAILED",
+                "code": (
+                    "SCHEMA_VALIDATION_FAILED"
+                    if isinstance(exc, ContractValidationError)
+                    else "SKILL_EXECUTION_FAILED"
+                ),
                 "message": f"{type(exc).__name__}: {exc}",
                 "phase": "prepare_or_execute_or_commit",
                 "request_path": str(request_path),
@@ -1971,6 +2032,10 @@ def audit_value(root: Path, control: dict[str, Any], dag: dict[str, Any], mode: 
             return False
         try:
             event = read_json(event_path)
+            validate_contract(
+                event, "execution_event.schema.json",
+                f"execution event for {node.get('node_id')}",
+            )
             for key in ("round_id", "node_id", "capability_id", "skill_name"):
                 if event.get(key) != node.get(key):
                     return False
@@ -1994,6 +2059,13 @@ def audit_value(root: Path, control: dict[str, Any], dag: dict[str, Any], mode: 
                 except ValueError:
                     return False
                 if not path.is_file() or sha256(path) != item["sha256"]:
+                    return False
+            if node.get("capability_id") == "A009":
+                report_audit_path = directory / "report_audit.json"
+                if not report_audit_path.is_file():
+                    return False
+                report_audit = read_json(report_audit_path)
+                if report_audit.get("status") != "pass":
                     return False
             return True
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
@@ -2117,6 +2189,14 @@ def audit_value(root: Path, control: dict[str, Any], dag: dict[str, Any], mode: 
         except (KeyError, OSError, ValueError, TypeError):
             return False
     add("version", control.get("conductor_version") == VERSION and dag.get("conductor_version") == VERSION)
+    try:
+        validate_runtime_state(control, dag)
+        state_schema_ok = True
+        state_schema_detail = ""
+    except ContractValidationError as exc:
+        state_schema_ok = False
+        state_schema_detail = str(exc)
+    add("state_schemas", state_schema_ok, state_schema_detail)
     add("state_revision", control.get("revision") == dag.get("revision"), f"control={control.get('revision')}, dag={dag.get('revision')}")
     input_path = Path(str(control.get("input_path", "")))
     add("input_integrity", input_path.is_file() and sha256(input_path) == control.get("input_sha256"))

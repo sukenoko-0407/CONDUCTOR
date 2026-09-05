@@ -123,9 +123,11 @@ class Version0110Contracts(unittest.TestCase):
         )
         registry = root / "registry.csv"
         registry.write_text(
-            "cluster_id,source_cluster_id,source_node_id,sample_count\n"
+            "cluster_id,source_cluster_id,source_node_id,clustering_id,"
+            "description_id,input_kind,sample_count\n"
             + "".join(
-                f"{cluster_id},L{position:06d},N000001,10\n"
+                f"{cluster_id},L{position:06d},N000001,C005,D001,"
+                "description_vector,10\n"
                 for position, cluster_id in enumerate(cluster_ids, 1)
             ),
             encoding="utf-8",
@@ -159,7 +161,8 @@ class Version0110Contracts(unittest.TestCase):
                 "resolution_grid": [1.0, 1.25, 1.5, 2.0, 2.5, 3.0],
                 "min_ff_evaluate_grid": [10, 15, 20, 25, 30],
                 "favorable_fraction_threshold": 0.5,
-                "multi_cluster_favorable_fraction_threshold": 0.4,
+                "supported_core_union_ff_floor": 0.3,
+                "supported_core_ff_threshold": 0.5,
                 "max_units_for_auto_standard": 24,
                 "absolute_max_analysis_units": 100,
             },
@@ -181,7 +184,93 @@ class Version0110Contracts(unittest.TestCase):
                 )
             )
             self.assertEqual(capability["version"], "0.1.10", skill_name)
-            self.assertTrue(str(capability.get("calculation_version", "")), skill_name)
+            self.assertRegex(
+                capability.get("calculation_version", ""), r"^[1-9][0-9]*$",
+                skill_name,
+            )
+
+    def test_shared_schemas_reject_invalid_ids_dependencies_and_empty_artifacts(self) -> None:
+        import jsonschema
+
+        schema_paths = [
+            *(MODULES / "schemas").glob("*.schema.json"),
+            *SKILLS.glob("*/schemas/*.schema.json"),
+        ]
+        for schema_path in sorted(schema_paths):
+            with self.subTest(schema_definition=schema_path.name):
+                jsonschema.Draft202012Validator.check_schema(
+                    json.loads(schema_path.read_text(encoding="utf-8"))
+                )
+        controller_path = MODULES / "tools" / "runtime_controller.py"
+        specification = importlib.util.spec_from_file_location(
+            "runtime_0110_negative_schema_test", controller_path
+        )
+        runtime = importlib.util.module_from_spec(specification)
+        assert specification.loader is not None
+        specification.loader.exec_module(runtime)
+        invalid_cases = [
+            (
+                "node_record.schema.json",
+                {
+                    "node_id": 1, "capability_id": "A003",
+                    "skill_name": "cs-analysis-series-descriptor-contrast",
+                    "stage": "analysis", "wave": "standard",
+                    "round_id": "RND0001", "dependencies": [7],
+                    "parameters": {}, "status": "pending", "attempts": [],
+                },
+            ),
+            (
+                "node_record.schema.json",
+                {
+                    "node_id": "N000001", "capability_id": "A003",
+                    "skill_name": "cs-analysis-series-descriptor-contrast",
+                    "stage": "analysis", "wave": "standard",
+                    "round_id": "RND0001", "dependencies": [],
+                    "parameters": {}, "status": "running",
+                    "attempts": [{"attempt_id": "ATT0001"}],
+                },
+            ),
+            (
+                "artifact_manifest.schema.json",
+                {
+                    "schema_version": "1.0.0", "conductor_version": "0.1.10",
+                    "identity": {
+                        "project": "P", "run_id": "R", "round_id": "RND0001",
+                        "node_id": "N000001", "attempt_id": "ATT0001",
+                        "capability_id": "A003", "skill_name": "skill",
+                    },
+                    "capability": "A003", "artifacts": [],
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                },
+            ),
+            (
+                "execution_event.schema.json",
+                {
+                    "schema_version": "1.0.0", "project": "P", "run_id": "R",
+                    "round_id": "RND0001", "node_id": "N000001",
+                    "attempt_id": "ATT0001", "capability_id": "A003",
+                    "skill_name": "skill", "status": "succeeded", "artifacts": [],
+                },
+            ),
+        ]
+        for schema_name, payload in invalid_cases:
+            with self.subTest(schema=schema_name):
+                with self.assertRaises(runtime.ContractValidationError):
+                    runtime.validate_contract(payload, schema_name, "negative test")
+        runtime.validate_contract(
+            {
+                "node_id": "N000001", "capability_id": "I001",
+                "skill_name": "cs-analysis-interpret-results",
+                "stage": "interpretation", "wave": "interpretation",
+                "round_id": "RND0001", "dependencies": ["N000000"],
+                "parameters": {}, "signature": "a" * 64,
+                "status": "succeeded", "attempts": [], "result": {},
+                "error": None, "waived": False,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:01+00:00",
+            },
+            "node_record.schema.json", "Interpretation node",
+        )
 
     def test_standard_operator_ids_are_unique_and_batched(self) -> None:
         expected = ["A003", "A004", "A005", "A006", "A007", "A008", "A009"]
@@ -196,6 +285,27 @@ class Version0110Contracts(unittest.TestCase):
         self.assertEqual(capability["implementation"]["record_namespace"], "REQ")
         self.assertEqual(capability["implementation"]["round_participation"], "forbidden")
         self.assertEqual(capability["implementation"]["dag_registration"], "forbidden")
+
+    def test_prompt_library_covers_0110_daily_and_recovery_workflows(self) -> None:
+        prompt_root = MODULES / "docs" / "prompt"
+        daily = (prompt_root / "CONDUCTOR_prompts_daily.md").read_text(
+            encoding="utf-8"
+        )
+        special = (prompt_root / "CONDUCTOR_prompts_special.md").read_text(
+            encoding="utf-8"
+        )
+        for phrase in (
+            "入力Preflight", "同じRoundの再開", "Series条件Matrixの選択",
+            "Series support結果の確認", "Round完走後の終了処理",
+            "approve-series", "select-series-configuration", "accept-round",
+        ):
+            self.assertIn(phrase, daily)
+        for phrase in (
+            "Failed Node修復", "Description calculation versionの確認",
+            "Reportリンク・件数監査", "0.1.10 Release smoke test",
+            "LLM Vision", "audit --mode full",
+        ):
+            self.assertIn(phrase, special)
 
     def test_mmp_defaults_are_interpretable(self) -> None:
         capability = json.loads((SKILLS / "cs-analysis-matched-molecular-pairs" / "capability.json").read_text(encoding="utf-8"))
@@ -266,6 +376,11 @@ class Version0110Contracts(unittest.TestCase):
             )
         ]
         self.assertEqual(section_positions, sorted(section_positions))
+        self.assertIn("$relationship_map", template)
+        self.assertLess(
+            template.index("$relationship_map"),
+            template.index('data-report-section="structures"'),
+        )
         self.assertIn("Target full SMILES", template)
         self.assertIn("$target_structure_image", template)
         self.assertIn("$neighbor_structure_gallery", template)
@@ -557,6 +672,10 @@ class Version0110Contracts(unittest.TestCase):
             self.assertIn("CCCCN", target_html)
             self.assertNotIn(">CCCCCl<", target_html)
             self.assertIn("Neighbor → Target", target_html)
+            self.assertIn("data-report-section='relationship-map'", target_html)
+            self.assertIn("MMP relationship map", target_html)
+            self.assertIn("Endpoint 3.00", target_html)
+            self.assertIn("Δ +5.00", target_html)
             self.assertIn('data-report-section="visual-transformations"', target_html)
             self.assertIn("一意MMPを2件検出", target_html)
             self.assertIn("最小変換へ整理した1件", target_html)
@@ -564,6 +683,7 @@ class Version0110Contracts(unittest.TestCase):
             self.assertEqual(
                 len(list(output.glob("mmp_transform_*.svg"))), 1
             )
+            self.assertEqual(len(list(output.glob("mmp_map_*.svg"))), 3)
 
     def test_audit_directories_do_not_collide_within_one_second(self) -> None:
         controller_path = MODULES / "tools" / "runtime_controller.py"
@@ -759,8 +879,7 @@ class Version0110Contracts(unittest.TestCase):
             "feature": "MolWt", "description_id": "D001",
             "sample_count": 12, "pearson_r": .81,
             "spearman_r": .78, "max_abs_correlation": .81,
-            "correlation_q_bh": .01, "strict_hit": True,
-            "median_shift_global_iqr": 1.2, "shift_q_bh": .02,
+            "correlation_q_bh": .01, "criteria_pass": True,
             "global_pearson_r": .15,
         }])
         a003_rendered = runner.compact_table(a003_frame, "A003_detail")
@@ -768,7 +887,6 @@ class Version0110Contracts(unittest.TestCase):
         self.assertLess(a003_rendered.index("Description ID"), a003_rendered.index("N"))
         self.assertNotIn("Correlation BH q", a003_rendered)
         self.assertNotIn("Strict hit", a003_rendered)
-        self.assertNotIn("median_shift_global_iqr", a003_rendered)
         self.assertNotIn("global_pearson_r", a003_rendered)
 
         fallback_row = runner.pd.Series({
@@ -845,26 +963,36 @@ class Version0110Contracts(unittest.TestCase):
             )
             series = write(
                 "series.csv",
-                "series_id,source_cluster_count,compound_count,"
+                "series_id,source_cluster_count,representation_count,"
+                "cross_representation_core_compound_count,"
+                "cross_representation_core_ff,core_compound_count,core_ff,"
+                "fringe_compound_count,fringe_ff,"
+                "supported_core_compound_count,supported_core_endpoint_valid_n,"
+                "supported_core_ff,union_compound_count,union_ff,"
+                "compound_count,"
                 "endpoint_valid_count,favorable_count,favorable_fraction,"
                 "source_cluster_mean_ff,union_ff_delta_from_source_mean,"
-                "accepted,fallback_reason\n"
-                "S000001,1,6,6,4,0.6667,0.6667,0,True,\n",
+                "acceptance_mode,accepted,final_analysis_units,fallback_reason\n"
+                "S000001,1,1,0,,0,,6,0.6667,0,0,,6,0.6667,6,6,4,"
+                "0.6667,0.6667,0,standard,True,S000001,\n",
             )
             series_summary = write(
                 "series_summary.json",
                 json.dumps({
                     "min_ff_evaluate": 10,
                     "favorable_fraction_threshold": .5,
+                    "standard_accepted_series_count": 1,
+                    "supported_core_rescue_series_count": 0,
                     "series_with_ff_decrease_count": 0,
                     "median_union_ff_delta_from_source_mean": 0,
                 }),
             )
             unit_membership = write(
                 "unit_membership.csv",
-                "compound_id,analysis_unit_id,membership_value\n"
+                "compound_id,analysis_unit_id,membership_value,series_member_class\n"
                 + "".join(
-                    f"{compound},GLOBAL,True\n{compound},S000001,True\n"
+                    f"{compound},GLOBAL,True,not_applicable\n"
+                    f"{compound},S000001,True,fringe\n"
                     for compound in ("C1", "C2", "C3", "C4", "C5", "C6")
                 ),
             )
@@ -883,9 +1011,13 @@ class Version0110Contracts(unittest.TestCase):
             )
             support = write(
                 "support.csv",
-                "series_id,compound_id,support_count,support_fraction\n"
+                "candidate_series_id,series_id,compound_id,"
+                "support_cluster_count,support_count,support_fraction,"
+                "support_representation_count,support_representation_keys_json,"
+                "member_class,endpoint_valid,favorable\n"
                 + "".join(
-                    f"S000001,{compound},1,1\n"
+                    f"S000001,S000001,{compound},1,1,1,1,"
+                    f"\"[\"\"D001\"\"]\",fringe,True,False\n"
                     for compound in ("C1", "C2", "C3", "C4", "C5", "C6")
                 ),
             )
@@ -893,10 +1025,9 @@ class Version0110Contracts(unittest.TestCase):
                 "a003.csv",
                 "analysis_unit_id,feature,description_id,sample_count,pearson_r,"
                 "spearman_r,correlation_gain,correlation_q_bh,"
-                "median_shift_global_iqr,shift_q_bh,correlation_hit,strict_hit,"
+                "correlation_hit,criteria_pass,"
                 "near_miss_score\n"
-                "S000001,MolWt,D001,6,0.3,0.35,0.1,0.08,0.5,0.07,False,"
-                "False,0.9\n",
+                "S000001,MolWt,D001,6,0.3,0.35,0.1,0.08,False,False,0.9\n",
             )
             a005 = write(
                 "a005.csv",
@@ -1010,7 +1141,8 @@ class Version0110Contracts(unittest.TestCase):
                 summary_html.index('data-report-section="summary"'),
                 summary_html.index('data-report-section="endpoint-distribution"'),
             )
-            self.assertIn("Standard-criterion Series", summary_html)
+            self.assertIn("Standard accepted Series", summary_html)
+            self.assertIn("Supported Core rescue Series", summary_html)
             self.assertIn("All Clusters", summary_html)
             self.assertNotIn("参考・基準未達: MolWt", summary_html)
             self.assertIn("各analysis unitの最良結果を1件ずつ", summary_html)
@@ -1043,6 +1175,12 @@ class Version0110Contracts(unittest.TestCase):
             self.assertEqual(
                 index["report_template"], "standard_summary_template.html"
             )
+            self.assertEqual(index["template_version"], "1.0.0")
+            self.assertEqual(len(index["template_sha256"]), 64)
+            report_audit = json.loads(
+                (output / "report_audit.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(report_audit["status"], "pass")
             self.assertAlmostEqual(index["endpoint_overview"]["mean"], 3.5)
             self.assertAlmostEqual(index["endpoint_overview"]["median"], 3.5)
             self.assertAlmostEqual(
@@ -1053,6 +1191,48 @@ class Version0110Contracts(unittest.TestCase):
             )
             self.assertTrue((output / "tables" / "A003_full.csv").is_file())
             self.assertTrue((output / "endpoint_analysis_unit_boxplot.png").is_file())
+
+    def test_a009_report_audit_rejects_broken_links_and_count_mismatches(self) -> None:
+        runner = self.load_batch_runner("batch_runner_0110_report_audit_negative_test")
+        expected = {"analysis_unit_count": 1, "detail_report_count": 0}
+        index = {"analysis_unit_count": 1, "detail_reports": [], "series_formation": {}}
+        empty = runner.pd.DataFrame()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            broken = root / "broken"
+            broken.mkdir()
+            (broken / "standard_summary.html").write_text(
+                runner._audit_count_markers(expected)
+                + "<a href='missing.csv'>missing</a>",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "broken report reference"):
+                runner.audit_a009_reports(
+                    output=broken, index=index, expected_counts=expected,
+                    series=empty, support=empty,
+                )
+            broken_audit = json.loads(
+                (broken / "report_audit.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(broken_audit["link_checks"]["status"], "fail")
+
+            wrong_count = root / "wrong-count"
+            wrong_count.mkdir()
+            (wrong_count / "standard_summary.html").write_text(
+                runner._audit_count_markers({
+                    "analysis_unit_count": 2, "detail_report_count": 0,
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "count marker"):
+                runner.audit_a009_reports(
+                    output=wrong_count, index=index, expected_counts=expected,
+                    series=empty, support=empty,
+                )
+            count_audit = json.loads(
+                (wrong_count / "report_audit.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(count_audit["count_checks"]["status"], "fail")
 
     def test_a003_generates_top_three_feature_endpoint_scatter_plots(self) -> None:
         runner = self.load_batch_runner("batch_runner_019_a003_scatter_test")
@@ -1070,7 +1250,10 @@ class Version0110Contracts(unittest.TestCase):
             )
             description_specs = {
                 "D001": ("feature_a,feature_b", lambda index: f"{index},{9-index}"),
-                "D012": ("rdkit3d__PBF,rdkit3d__NPR1", lambda index: f"{index * index},{index / 10}"),
+                "D012": (
+                    "rdkit3d__PBF,rdkit3d__NPR1",
+                    lambda index: f"{'inf' if index == 6 else index * index},{index / 10}",
+                ),
                 "D015": ("mordred__nAcid,mordred__nRing,mordred__ABC", lambda index: f"{index % 2},{index % 4},{index * 9}"),
                 "D016": ("mordred__GeomDiameter,mordred__PNSA1,mordred__Mor01", lambda index: f"{index * 1.5},{index * 2},{index * 11}"),
                 "D019": ("xtb__dipole,xtb__homo", lambda index: f"{index / 3},{-index}"),
@@ -1137,6 +1320,21 @@ class Version0110Contracts(unittest.TestCase):
             result = runner.pd.read_csv(output / "A003_series_descriptor_contrast.csv")
             self.assertEqual(
                 set(result["description_id"]), set(runner.A003_DESCRIPTION_PANEL)
+            )
+            self.assertIn("criteria_pass", result.columns)
+            self.assertNotIn("strict_hit", result.columns)
+            self.assertNotIn("median_shift_global_iqr", result.columns)
+            self.assertEqual(set(result["sample_count"]), {5, 6})
+            self.assertEqual(
+                set(result.loc[
+                    result["feature"].eq("rdkit3d__PBF"), "sample_count"
+                ]),
+                {5},
+            )
+            self.assertTrue(
+                result["criteria_pass"].astype(bool).eq(
+                    result["correlation_hit"].astype(bool)
+                ).all()
             )
             self.assertNotIn("mordred__ABC", set(result["feature"]))
             self.assertNotIn("mordred__Mor01", set(result["feature"]))
@@ -1637,7 +1835,11 @@ class Version0110Contracts(unittest.TestCase):
             membership = base / "membership.csv"
             membership.write_text("compound_id,C000001\nC1,True\nC2,True\n", encoding="utf-8")
             registry = base / "registry.csv"
-            registry.write_text("cluster_id,sample_count\nC000001,2\n", encoding="utf-8")
+            registry.write_text(
+                "cluster_id,clustering_id,description_id,input_kind,sample_count\n"
+                "C000001,C005,D001,description_vector,2\n",
+                encoding="utf-8",
+            )
             profile = base / "profile.csv"
             profile.write_text(
                 "cluster_id,sample_count,favorable_fraction,selected_for_series\nC000001,2,0.5,False\n",
@@ -1690,8 +1892,9 @@ class Version0110Contracts(unittest.TestCase):
             )
             registry = base / "registry.csv"
             registry.write_text(
-                "cluster_id,source_cluster_id,source_node_id,sample_count\n"
-                "C000001,LCL000001,N000001,5\n",
+                "cluster_id,source_cluster_id,source_node_id,clustering_id,"
+                "description_id,input_kind,sample_count\n"
+                "C000001,LCL000001,N000001,C005,D001,description_vector,5\n",
                 encoding="utf-8",
             )
             profile = base / "profile.csv"
@@ -1748,9 +1951,10 @@ class Version0110Contracts(unittest.TestCase):
             )
             registry = base / "registry.csv"
             registry.write_text(
-                "cluster_id,source_cluster_id,source_node_id,sample_count\n"
-                "C000001,L1,N000001,4\n"
-                "C000002,L2,N000002,4\n",
+                "cluster_id,source_cluster_id,source_node_id,clustering_id,"
+                "description_id,input_kind,sample_count\n"
+                "C000001,L1,N000001,C005,D001,description_vector,4\n"
+                "C000002,L2,N000002,C005,D001,description_vector,4\n",
                 encoding="utf-8",
             )
             profile = base / "profile.csv"
@@ -1810,8 +2014,8 @@ class Version0110Contracts(unittest.TestCase):
         self.assertEqual(summary["fallback_cluster_count"], 2)
         self.assertEqual(summary["analysis_unit_count"], 2)
 
-    def test_c012_accepts_multi_cluster_series_at_relaxed_ff_040(self) -> None:
-        runner = self.load_batch_runner("series_runner_0110_relaxed_ff_test")
+    def test_c012_supported_core_rescue_and_member_classes(self) -> None:
+        runner = self.load_batch_runner("series_runner_0110_supported_core_test")
         frame = runner.pd.DataFrame({
             "compound_id": [f"C{index}" for index in range(1, 11)],
             "activity": list(range(1, 11)),
@@ -1834,26 +2038,117 @@ class Version0110Contracts(unittest.TestCase):
                     "C000001": {"C1", "C2", "C9", "C10"},
                     "C000002": {"C1", "C3", "C9", "C10"},
                 },
+                cluster_representations={
+                    "C000001": "D001", "C000002": "D002",
+                },
                 enrichment=enrichment,
                 frame=frame,
                 compound_id_column="compound_id",
                 endpoint_column="activity",
                 higher_is_better=True,
-                min_ff_evaluate=4,
+                min_ff_evaluate=3,
                 resolution=1.0,
                 random_seed=61453,
                 cluster_ff_threshold=0.5,
-                multi_cluster_ff_threshold=0.4,
+                supported_core_union_ff_floor=0.3,
+                supported_core_ff_threshold=0.5,
             )
         row = result["series_rows"][0]
         self.assertTrue(row["accepted"])
-        self.assertAlmostEqual(row["favorable_fraction"], 0.4)
-        self.assertEqual(row["applied_ff_threshold"], 0.4)
-        self.assertEqual(row["acceptance_basis"], "multi_cluster_relaxed_0.40")
+        self.assertAlmostEqual(row["union_ff"], 0.4)
+        self.assertEqual(row["acceptance_mode"], "supported_core_rescue")
+        self.assertEqual(row["cross_representation_core_compound_count"], 3)
+        self.assertAlmostEqual(row["cross_representation_core_ff"], 2 / 3)
+        self.assertEqual(row["fringe_compound_count"], 2)
         self.assertAlmostEqual(row["global_favorable_fraction"], 0.2)
         self.assertAlmostEqual(row["ff_delta_from_global"], 0.2)
         self.assertAlmostEqual(row["ff_enrichment_ratio"], 2.0)
-        self.assertEqual(result["summary"]["relaxed_series_count"], 1)
+        self.assertEqual(
+            result["summary"]["supported_core_rescue_series_count"], 1
+        )
+        self.assertTrue(all(
+            membership["series_member_class"] != "not_applicable"
+            for membership in result["membership_rows"]
+            if membership["analysis_unit_id"] == "S000001"
+        ))
+
+    def test_c012_rescue_accepts_supported_core_ff_boundary(self) -> None:
+        runner = self.load_batch_runner("series_runner_0110_rescue_boundary_test")
+        frame = runner.pd.DataFrame({
+            "compound_id": [f"C{index}" for index in range(1, 16)],
+            "activity": list(range(1, 16)),
+        })
+        enrichment = runner.pd.DataFrame([
+            {"cluster_id": cluster_id, "sample_count": 6,
+             "favorable_fraction": 0.5}
+            for cluster_id in ("C000001", "C000002", "C000003")
+        ])
+        favorable = {"C13", "C14", "C15"}
+        clusters = {
+            "C000001": favorable | {"C1", "C3", "C4"},
+            "C000002": favorable | {"C1", "C2", "C5"},
+            "C000003": favorable | {"C2", "C3", "C6"},
+        }
+        with mock.patch.object(
+            runner, "leiden_membership", return_value=[0, 0, 0]
+        ):
+            result = runner.evaluate_series_configuration(
+                cluster_sets=clusters,
+                cluster_representations={
+                    "C000001": "D001", "C000002": "D001",
+                    "C000003": "D002",
+                },
+                enrichment=enrichment, frame=frame,
+                compound_id_column="compound_id", endpoint_column="activity",
+                higher_is_better=True, min_ff_evaluate=6, resolution=1.0,
+                random_seed=61453, cluster_ff_threshold=0.5,
+                supported_core_union_ff_floor=0.3,
+                supported_core_ff_threshold=0.5,
+            )
+        row = result["series_rows"][0]
+        self.assertAlmostEqual(row["union_ff"], 1 / 3)
+        self.assertEqual(row["supported_core_endpoint_valid_n"], 6)
+        self.assertAlmostEqual(row["supported_core_ff"], 0.5)
+        self.assertEqual(row["acceptance_mode"], "supported_core_rescue")
+
+    def test_c012_rescue_accepts_exact_union_ff_floor(self) -> None:
+        runner = self.load_batch_runner("series_runner_0110_union_floor_test")
+        frame = runner.pd.DataFrame({
+            "compound_id": [f"C{index}" for index in range(1, 16)],
+            "activity": list(range(1, 16)),
+        })
+        enrichment = runner.pd.DataFrame([
+            {"cluster_id": cluster_id, "sample_count": 6,
+             "favorable_fraction": 0.5}
+            for cluster_id in ("C000001", "C000002", "C000003")
+        ])
+        favorable = {"C13", "C14", "C15"}
+        clusters = {
+            "C000001": favorable | {"C1", "C2", "C3"},
+            "C000002": favorable | {"C3", "C4", "C5"},
+            "C000003": favorable | {"C5", "C6", "C7"},
+        }
+        with mock.patch.object(
+            runner, "leiden_membership", return_value=[0, 0, 0]
+        ):
+            result = runner.evaluate_series_configuration(
+                cluster_sets=clusters,
+                cluster_representations={
+                    "C000001": "D001", "C000002": "D001",
+                    "C000003": "D002",
+                },
+                enrichment=enrichment, frame=frame,
+                compound_id_column="compound_id", endpoint_column="activity",
+                higher_is_better=True, min_ff_evaluate=5, resolution=1.0,
+                random_seed=61453, cluster_ff_threshold=0.5,
+                supported_core_union_ff_floor=0.3,
+                supported_core_ff_threshold=0.5,
+            )
+        row = result["series_rows"][0]
+        self.assertAlmostEqual(row["union_ff"], 0.3)
+        self.assertEqual(row["supported_core_endpoint_valid_n"], 5)
+        self.assertAlmostEqual(row["supported_core_ff"], 0.6)
+        self.assertEqual(row["acceptance_mode"], "supported_core_rescue")
 
     def test_c012_resolution_search_auto_selects_first_condition_at_24_or_less(self) -> None:
         runner = self.load_batch_runner("series_runner_0110_auto_search_test")

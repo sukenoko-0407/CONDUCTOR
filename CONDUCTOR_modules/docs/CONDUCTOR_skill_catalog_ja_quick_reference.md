@@ -23,7 +23,7 @@
 | D019 | xTB | 量子化学特徴量 |
 | D020 | ChemBERTa | CPUで生成するpretrained embedding |
 
-全Descriptionは`project`（Program）別Databaseを利用し、計算条件signatureが一致するcompound IDを再利用します。別Programとは共有せず、同一Programの同一ID・異構造はfail-fastです。
+全Descriptionは`project`（Program）別Databaseを利用し、必須の`calculation_version`と計算条件signatureが一致するcompound IDを再利用します。別Programとは共有せず、同一Programの同一ID・異構造はfail-fastです。
 
 ## Clustering
 
@@ -36,7 +36,7 @@
 | C008 | Vector Louvain | weighted mutual-kNN graph |
 | C009 | Vector Leiden | weighted mutual-kNN graph |
 | C010 | Vector Connected components | 距離graphの連結成分 |
-| C012 | weighted Leiden Series | 複数ClusterはFF≥0.40、単独はFF≥0.50。resolution自動探索とhuman Matrix選択 |
+| C012 | weighted Leiden Series | Union FF≥0.50でStandard採用。Union FF≥0.30かつSupported Core N/FF基準でrescue。resolution自動探索とhuman Matrix選択 |
 
 ## Analysis
 
@@ -50,7 +50,7 @@
 | A006 | Landscape | D002 ECFP4、Tanimoto 0.75以上のunit内外cliffとBoundary favorable件数 |
 | A007 | Structural signature | 構造由来は登録Keyのみ、vector由来だけSource Cluster別Murcko/MCS |
 | A008 | MMP | Type-I/II/III、1-cut |
-| A009 | Standard report | 7 Section全体HTML、中央配置Endpoint図、A003／A005図、構造gallery、MMP導線 |
+| A009 | Standard report | 固定Templateによる全体・個別HTML、Endpoint図、A003／A005図、構造gallery、MMP導線、local link・件数監査 |
 
 ## Interpretation / Control
 

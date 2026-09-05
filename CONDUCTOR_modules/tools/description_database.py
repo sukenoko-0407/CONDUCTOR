@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
@@ -16,6 +17,18 @@ COMMON_COLUMNS = (
     "mol_parse_ok",
     "description_error",
 )
+CALCULATION_VERSION_PATTERN = re.compile(r"^[1-9][0-9]*$")
+
+
+def required_calculation_version(capability: dict[str, Any]) -> str:
+    """Return the explicit Description calculation contract version."""
+    value = capability.get("calculation_version")
+    if not isinstance(value, str) or not CALCULATION_VERSION_PATTERN.fullmatch(value):
+        raise ValueError(
+            "Description capability calculation_version must be an explicit "
+            "positive-integer string"
+        )
+    return value
 
 
 def utc_now() -> str:
@@ -241,12 +254,13 @@ def calculation_signature(
     parameters: dict[str, Any],
     dataset_signature: str | None = None,
 ) -> str:
+    calculation_version = required_calculation_version(capability)
     defaults = dict(capability.get("default_parameters") or {})
     defaults.update(parameters)
     payload: dict[str, Any] = {
         "capability_id": capability["capability_id"],
         "skill_name": capability["skill_name"],
-        "calculation_version": str(capability.get("calculation_version", "1")),
+        "calculation_version": calculation_version,
         "parameters": defaults,
         "implementation": capability.get("implementation", {}),
         "representation_id": capability.get("representation_id"),
@@ -321,6 +335,7 @@ def prepare_cache_plan(
     scratch: Path,
     source_run_id: str,
 ) -> dict[str, Any]:
+    calculation_version = required_calculation_version(capability)
     frame, identities, dataset_signature = _dataset_identity(
         dataset_path, id_column, smiles_column
     )
@@ -408,7 +423,7 @@ def prepare_cache_plan(
                 if alternatives:
                     if any(
                         str(value["calculation_version"])
-                        == str(capability.get("calculation_version", "1"))
+                        == calculation_version
                         for value in alternatives
                     ):
                         configuration_mismatch_ids.append(item["compound_id"])
@@ -439,7 +454,7 @@ def prepare_cache_plan(
         "schema_version": SCHEMA_VERSION,
         "program_name": program_name,
         "database_path": str(db_path.resolve()),
-        "calculation_version": str(capability.get("calculation_version", "1")),
+        "calculation_version": calculation_version,
         "skill_version": str(capability["version"]),
         "configuration_signature": config_signature,
         "chemical_dataset_signature": dataset_signature,

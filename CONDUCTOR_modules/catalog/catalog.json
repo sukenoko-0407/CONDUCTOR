@@ -2,9 +2,9 @@
   "schema_version": "1.0.0",
   "conductor_version": "0.1.10",
   "profile_id": "enrichment-series-0.1.10",
-  "profile_hash": "4a430044f924d1848ae478568a4831b0daa62704c2c4fc5cbf0d6009e512981a",
+  "profile_hash": "67f396a5cc2e2236a86d6cb4c6f0c13f26e73ec83137e955f7d263953312832a",
   "selection_hash": "f0b228c2c02b3055543ee5f70e0e58e5ff0787da5e85b200c1baaac6ca772f52",
-  "generated_at": "2026-09-04T12:21:27.423642+00:00",
+  "generated_at": "2026-09-05T22:56:42.617420+00:00",
   "capabilities": [
     {
       "schema_version": "2.0.0",
@@ -1145,7 +1145,8 @@
       "default_parameters": {
         "min_ff_evaluate": 10,
         "favorable_fraction_threshold": 0.5,
-        "multi_cluster_favorable_fraction_threshold": 0.4,
+        "supported_core_union_ff_floor": 0.3,
+        "supported_core_ff_threshold": 0.5,
         "leiden_resolution": 1.0,
         "resolution_grid": [
           1.0,

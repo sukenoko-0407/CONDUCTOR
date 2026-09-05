@@ -1,1 +1,47 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"CONDUCTOR 0.1.10 compact control","type":"object","required":["schema_version","protocol_version","conductor_version","project","run_id","run_root","round_status","next_node_number","revision"],"properties":{"schema_version":{"const":"1.0.0"},"protocol_version":{"const":"0.1.10"},"conductor_version":{"const":"0.1.10"},"project":{"type":"string","minLength":1,"description":"The canonical program_name; one level above run_id."},"run_id":{"type":"string"},"run_root":{"type":"string"},"round_status":{"enum":["NONE","PREPARED","ACTIVE","PAUSED","AWAITING_HUMAN_REVIEW","CLOSED"]},"active_round_id":{"type":["string","null"]},"next_node_number":{"type":"integer","minimum":1},"revision":{"type":"integer","minimum":0}},"additionalProperties":true}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CONDUCTOR 0.1.10 compact control",
+  "type": "object",
+  "required": [
+    "schema_version", "protocol_version", "conductor_version", "project",
+    "run_id", "run_root", "input_path", "input_sha256",
+    "input_compound_count", "endpoint_valid_count", "columns",
+    "higher_is_better", "parallel_limit", "available_cpu_cores",
+    "round_status", "active_round_id", "next_round_number",
+    "next_node_number", "revision", "created_at", "updated_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "protocol_version": {"const": "0.1.10"},
+    "conductor_version": {"const": "0.1.10"},
+    "project": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "run_root": {"type": "string", "minLength": 1},
+    "input_path": {"type": "string", "minLength": 1},
+    "input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "input_compound_count": {"type": "integer", "minimum": 1},
+    "endpoint_valid_count": {"type": "integer", "minimum": 1},
+    "round_status": {"enum": ["NONE", "PREPARED", "ACTIVE", "PAUSED", "AWAITING_HUMAN_REVIEW", "CLOSED"]},
+    "active_round_id": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^RND[0-9]{4}$"}]},
+    "higher_is_better": {"type": "boolean"},
+    "endpoint_unit": {"type": ["string", "null"]},
+    "parallel_limit": {"type": "integer", "minimum": 1},
+    "available_cpu_cores": {"type": "integer", "minimum": 1},
+    "next_round_number": {"type": "integer", "minimum": 1},
+    "next_node_number": {"type": "integer", "minimum": 1},
+    "revision": {"type": "integer", "minimum": 0},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "columns": {
+      "type": "object",
+      "required": ["compound_id", "smiles", "endpoint"],
+      "properties": {
+        "compound_id": {"type": "string", "minLength": 1},
+        "smiles": {"type": "string", "minLength": 1},
+        "endpoint": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

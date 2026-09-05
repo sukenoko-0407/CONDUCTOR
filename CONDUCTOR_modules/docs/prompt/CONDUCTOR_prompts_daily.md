@@ -1,12 +1,14 @@
 # CONDUCTOR 0.1.10 日常プロンプト集
 
 - [状態だけを確認](#状態だけを確認)
+- [入力Preflight](#入力preflight)
 - [新規Run](#新規run)
 - [同じProjectで別EndpointのRun](#同じprojectで別endpointのrun)
 - [同じRoundの再開](#同じroundの再開)
 - [analysis unit数超過の承認](#analysis-unit数超過の承認)
 - [Series条件Matrixの選択](#series条件matrixの選択)
 - [Series条件の明示変更](#series条件の明示変更)
+- [Series support結果の確認](#series-support結果の確認)
 - [Round結果の追加確認](#round結果の追加確認)
 - [Round完走後の終了処理](#round完走後の終了処理)
 - [On-demand解析](#on-demand解析)
@@ -18,6 +20,20 @@
 `cs-conductor-orchestrator` SkillをMain Agentで使用してください。
 Run root: <RUN_ROOT>
 Runtimeの`query`だけを実行し、現在のRound状態、required_action、進行中・失敗・未実施Nodeの件数を短く報告してください。Roundの再開、Node実行、State変更は行わないでください。
+```
+
+## 入力Preflight
+
+```text
+CONDUCTOR 0.1.10のRunを開始せず、次の入力をread-onlyで事前確認してください。
+入力CSV: <ABSOLUTE_CSV_PATH>
+compound ID列: <ID_COLUMN>
+SMILES列: <SMILES_COLUMN>
+Endpoint列: <ENDPOINT_COLUMN>
+Project（Program名）: <PROJECT_NAME>
+予定Run root: <NEW_EMPTY_RUN_ROOT>
+
+必須列の存在、compound IDの欠損・重複、Endpointのfinite件数、SMILESの空欄・RDKit parse不能件数、同一Projectの既存Databaseとcompound ID/canonical SMILESが矛盾しないこと、Run rootが新規または空であることを確認してください。ファイル、Database、Runtime Stateは変更せず、開始可否と問題点だけを短く報告してください。
 ```
 
 ## 新規Run
@@ -87,6 +103,12 @@ Leiden resolution: <正の数>
 変更理由: <HUMAN_REASON>
 
 `revise-series`を使い、新しいC012 Nodeとして登録してください。成功済みDescription、C001-C010、A001/A002は再計算せず、新Roundを開始しないでください。再計算後も24件を超える場合は、再度私へ確認してください。
+```
+
+## Series support結果の確認
+
+```text
+Run root <RUN_ROOT> の最新C012成果物をread-onlyで確認してください。Standard accepted Series、Supported Core rescue Series、Rejected Series、fallback Cluster、最終analysis unitの件数を示してください。Candidate SeriesごとにUnion N/FF、Supported Core Endpoint-valid N/FF、Cross-representation Core・Core・FringeのN/FF、acceptance modeを簡潔な表で示してください。Runtime State、成果物、Series条件は変更しないでください。
 ```
 
 ## Round結果の追加確認

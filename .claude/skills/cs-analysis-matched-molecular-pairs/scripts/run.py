@@ -433,6 +433,215 @@ def mmp_report_scope_note(
     return selection
 
 
+def render_mmp_relationship_map(
+    target_id: str, target_smiles: str, target_endpoint: Any,
+    analysis_unit_labels: str, report_pairs: pd.DataFrame,
+    output: Path, filename_prefix: str,
+) -> tuple[str, list[Path]]:
+    """Render a bounded Target → Exact Core → Neighbor overview map."""
+    from rdkit.Chem import Draw
+
+    artifacts: list[Path] = []
+
+    def molecule_image(
+        value: Any, suffix: str, width: int, height: int, alt: str,
+    ) -> str:
+        molecule = depiction_molecule(value)
+        if molecule is None:
+            return "<span class='muted'>構造なし</span>"
+        path = output / f"mmp_map_{filename_prefix}_{suffix}.svg"
+        path.write_text(
+            str(Draw.MolsToGridImage(
+                [molecule], molsPerRow=1, subImgSize=(width, height),
+                legends=[""], useSVG=True,
+            )),
+            encoding="utf-8",
+        )
+        artifacts.append(path)
+        return (
+            f"<img src='{image_uri(path)}' alt='{html.escape(alt, quote=True)}'>"
+        )
+
+    def fixed_number(value: Any, digits: int = 2, signed: bool = False) -> str:
+        number = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+        if pd.isna(number):
+            return "—"
+        return f"{float(number):+.{digits}f}" if signed else f"{float(number):.{digits}f}"
+
+    target_image = molecule_image(
+        target_smiles, "target", 260, 160, f"Target {target_id}"
+    )
+    target_card = (
+        "<article class='mmp-map-target'>"
+        "<div class='role'>TARGET</div>"
+        f"{target_image}<div class='identity'>{html.escape(target_id)}</div>"
+        f"<div class='endpoint'>Endpoint {html.escape(fixed_number(target_endpoint))}</div>"
+        f"<div class='scope'>Analysis units: {html.escape(analysis_unit_labels or '—')}</div>"
+        "</article>"
+    )
+
+    grouped = report_pairs.copy()
+    core_groups: list[tuple[str, pd.DataFrame]] = []
+    if len(grouped) and "exact_core_smiles" in grouped:
+        grouped["_map_core_key"] = grouped["exact_core_smiles"].map(
+            canonical_core_key
+        )
+        grouped["_map_delta"] = pd.to_numeric(
+            grouped.get("favorable_delta_report"), errors="coerce"
+        )
+        core_order = (
+            grouped.groupby("_map_core_key", dropna=False)["_map_delta"]
+            .max().sort_values(ascending=False, na_position="last").index
+        )
+        for core_key in core_order:
+            core_groups.append((
+                str(core_key),
+                grouped.loc[grouped["_map_core_key"].eq(core_key)].sort_values(
+                    ["_map_delta", "neighbor_compound_id", "mmp_id"],
+                    ascending=[False, True, True], na_position="last",
+                    kind="mergesort",
+                ),
+            ))
+
+    displayed_groups = core_groups[:3]
+    slot_order = (
+        ["a"] if len(displayed_groups) == 1
+        else ["b", "c"] if len(displayed_groups) == 2
+        else ["a", "b", "c"]
+    )
+    core_positions = {
+        "a": (41.52, 15.69), "b": (19.20, 46.53), "c": (63.84, 46.53),
+    }
+    neighbor_positions = {
+        "a": [(11.61, 11.39), (41.34, 1.11), (70.98, 11.39)],
+        "b": [(0.89, 34.03), (0.89, 52.08), (0.89, 70.14)],
+        "c": [(81.70, 34.03), (81.70, 52.08), (81.70, 70.14)],
+    }
+    target_edges = {
+        "a": "M560 285 C560 279 560 274 560 268",
+        "b": "M410 410 C408 410 407 412 405 412",
+        "c": "M710 410 C712 410 713 412 715 412",
+    }
+    neighbor_edges = {
+        "a": [
+            "M485 133 C435 109 375 104 325 133",
+            "M560 113 L560 113",
+            "M635 133 C685 109 745 104 795 133",
+        ],
+        "b": [
+            "M215 365 C180 340 150 310 108 297",
+            "M215 412 C180 425 145 427 108 427",
+            "M215 460 C180 490 145 535 108 557",
+        ],
+        "c": [
+            "M905 365 C940 340 970 310 1012 297",
+            "M905 412 C940 425 975 427 1012 427",
+            "M905 460 C940 490 975 535 1012 557",
+        ],
+    }
+
+    edge_markup: list[str] = []
+    core_markup: list[str] = []
+    neighbor_markup: list[str] = []
+    displayed_neighbors = 0
+    for group_index, ((core_key, part), slot) in enumerate(
+        zip(displayed_groups, slot_order), 1
+    ):
+        edge_markup.append(
+            f"<path d='{target_edges[slot]}' fill='none' stroke='#174a7e' "
+            "stroke-width='5' stroke-linecap='round'/>"
+        )
+        core_left, core_top = core_positions[slot]
+        core_image = molecule_image(
+            core_key, f"core_{group_index:03d}", 160, 105,
+            f"Exact Core group {group_index}",
+        )
+        max_delta = part["_map_delta"].max()
+        unique_neighbor_count = int(part["neighbor_compound_id"].nunique())
+        core_markup.append(
+            "<article class='mmp-map-core' "
+            f"style='left:{core_left:.2f}%;top:{core_top:.2f}%'>"
+            f"<div class='role'>EXACT CORE {chr(64 + group_index)}</div>"
+            f"{core_image}<div class='identity'>Core group {group_index}</div>"
+            f"<div class='metric'>{unique_neighbor_count} neighbors · "
+            f"Max Δ {html.escape(fixed_number(max_delta))}</div></article>"
+        )
+        visible_neighbors = part.drop_duplicates("neighbor_compound_id").head(3)
+        position_indexes = (
+            [1] if len(visible_neighbors) == 1
+            else [0, 2] if len(visible_neighbors) == 2
+            else [0, 1, 2]
+        )
+        for neighbor_index, (position_index, record) in enumerate(zip(
+            position_indexes, visible_neighbors.itertuples()
+        ), 1):
+            displayed_neighbors += 1
+            edge_markup.append(
+                f"<path d='{neighbor_edges[slot][position_index]}' "
+                "fill='none' stroke='#df9a5e' stroke-width='2'/>"
+            )
+            left, top = neighbor_positions[slot][position_index]
+            neighbor_id = str(getattr(record, "neighbor_compound_id", "—"))
+            mmp_id = str(getattr(record, "mmp_id", "—"))
+            short_mmp_id = mmp_id if len(mmp_id) <= 13 else f"{mmp_id[:10]}…"
+            before_image = molecule_image(
+                getattr(record, "variable_neighbor", None),
+                f"before_{group_index:03d}_{neighbor_index:03d}",
+                72, 72, f"Before fragment for Neighbor {neighbor_id}",
+            )
+            neighbor_markup.append(
+                "<article class='mmp-map-neighbor' "
+                f"style='left:{left:.2f}%;top:{top:.2f}%'>"
+                f"{before_image}<div class='identity'>{html.escape(neighbor_id)}</div>"
+                "<div class='endpoint'>Endpoint "
+                f"{html.escape(fixed_number(getattr(record, 'neighbor_endpoint', None)))}</div>"
+                "<div class='delta'>Δ "
+                f"{html.escape(fixed_number(getattr(record, 'favorable_delta_report', None), signed=True))}</div>"
+                f"<div class='mmp'>Core {chr(64 + group_index)} · "
+                f"{html.escape(short_mmp_id)}</div></article>"
+            )
+
+    total_core_count = len(core_groups)
+    total_neighbor_count = int(
+        grouped[["_map_core_key", "neighbor_compound_id"]]
+        .drop_duplicates().shape[0]
+    ) if len(grouped) else 0
+    if total_core_count > len(displayed_groups) or total_neighbor_count > displayed_neighbors:
+        note = (
+            f"関係図はFavorable Δ上位のExact Core {len(displayed_groups)}/{total_core_count}件、"
+            f"各Core上位3 Neighbor（計{displayed_neighbors}/{total_neighbor_count}件）を表示。"
+            "残りはSection 4を参照してください。"
+        )
+    elif total_core_count:
+        note = (
+            f"Exact Core {total_core_count}件、Neighbor関係 {total_neighbor_count}件を"
+            "すべて表示しています。"
+        )
+    else:
+        note = "このTargetに接続する表示可能なMMPはありません。"
+
+    relationship_html = (
+        "<section class='card' data-report-section='relationship-map'>"
+        "<h2>MMP relationship map</h2>"
+        "<div class='mmp-map-scroll'><div class='mmp-relation-map' "
+        "role='img' aria-label='Target, Exact Core, and Neighbor relationship map'>"
+        "<svg class='mmp-map-links' viewBox='0 0 1120 720' aria-hidden='true'>"
+        f"{''.join(edge_markup)}</svg>{target_card}{''.join(core_markup)}"
+        f"{''.join(neighbor_markup)}"
+        "<aside class='mmp-map-legend'>"
+        "<span class='mmp-map-target-key'></span>Target "
+        "<span class='mmp-map-core-key'></span>Exact Core "
+        "<span class='mmp-map-neighbor-key'></span>Neighbor / Before fragment"
+        "</aside>"
+        f"<div class='mmp-map-note'>{html.escape(note)}</div>"
+        "</div></div>"
+        "<p class='mmp-map-caption'>Targetを中心に、Attachment pointを含むExact Coreと、"
+        "各Coreに接続するNeighborの置換前部分構造を示します。</p>"
+        "</section>"
+    )
+    return relationship_html, artifacts
+
+
 def render_target_overview_gallery(
     targets: pd.DataFrame, data: pd.DataFrame, compound_id_column: str,
     smiles_column: str, endpoint_column: str, output: Path,
@@ -1140,22 +1349,29 @@ def run_execution_request() -> int:
             )
             display_effect = "favorable_delta_report"
             display_label = "Δ neighbor→target"
-            target_smiles = str(
-                data.loc[
-                    data[compound_id].astype(str).eq(target_id), smiles
-                ].iloc[0]
+            target_data_row = data.loc[
+                data[compound_id].astype(str).eq(target_id)
+            ].iloc[0]
+            target_smiles = str(target_data_row[smiles])
+            target_endpoint = target_data_row[endpoint]
+            visible_pairs = report_pairs.sort_values(
+                ["neighbor_compound_id", "mmp_id"],
+                ascending=[True, True],
+                kind="mergesort",
+            ) if len(report_pairs) else report_pairs
+            relationship_map_html, relationship_map_paths = (
+                render_mmp_relationship_map(
+                    target_id, target_smiles, target_endpoint, unit_labels,
+                    visible_pairs, outdir, safe,
+                )
             )
+            structure_artifacts.extend(relationship_map_paths)
             target_structure_html, neighbor_structure_html, structure_paths = (
                 render_target_neighbor_structures(
                     target_id, target_smiles, report_pairs, outdir, safe
                 )
             )
             structure_artifacts.extend(structure_paths)
-            visible_pairs = report_pairs.sort_values(
-                ["neighbor_compound_id", "mmp_id"],
-                ascending=[True, True],
-                kind="mergesort",
-            ) if len(report_pairs) else report_pairs
             transformation_gallery, gallery_artifacts = (
                 render_core_group_gallery(visible_pairs, outdir, safe)
             )
@@ -1171,6 +1387,7 @@ def run_execution_request() -> int:
                     "role_label": html.escape(role),
                     "target_id": html.escape(target_id),
                     "analysis_units": html.escape(unit_labels),
+                    "relationship_map": relationship_map_html,
                     "target_smiles": html.escape(target_smiles),
                     "target_structure_image": target_structure_html,
                     "neighbor_structure_gallery": neighbor_structure_html,

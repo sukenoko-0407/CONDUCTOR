@@ -2,7 +2,7 @@
 
 1. 人間の省略指示がない限り、全Description・全標準Clustering・A001/A002・C012を揃える。
 2. FavorableはGlobal endpointの上位20%（`higher_is_better=false`は下位20%）。Cluster内で閾値を再定義しない。
-3. 一次選抜Clusterと単独Cluster Seriesは既定N>=10かつFF>=0.50、複数Cluster SeriesはFF>=0.40。q値は補助表示でありgateではない。
+3. 一次選抜Clusterは既定N>=10かつFF>=0.50。Candidate SeriesはUnion FF>=0.50でStandard acceptanceとする。Standard不通過でも、Union FF>=0.30、Supported Core Endpoint-valid N>=`min_ff_evaluate`、Supported Core FF>=0.50をすべて満たせばSupported Core rescueとし、Fringeを含むUnion全体をanalysis unitにする。q値は補助表示でありgateではない。
 4. C012は`min_ff_evaluate=10`のままLeiden resolutionを1.0～3.0で自動探索する。24件以下は自動進行する。該当がなければ`min_ff_evaluate=10,15,20,25,30`との全MatrixをSession内に示して人間が選ぶ。25～100件は人間承認可、101件以上は不可。
 5. 定型解析はGlobalをcontrolとして必ず含める。Seriesの性能は独立検証とは表現しない。
 6. 人間Reportは具体的な数値基準を示し、該当なしは一文と`参考・基準未達`一件に留める。

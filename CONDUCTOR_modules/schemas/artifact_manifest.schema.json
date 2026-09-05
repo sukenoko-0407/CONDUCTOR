@@ -1,1 +1,43 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"CONDUCTOR 0.1.10 artifact manifest","type":"object","required":["schema_version","conductor_version","artifacts"],"properties":{"schema_version":{"const":"1.0.0"},"conductor_version":{"const":"0.1.10"},"identity":{"type":"object"},"request_id":{"type":"string"},"artifacts":{"type":["array","object"]},"created_at":{"type":"string"}},"additionalProperties":true}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CONDUCTOR 0.1.10 analysis artifact manifest",
+  "type": "object",
+  "required": ["schema_version", "conductor_version", "identity", "capability", "artifacts", "created_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "conductor_version": {"const": "0.1.10"},
+    "identity": {"$ref": "#/$defs/identity"},
+    "capability": {"type": "string", "pattern": "^[DCAI][0-9]{3}$"},
+    "parameters": {"type": "object"},
+    "inputs": {"type": "array"},
+    "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact"}},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "required": ["project", "run_id", "round_id", "node_id", "attempt_id", "capability_id", "skill_name"],
+      "properties": {
+        "project": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+        "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
+        "attempt_id": {"type": "string", "pattern": "^ATT[0-9]{4}$"},
+        "capability_id": {"type": "string", "pattern": "^[DCAI][0-9]{3}$"},
+        "skill_name": {"type": "string", "pattern": "^[a-z0-9-]{1,63}$"}
+      },
+      "additionalProperties": true
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["type", "path", "sha256"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

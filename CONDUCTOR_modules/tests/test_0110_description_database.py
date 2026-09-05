@@ -140,6 +140,21 @@ class DescriptionDatabase0110Tests(unittest.TestCase):
             self.assertEqual(configured["version_mismatch_count"], 0)
             self.assertEqual(configured["configuration_mismatch_count"], 1)
 
+    def test_calculation_version_is_required_and_must_be_positive_integer_string(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            dataset = root / "input.csv"
+            self.dataset(dataset)
+            for invalid in (None, "", "0", "v1", 1):
+                capability = self.capability(root / f"skill-{invalid}")
+                if invalid is None:
+                    capability.pop("calculation_version")
+                else:
+                    capability["calculation_version"] = invalid
+                with self.subTest(calculation_version=invalid):
+                    with self.assertRaisesRegex(ValueError, "calculation_version"):
+                        self.plan(root, dataset, capability)
+
     def test_same_id_different_structure_fails_fast_across_description_databases(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -207,6 +222,66 @@ class DescriptionDatabase0110Tests(unittest.TestCase):
             self.assertEqual(restored["MolWt"].tolist(), [46.07])
             event = json.loads((output / "execution_event.json").read_text(encoding="utf-8"))
             self.assertEqual(event["cache"]["hit_count"], 1)
+
+    def test_partial_hit_computes_only_misses_then_reconstructs_full_vector(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            capability = self.capability(root / "skill")
+            first = root / "first.csv"
+            self.dataset(first, "CCO")
+            cold = self.plan(root, first, capability)
+            self.register(cold, root)
+
+            expanded = root / "expanded.csv"
+            expanded.write_text(
+                "compound_id,SMILES,Endpoint\nC1,CCO,1.0\nC2,CCN,2.0\n",
+                encoding="utf-8",
+            )
+            partial = self.plan(root, expanded, capability)
+            self.assertEqual(partial["hit_ids"], ["C1"])
+            self.assertEqual(partial["miss_ids"], ["C2"])
+            subset = pd.read_csv(partial["subset_path"])
+            self.assertEqual(subset["compound_id"].tolist(), ["C2"])
+
+            miss_payload = root / "miss-payload.csv"
+            pd.DataFrame([{
+                "compound_id": "C2", "input_smiles": "CCN",
+                "mol_parse_ok": True, "description_error": "", "MolWt": 45.08,
+            }]).to_csv(miss_payload, index=False)
+            inserted = db.register_misses(
+                plan=partial, payload_path=miss_payload,
+                manifest={
+                    "feature_columns": ["MolWt"],
+                    "value_semantics": "dense_continuous",
+                    "natural_metric": "euclidean",
+                },
+                identity={
+                    "run_id": "RUN002", "round_id": "RND0001",
+                    "node_id": "N000002",
+                },
+            )
+            self.assertEqual(inserted, 1)
+
+            complete = self.plan(root, expanded, capability)
+            self.assertEqual(complete["hit_count"], 2)
+            self.assertEqual(complete["miss_count"], 0)
+            output = root / "complete-output"
+            restored_path = db.finalize_cached_output(
+                plan=complete, output=output,
+                request={
+                    "conductor_version": "0.1.10", "created_at": db.utc_now(),
+                    "identity": {
+                        "project": "program-a", "run_id": "RUN003",
+                        "round_id": "RND0001", "node_id": "N000003",
+                        "attempt_id": "ATT0001", "capability_id": "D001",
+                        "skill_name": capability["skill_name"],
+                    },
+                },
+                capability=capability,
+            )
+            restored = pd.read_csv(restored_path)
+            self.assertEqual(restored["compound_id"].tolist(), ["C1", "C2"])
+            self.assertEqual(restored["MolWt"].round(2).tolist(), [46.07, 45.08])
 
     def test_runtime_all_hit_path_skips_description_kernel(self) -> None:
         runtime_path = TOOLS / "runtime_controller.py"

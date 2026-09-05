@@ -2,9 +2,11 @@
 
 ## 1. 実装状態
 
-本計画には事前協議で承認された設計判断を反映している。2026-09-04に人間から明示的な実装開始指示を受け、Phase 0のbaseline確認後、各Phaseを実装した。
+本計画には事前協議で承認された設計判断を反映している。2026-09-04に人間から明示的な実装開始指示を受け、Phase 0のbaseline確認後、初回0.1.10実装を行った。2026-09-06に承認された追補修正も[`CONDUCTOR_0.1.10_patch_plan.md`](CONDUCTOR_0.1.10_patch_plan.md)に従って実装・検証を完了した。
 
-実装前baselineは37 tests PASSであった。0.1.10実装後はDescription DatabaseのRuntime warm-cache統合、C012 parameter Matrix、A009、A007、MMP rendererを含む50 testsとpackage verificationで検証する。最終結果は本書末尾の実装結果へ記録する。
+初回実装前baselineは37 tests PASSであり、2026-09-04時点の初回実装は53 tests／6 subtestsとpackage verificationで検証した。追補修正後はA003、calculation version、Schema、C012境界、A009 Template／監査、Prompt contract、Description Database partial-hit再構成を含む60 tests PASS、package verification PASS、generated Catalog check PASSで検証した。
+
+> **Version境界（2026-09-06）:** 本書のMMP項目は0.1.10で完了したReport baselineの実装記録である。2 Mode化、Global Top 1、Transformation evidence、1/2-cut、情報抽出、Interactive visualization等の追加改修は0.1.10追補では実装せず、0.1.11へ移管する。従来0.1.11で検討していた非MMP項目は0.1.12へ繰り越す。
 
 ## 2. 実装原則
 
@@ -57,7 +59,7 @@
 3. `project`／`program_name`を一つの安全なpath componentとして検証し、Run内で変更不可にする。
 4. control state、Execution Request、Description manifestへDatabase関連metadataを追加できるようschemaを更新する。
 5. profileへ次を追加する。
-   - multi-Cluster Series FF threshold
+   - Series member support分類とStandard／Supported Core rescue条件
    - Series parameter search grid
    - 自動進行unit上限
    - A003 correlation threshold 0.60
@@ -221,11 +223,13 @@ miss 0件の場合は、現在のNode identityを持つmanifestとexecution even
 1. Cluster選抜mask作成
 2. overlap graph作成
 3. Leiden partition
-4. community union統計
-5. Series採否判定
-6. fallback展開
-7. final analysis unit集計
-8. configuration比較と選択
+4. community union作成
+5. Cross-representation Core／Core／Fringe分類
+6. 3 member class、Supported Core、Unionの統計
+7. Series採否判定
+8. fallback展開
+9. final analysis unit集計
+10. configuration比較と選択
 
 同一入力に対する各configuration評価を副作用なしの関数にし、unit test可能にする。
 
@@ -233,14 +237,17 @@ miss 0件の場合は、現在のNode identityを持つmanifestとexecution even
 
 1. A001/A002の全Cluster統計を読み、各`min_ff_evaluate`で選抜maskを再生成する。
 2. 各resolutionでLeidenを実行する。
-3. 複数Cluster Seriesには承認済み0.40基準、単独Clusterには0.50基準を適用する。
-4. まず`min_ff_evaluate=10`でresolutionを小さい順に評価し、最初の24件以下をchosen configurationとする。
-5. resolution変更だけで24件以下にならない場合に、全30 configurationを評価する。
-6. 全gridの数値をRuntime内部の`series_parameter_search.json`へ保持する。
-7. Runtime応答を受けたAgentが、行を`min_ff_evaluate`、列をresolution、各セルを`final unit数 / Cluster coverage / Compound coverage / fallback数`とするMarkdown TableをSession内に表示し、人間の選択を待つ。HTML reportや図は生成しない。
-8. 各configurationについて、Default選抜Clusterに対するCluster coverageと、Default選抜Cluster和集合に対するCompound coverageを計算する。
-9. 人間判断が必要な場合、探索段階ではcanonical Series Artifactを確定せず、候補summaryだけをRuntime内部stateへcommitする。
-10. 人間が選択した条件でC012を再実行し、その条件だけのmembershipとcanonical Artifactを生成する。
+3. Candidate Series内の化合物をCross-representation Core、Core、Fringeへ排他的に分類する。
+4. `Union FF >= 0.50`をStandard acceptanceとする。
+5. Standard不通過でも、`Union FF >= 0.30`、`Supported Core Endpoint-valid N >= min_ff_evaluate`、`Supported Core FF >= 0.50`をすべて満たす場合はSupported Core rescueとする。
+6. Standardとrescueの両方を満たす場合はStandardを優先し、採用時はいずれもFringeを含むUnion全体をanalysis unitとする。
+7. まず`min_ff_evaluate=10`でresolutionを小さい順に評価し、最初の24件以下をchosen configurationとする。
+8. resolution変更だけで24件以下にならない場合に、全30 configurationを評価する。
+9. 全gridの数値をRuntime内部の`series_parameter_search.json`へ保持する。
+10. Runtime応答を受けたAgentが、行を`min_ff_evaluate`、列をresolution、各セルを`final unit数 / Cluster coverage / Compound coverage / fallback数`とするMarkdown TableをSession内に表示し、人間の選択を待つ。HTML reportや図は生成しない。
+11. 各configurationについて、Default選抜Clusterに対するCluster coverageと、Default選抜Cluster和集合に対するCompound coverageを計算する。
+12. 人間判断が必要な場合、探索段階ではcanonical Series Artifactを確定せず、候補summaryだけをRuntime内部stateへcommitする。
+13. 人間が選択した条件でC012を再実行し、その条件だけのmembershipとcanonical Artifactを生成する。
 
 ### 7.3 Canonical Artifact
 
@@ -255,7 +262,9 @@ chosen configurationから既存Artifactを生成する。
 - `series_summary.json`
 - `selected_clusters_effective.csv`
 
-`series_summary.json`には最終chosen condition、閾値、gate状態だけを記録する。全gridは解析結果Artifactに含めず、Runtime内部の途中判断stateとして`runtime/series_parameter_search.json`に保持する。
+`series_summary.json`には最終chosen condition、閾値、gate状態を記録する。全gridは解析結果Artifactに含めず、Runtime内部の途中判断stateとして`runtime/series_parameter_search.json`に保持する。
+
+`compound_series_support.csv`にはsupport Cluster数、support representation数、sort済みrepresentation key一覧、member class、Endpoint-valid／Favorable flagを保存する。`series_registry.csv`と`series_summary.json`にはCross-representation Core、Core、Fringe、Supported Core、Unionのcompound count、Endpoint-valid N、Favorable N、FF、Supported Core coverage、`acceptance_mode`を保存する。`acceptance_mode`は`standard`、`supported_core_rescue`、`rejected`のいずれかとする。
 
 ### 7.4 Runtime gate
 
@@ -270,8 +279,11 @@ chosen configurationから既存Artifactを生成する。
 
 - 同じseedとgridで完全に同じ結果になる。
 - resolution上昇時にunit数が非単調なfixtureでも最終unit数で正しく選ぶ。
-- 0.40以上0.50未満のmulti-Cluster Seriesだけが緩和採用される。
-- single-Cluster candidateへ0.40を誤適用しない。
+- Cross-representation Core、Core、Fringeが排他的かつ網羅的に分類される。
+- 3 member class、Supported Core、UnionのFFがEndpoint-valid Nを分母として正しく計算される。
+- Union FF 0.50、Union FF 0.30、Supported Core FF 0.50、Supported Core Nの各境界で採否が正しい。
+- Standardとrescueを同時に満たす場合はStandardが優先される。
+- rescue採用でもFringeを含むUnion全体がanalysis unitになる。
 - `min_ff_evaluate`各段階で選抜Clusterが正しく変わる。
 - `min_ff_evaluate=10`のresolution探索で最初の24件以下が自動選択される。
 - resolution探索で24件以下にならない場合だけ全gridがSession提示対象になる。
@@ -295,7 +307,9 @@ chosen configurationから既存Artifactを生成する。
 4. 出力へDescription IDと内部一意feature keyを追加する。
 5. analysis unitごとの上位3featureを決定的にrankする。
 6. 対象analysis unit内の点だけを使う簡潔なscatter plotとindex JSONを生成し、Global比較overlayは加えない。
-7. CSVの全統計は維持する。
+7. 正式通過判定を`criteria_pass = correlation_hit`へ統一し、旧`strict_hit`を残さない。
+8. median shift関連の計算、判定、出力、説明、near-miss sort要素を削除する。
+9. `sample_count`を各featureのfiniteなEndpoint／feature pair数とし、相関とp値を計算したNへ一致させる。
 
 ### A005
 
@@ -342,7 +356,7 @@ chosen configurationから既存Artifactを生成する。
 6. HistogramとBoxplotを本文幅より小さく中央配置する。BoxplotはGlobalを灰、Seriesを青、fallback Clusterを橙とし、図全体の横幅と高さをHTML表示幅内に固定する。group数が多い場合は各Boxの幅とlabelを調整して一つの横長図へ収め、Favorable／Unfavorable cutoffを破線と凡例で示す。図から自明な重複見出しと判定式の折り畳みは置かない。
 7. selected Cluster TableをID中心の固定列へ制限する。
 8. 使用IDだけのDescription／Clustering凡例を折り畳み領域として自動生成する。構造クラスタリングではDescriptionを非該当として表示しない。
-9. Series plotを削除し、Candidate Series mapは全Candidateを含むcompact Tableにする。Table本体をCandidate ID、source Cluster数、化合物数、和集合FF、適用基準、採否、最終unitへ限定し、source Cluster ID一覧は折り畳む。
+9. Series plotを削除し、Candidate Series mapは全Candidateを含むcompact Tableにする。Table本体をCandidate ID、source Cluster数、Union N／FF、Supported Core Endpoint-valid N／FF、acceptance mode、最終unitへ限定し、source Cluster ID一覧と3 member classのN／FFは折り畳む。
 10. Section 4のmetric card直下に各itemの説明を折り畳みで置き、固定の重複見出しとfallback説明を削除する。
 11. Standard analysis resultsはA003、A005、A006だけを表示し、折り畳み名を`解析内容`へ統一する。A003／A006の評価件数・near-miss定型文は表示せず、A005は評価可能な全analysis unitについて最良modelを1件ずつ表示する。
 12. A004、A007、A008をStandard analysis resultsへ重複表示せず、A007の導線も置かない。
@@ -367,7 +381,7 @@ chosen configurationから既存Artifactを生成する。
 - 禁止文言`厳格基準`、`strict hit`、Agent向け選択文がないことを検査する。
 - selected Cluster Tableに名称全文が混入せず、ID凡例が存在する。
 - Series plot要素がなく、Candidate Series mapがある。
-- Candidate Series mapが全Candidateを含み、固定列だけを表示し、source Cluster ID一覧を折り畳む。
+- Candidate Series mapが全Candidateを含み、Standard／Supported Core rescue／Rejectedを正しく区別し、source Cluster ID一覧と3 member classのN／FFを折り畳む。
 - Endpoint図内の統計blockが一つだけである。
 - Boxplotが横長で縦軸Endpointとなり、Global、Series、fallback ClusterのDOM／描画順と色が正しい。
 - Boxplotに採用Seriesの構成元Clusterが重複表示されない。
@@ -392,6 +406,7 @@ chosen configurationから既存Artifactを生成する。
 8. A007上位構造画像galleryを表示し、captionはCluster IDに限定して件数captionを除く。構造由来Clusterは登録Keyだけ、vector由来ClusterだけSource Cluster membershipからMurcko／MCSを導出し、由来説明は折り畳まず表示する。
 9. A008 report indexからTop 1 compoundとMMP linkを表示する。
 10. Analysis unit Tableだけは初期表示し、各詳細CSVリンクは必ず該当Section末尾へ置く。
+11. Series ReportではCross-representation Core、Core、FringeのN／FFを表示し、membershipとPCA／UMAPを`#c2185b`／`#ff7f0e`／`#7f7f7f`の固定3色と凡例で区別する。Global背景点は`#d9d9d9`とする。fallback Cluster ReportではSeries member classを流用しない。
 
 ### Test
 
@@ -406,8 +421,24 @@ chosen configurationから既存Artifactを生成する。
 - A005でMember NとModel Nが正しく表示され、対象外時に空Tableがないこと
 - Top 1 targetとlinkが正しいこと
 - 個別レポート末尾に独立した`Full tables and limitations` Sectionがないこと
+- Seriesの3 member class表示と凡例がcanonical membershipに一致し、fallback Clusterに誤適用されないこと
 
-## 11. Phase 7: MMPレポートとA009導線
+### A009共通Template契約と生成後監査
+
+1. A009全体／個別Reportは承認済みTemplateから`Template.substitute()`で生成し、full HTMLの代替生成経路を作らない。
+2. 必須placeholder、`template_id`、`template_version`、`template_sha256`を検証・記録する。
+3. Template契約違反、未解決placeholder、local link切れ、directory traversal、canonical Artifactとの主要件数不一致ではA009を成功確定しない。
+4. 監査結果をA009配下の`report_audit.json`へ保存し、失敗時はRuntime Full AuditもFAILとする。
+5. 自動監査はlink確認と件数確認だけとし、LLM Vision、Screenshot比較、AIによる外観評価を使用しない。
+
+### Template／監査Test
+
+- 通常、0件、一部未実施、fallbackのみのfixtureが同じTemplate構造から生成される。
+- placeholder欠落、重複、未解決値、Template metadata不一致を拒否する。
+- link切れ、directory traversal、主要件数不一致でA009とFull AuditがFAILする。
+- 正常Reportの`report_audit.json`がPASSとなる。
+
+## 11. Phase 7: MMPレポートとA009導線（実装済baseline・追補対象外）
 
 ### 11.1 A008 index
 
@@ -470,15 +501,17 @@ chosen configurationから既存Artifactを生成する。
 3. catalogを再生成する。
 4. user guide、overview、output contract、skill catalog、quick referenceを更新する。
 5. Description Databaseの運用手順をuser guideへ追加する。
-6. Series gridとhuman gateの操作例をprompt／guideへ追加する。
-7. MMPとA009間のnavigationをoutput contractへ追加する。
-8. package verifierでcanonical copy差分、Version不一致、必要Artifactを検査する。
+6. Series grid、Standard／Supported Core rescue／fallback、human gateの操作例をprompt／guideへ追加する。
+7. 日常Promptへ入力preflight、Report監査、Series support確認、calculation version確認、release smoke test、Round完走後の終了処理を必須項目として揃える。
+8. Promptに記載したSkill、Runtime subcommand、required action、parameterが実装に存在することをcontract testで検証する。
+9. MMPとA009間のnavigationをoutput contractへ追加する。0.1.11のMMP新仕様は0.1.10 Promptへ先行記載しない。
+10. package verifierでcanonical copy差分、Version不一致、必要Artifactを検査する。
 
 ### 完了条件
 
 - canonical templateと各Skill copyに差分がない。
 - catalog、profile、capability、RuntimeのVersionが一致する。
-- 操作例だけでcold cache、warm cache、Series human gateを再現できる。
+- 操作例だけでcold cache、warm cache、Series human gate、Round完走後の終了処理を再現できる。
 
 ## 13. Phase 9: End-to-end検証
 
@@ -486,7 +519,8 @@ chosen configurationから既存Artifactを生成する。
 
 - cache hit／missが混在する小規模Dataset
 - 同一ID／異なるSMILESを含む拒否fixture
-- Series FFが0.40–0.50に入るfixture
+- Standard acceptance、Supported Core rescue、Rejectedの各Series fixture
+- Union FF 0.30／0.50、Supported Core FF 0.50、Supported Core Endpoint-valid Nの境界fixture
 - resolutionごとにfallback数が非単調になるfixture
 - final unit数が24以下になるfixture
 - 全gridで24超になるfixture
@@ -542,7 +576,7 @@ Phase 2、Phase 3、Phase 7の終了時に中間レビュー可能なcheckpoint�
 | cache mergeで入力順やdtypeが変化 | 元ID順によるone-to-one検証と全件contract test |
 | 並列RunでDatabaseが競合 | SQLite transaction、busy timeout、payload一致検証 |
 | Database破損をsilent missとして隠す | integrity errorで停止し、repairを要求 |
-| 0.40基準で弱いSeriesが増える | 緩和採用label、source FF、Globalとの差を明示 |
+| FringeによってUnion FFが低下する | StandardはUnion FF 0.50を維持し、Union FF 0.30以上かつ十分なNとFFを持つSupported Coreがある場合だけrescueする |
 | resolution増加でunit数が逆に増える | `min_ff_evaluate=10`では全resolutionを実測し、最初の24件以下だけを自動選択 |
 | min FF引上げで有用な小Clusterを失う | Session内MatrixへCluster／Compound coverageを併記し、人間が選択 |
 | A009が再び横長になる | renderer列allowlistとDOM／viewport test |
@@ -557,17 +591,23 @@ Phase 2、Phase 3、Phase 7の終了時に中間レビュー可能なcheckpoint�
 - 仕様概要書10節の完了条件を満たす。
 - unit、contract、renderer、integration、E2E testが全件PASSする。
 - 18 Descriptionおよびcustom runnerを含むcache matrixがPASSする。
+- A003が`criteria_pass = correlation_hit`だけで判定され、feature別`sample_count`がfinite pair数と一致する。
+- 全Descriptionの`calculation_version`必須化とRuntime／package verificationのfail-fastがPASSする。
+- Runtime core JSON Schemaのpositive／negative fixtureとFull Auditの要求が一致する。
 - C012 gridの選択結果をfixtureから手計算で照合できる。
-- A009とMMPの主要画面を人間がレビューし、可読性を承認する。
+- Cross-representation Core／Core／Fringe、Supported Core／UnionのN・FFとStandard／rescue／fallbackをfixtureから手計算で照合できる。
+- 追補対象であるA009の主要画面を人間がレビューし、可読性を承認する。MMPは既存baselineの回帰確認だけとする。
+- A009が承認済みTemplateだけから生成され、link／件数監査がPASSする。監査不合格時はA009とFull Auditを成功扱いにしない。
 - Runtime full auditがPASSする。
 - package layout verificationがPASSする。
 - user guideとquick referenceが実装と一致する。
 - 0.1.9の既存Runおよび原本CSVを変更していない。
+- 0.1.11向けMMP追加改修が0.1.10追補へ混入していない。
 
 ## 17. 実装結果（2026-09-04）
 
 - Description Database、Runtime cold／partial／warm cache経路、監査付きinvalidateを実装した。
-- C012のFF 0.50／0.40区分、resolution自動探索、30条件Matrix、人間選択、24／50／100件の境界を実装した。
+- 初回baselineではC012のFF 0.50／0.40区分、resolution自動探索、30条件Matrix、人間選択、24／50／100件の境界を実装した。FF 0.40区分は2026-09-06追補で廃止し、Standard／Supported Core rescueへ置換した。
 - A003、A005、A006、A007、A009およびMMP Type-Iの承認済みreport仕様を実装した。
 - canonical Runner／Templateを対象Skillへ同期し、42 Capabilityのcatalogを再生成した。
 - 自動検証は53 tests／6 subtests PASS、42 Capabilityのpackage layout verification PASSを確認した。

@@ -1,0 +1,18 @@
+[workspace]
+name = "conductor-0110-contract-tests"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[dependencies]
+python = ">=3.12,<3.13"
+jsonschema = ">=4.21,<5"
+matplotlib = ">=3.8"
+numpy = ">=1.26"
+pandas = ">=2.2"
+pyarrow = ">=15"
+rdkit = ">=2024.3"
+scikit-learn = ">=1.4"
+scipy = ">=1.12"
+
+[tasks]
+contracts = "python -m unittest discover -s .. -p 'test_0110*.py' -v"

@@ -4,7 +4,7 @@
   "type": "object",
   "required": [
     "schema_version", "conductor_version", "identity", "inputs", "columns", "endpoint",
-    "subject", "parameters", "resources", "output"
+    "subject", "parameters", "resources", "output", "created_at"
   ],
   "properties": {
     "schema_version": {"const": "1.0.0"},
@@ -14,7 +14,17 @@
       "required": [
         "project", "run_id", "round_id", "node_id", "attempt_id",
         "capability_id", "skill_name"
-      ]
+      ],
+      "properties": {
+        "project": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "round_id": {"type": "string", "pattern": "^RND[0-9]{4}$"},
+        "node_id": {"type": "string", "pattern": "^N[0-9]{6}$"},
+        "attempt_id": {"type": "string", "pattern": "^ATT[0-9]{4}$"},
+        "capability_id": {"type": "string", "pattern": "^[DCAI][0-9]{3}$"},
+        "skill_name": {"type": "string", "pattern": "^[a-z0-9-]{1,63}$"}
+      },
+      "additionalProperties": false
     },
     "inputs": {
       "type": "array",
@@ -37,26 +47,48 @@
     },
     "columns": {
       "type": "object",
-      "required": ["compound_id", "smiles", "endpoint"]
+      "required": ["compound_id", "smiles", "endpoint"],
+      "properties": {
+        "compound_id": {"type": "string", "minLength": 1},
+        "smiles": {"type": "string", "minLength": 1},
+        "endpoint": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
     },
     "endpoint": {
       "type": "object",
-      "required": ["higher_is_better"]
+      "required": ["higher_is_better"],
+      "properties": {"higher_is_better": {"type": "boolean"}},
+      "additionalProperties": true
     },
     "subject": {"type": "object"},
     "parameters": {"type": "object"},
     "resources": {"type": "object"},
+    "created_at": {"type": "string", "format": "date-time"},
     "description_cache": {
       "type": "object",
       "required": [
         "program_name", "database_path", "calculation_version",
         "configuration_signature", "hit_count", "miss_count"
       ],
+      "properties": {
+        "program_name": {"type": "string", "minLength": 1},
+        "database_path": {"type": "string", "minLength": 1},
+        "calculation_version": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "configuration_signature": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "hit_count": {"type": "integer", "minimum": 0},
+        "miss_count": {"type": "integer", "minimum": 0}
+      },
       "additionalProperties": true
     },
     "output": {
       "type": "object",
-      "required": ["directory"]
+      "required": ["directory"],
+      "properties": {
+        "directory": {"type": "string", "minLength": 1},
+        "overwrite": {"type": "boolean"}
+      },
+      "additionalProperties": true
     }
   },
   "additionalProperties": false
