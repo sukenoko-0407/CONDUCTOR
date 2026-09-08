@@ -1,32 +1,15 @@
-# SKILLの目的
+# A008 MMP transformation evidence
 
-Top化合物要因、Hit周辺SAR、または網羅MMPデータを人間向けに提示します。
+Version 0.1.11 replaces Type-I/II/III with two modes: `target` analyzes explicit Run compound IDs, while `database` builds a Target-independent canonical MMP database.
 
-## 想定利用シーン
+The standard Runtime supplies analysis-unit Top1 plus Global Top1 to `target`. Human On-demand requests use the same mode and name their own Targets. A compatible canonical database is reused read-only; otherwise `target` invokes the same builder once.
 
-Type-Iは各Series／fallback ClusterのTop 1を扱う定型解析、Type-II/IIIはOn-demandです。上位K化合物を詳しく調べる場合は対象IDを明示してType-IIを実行します。Type-I/IIは対象へ接続する成果物だけを保存し、包括的CSV・SQLiteはType-IIIだけが生成します。Type-IIでは、人間が明示した同一RunのType-III Databaseを任意で再利用できます。
+The database retains a fixed structural direction and signed delta. Target reports always place Target (or the Target-matched side) at the arrow end and retain a signed Target-oriented delta. Positive values support the Target Endpoint; negative values are improvement clues. This changes the reading, not the intrinsic quality of the evidence. Direct and Transferred evidence remain separate provenance classes.
 
-Type-I/II全体HTMLはanalysis unitごとのTargetを4列で示します。対象別HTMLの最上部には、Targetを中心、Exact Coreを中間、Neighborを外周とする横長のMMP relationship mapを表示します。Neighbor cardには置換前fragment、Endpoint、Favorable deltaを改行して示します。Targetは紺、Exact Coreは緑、Neighborはオレンジです。関係図はExact Core上位3件・各CoreのNeighbor上位3件までとし、省略時は図中に件数とSection 4への導線を明記します。Section 1ではTargetを単独行、その下の折り畳み領域へTargetに2D整列したNeighborを4列で示します。同じTarget–Neighborでは包含される小さいCoreを除き、包含関係にないCoreは残します。Exact Coreごとにcard化し、Favorable delta上位5件を展開、残りを折りたたみます。変換図はNeighbor全体／Target全体／置換前／置換後の4列で、Targetは共通構造によりNeighborへ2D整列します。Core画像と件数cardは横並びにし、HTMLでの整理・折りたたみ状況は実件数で説明します。Section 4は主要galleryを先に置き、`表示内容`と`掲載範囲`を別々の折り畳みにし、詳細CSVリンクをSection末尾へ配置します。未縮約データは詳細CSVに保持します。
+Both 1-cut and 2-cut are generated and kept separate. 2-cut structural classes are Target-independent. Similar-core transfer uses attachment topology, Core similarity, attachment-aware MCS, and Environment class. Proposed structures are labelled Virtual unless they match an observed Run compound.
 
-## 環境構築
+Target reports are offline, PC-wide Interactive HTML workspaces with a compact relationship map and click-driven detail drawer. A009 receives only versioned static-map paths through `mmp_report_index.json`.
 
-PixiがRDKitとmmpdbを準備します。
+The following defaults remain provisional until sample-data human checkpoints are approved: 2-cut size thresholds, standard cut SMARTS, similar-core thresholds, and maximum embedded evidence rows.
 
-## 利用例
-
-CONDUCTORではRuntimeが作成したRequestをLauncherへ渡します。
-
-```bash
-python scripts/launch.py --conductor-request /absolute/path/execution_request.json
-```
-
-## 制約事項
-
-1-cutのみ。外部SMILESだけのType-II対象は受け付けません。
-
-## 変更履歴
-
-| Version | 変更内容 |
-|---|---|
-| 0.1.10 | 対象別レポート最上部へMMP relationship mapを追加。Section 4の表示内容／掲載範囲を分離し、詳細CSVリンクを末尾へ配置 |
-| 1.0.0 | Type-I/II/IIIへ再設計 |
+See [references/mmp_contract.md](references/mmp_contract.md) and the repository 0.1.11 specification/implementation plan.

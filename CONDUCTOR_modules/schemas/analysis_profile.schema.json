@@ -42,7 +42,10 @@
       "type": "object",
       "required": [
         "capabilities", "descriptor_contrast_descriptions", "a003_correlation_threshold",
-        "minimum_local_model_samples", "mmp_type_i_top_k"
+        "minimum_local_model_samples", "mmp_cuts", "mmp_radius_min",
+        "mmp_radius_max", "mmp_neutral_tolerance", "mmp_near_core_tanimoto",
+        "mmp_near_core_mcs_coverage", "mmp_max_compounds",
+        "mmp_max_embedded_evidence"
       ],
       "properties": {
         "descriptor_contrast_descriptions": {
@@ -50,7 +53,14 @@
         },
         "a003_correlation_threshold": {"const": 0.6},
         "minimum_local_model_samples": {"const": 30},
-        "mmp_type_i_top_k": {"const": 1}
+        "mmp_cuts": {"const": 2},
+        "mmp_radius_min": {"const": 0},
+        "mmp_radius_max": {"const": 2},
+        "mmp_neutral_tolerance": {"const": 0.1},
+        "mmp_near_core_tanimoto": {"type": "number", "minimum": 0, "maximum": 1},
+        "mmp_near_core_mcs_coverage": {"type": "number", "minimum": 0, "maximum": 1},
+        "mmp_max_compounds": {"const": 5000},
+        "mmp_max_embedded_evidence": {"type": "integer", "minimum": 1}
       },
       "additionalProperties": true
     },

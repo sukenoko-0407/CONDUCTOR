@@ -22,4 +22,4 @@ Series形成ではUnion FF 0.50以上をStandard acceptanceとします。これ
 
 RuntimeはDAG、Node番号、依存関係、再試行、Round gateを決定論的に管理します。Main AgentはRuntimeの一つの`required_action`だけを進め、科学SkillのCLIを推測しません。各OperatorはGlobalと全Seriesを一括処理するため、Series数に比例してNodeが増えません。
 
-On-demand解析はRoundと通常DAGの外にあり、`run_root/on_demand/REQ######/`だけへ書き込みます。定型Reportを起点に、人間が自由な比較、図示、Type-II/III MMPを依頼できます。
+On-demand解析はRoundと通常DAGの外にあり、`run_root/on_demand/REQ######/`だけへ書き込みます。定型Reportを起点に、人間が自由な比較・図示を依頼でき、A008では明示TargetのMode IまたはTarget非依存Databaseを作るMode IIを実行できます。

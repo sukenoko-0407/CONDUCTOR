@@ -309,11 +309,12 @@ class Version0110Contracts(unittest.TestCase):
 
     def test_mmp_defaults_are_interpretable(self) -> None:
         capability = json.loads((SKILLS / "cs-analysis-matched-molecular-pairs" / "capability.json").read_text(encoding="utf-8"))
-        self.assertEqual(capability["default_parameters"]["cuts"], 1)
-        self.assertEqual(capability["default_parameters"]["top_k"], 1)
-        self.assertEqual(
-            self.profile["standard_analysis"]["mmp_type_i_top_k"], 1
-        )
+        self.assertEqual(capability["version"], "0.1.11")
+        self.assertEqual(capability["modes"], ["target", "database"])
+        self.assertEqual(capability["default_parameters"]["cuts"], 2)
+        self.assertEqual(capability["default_parameters"]["neutral_tolerance"], 0.1)
+        self.assertEqual(capability["default_parameters"]["max_compounds"], 5000)
+        self.assertEqual(self.profile["standard_analysis"]["mmp_cuts"], 2)
         self.assertEqual((capability["default_parameters"]["radius_min"], capability["default_parameters"]["radius_max"]), (0, 2))
 
     def test_mmp_type_i_targets_and_report_tables_follow_compact_contract(self) -> None:
@@ -1165,7 +1166,7 @@ class Version0110Contracts(unittest.TestCase):
             self.assertIn("data:image/png;base64", detail_html)
             self.assertNotIn("相関係数順に上位1件", detail_html)
             self.assertIn("該当結果なし", detail_html)
-            self.assertIn("Type-I MMP Top 1", detail_html)
+            self.assertIn("A008 Mode I Top 1", detail_html)
             self.assertIn("mmp_reports/mmp_target_C6.html", detail_html)
             copied_mmp = (
                 output / "mmp_reports" / "mmp_target_C6.html"

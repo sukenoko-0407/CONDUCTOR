@@ -9,10 +9,15 @@ jsonschema = ">=4.21,<5"
 matplotlib = ">=3.8"
 numpy = ">=1.26"
 pandas = ">=2.2"
+networkx = ">=3.2"
 pyarrow = ">=15"
 rdkit = ">=2024.3"
 scikit-learn = ">=1.4"
 scipy = ">=1.12"
 
+[pypi-dependencies]
+mmpdb = "==3.1.4"
+playwright = "==1.55.0"
+
 [tasks]
-contracts = "python -m unittest discover -s .. -p 'test_0110*.py' -v"
+contracts = "python -m unittest discover -s .. -p 'test_01*.py' -v"

@@ -8,7 +8,7 @@
 6. 人間Reportは具体的な数値基準を示し、該当なしは一文と`参考・基準未達`一件に留める。
 7. Failure時は同じNodeを修正・再試行する。Mainが独自CLIで代行しない。
 8. Wall Time終了は同じRoundのpauseであり、自動で次Roundへ進まない。
-9. MMP Type-I/II/IIIは1-cut、radius 0-2。観測データとAgent解釈を混同しない。
-10. 定型MMP Type-Iは各Series／fallback Cluster Top 1だけを対象とする。上位K化合物の追加評価は、人間が対象IDを選びOn-demand Type-IIで実行する。
+9. A008 MMPはMode I（明示Target解析）とMode II（Target非依存Database）に分け、1-cut／2-cutとradius 0–2を別集計する。Databaseは固定構造方向のsigned deltaを保持し、Favorable方向化はTarget解釈時だけ行う。
+10. 定型MMP Mode Iは各analysis unit Top 1とGlobal Top 1を重複除去して対象とする。追加化合物は、人間がRun内compound IDを選びOn-demand Mode Iで実行する。
 11. On-demandはREQ directoryだけへ書き、通常Stateを変えない。
 12. DescriptionはProgram別Databaseから一致recordを再利用し、missだけを計算する。同一Programの同一ID・異構造はfail-fastとし、通常Runからrecordを上書き・削除しない。

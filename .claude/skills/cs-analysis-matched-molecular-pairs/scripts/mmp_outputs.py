@@ -10,11 +10,20 @@ import pandas as pd
 
 
 def load_database(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Read the canonical one-cut Type-III SQLite index without mutating it."""
+    """Read a legacy or 0.1.11 canonical SQLite index without mutating it."""
     uri = f"file:{path.resolve().as_posix()}?mode=ro"
     with closing(sqlite3.connect(uri, uri=True)) as connection:
-        details = pd.read_sql_query(
-            """
+        names = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table','view')"
+        )}
+        if "pair_transformations" in names:
+            details = pd.read_sql_query(
+                "SELECT * FROM pair_transformations ORDER BY cut_count,pair_id,core_id,transformation_id",
+                connection,
+            )
+        else:
+            details = pd.read_sql_query(
+                """
             SELECT p.mmp_id,
                    cf.compound_id AS compound_id_from,
                    ct.compound_id AS compound_id_to,
@@ -45,7 +54,7 @@ def load_database(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
               JOIN cores c ON c.core_key = p.core_key
              ORDER BY p.pair_key
             """,
-            connection,
-        )
+                connection,
+            )
         rows = connection.execute("SELECT key, value_json FROM metadata").fetchall()
     return details, {key: json.loads(value) for key, value in rows}

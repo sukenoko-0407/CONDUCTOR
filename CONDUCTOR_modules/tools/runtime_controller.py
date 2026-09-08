@@ -285,8 +285,12 @@ def capabilities() -> dict[str, dict[str, Any]]:
             raise ValueError(f"Selected Skill has no capability_id: {path}")
         if value.get("skill_name") != skill_name:
             raise ValueError(f"Selected Skill name mismatch: directory={skill_name}, capability={value.get('skill_name')!r}")
-        if value.get("version") != VERSION:
-            raise ValueError(f"Selected Skill {skill_name} has version={value.get('version')!r}; expected {VERSION}")
+        expected_version = "0.1.11" if capability_id == "A008" else VERSION
+        if value.get("version") != expected_version:
+            raise ValueError(
+                f"Selected Skill {skill_name} has version={value.get('version')!r}; "
+                f"expected {expected_version}"
+            )
         if capability_id in result:
             raise ValueError(f"Duplicate capability_id: {capability_id}")
         value["_skill_dir"] = str(path.parent.resolve())
@@ -1079,9 +1083,21 @@ def cmd_plan_standard(args: argparse.Namespace) -> int:
             ])
         if all(d.get(item) for item in prof["model_description_panel"]):
             specifications.append(("A005", [*[d[item]["node_id"] for item in prof["model_description_panel"]], c012["node_id"]], {"min_local_samples": prof["minimum_local_model_samples"], "random_seed": 61453}))
+        mmp_targets = standard_mmp_targets(root, control)
         specifications.extend([
             ("A007", [c012["node_id"]], {}),
-            ("A008", [c012["node_id"]], {"role": "type-i", "top_k": prof["mmp_type_i_top_k"], "cuts": 1, "radius_min": 0, "radius_max": 2}),
+            ("A008", [c012["node_id"]], {
+                "mode": "target",
+                "targets": mmp_targets,
+                "cuts": int(prof["mmp_cuts"]),
+                "radius_min": int(prof["mmp_radius_min"]),
+                "radius_max": int(prof["mmp_radius_max"]),
+                "neutral_tolerance": float(prof["mmp_neutral_tolerance"]),
+                "near_core_tanimoto": float(prof["mmp_near_core_tanimoto"]),
+                "near_core_mcs_coverage": float(prof["mmp_near_core_mcs_coverage"]),
+                "max_compounds": int(prof["mmp_max_compounds"]),
+                "max_embedded_evidence": int(prof["mmp_max_embedded_evidence"]),
+            }),
         ])
         standard_ids: list[str] = []
         for capability_id, dependencies, parameters in specifications:
@@ -1092,6 +1108,71 @@ def cmd_plan_standard(args: argparse.Namespace) -> int:
         if added: created.append(report["node_id"])
         save_state(root, control, dag, "STANDARD_PLANNED", {"created_node_ids": created})
     return emit(root, control, dag, created_node_ids=created)
+
+
+def standard_mmp_targets(root: Path, control: dict[str, Any]) -> list[dict[str, Any]]:
+    """Select analysis-unit Top1 plus Global Top1 for an explicit A008 request.
+
+    Selection belongs to the Runtime adapter. The A008 scientific engine only
+    receives and analyzes the resulting explicit Target registry.
+    """
+    import pandas as pd
+
+    membership_path = root / "runtime" / "analysis_unit_membership.csv"
+    if not membership_path.is_file():
+        raise ValueError("Standard A008 planning requires analysis_unit_membership.csv")
+    data = pd.read_csv(
+        control["input_path"],
+        dtype={str(control["columns"]["compound_id"]): "string"},
+    )
+    compound_id = str(control["columns"]["compound_id"])
+    endpoint = str(control["columns"]["endpoint"])
+    if not {compound_id, endpoint}.issubset(data.columns):
+        raise ValueError("Standard A008 Target selection cannot find compound ID or Endpoint column")
+    data[compound_id] = data[compound_id].astype(str)
+    data[endpoint] = pd.to_numeric(data[endpoint], errors="coerce")
+    ranked = data.dropna(subset=[endpoint]).sort_values(
+        [endpoint, compound_id],
+        ascending=[not bool(control["higher_is_better"]), True],
+        kind="mergesort",
+    )
+    membership = pd.read_csv(membership_path, dtype=str)
+    required = {"compound_id", "analysis_unit_id"}
+    if not required.issubset(membership.columns):
+        raise ValueError("analysis_unit_membership.csv lacks compound_id or analysis_unit_id")
+    if "membership_value" in membership.columns:
+        active = membership["membership_value"].astype(str).str.strip().str.lower().isin(
+            {"true", "1", "1.0", "yes"}
+        )
+        membership = membership.loc[active]
+    selected: dict[str, list[dict[str, str]]] = {}
+    for unit_id, part in membership.groupby("analysis_unit_id", sort=True):
+        members = set(part["compound_id"].astype(str))
+        top = ranked.loc[ranked[compound_id].isin(members), compound_id].head(1)
+        if top.empty:
+            continue
+        target_id = str(top.iloc[0])
+        source_type = "global_top1" if str(unit_id) == "GLOBAL" else "analysis_unit_top1"
+        selected.setdefault(target_id, []).append({
+            "source_type": source_type,
+            "source_id": str(unit_id),
+        })
+    if not any(
+        source["source_type"] == "global_top1"
+        for sources in selected.values() for source in sources
+    ):
+        if ranked.empty:
+            raise ValueError("Standard A008 Target selection requires at least one finite Endpoint")
+        target_id = str(ranked.iloc[0][compound_id])
+        selected.setdefault(target_id, []).append({
+            "source_type": "global_top1", "source_id": "GLOBAL"
+        })
+    return [
+        {"compound_id": target_id, "selection_sources": sorted(
+            sources, key=lambda item: (item["source_type"], item["source_id"])
+        )}
+        for target_id, sources in sorted(selected.items())
+    ]
 
 
 def artifact(role: str, path: Path, node: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1278,7 +1359,7 @@ def execution_request(root: Path, control: dict[str, Any], dag: dict[str, Any], 
             if source.get("status") != "succeeded":
                 continue
             # A008 remains an A009 dependency so the deterministic standard
-            # workflow waits for MMP Type-I.  Pass only the compact navigation
+            # workflow waits for A008 Mode I. Pass only the compact navigation
             # index; the potentially large pair table remains in the A008 node.
             if capability_id == "A009" and source.get("capability_id") == "A008":
                 mmp_index = primary_path(source).parent / "mmp_report_index.json"

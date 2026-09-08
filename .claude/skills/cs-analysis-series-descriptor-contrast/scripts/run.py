@@ -3232,6 +3232,7 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
         for label, path in full_table_links
     ) + "</ul>"
     mmp_navigation_by_unit: dict[str, str] = {}
+    mmp_global_map_html = '<p class="muted">Global Top1 MMP mapはありません。</p>'
     mmp_report_artifacts: list[Path] = []
     if mmp_report_index_path is not None:
         mmp_index = json.loads(
@@ -3239,7 +3240,44 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
         )
         mmp_destination = output / "mmp_reports"
         mmp_destination.mkdir(exist_ok=True)
-        for source_artifact in mmp_report_index_path.parent.iterdir():
+        if str(mmp_index.get("schema_version")) == "2.0.0":
+            source_root = mmp_report_index_path.parent.resolve()
+            expected_target_root = (source_root / "targets").resolve()
+            for record in mmp_index.get("unit_reports", []):
+                unit_id = str(record.get("analysis_unit_id", ""))
+                target_id = str(record.get("target_compound_id", ""))
+                static_path = str(record.get("static_map_path", ""))
+                source_type = str(record.get("source_type", ""))
+                if not unit_id or not target_id or not static_path:
+                    continue
+                source_map = (source_root / static_path).resolve()
+                if source_map.parent != expected_target_root or not source_map.is_file():
+                    raise ValueError(
+                        "A008 mmp_report_index static_map_path must resolve to targets/*.svg: "
+                        f"{static_path!r}"
+                    )
+                destination = mmp_destination / source_map.name
+                if not destination.is_file():
+                    shutil.copy2(source_map, destination)
+                    mmp_report_artifacts.append(destination)
+                map_html = (
+                    "<figure data-report-section='mmp-static-map'>"
+                    f"<figcaption><b>A008 MMP Target: {html_lib.escape(target_id)}</b></figcaption>"
+                    f"<img class='report-figure' src='mmp_reports/{html_lib.escape(destination.name, quote=True)}' "
+                    f"alt='Static MMP relationship map for {html_lib.escape(target_id, quote=True)}'>"
+                    "</figure>"
+                )
+                if source_type == "global_top1" or unit_id == "GLOBAL":
+                    mmp_global_map_html = map_html
+                elif source_type in {"analysis_unit_top1", ""}:
+                    mmp_navigation_by_unit[unit_id] = map_html
+        # schema 2.0 deliberately exposes only static maps to A009.  The
+        # interactive workspace and evidence tables remain owned by A008.
+        for source_artifact in (
+            mmp_report_index_path.parent.iterdir()
+            if str(mmp_index.get("schema_version")) != "2.0.0"
+            else []
+        ):
             if (
                 source_artifact.is_file()
                 and source_artifact.suffix.lower()
@@ -3267,7 +3305,7 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
                     f"{report_path!r}"
                 )
             mmp_navigation_by_unit[unit_id] = (
-                "<p><b>Type-I MMP Top 1:</b> "
+                "<p><b>A008 Mode I Top 1:</b> "
                 f"<a href='mmp_reports/{html_lib.escape(report_path, quote=True)}'>"
                 f"{html_lib.escape(target_id)}</a></p>"
             )
@@ -3383,7 +3421,7 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
             ),
             "mmp_navigation": mmp_navigation_by_unit.get(
                 unit_id,
-                '<p class="muted">Type-I MMP対象またはレポートなし</p>',
+                '<p class="muted">A008 Mode IのTargetまたはstatic Mapなし</p>',
             ),
             "a006_explanation": html_lib.escape(OPERATOR_EXPLANATIONS["A006"]),
             "a003_explanation": html_lib.escape(OPERATOR_EXPLANATIONS["A003"]),
@@ -3621,6 +3659,7 @@ def run_a009(request: dict[str, Any], output: Path, cap: dict[str, Any]) -> None
         ("Median union FF delta", "Candidate Seriesごとの『和集合FF − Source Cluster平均FF』の中央値。"),
     ]
     body = render_report_template("standard_summary_template.html", {
+        "mmp_global_map": mmp_global_map_html,
         "summary_metrics": metric_grid(summary_metric_items),
         "summary_metric_help": metric_help(summary_metric_definitions),
         "report_scope": bullet_list([

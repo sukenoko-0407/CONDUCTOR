@@ -6,6 +6,7 @@ platforms = ["linux-64", "win-64"]
 [dependencies]
 numpy = ">=1.26"
 pandas = ">=2.2"
+networkx = ">=3.2"
 python = ">=3.12,<3.13"
 rdkit = ">=2023.9"
 

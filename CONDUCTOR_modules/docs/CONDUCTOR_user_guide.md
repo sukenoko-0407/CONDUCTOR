@@ -17,11 +17,11 @@ python .claude/skills/cs-conductor-runtime/scripts/launch.py state description-c
 
 ## 人間確認
 
-まずA009の`standard_summary.html`冒頭にある主要件数card、Endpointヒストグラム、横長のGlobal／Series／fallback Cluster Boxplotを読みます。個別analysis unit HTMLには所属構造例、Description ID付きA003散布図、A005 Local／Global OOF予測比較図、A007構造、Type-I Top 1化合物とMMPレポートへのlinkがあります。気になるSeries、Cluster、化合物、図、仮説はOn-demandへ依頼します。
+まずA009の`standard_summary.html`冒頭にある主要件数card、Endpointヒストグラム、横長のGlobal／Series／fallback Cluster Boxplotを読みます。個別analysis unit HTMLには所属構造例、Description ID付きA003散布図、A005 Local／Global OOF予測比較図、A007構造、Mode I Top 1化合物のstatic MMP Mapがあります。気になるSeries、Cluster、化合物、図、仮説はOn-demandへ依頼します。
 
-定型A008 Type-Iは各Series／fallback ClusterのTop 1のみを対象にします。上位K化合物を追加評価する場合は、対象となるrun内compound IDを選び、On-demand Type-IIの`--target-compound-id`を複数回指定します。
+定型A008 Mode Iは各analysis unitのTop 1とGlobal Top 1を対象にし、同じ化合物は一つのTargetへ統合して選択元を保持します。追加化合物を評価する場合はRun内compound IDを選び、On-demand Mode Iの`--target-compound-id`を一つ以上指定します。Mode IIはTargetを持たないcanonical MMP Databaseだけを構築します。
 
-A008 Type-I/IIのHTMLはTargetを常にTo、NeighborをFromとして表示し、Favorable deltaもNeighbor→Target方向へ統一します。同一Target–Neighborでは包含関係にある小さいCoreを除きますが、包含関係にないCoreは両方を残します。原本CSV／Databaseは変更しません。Exact CoreごとのcardでFavorable delta上位5件を展開し、各行をNeighbor全体、Target全体、置換前fragment、置換後fragmentの順に確認できます。
+A008 Mode IのInteractive HTMLは、固定構造方向のsigned deltaをDatabaseに保持したまま、Targetを常に表示上の生成物側に置きます。Target基準Δは正値へ反転せず、正ならTargetを支える観測、負なら改善の手掛かりとして読み分けます。この正負はEvidence品質の差ではありません。中央Target―中間Core／Retained anchors―外周NeighborのMapを1-cut／2-cut別に切り替え、Neighbor clickで個別MMP、Core clickで全Neighborと類似Core Evidenceへ移動します。同一Target–Neighborでは包含される小さいCoreをReportだけで除き、canonical CSV／SQLiteは変更しません。
 
 ## parameter変更
 

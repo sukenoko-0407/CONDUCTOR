@@ -12,7 +12,7 @@
 - [Round結果の追加確認](#round結果の追加確認)
 - [Round完走後の終了処理](#round完走後の終了処理)
 - [On-demand解析](#on-demand解析)
-- [MMP Type-II](#mmp-type-ii)
+- [MMP Mode I（明示Target）](#mmp-mode-i明示target)
 
 ## 状態だけを確認
 
@@ -135,8 +135,8 @@ A009の全体・個別レポートとInterpretationを人間が確認済みで�
 通常DAG、Round、既存成果物は変更せず、`on_demand/REQ######/`だけへMarkdown/HTMLと必要な図・表を保存してください。
 ```
 
-## MMP Type-II
+## MMP Mode I（明示Target）
 
 ```text
-`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> のcompound_id `<ID>`を中心としたMMP Type-IIを実行してください。複数の上位化合物を調べる場合は、対象IDごとに`--target-compound-id <ID>`を繰り返してください。REQをprepareした後、専用の`run-mmp --role type-ii --target-compound-id <ID>`を使用してください。再利用する同一RunのType-III `mmp_database.sqlite`を人間が明示した場合だけ`--mmp-database <PATH>`を追加してください。1-cut、radius 0-2とし、観測MMPをありのまま示してください。Near-core参照はTanimoto>=0.70かつ両側MCS coverage>=0.60を満たす場合だけ別枠で表示してください。
+`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> のcompound_id `<ID>`を明示TargetとするA008 MMP Mode Iを実行してください。複数化合物を調べる場合は対象IDごとに`--target-compound-id <ID>`を繰り返してください。REQをprepareした後、`run-mmp --mode target --target-compound-id <ID>`を使用してください。同一RunのMode II `mmp_database.sqlite`を再利用する場合だけ`--mmp-database <PATH>`を追加してください。1-cut／2-cutとradius 0–2を分離し、Target別Interactive HTML、static Map、Evidence CSVを作成してください。Databaseのsigned deltaは変更せず、Favorable方向化はTarget解釈時だけ行ってください。
 ```

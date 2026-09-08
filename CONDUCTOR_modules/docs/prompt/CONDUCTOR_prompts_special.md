@@ -8,10 +8,11 @@
 - [Description Databaseの調査](#description-databaseの調査)
 - [Description recordの限定無効化](#description-recordの限定無効化)
 - [Description calculation versionの確認](#description-calculation-versionの確認)
-- [MMP Type-III](#mmp-type-iii)
+- [MMP Mode II Database](#mmp-mode-ii-database)
 - [監査のみ](#監査のみ)
 - [Reportリンク・件数監査](#reportリンク件数監査)
 - [0.1.10 Release smoke test](#0110-release-smoke-test)
+- [0.1.11 A008 Release smoke test](#0111-a008-release-smoke-test)
 
 ## Failed Node修復
 
@@ -61,10 +62,10 @@ Project <PROJECT_NAME> のDescription Databaseについて、capability <CAPABIL
 CONDUCTOR 0.1.10に含まれる全Description Skillのcapability.jsonをread-onlyで検査してください。`calculation_version`が欠落せず、正の整数文字列であることを確認してください。Project <PROJECT_NAME> を指定した場合は、Description Databaseのrecordに保存されたcalculation versionも照合し、再利用可能・version mismatchの件数をcapabilityごとに示してください。Skill、Database、Runtime Stateは変更しないでください。
 ```
 
-## MMP Type-III
+## MMP Mode II Database
 
 ```text
-`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> の全化合物についてMMP Type-IIIを明示実行してください。REQをprepareした後、専用の`run-mmp --role type-iii`を使用してください。1-cut、radius 0-2とし、Spotfire用の全詳細CSVと集約CSV、正規化SQLiteを派生成果物としてREQ directory内へ保存してください。通常analysis NodeやDAGは変更しないでください。
+`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> の全化合物についてA008 MMP Mode IIを明示実行してください。REQをprepareした後、`run-mmp --mode database`を使用してください。1-cut／2-cut、radius 0–2のTarget非依存canonical SQLiteと、pair detail、Transformation、Context、2-cut品質、Environmentの各CSVをREQ directory内へ保存してください。Target registryやTarget別Reportは作らず、通常analysis NodeやDAGは変更しないでください。
 ```
 
 ## 監査のみ
@@ -83,4 +84,10 @@ Run root <RUN_ROOT> のA009 `report_audit.json`を確認し、Template、local l
 
 ```text
 CONDUCTOR 0.1.10のrelease smoke testを実行してください。順番は、package layout verification、catalog再生成後の差分確認、Schema negative test、Description Database cold/warm/partial-hit test、A003/C012/A009のcontract test、代表fixtureのRuntime Full Auditです。MMPの0.1.11予定機能は検査対象に含めません。失敗時はその場で止め、失敗command、対象test、原因を短く報告してください。結果や一時environmentをGit管理対象へ追加しないでください。
+```
+
+## 0.1.11 A008 Release smoke test
+
+```text
+CONDUCTOR A008 0.1.11のrelease smoke testを実行してください。Mode II Database構築と監査、同Databaseをread-only再利用したMode I、Global Top 1＋analysis unit Top 1の重複除去、1-cut／2-cut分離、Direct／Transferredとexplanation／improvement分類、Target HTMLのTemplate・local link・件数監査、PlaywrightによるDOM／bounding-box／click試験、A009へのstatic SVGだけの接続を確認してください。LLM Visionとscreenshot内容判定は使用しないでください。生成結果はGit管理対象へ追加しないでください。
 ```

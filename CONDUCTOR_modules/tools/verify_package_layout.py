@@ -83,7 +83,9 @@ def main() -> int:
             try:
                 cap=json.loads(cap_path.read_text(encoding="utf-8")); ids.append(cap["capability_id"])
                 if cap.get("skill_name")!=name: errors.append(f"{name}: skill_name mismatch")
-                if cap.get("version")!=VERSION: errors.append(f"{name}: product version mismatch")
+                expected_skill_version = "0.1.11" if name == "cs-analysis-matched-molecular-pairs" else VERSION
+                if cap.get("version") != expected_skill_version:
+                    errors.append(f"{name}: product version mismatch")
                 if cap.get("stage") == "description":
                     calculation_version = cap.get("calculation_version")
                     if not isinstance(calculation_version, str) or not re.fullmatch(
@@ -280,7 +282,13 @@ def main() -> int:
     if profile.get("standard_analysis",{}).get("a003_correlation_threshold")!=0.6: errors.append("A003 correlation threshold must be 0.6")
     if profile.get("standard_analysis",{}).get("descriptor_contrast_descriptions") != ["D001","D012","D015","D016","D019"]:
         errors.append("A003 interpretable Description panel mismatch")
-    if profile.get("standard_analysis",{}).get("mmp_type_i_top_k")!=1: errors.append("standard MMP Type-I must use Top 1")
+    mmp_profile = profile.get("standard_analysis", {})
+    if mmp_profile.get("mmp_cuts") != 2:
+        errors.append("standard MMP must generate and separate 1/2-cut rows")
+    if mmp_profile.get("mmp_neutral_tolerance") != 0.1:
+        errors.append("standard MMP neutral tolerance must be 0.10")
+    if mmp_profile.get("mmp_max_compounds") != 5000:
+        errors.append("standard MMP maximum must be 5000 compounds")
     a006_capability = json.loads(
         (SKILLS / "cs-analysis-series-landscape" / "capability.json")
         .read_text(encoding="utf-8")

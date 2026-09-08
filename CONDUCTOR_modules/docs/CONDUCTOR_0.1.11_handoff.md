@@ -1,314 +1,189 @@
-# CONDUCTOR 0.1.11 A008 MMP大幅更新 引継ぎ・協議事項
+# CONDUCTOR 0.1.11 A008 MMP大幅更新 引継ぎ事項
 
-Status: **MMP専用Version。仕様概要書・実装計画書作成済み、承認待ち・未実装。**
+Status: **A008 Report再設計を実装中。旧A008_v10は人間評価で不合格。**
 
-## 1. 位置付け
+## 1. Version境界
 
-0.1.11はA008 MMPだけを大幅更新するVersionとする。0.1.10追補修正からMMP追加改修を外し、従来0.1.11で検討していたRuntime Supervisor、Endpoint選抜安定性、A005予測安定性、共通runner再編は0.1.12へ移管する。
+- 0.1.10: MMP追加改修を行わず、既存Reportをbaselineとして維持する。
+- 0.1.11: A008 MMP解析、情報抽出、Target improvement、Interactive visualizationを大幅更新する。
+- 0.1.12: Runtime Supervisor、Endpoint選抜安定性、A005予測安定性、共通runner再編を扱う。
 
-- 0.1.10追補: MMP追加改修を行わない。
-- 0.1.11: A008 MMP解析、情報抽出、Report／Interactive visualizationだけを扱う。
-- 0.1.12: [`CONDUCTOR_0.1.12_handoff.md`](CONDUCTOR_0.1.12_handoff.md)の非MMP項目を検討する。
+実装契約は次の二文書を正とする。
 
-0.1.11の実装は、調査、事例dataによる試作、仕様概要書、実装計画書の承認後に開始する。
+- [`CONDUCTOR_0.1.11_specification_overview.md`](CONDUCTOR_0.1.11_specification_overview.md)
+- [`CONDUCTOR_0.1.11_implementation_plan.md`](CONDUCTOR_0.1.11_implementation_plan.md)
 
-## 2. 参照文書
+現行仕様・課題・外部調査は[`research/mmp_transformation_evidence/report-source.md`](research/mmp_transformation_evidence/report-source.md)、初期案は[`research/mmp_transformation_evidence/archive/2026-09-05_v1/report-source.md`](research/mmp_transformation_evidence/archive/2026-09-05_v1/report-source.md)へ保存している。初期案と確定仕様が異なる場合は、上記二つの実装契約を優先する。
 
-- 0.1.11仕様概要書: [`CONDUCTOR_0.1.11_specification_overview.md`](CONDUCTOR_0.1.11_specification_overview.md)
-- 0.1.11実装計画書: [`CONDUCTOR_0.1.11_implementation_plan.md`](CONDUCTOR_0.1.11_implementation_plan.md)
-- 現行仕様、課題、外部調査: [`research/mmp_transformation_evidence/report-source.md`](research/mmp_transformation_evidence/report-source.md)
-- 旧Transformation evidence案: [`research/mmp_transformation_evidence/archive/2026-09-05_v1/report-source.md`](research/mmp_transformation_evidence/archive/2026-09-05_v1/report-source.md)
-- 0.1.10実装済みMMP Report仕様: [`CONDUCTOR_0.1.10_specification_overview.md`](CONDUCTOR_0.1.10_specification_overview.md)
+## 2. 0.1.11の到達目標
 
-## 3. 0.1.11の目的
+A008をTarget周辺MMPの列挙から、次を根拠付きで提供するMMP intelligence toolへ発展させる。
 
-現行A008を、Target周辺MMPを列挙する機能から、次の二つを根拠付きで提供するMMP intelligence toolへ発展させる。
+1. **Positive N2T**: Targetを常に生成物側へ置いた`ΔN2T >= +0.10`のEvidenceを整理する。
+2. **Negative N2T**: 同じTarget固定方向の`ΔN2T <= -0.10`のEvidenceを整理する。
 
-1. **Target explanation**: EndpointがFavorableになる向きをA → Bとしたとき、TargetまたはTarget対応構造がB側にあるEvidenceからFavorable要因を説明する。
-2. **Target improvement opportunity**: 同じA → BにおいてTargetまたはTarget対応構造がA側にあるEvidenceから、実測済み改善NeighborまたはVirtual Candidateを探索する。
+Direct／TransferredはTargetとの接続性、Positive／Negative N2TはTargetを生成物側へ固定したsigned `ΔN2T`による分類であり、独立した軸とする。A/BはTransferred mappingとConsensus集計の内部表現に限定する。TargetがGlobal Top 1かHit-to-LeadのHitかによってrouting規則を変えない。
 
-Direct／TransferredはEvidenceの接続性、explanation／improvementはTargetのA/B位置による解釈役割であり、独立した分類軸とする。
+## 3. 実行Mode
 
-Analysis unitとの接続とMMP解析自体の高度化は、独立した設計軸として扱う。
+| Mode | Contract | 目的 |
+|---|---|---|
+| Mode I | `target` | 明示Target一覧を解析し、Target別ArtifactとInteractive HTMLを生成する |
+| Mode II | `database` | Target非依存のRun全体Canonical MMP Databaseを単独構築する |
 
-## 4. 現時点で確定している方向
+- Mode Iに`standard`／`explicit`等のsubmodeを設けない。
+- CONDUCTOR定型実行では、Orchestratorがanalysis unit Top 1＋Global Top 1を選び、重複除去してMode Iへ明示する。
+- On-demandでは、人間が指定したRun内compound IDをMode Iへ明示する。
+- 同じTargetに複数sourceがあっても、解析とHTMLは一度だけ作り、全`selection_source`を保存する。
+- Mode Iはcompatible Databaseをread-onlyで再利用し、なければMode IIと同じbuilderを内部で一度だけ呼ぶ。標準RuntimeでMode IIとMode Iを二重Node化しない。
+- Mode IIはDatabaseだけを事前構築したい場合に単独実行できる。
+- 旧Type-I／II／IIIは互換adapterだけでMode I／IIへ変換し、新engineに旧分岐を残さない。
+- 正式対応上限は1 Run 5,000化合物とする。
 
-### 4.1 2 Mode化
+## 4. Canonical Databaseと方向
 
-現行Type-I／II／IIIを次へ集約する。
+Canonical DatabaseはTarget非依存かつ構築後immutableとする。Target registry、Target別Evidence、analysis unit membership、Virtual Candidate、Report状態は別Artifactへ保存する。
 
-| Mode | 目的 |
+Databaseではcanonical fragment順に固定した構造方向と`normalized_signed_delta`を保持する。Target別ReportではTargetを表示上の生成物側に固定したsigned `target_oriented_delta`を別途導出し、正方向への反転もDatabase rowの上書きも行わない。
+
+```text
+Higher-is-favorable: Δ(X → Y) = Endpoint(Y) - Endpoint(X)
+Lower-is-favorable:  Δ(X → Y) = Endpoint(X) - Endpoint(Y)
+```
+
+- `|Δ| < 0.10`: neutral
+- `|Δ| >= 0.10`: Target ReportではTargetを生成物側へ置いたsigned `target_oriented_delta`を派生する。正値へ揃えない
+- missingとneutralは方向一致率の分母へ含めず、別件数で示す。
+- 方向一致率は`supporting / (supporting + conflicting)`とする。
+
+Target別Consensus directionは同一Target・cut count・Transformation family内で決める。異なるTransformation familyを横断した多数決は行わない。
+
+1. 当該Transformation familyにExact Target CoreのDirect pairがあれば、その集合だけを基準にし、類似Coreのpairをその方向へalignする。
+2. なければ互換性のある同一Environment class内の非neutral pairを方向別にCountする。
+3. Count降順、attachment label付きcanonical variable fragmentの`from_smiles → to_smiles`昇順でSortし、一番上へ合わせる。
+4. 同数時のmedian判定や`direction ambiguous`分岐は設けない。
+5. Radius-2、Radius-1、Environment mismatchを混ぜない。不一致群は比較referenceとして残す。
+
+Direct Mapでは常にNeighbor → Targetを表示し、signed `target_oriented_delta`を使う。Transformation Evidenceの再現性集計では全pairをConsensusへ揃えたsigned `consensus_aligned_delta`を使い、正をsupporting、負をconflictingとする。`pair_favorable_gain`は互換・補助集計用でありMap表示には使わない。
+
+Database compatibilityは`structure_signature`と`effect_signature`へ分ける。Report Template変更だけでDatabaseを再構築せず、構造signatureが一致する場合は保存済みpairから効果列を再計算できる構成にする。
+
+## 5. 1-cut／2-cut
+
+1-cutをPrimaryなterminal substitutionとして維持し、2-cutを独立したlinker／core replacementとして追加する。`compound_pair_id`はcut非依存、`pair_id`はcut別、`pair_transformation_id`はCore／Transformation別とし、解析、Table／View、集計、Reportを分ける。mmpdbの最大2-cut出力に含まれる1-cutは`cut_count`で確実に分離する。
+
+```text
+A—B—C → A—B'—C
+```
+
+2-cutは二段階で品質管理する。
+
+- `absolute safety floor`: attachment、連結性、mapping unique／symmetry-equivalent、再構成、ring cut、1-cut reducibility、および両Retained anchor各heavy atom 4以上。
+- `standard quality threshold`: retained fraction、variable size。
+
+| 構造品質 | 意味 |
 |---|---|
-| `target` | 人間指定Target、定型analysis unit Top 1、Global Top 1を同じTarget解析経路で処理する |
-| `database` | Run全体のMMP Database、全pair、transform、core、context Summaryを構築する |
+| `2C-A` | standard quality thresholdを満たすTarget非依存の構造候補 |
+| `2C-B` | safety floorは満たすが標準size等に届かないreview reference |
+| `2C-X` | ambiguous／failed mapping、attachment不正、ring cut、1-cut冗長、再構成不正、安全下限未満 |
 
-- 定型Targetには各採用analysis unitのTop 1とGlobal Top 1を含める。
-- 人間が指定したRun内compound IDを主要なTarget指定方法とする。
-- 同じTargetが複数selection sourceから選ばれても、MMP抽出と個別Reportは一度だけ作る。
-- MMP探索母集団はTarget所属unit内ではなくRun全体とする。
-- TargetでMMPが0件でも次順位へ自動補充しない。
-- 旧Type parameterは互換adapterだけで扱い、新実装本体へ分岐を残さない。
+`2C-A／B／X`へTarget適用性、Environment、support、Endpoint方向を混ぜない。Target別評価は`target_evidence_quality = high | limited | not_applicable | ambiguous`へ保存する。2-cutの保持構造はReportで`Exact Core`ではなく`Retained anchors`と表示する。
 
-### 4.2 Favorable方向と解釈役割を分離する
+## 6. Transferred evidence
 
-```text
-EndpointがFavorableになる向き: A → B
+Target自身のeligible fragmentationを作り、Targetの現在のvariable fragmentがObserved TransformationのA側、B側、neither、bothのどれに対応するかをAttachment-constrained MCSで判定する。
 
-TargetがA側: improvement
-TargetがB側: explanation
-```
+| 対応 | 解釈 |
+|---|---|
+| Direct・`ΔN2T >= +0.10` | Positive N2T |
+| Direct・`ΔN2T <= -0.10` | Negative N2T |
+| Transferred・`ΔN2T >= +0.10` | Positive N2T |
+| Transferred・`ΔN2T <= -0.10` | Negative N2T |
+| neither | not applicable reference |
+| both／非同値複数mapping | ambiguous。標準表示しない |
 
-この規則はDirect／Transferredの両方へ適用する。Direct MMPでTarget=AならTarget → 実測Neighbor BというObserved improvementであり、Target=Bなら実測Neighbor A → TargetというTarget explanationである。Transferred evidenceでも、Target対応構造がAならProposed improvement、BならTransferred explanationとなる。
+Evidence classは次の順とする。
 
-内部値`favorable_gain`と表示上のFavorable Δは正値へ揃える。一方、同じ化学変換がcontextにより逆方向へ働く矛盾を検出するため、固定構造方向のsigned deltaとdirection-neutralなTransformation familyもDatabaseへ保持する。現行Type-IIのCSV SummaryとTarget HTMLで方向が一致しない問題も0.1.11で解消する。
+1. Exact-core evidence
+2. Radius-2 matched similar-core evidence
+3. Radius-1 matched related-core evidence
+4. Attachment-mapped but environment-mismatched reference
+5. Ambiguous／excluded
 
-### 4.3 Relationship map
+Environment方向集計はcut count、ordered attachment topology、最大一致radius、canonical Environment signatureが同じgroup内だけで行う。同じradius classでもsignatureが違えば混ぜず、Environment mismatchはTarget向けConsensus directionに使用しない。
 
-0.1.10で試作・確認したTarget中心、Exact Core中間、Neighbor外周のmapを、Direct MMPの基礎Viewとして引き継ぐ。
+初期表示はunique compound pair 3以上、unique Exact Core／Retained-anchor context 2以上、方向一致率0.80以上、mapping unique／symmetry-equivalent、Target Evidence quality highを満たすものに固定する。基準未達はlimitedとして折り畳み、Direct observed pairは件数に関係なく到達可能にする。
 
-- Targetは紺、Exact Coreは緑、Neighborはオレンジ。
-- Neighbor cardにNeighbor側variable fragment、Endpoint、正値のFavorable Δを示す。TargetがBならNeighbor fragmentはBefore、TargetがAならAfterとなる。
-- edgeは常にFavorable方向A → Bとし、Targetへ入る矢印をexplanation、Targetから出る矢印をObserved improvementとして区別する。
-- 3／4／5 Coreの承認済みlayoutをreferenceとする。
-- Report本文幅内の横長表示とし、表示上限超過時は省略数と詳細導線を示す。
+`unique context`は、1-cutではattachment label込みExact Core、2-cutではordered attachment topology込みRetained anchorsの一意数とする。radius、unit、Target違いで水増ししない。hub bias確認用の`disjoint_pair_count`はcompound-pair graphの最大cardinality matchingで算出して示すが、合否には使用しない。
 
-## 5. MMP解析・情報抽出の協議軸
+## 7. Virtual Candidate
 
-### 5.1 Exact Core以外のTransformation evidence
+TargetがA側へ一意に対応するTransferred transformationだけを候補化し、RDKitでsanitize、valence、attachment順、stereochemistry、重複を検証する。
 
-Targetから得られたExact Coreだけでなく、Run全体の別MMPから同じTransformationの情報を利用する。
+- Run内既存化合物と一致した場合はVirtualのまま残さずObserved compoundへ再分類する。
+- 非同値な複数適用siteはsite別に生成し、canonical isomeric SMILESで重複除去する。
+- Endpoint確定値、合成可能性、候補自動採用を主張しない。
+- 根拠pair、Environment、support／conflict、signed delta分布を追跡可能にする。
 
-現時点の候補分類は次である。
+## 8. ReportとA009
 
-- `Exact-core evidence`
-- `Radius-2 matched similar-core evidence`
-- `Radius-1 matched related-core evidence`
-- `Attachment-mapped but environment-mismatched reference`
-- `Ambiguous / excluded`
+Target個別ReportはPCワイド画面の一画面内で操作するoffline Interactive HTMLとする。
 
-Core全体の類似性、Attachment point対応、Environment一致を別々に評価する。
+- 初期Relationship Map: Target中央、1-cut Exact Core／2-cut Retained anchors中間、Neighbor外周。
+- 色: Target紺、Core／anchors緑、Neighborオレンジ。
+- 初期表示: 最大5 Core。Neighbor 5件以下は全件、6件以上は件数Nodeに集約し、Core detailで全件表示。
+- Neighbor click: 全体構造、共通Core、Fragment、両Endpoint、`ΔN2T`、`Align ✓ / ×`を広幅Detail panelへ表示。
+- Core click: 最上段に緑枠Coreと紺枠Targetを横並びにし、Direct Neighbor全件とSimilar Core secondary MapをDetail panelへ表示。
+- 1-cut／2-cutを別Viewで切り替える。
+- 矢印はCore経由の反応を表すのではなく、正負にかかわらずNeighbor → Targetを表す。
+- Core → 類似Core → 個別MMPを辿り、戻るbuttonで一段前へ戻れる。
+- 外部CDN、Web API、serverは不要。JavaScriptは表示操作だけを担当する。
+- 主navigationはRelationship Map／N2T Direction／Core Type／N-Cuts／Data Tableとする。N2T Directionは`ΔN2T >= 0`／`ΔN2T < 0`、Core TypeはExact Core／Similar Core、N-Cutsは1 Cut／2 Cutsのsubtabを持つ。Evidence Guideは右端の補助tabとして維持し、`2C-A／B／X`を説明する。
 
-### 5.2 Attachment mapping
+A009へはInteractive機能を複製しない。
 
-Environmentが異なる場合でも、大局的に同じ変換位置であることを判定できる仕組みを検討する。
+- A009個別analysis unit Report: 当該unit Top 1のstatic Relationship Map。
+- A009全体Summary: Global Top 1のstatic Relationship Map。
+- On-demand Target: A009へ自動追記しない。
+- A009はVersion付き`mmp_report_index.json`からstatic SVGだけを取得する。
 
-第一候補はAttachment-constrained MCSである。
+Interactive HTMLの監査はVersion固定したPlaywrightでDOM、bounding box、text、attribute、event、link、件数を検証する。LLM VisionとScreenshot意味判定は禁止する。
 
-- attachment dummy／labelを保持する。
-- Attachmentを含むMCSだけを許可する。
-- custom atom comparator、seed、final match checkを使用する。
-- 同率MCS mappingを列挙し、unique、symmetry-equivalent、ambiguous、failedへ分類する。
-- MCS対応部分、Attachment、Radius 1/2、非対応部分を色分けする試作図を事例dataで評価する。
+## 9. 実装中checkpoint
 
-Core similarityは候補検索／順位付け、Attachment-constrained MCSは位置対応、Environmentは変換適用可能性と効果差の解釈に使用する。
+実装を開始できない設計上の未確定事項はない。次だけを実装中benchmarkで比較し、人間が固定する。
 
-### 5.3 Environment解析
+1. 2-cutのabsolute safety floorとstandard quality thresholdの数値。
+2. 標準cut SMARTS: `default`、`cut_AlkylChains`、`exocyclic`の比較。
+3. similar CoreのMorgan Tanimoto pre-filterとAttachment-constrained MCS coverage。
+4. HTML 10 MiB以下、初期DOM ready 2秒以内、detail panel更新100 ms以内を守る最大埋め込みEvidence件数。
 
-- radius 0–2を入れ子のcontextとして扱う。
-- 同じpairをradiusごとに重複Evidenceとして数えない。
-- Environment一致は転用可能性の判定だけでなく、Environment差によるeffect反転を理解するためにも使用する。
-- Environment不一致だがAttachment mappingが一意なcaseは、統合Evidenceではなく比較referenceとして扱う方向で検討する。
+checkpointでは件数だけでなく、positive／negative代表構造、既知有用変換coverage、noise、誤mapping、容量・速度をSession内で提示する。これらは解析途中の判断材料であり、A008／A009 Reportへ掲載しない。
 
-### 5.4 Analysis unitとの接続
+各checkpointの採用値と理由は仕様概要書と実装計画書へ追記する。Human checkpoint A～DとサンプルReportの人間確認が完了するまでは、実装完了と宣言しない。
 
-Analysis unit情報はMMP検出の前提にせず、Canonical MMPへ重ねるmetadataとする方向で検討する。
-
-- Target／Neighborの所属unit
-- pairがunit内部、境界、unit外のどこにあるか
-- 同じtransformが複数unitで支持されるか
-- Cross-representation Core／Core／Fringeとの関係
-
-複数unitへの所属行を独立MMP数として重複計上しない。
-
-### 5.5 Target explanation／improvement routing
-
-MMPがTargetへ直接接続するかではなく、Favorable-oriented A → Bのどちら側へTargetが位置するかで解釈する。
-
-| 接続 | Target位置 | 役割 |
-|---|---|---|
-| Direct | A | 実測済みObserved improvement |
-| Direct | B | Target explanation |
-| Transferred | A | Proposed improvement／Virtual Candidate |
-| Transferred | B | Transferred explanation |
-
-Transferred evidenceでTargetがA側に対応する場合は、Targetへ適用可能な変換を探索する。
-
-概念flowは次とする。
-
-```text
-Run全体のobserved transformation
-  → TargetがBefore fragmentを持つか
-  → Target上のAttachment位置をmappingできるか
-  → EnvironmentとCore類似性は十分か
-  → After fragmentへ変換したVirtual Candidate
-  → 根拠pair、効果分布、矛盾を提示
-```
-
-Virtual Candidateは未測定の仮説であり、観測MMPと明確に区別する。
-
-## 6. 1-cut／2-cutの協議
-
-### 6.1 Motivation
-
-1-cutは末端置換の解釈性が高い。一方、2-cutでは概念的に次を扱える。
-
-```text
-A—B—C  →  A—B'—C
-```
-
-2本のbondを切ると、AとCが二つのconstant fragment、中央のB/B'が二点接続variable fragmentになる。これによりlinker replacement、central heterocycle replacement、ring／scaffold replacementの一部を抽出できる可能性がある。
-
-ここで、創薬化学上はBを「core部分」と呼ぶ場合があるが、MMPのfragment表現では交換されるB/B'が`variable`、保持されるAとCが`constant`である。この語義をReportとSchemaで混同しない。
-
-2-cutが特に有効なのは、同じ二つのanchorを保ったlinker長、linker原子、中央heterocycle等の交換である。一方、同じA/Cへ分離できないfused ring再編、標準fragmentationでring bond切断を要する変更、三点以上の接続を保つ変更は、2-cutだけでは安定して表現できない。これらを無理に2-cutへ含めず、Attachment-constrained MCS等の別Evidence classへ回す。
-
-### 6.2 想定noise
-
-- 小さすぎるAまたはCによる意味の薄いmatch
-- 1-cutでも表現できる変換の冗長な2-cut表現
-- variable fragmentが大きすぎ、局所変換と呼びにくいpair
-- attachment label順序、対称性、mappingの曖昧さ
-- contextの異なるpairの混在
-- 2-cut pair数増加によるReport過密化
-- ring bond切断や化学的に不自然なfragmentation
-
-### 6.3 現時点の原則候補
-
-- 1-cutをPrimary、2-cutを独立した`linker/scaffold transformation` classとし、件数と統計を混ぜない。
-- Canonical Databaseには品質条件を満たす2-cutを保存できるが、標準Target Reportへ全件を自動展開しない。
-- 1-cutへ還元できる2-cut表現は1-cutを優先する。
-- 両constant fragment、combined constant、variable fragment、attachment topologyへ明示的なsize／構造条件を置く。
-- attachment mappingがambiguousな2-cutは標準Evidenceから除外する。
-- 2-cutの具体的閾値、ring規則、support条件、表示上限は事例評価後に決める。
-
-これは確定仕様ではなく、次の協議事項である。
-
-### 6.4 情報品質を担保する処理案
-
-2-cutは「検出」「Evidence採用」「標準表示」を別々に制御する。Endpoint差が大きいpairだけを検出時に残すと選抜biasが入るため、構造適格性と効果Evidenceを分離する。
-
-#### Stage 1: 構造候補の生成
-
-- 1-cutと2-cutを別classとして生成し、`cut_count`を必須provenanceにする。
-- 二つのattachment label、向き、constant fragmentの順序をcanonical化する。
-- 対称性により複数mappingが生じる場合は、同値mappingか真の曖昧性かを記録する。
-
-#### Stage 2: Hard structural gate
-
-標準Evidence候補には少なくとも次を要求する方向で検討する。
-
-- variable fragmentは連結成分一つで、attachment pointが正確に二つである。
-- 両constant fragmentがそれぞれ十分なheavy atomを持つ。mmpdbの実装知見では、各constant fragmentの最小heavy atom数を3または4にすると、極小fragmentをanchorとする不要なmultiple-cutを大きく抑えられる。
-- 二つのconstant fragmentを合計した保持構造が、pair両側で十分な割合を占める。
-- B/B'が大きすぎる場合は、局所Transformationではなく広いscaffold changeとして別classへ送る。
-- attachment対応が一意またはsymmetry-equivalentである。ambiguous mappingは標準Evidenceに使わない。
-- valence、芳香族性、stereochemistry、分子内接続を再構成後に検証する。
-- 1-cutへ還元できる表現には`reducible_to_1cut`を付け、標準表示では1-cutを優先する。
-
-`min_heavies_per_constant_fragment`、`minimum_retained_fraction`、`maximum_variable_heavies`等の数値は設定値として保存する。ただし最終値は、実データのpositive／negative caseでprecisionとcoverageを比較してから決める。
-
-#### Stage 3: Canonical化と重複排除
-
-同じcompound pairから複数のcut表現が得られるため、次の順に代表Evidenceを決める。
-
-1. 化学的に同じ変換なら1-cutを優先する。
-2. 2-cut同士では、両anchorが大きく、保持構造割合が高く、mappingが一意な表現を優先する。
-3. 非包含で別の二点変換を表す場合は両方を保持するが、独立pair数はcompound pair単位で重複計上しない。
-
-#### Stage 4: Evidence評価
-
-構造gate通過後に、次を別列で評価する。
-
-- unique compound-pair数
-- unique constant-context数
-- Endpoint deltaの中央値、分布、方向一致率
-- Radius 0/1/2のEnvironment一致
-- Targetへのattachment mapping confidence
-- 支持Evidenceとconflicting Evidence
-
-単一の不透明な総合scoreだけで合否を決めず、まず各根拠を表示可能な列として保持する。Radius違いや複数analysis unit所属を独立Evidenceとして水増ししない。
-
-#### Stage 5: 標準Reportへの掲載
-
-- `1-cut: terminal substitution`と`2-cut: linker/core replacement`を別tab／sectionに分ける。
-- 初期表示は、構造gateを通過し、Targetへ適用位置を一意に対応でき、Evidence品質が高い候補に限定する。
-- 支持数不足だが直接観測された2-cutは、低信頼として折り畳む。曖昧mapping、極小anchor、1-cut冗長表現は標準画面へ出さず、詳細dataまたは除外理由Summaryから確認できるようにする。
-- TargetがFavorable側Bなら、Direct／Transferredを問わずexplanationへ送る。
-- Targetが非Favorable側Aなら、Direct pairは実測済みimprovement、Transferred evidenceはVirtual Candidate候補へ送る。
-- predictionとobservation、DirectとTransferredは独立labelで示す。
-
-### 6.5 暫定品質class
-
-| Class | 意味 | 初期表示 |
-|---|---|---|
-| `2C-A` | 両anchorが十分、mappingが一意、1-cut非冗長、Target context適合、複数Evidenceあり | 表示 |
-| `2C-B` | 構造的には妥当だが、支持数またはEnvironment適合が弱い | 折り畳み |
-| `2C-X` | mapping曖昧、極小anchor、1-cut冗長、再構成不正等 | 非表示／除外理由のみ |
-
-このclassはReportの情報量制御用であり、Databaseから都合の悪いEndpoint結果を消すものではない。
-
-### 6.6 検証方針
-
-件数が増えたことを成功条件にしない。次のfixtureを用意し、標準表示された`2C-A`のprecisionを最優先で確認する。
-
-- A-B-C → A-B'-Cの明確なlinker交換
-- 1-cutへ還元できる冗長な2-cut
-- AまたはCが1～2 heavy atomしかないnoise
-- 対称構造でattachment順序が同値なcaseと曖昧なcase
-- ring切断を要求するcase
-- 同じ2-cut transformが複数contextで同方向／逆方向を示すcase
-- Targetへ適用するとvalenceまたはstereochemistryが破綻するcase
-
-評価指標は、`2C-A`表示精度、既知有用変換のcoverage、1-cut重複率、ambiguous mapping混入率、1 Target当たりの初期表示件数とする。
-
-### 6.7 技術的根拠
-
-[mmpdb公式文書](https://github.com/rdkit/mmpdb)は、1、2、3本のnon-ring bond切断を扱い、cut数と同じ数のconstant fragmentと、一つのvariable fragmentを生成する。2-cut自体は確立したfragmentation表現であり、CONDUCTOR固有の新概念ではない。
-
-一方、[mmpdb changelog](https://github.com/rdkit/mmpdb/blob/master/CHANGELOG.md)も、multiple-cutでは一原子程度の極小constant fragmentや1-cutへ還元できる冗長変換が増えることを明記している。`min-heavies-per-const-frag`と`smallest-transformation-only`が導入されているため、CONDUCTORでも同種のnoise制御を最低条件とし、その上にTarget適用性とReport表示制御を加える。
-
-## 7. Interactive Reportの目標
-
-Target個別ReportはPCワイド画面の`100dvh`相当へ収め、基本情報から複数の深さへ進めるoffline workspaceとする。初期Relationship Map、Neighbor clickによるcompact detail、Core clickによる関連MMP一覧、View切替を一画面内で提供する。
-
-```text
-Target overview / Direct relationship map
-├─ Explanation: Target is favorable-side B
-│  ├─ Direct A → Target B
-│  ├─ Transferred A → Target-like B
-│  └─ Exact Core / Environment detail
-├─ Improvement: Target is less-favorable-side A
-│  ├─ Direct Target A → observed Neighbor B
-│  ├─ Transferred Target A → Virtual Candidate B
-│  └─ Supporting / conflicting pairs
-└─ Explore evidence
-   ├─ Core alignment
-   ├─ Radius 0/1/2
-   ├─ Analysis unit scope
-   └─ Canonical pair detail
-```
-
-表示はprogressive disclosureとし、初期画面へ全MMP Tableを展開しない。HTML内のfilter、sort、toggle、hover、detail drawer等を候補とするが、具体的GUIは事例dataで試作してから承認する。
-
-## 8. 0.1.11で扱わない項目
+## 10. 0.1.11で扱わない項目
 
 - Bounded Runtime Supervisor
 - Endpoint選抜安定性
 - A005予測安定性
 - 共通runner再編
-- MMPと無関係なDescription／Clustering仕様変更
+- MMPと無関係なDescription／Clustering変更
+- 3-cut、一般的ring-cut scaffold hopping、3D binding-site解析
+- Web GUI／API、合成route設計、Endpoint確定予測
 
-これらは0.1.12へ引き継ぐ。
+これらは0.1.12以降の別議論とする。
 
-## 9. 次の協議事項
+## 11. 実装・検証状況（2026-09-06）
 
-1. 2-cutを標準Databaseへ含める条件
-2. 2-cutを標準Target Reportへ表示する条件
-3. 両constant fragmentとvariable fragmentのsize閾値
-4. Attachment mappingのbenchmarkと合否条件
-5. Core similarity metricと閾値
-6. Radius別Evidenceの扱いとeffect反転表示
-7. Target improvement候補のranking項目
-8. Virtual Candidate生成時の化学構造validation
-9. Analysis unit情報を初期表示する範囲
-10. Interactive HTMLの最小機能と最大表示件数
+- Mode I／II、Target非依存SQLite、1-cut／2-cut分離、fixed signed delta、Direct／Transferred Evidence、Virtual Candidate、A009 static Map接続は実装済み。
+- `compound_pair_id`、cut別`pair_id`、Core／Transformation別`pair_transformation_id`を分離した。
+- `disjoint_pair_count`はgreedy近似ではなくcompound-pair graphのmaximum-cardinality matchingで算出する。
+- Target HTMLは最大500 Evidence埋め込みを暫定標準とし、詳細全件はCSV／SQLiteに保持する。
+- ChEMBL JAK2 231化合物のMode II → Mode I Database再利用 → A009接続を実行した。
+- contract／regression test 86件、package verification、A008件数・link・Template監査、A009 Template・link・件数監査はPASSした。
+- 旧`A008_v10` Interactive HTMLは人間評価で不合格。Similar Core画像、全connector破線、Map配置、階層subtab、2C Guide、attachment dummyを除いた最大Core集約、Transferred外部SVGの正しいXML保存、Transformation横断View、Target Connection分類、全data view共通filterを反映した`A008_v24`とA009接続版`A009_v13`を生成し、人間による再評価待ちである。
+
+確認用Artifactは`results/CONDUCTOR/report_validation/RV_CHEMBLE_JAK2_0111/operators/A008_v24/`と`A009_v13/`に生成した。Canonical Databaseは`A008_database_v7/`である。これらはvalidation outputでありGit管理対象外である。
+
+Human checkpoint A～DとReportの人間確認が未完了なので、Releaseとしての実装完了宣言はまだ行わない。

@@ -49,7 +49,7 @@
 | A005 | Multi-Description model | 固定6表現、OOF低容量model |
 | A006 | Landscape | D002 ECFP4、Tanimoto 0.75以上のunit内外cliffとBoundary favorable件数 |
 | A007 | Structural signature | 構造由来は登録Keyのみ、vector由来だけSource Cluster別Murcko/MCS |
-| A008 | MMP | Type-I/II/III、1-cut |
+| A008 | MMP transformation evidence | Mode I＝明示Target解析、Mode II＝Target非依存Database、1-cut／2-cut、Interactive Map |
 | A009 | Standard report | 固定Templateによる全体・個別HTML、Endpoint図、A003／A005図、構造gallery、MMP導線、local link・件数監査 |
 
 ## Interpretation / Control

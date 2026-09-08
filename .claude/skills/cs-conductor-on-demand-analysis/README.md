@@ -14,7 +14,7 @@
 
 `python scripts/launch.py prepare --run-root RUN --request "S000001を詳しく" --explicit-request`
 
-MMP Type-II/IIIはprepare後に`run-mmp`を使います。
+MMP Mode I（明示Target）／Mode II（Target非依存Database）はprepare後に`run-mmp`を使います。
 
 ## 制約事項
 

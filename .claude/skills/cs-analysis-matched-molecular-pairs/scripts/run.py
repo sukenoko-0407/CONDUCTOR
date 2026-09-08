@@ -1537,6 +1537,14 @@ def run() -> int:
             "Usage: run.py --request <execution_request.json>. "
             "Use the Launcher with --conductor-request in managed execution."
         )
+    # The 0.1.11 two-mode contract is implemented in an isolated runner so
+    # completed 0.1.10 Run artifacts and the legacy three-role fixture remain
+    # reproducible. New Runtime requests always contain parameters.mode.
+    request_preview = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+    if "mode" in request_preview.get("parameters", {}):
+        from mmp_0111_runner import execute as execute_0111
+
+        return execute_0111()
     return run_execution_request()
 
 

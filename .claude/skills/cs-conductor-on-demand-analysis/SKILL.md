@@ -12,9 +12,9 @@ allowed-tools: Read, Write, Glob, Grep, Bash
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" prepare --run-root <RUN_ROOT> --request "依頼" --explicit-request
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" add-source --request-dir <REQ_DIR> --source <RUN_ARTIFACT>
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" run-helper --request-dir <REQ_DIR> --script <REQ_DIR>/scratch/check.py
-python "${CLAUDE_SKILL_DIR}/scripts/launch.py" run-mmp --request-dir <REQ_DIR> --role type-ii --target-compound-id <ID>
+python "${CLAUDE_SKILL_DIR}/scripts/launch.py" run-mmp --request-dir <REQ_DIR> --mode target --target-compound-id <ID>
 python "${CLAUDE_SKILL_DIR}/scripts/launch.py" finalize --request-dir <REQ_DIR>
 ```
 
-依頼固有PythonはREQ内`scratch/`へ置ける。固定Pixi環境だけを使い、実行中のnetwork installは禁止。既存metricを推測式で置換せず、追加集計には式、source、filter、scope、分母Nを記録する。Type-II/III MMPは`run-mmp`でREQ内だけへ生成する。
-同一Runの明示済みType-III DatabaseをType-IIで再利用する場合だけ、上記へ`--mmp-database <PATH>`を追加する。自動探索はしない。
+依頼固有PythonはREQ内`scratch/`へ置ける。固定Pixi環境だけを使い、実行中のnetwork installは禁止。既存metricを推測式で置換せず、追加集計には式、source、filter、scope、分母Nを記録する。A008 Mode I／IIは`run-mmp`でREQ内だけへ生成する。
+同一Runの明示済みMode II DatabaseをMode Iで再利用する場合だけ、上記へ`--mmp-database <PATH>`を追加する。Databaseだけを構築する場合は`--mode database`を使う。

@@ -54,7 +54,7 @@ CONDUCTOR: `0.1.10`
 | A005 | Series multi-Description feature model | 固定6 Description panelでGlobalと全SeriesのOOFモデルを一括比較する。 | high |
 | A006 | Series SALI and Cliff landscape | D002 ECFP4/Tanimoto空間でGlobal、SeriesのSALIとinternal／boundary Cliffを一括評価する。 | medium |
 | A007 | Series structural signature | 構造由来Clusterは登録済みKey構造を使い、vector由来ClusterだけMurcko／MCSを導出する。 | medium |
-| A008 | Human-centered matched molecular pair analysis | 1-cut MMPをType-I top compound、Type-II Hit-to-Lead、Type-III databaseとして提供する。 | high |
+| A008 | Target-centred MMP transformation evidence | 1/2-cut canonical MMP databaseとTarget別Transformation evidenceを生成する。 | high |
 | A009 | CONDUCTOR standard Series report | 7 Section Summary、中央配置のEndpoint図、analysis unit構造gallery、A003／A005図、MMP導線を決定論的HTMLへ描画する。 | low |
 
 ## Interpretation

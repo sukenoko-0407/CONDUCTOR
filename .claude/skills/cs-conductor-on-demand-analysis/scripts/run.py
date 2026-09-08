@@ -415,45 +415,63 @@ def project_root() -> Path:
 def run_mmp(args: argparse.Namespace) -> dict[str, Any]:
     request_dir,run_root,request=resolve_request_dir(args.request_dir)
     if request.get("status")!="prepared": raise RuntimeError("MMP can run only while the On-demand request is prepared")
-    control=load_json(Path(request["control_path"])); role=str(args.role).lower()
-    if role not in {"type-ii","type-iii"}: raise ValueError("On-demand MMP role must be type-ii or type-iii")
-    if role=="type-ii" and not args.target_compound_id: raise ValueError("MMP Type-II requires at least one --target-compound-id")
-    if role=="type-iii" and args.target_compound_id:
-        raise ValueError("--target-compound-id is accepted only with --role type-ii")
+    control=load_json(Path(request["control_path"]))
+    legacy_role = str(args.role).lower() if args.role else None
+    mode = str(args.mode).lower() if args.mode else (
+        "target" if legacy_role == "type-ii" else "database" if legacy_role == "type-iii" else ""
+    )
+    if mode not in {"target", "database"}:
+        raise ValueError("On-demand MMP mode must be target or database")
+    if mode=="target" and not args.target_compound_id:
+        raise ValueError("MMP mode=target requires at least one --target-compound-id")
+    if mode=="database" and args.target_compound_id:
+        raise ValueError("--target-compound-id is accepted only with --mode target")
     if int(args.available_cpu_cores) < 1:
         raise ValueError("--available-cpu-cores must be at least 1")
     target_ids = [str(value) for value in (args.target_compound_id or [])]
     if len(target_ids) != len(set(target_ids)):
-        raise ValueError("MMP Type-II --target-compound-id values must be unique")
+        raise ValueError("MMP --target-compound-id values must be unique")
     dataset_path = Path(control["input_path"]).resolve()
     if not dataset_path.is_file() or sha256_file(dataset_path) != control.get("input_sha256"):
         raise RuntimeError("Run input CSV changed after initialization; restore it or start a new Run")
-    output=request_dir/"artifacts"/f"mmp_{role.replace('-','_')}"
+    output=request_dir/"artifacts"/f"mmp_{mode}"
     if output.exists() and any(output.iterdir()): raise FileExistsError(f"MMP output already exists and is not empty: {output}")
-    request_path=request_dir/"scratch"/f"mmp_{role.replace('-','_')}_execution_request.json"; request_path.parent.mkdir(parents=True,exist_ok=True)
+    request_path=request_dir/"scratch"/f"mmp_{mode}_execution_request.json"; request_path.parent.mkdir(parents=True,exist_ok=True)
     request_inputs=[{"role":"dataset","artifact_type":"dataset","path":str(dataset_path),"sha256":sha256_file(dataset_path)}]
     if args.mmp_database:
-        if role != "type-ii": raise ValueError("--mmp-database is accepted only with --role type-ii")
+        if mode != "target": raise ValueError("--mmp-database is accepted only with --mode target")
         database_path=Path(args.mmp_database).expanduser().resolve()
         if not database_path.is_file() or not is_relative_to(database_path,run_root):
-            raise ValueError("--mmp-database must be an existing Type-III SQLite artifact under this run_root")
+            raise ValueError("--mmp-database must be an existing Mode II SQLite artifact under this run_root")
         request_inputs.append({"role":"mmp_database","artifact_type":"mmp_database","path":str(database_path),"sha256":sha256_file(database_path)})
     payload={
         "schema_version":"1.0.0",
         "identity":{"project":control.get("project","on-demand"),"run_id":control["run_id"],"round_id":"ON_DEMAND","node_id":request_dir.name,"attempt_id":"ATT0001","capability_id":"A008","skill_name":"cs-analysis-matched-molecular-pairs"},
         "inputs":request_inputs,
         "columns":control["columns"],"endpoint":{"higher_is_better":bool(control["higher_is_better"])},"subject":{"mode":"on_demand"},
-        "parameters":{"role":role,"target_compound_ids":target_ids,"cuts":1,"radius_min":0,"radius_max":2},
+        "parameters":{
+            "mode":mode,
+            "targets":[
+                {"compound_id":target_id,"selection_sources":[
+                    {"source_type":"human_explicit","source_id":request_dir.name}
+                ]}
+                for target_id in target_ids
+            ],
+            "cuts":2,"radius_min":0,"radius_max":2,
+            "neutral_tolerance":0.1,"near_core_tanimoto":0.7,
+            "near_core_mcs_coverage":0.7,"max_compounds":5000,
+            "max_embedded_evidence":500,
+        },
         "resources":{"available_cpu_cores":int(args.available_cpu_cores),"node_cpu_cores":int(args.available_cpu_cores),"native_thread_limit":1,"skill_options":{}},
         "output":{"directory":str(output.resolve()),"overwrite":False},"created_at":utc_now(),
     }
     write_json(request_path,payload)
     launcher=project_root()/".claude"/"skills"/"cs-analysis-matched-molecular-pairs"/"scripts"/"launch.py"
-    log=request_dir/"scratch"/f"mmp_{role.replace('-','_')}.log"
+    log=request_dir/"scratch"/f"mmp_{mode}.log"
     with log.open("w",encoding="utf-8") as handle:
         completed=subprocess.run([sys.executable,str(launcher),"--conductor-request",str(request_path)],cwd=project_root(),stdout=handle,stderr=subprocess.STDOUT,check=False)
     if completed.returncode:
-        raise RuntimeError(f"MMP {role} failed (exit={completed.returncode}); inspect {log}")
+        raise RuntimeError(f"MMP {mode} failed (exit={completed.returncode}); inspect {log}")
     event=output/"execution_event.json"
     if not event.is_file(): raise FileNotFoundError(f"MMP did not produce execution_event.json: {event}")
     artifacts=[path.relative_to(run_root).as_posix() for path in output.rglob("*") if path.is_file()]
@@ -463,7 +481,7 @@ def run_mmp(args: argparse.Namespace) -> dict[str, Any]:
         previous=list(load_json(generated_path).get("artifacts") or [])
     combined=sorted(set(previous)|set(artifacts))
     write_json(generated_path,{"schema_version":"1.0.0","request_id":request_dir.name,"artifacts":combined,"created_at":utc_now()})
-    return {"status":"succeeded","request_id":request_dir.name,"role":role,"output_dir":str(output),"artifact_count":len(artifacts),"log":str(log)}
+    return {"status":"succeeded","request_id":request_dir.name,"mode":mode,"legacy_role":legacy_role,"output_dir":str(output),"artifact_count":len(artifacts),"log":str(log)}
 
 
 def resolve_source(value: str, run_root: Path) -> Path:
@@ -912,11 +930,13 @@ def parser() -> argparse.ArgumentParser:
     helper_parser.add_argument("script_args", nargs=argparse.REMAINDER)
     helper_parser.set_defaults(handler=run_helper)
 
-    mmp_parser=subparsers.add_parser("run-mmp",help="Run managed Type-II/III MMP inside this REQ directory.")
+    mmp_parser=subparsers.add_parser("run-mmp",help="Run managed A008 MMP target analysis or database build inside this REQ directory.")
     mmp_parser.add_argument("--request-dir",required=True)
-    mmp_parser.add_argument("--role",required=True,choices=["type-ii","type-iii"])
+    mmp_mode_group=mmp_parser.add_mutually_exclusive_group(required=True)
+    mmp_mode_group.add_argument("--mode",choices=["target","database"])
+    mmp_mode_group.add_argument("--role",choices=["type-ii","type-iii"],help="Legacy 0.1.10 adapter; prefer --mode.")
     mmp_parser.add_argument("--target-compound-id",action="append")
-    mmp_parser.add_argument("--mmp-database",help="Optional explicit Type-III mmp_database.sqlite from this Run; Type-II only.")
+    mmp_parser.add_argument("--mmp-database",help="Optional explicit Mode II mmp_database.sqlite from this Run; target mode only.")
     mmp_parser.add_argument("--available-cpu-cores",type=int,default=8)
     mmp_parser.set_defaults(handler=run_mmp)
 
