@@ -286,7 +286,7 @@ class Version0110Contracts(unittest.TestCase):
         self.assertEqual(capability["implementation"]["round_participation"], "forbidden")
         self.assertEqual(capability["implementation"]["dag_registration"], "forbidden")
 
-    def test_prompt_library_covers_0110_daily_and_recovery_workflows(self) -> None:
+    def test_prompt_library_covers_0111_daily_and_recovery_workflows(self) -> None:
         prompt_root = MODULES / "docs" / "prompt"
         daily = (prompt_root / "CONDUCTOR_prompts_daily.md").read_text(
             encoding="utf-8"
@@ -296,13 +296,16 @@ class Version0110Contracts(unittest.TestCase):
         )
         for phrase in (
             "入力Preflight", "同じRoundの再開", "Series条件Matrixの選択",
-            "Series support結果の確認", "Round完走後の終了処理",
+            "Prepared Roundの承認", "Series support結果の確認",
+            "Round完走結果の確認", "MMPレポートの確認",
+            "Round完走後の終了処理",
             "approve-series", "select-series-configuration", "accept-round",
         ):
             self.assertIn(phrase, daily)
         for phrase in (
             "Failed Node修復", "Description calculation versionの確認",
-            "Reportリンク・件数監査", "0.1.10 Release smoke test",
+            "Reportリンク・件数監査", "MMP個別Report監査",
+            "HPCからのReport持ち出し確認", "0.1.10基盤Regression smoke test",
             "LLM Vision", "audit --mode full",
         ):
             self.assertIn(phrase, special)

@@ -1,4 +1,4 @@
-# CONDUCTOR 0.1.10 特別対応プロンプト集
+# CONDUCTOR 0.1.11 特別対応プロンプト集
 
 - [Failed Node修復](#failed-node修復)
 - [中断されたrunning Nodeの回収](#中断されたrunning-nodeの回収)
@@ -11,7 +11,9 @@
 - [MMP Mode II Database](#mmp-mode-ii-database)
 - [監査のみ](#監査のみ)
 - [Reportリンク・件数監査](#reportリンク件数監査)
-- [0.1.10 Release smoke test](#0110-release-smoke-test)
+- [MMP個別Report監査](#mmp個別report監査)
+- [HPCからのReport持ち出し確認](#hpcからのreport持ち出し確認)
+- [0.1.10基盤Regression smoke test](#0110基盤regression-smoke-test)
 - [0.1.11 A008 Release smoke test](#0111-a008-release-smoke-test)
 
 ## Failed Node修復
@@ -80,14 +82,26 @@ Run root <RUN_ROOT> に対してRuntime `audit --mode full`を実行し、結果
 Run root <RUN_ROOT> のA009 `report_audit.json`を確認し、Template、local link、canonical成果物との件数照合がすべてPASSか報告してください。続けてRuntime `audit --mode full`を実行しますが、Stateへのregister、Round進行、Report再生成は行わないでください。失敗時は壊れた参照または不一致項目と期待値・実値だけを示してください。LLM Vision、screenshot比較、目視判定は使用しないでください。
 ```
 
-## 0.1.10 Release smoke test
+## MMP個別Report監査
 
 ```text
-CONDUCTOR 0.1.10のrelease smoke testを実行してください。順番は、package layout verification、catalog再生成後の差分確認、Schema negative test、Description Database cold/warm/partial-hit test、A003/C012/A009のcontract test、代表fixtureのRuntime Full Auditです。MMPの0.1.11予定機能は検査対象に含めません。失敗時はその場で止め、失敗command、対象test、原因を短く報告してください。結果や一時environmentをGit管理対象へ追加しないでください。
+Run root <RUN_ROOT> の最新A008 Mode Iをread-onlyで監査してください。`mmp_report_audit.json`、Target別browser audit、`mmp_report_index.json`を確認し、Target registryとの件数、HTML／CSV／static Mapのlocal link、外部SVGが相対pathで存在して正しいSVG XMLであることを検証してください。Interactive HTMLではRelationship Mapの非重複、TransformationのAll／Direct／Transferred、N2T Direction、Target Connection、N-Cuts、Data Table、Evidence Guide、全data viewへのcut・品質filter適用をPlaywrightで確認してください。LLM Visionとscreenshot内容判定、Report再生成、Runtime State変更は行わないでください。
+```
+
+## HPCからのReport持ち出し確認
+
+```text
+Run root <RUN_ROOT> の確認対象Report directory <REPORT_DIR>を別PCへコピーできる単位としてread-onlyで検査してください。HTML単体ではなく、参照するCSV、JSON、SVG、assets directoryを含む相対path bundleであること、絶対path・file URI・欠損local linkがないことを確認し、コピーすべき最小のdirectory rootを示してください。Archive作成やファイル移動は行わないでください。
+```
+
+## 0.1.10基盤Regression smoke test
+
+```text
+CONDUCTOR 0.1.11の基盤Regression smoke testとして、0.1.10由来の共通機能を検証してください。順番は、package layout verification、catalog再生成後の差分確認、Schema negative test、Description Database cold/warm/partial-hit test、A003/C012/A009のcontract test、代表fixtureのRuntime Full Auditです。A008固有機能は次の「0.1.11 A008 Release smoke test」で別に検証してください。失敗時はその場で止め、失敗command、対象test、原因を短く報告してください。結果や一時environmentをGit管理対象へ追加しないでください。
 ```
 
 ## 0.1.11 A008 Release smoke test
 
 ```text
-CONDUCTOR A008 0.1.11のrelease smoke testを実行してください。Mode II Database構築と監査、同Databaseをread-only再利用したMode I、Global Top 1＋analysis unit Top 1の重複除去、1-cut／2-cut分離、Direct／Transferredとexplanation／improvement分類、Target HTMLのTemplate・local link・件数監査、PlaywrightによるDOM／bounding-box／click試験、A009へのstatic SVGだけの接続を確認してください。LLM Visionとscreenshot内容判定は使用しないでください。生成結果はGit管理対象へ追加しないでください。
+CONDUCTOR A008 0.1.11のrelease smoke testを実行してください。Mode II Database構築と監査、同Databaseをread-only再利用したMode I、Global Top 1＋analysis unit Top 1の重複除去、1-cut／2-cut分離、Direct／Transferred、signed `ΔN2T`、Transformation横断View、Target Connection分類、最大Core集約、Target HTMLのTemplate・local link・件数・外部SVG XML監査、PlaywrightによるDOM／bounding-box／click／全data view filter試験、A009へのstatic SVGだけの接続を確認してください。LLM Visionとscreenshot内容判定は使用しないでください。生成結果はGit管理対象へ追加しないでください。
 ```

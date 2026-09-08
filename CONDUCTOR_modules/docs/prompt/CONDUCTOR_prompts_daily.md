@@ -1,8 +1,9 @@
-# CONDUCTOR 0.1.10 日常プロンプト集
+# CONDUCTOR 0.1.11 日常プロンプト集
 
 - [状態だけを確認](#状態だけを確認)
 - [入力Preflight](#入力preflight)
 - [新規Run](#新規run)
+- [Prepared Roundの承認](#prepared-roundの承認)
 - [同じProjectで別EndpointのRun](#同じprojectで別endpointのrun)
 - [同じRoundの再開](#同じroundの再開)
 - [analysis unit数超過の承認](#analysis-unit数超過の承認)
@@ -10,6 +11,8 @@
 - [Series条件の明示変更](#series条件の明示変更)
 - [Series support結果の確認](#series-support結果の確認)
 - [Round結果の追加確認](#round結果の追加確認)
+- [Round完走結果の確認](#round完走結果の確認)
+- [MMPレポートの確認](#mmpレポートの確認)
 - [Round完走後の終了処理](#round完走後の終了処理)
 - [On-demand解析](#on-demand解析)
 - [MMP Mode I（明示Target）](#mmp-mode-i明示target)
@@ -25,7 +28,7 @@ Runtimeの`query`だけを実行し、現在のRound状態、required_action、�
 ## 入力Preflight
 
 ```text
-CONDUCTOR 0.1.10のRunを開始せず、次の入力をread-onlyで事前確認してください。
+CONDUCTOR 0.1.11のRunを開始せず、次の入力をread-onlyで事前確認してください。
 入力CSV: <ABSOLUTE_CSV_PATH>
 compound ID列: <ID_COLUMN>
 SMILES列: <SMILES_COLUMN>
@@ -39,7 +42,7 @@ Project（Program名）: <PROJECT_NAME>
 ## 新規Run
 
 ```text
-`cs-conductor-orchestrator` SkillをMain Agentで使用し、CONDUCTOR 0.1.10の新規Runを開始してください。
+`cs-conductor-orchestrator` SkillをMain Agentで使用し、CONDUCTOR 0.1.11の新規Runを開始してください。
 入力CSV: <ABSOLUTE_CSV_PATH>
 compound ID列: <ID_COLUMN>
 SMILES列: <SMILES_COLUMN>
@@ -54,6 +57,12 @@ min_ff_evaluate: <未指定なら10>
 Leiden resolution: <未指定なら1.0>
 
 全Descriptionと全標準Clusteringを基本計算し、C001/A002、C012、A003-A009、軽量Interpretation、Full Auditまで同じRoundで進めてください。Descriptionは同じProjectのDatabaseを再利用し、missだけを計算してください。Descriptionごとの高コスト承認は求めません。新しいRoundを自動開始しないでください。
+```
+
+## Prepared Roundの承認
+
+```text
+Run root <RUN_ROOT> のPrepared Roundについて、Main Agentが提示したobjective、入力、Project、Endpoint方向、並列Node数、CPU数、Wall Time、min_ff_evaluate、Leiden resolutionを確認しました。この内容で現在のRoundを承認します。Runtime `query`でrequired_actionが`AUTHORIZE_ROUND`であり、提示済みrequest_fileと同一であることを確認してから`authorize-round`し、同じRoundを開始してください。異なる内容なら実行せず、差分を報告してください。新しいRoundは作らないでください。
 ```
 
 ## 同じProjectで別EndpointのRun
@@ -78,7 +87,7 @@ compound IDとcanonical SMILESの不一致はfail-fastとしてください。�
 ```text
 `cs-conductor-orchestrator` SkillをMain Agentで使用してください。
 Run root: <RUN_ROOT>
-現在のRuntime required_actionを確認し、PAUSEDまたはACTIVEの同じRoundだけを再開してください。Failed Nodeはdiagnosticを示し、実装修正後に同じNode IDをretryしてください。新しいRoundは開始しないでください。
+現在のRuntime required_actionを確認してください。RoundがACTIVEで有効なLeaseがない場合だけ、同じRoundを`resume-round`してください。PAUSEDなら`resume-round`せず、追加Wall Timeが必要であることを報告してください。Failed Nodeはdiagnosticを示し、実装修正後に同じNode IDをretryしてください。`AWAIT_HUMAN_REVIEW`またはCLOSEDのRoundを再開せず、新しいRoundも開始しないでください。
 ```
 
 ## analysis unit数超過の承認
@@ -118,6 +127,20 @@ Run root <RUN_ROOT> のA009 `standard_summary.html`と個別Reportを確認し�
 質問: <FINDING/SERIES/CLUSTER/COMPOUNDと依頼内容>
 ```
 
+## Round完走結果の確認
+
+```text
+`cs-conductor-orchestrator` SkillをMain Agentで使用してください。
+Run root: <RUN_ROOT>
+Runtime `query`だけを実行し、required_actionが`AWAIT_HUMAN_REVIEW`であることを確認してください。A009 standard_summary・個別Report、A008 MMP index・Target別Interactive HTML、Interpretation、登録済みFull Auditの所在と成否を短く整理してください。Reportや画像の再生成、Round終了、On-demand解析、LLM Visionやscreenshot判定は行わないでください。人間が確認すべきリンクを提示したところで停止してください。
+```
+
+## MMPレポートの確認
+
+```text
+Run root <RUN_ROOT> の最新A008 `mmp_report_index.json`と監査結果をread-onlyで確認してください。Targetごとに選択元、Direct／Transferred件数、1-cut／2-cut件数、Interactive HTMLとstatic Mapへのpathを示してください。Interactive HTMLにRelationship Map、Transformation、N2T Direction、Target Connection、N-Cuts、Data Table、Evidence Guideがあり、相対参照SVG、local link、件数監査がPASSしているか報告してください。Report再生成、Runtime State変更、LLM Vision、screenshot内容判定は行わないでください。
+```
+
 ## Round完走後の終了処理
 
 ```text
@@ -138,5 +161,5 @@ A009の全体・個別レポートとInterpretationを人間が確認済みで�
 ## MMP Mode I（明示Target）
 
 ```text
-`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> のcompound_id `<ID>`を明示TargetとするA008 MMP Mode Iを実行してください。複数化合物を調べる場合は対象IDごとに`--target-compound-id <ID>`を繰り返してください。REQをprepareした後、`run-mmp --mode target --target-compound-id <ID>`を使用してください。同一RunのMode II `mmp_database.sqlite`を再利用する場合だけ`--mmp-database <PATH>`を追加してください。1-cut／2-cutとradius 0–2を分離し、Target別Interactive HTML、static Map、Evidence CSVを作成してください。Databaseのsigned deltaは変更せず、Favorable方向化はTarget解釈時だけ行ってください。
+`cs-conductor-on-demand-analysis`を使い、Run root <RUN_ROOT> のcompound_id `<ID>`を明示TargetとするA008 MMP Mode Iを実行してください。複数化合物を調べる場合は対象IDごとに`--target-compound-id <ID>`を繰り返してください。REQをprepareした後、`run-mmp --mode target --target-compound-id <ID>`を使用してください。同一RunのMode II `mmp_database.sqlite`を再利用する場合だけ`--mmp-database <PATH>`を追加してください。1-cut／2-cutとradius 0–2を分離し、Target別Interactive HTML、static Map、Evidence CSVを作成してください。Databaseの固定構造方向とsigned deltaは変更せず、ReportではTargetを常に生成物側に置いてsigned `ΔN2T`を示してください。正負を一律に反転しないでください。
 ```
