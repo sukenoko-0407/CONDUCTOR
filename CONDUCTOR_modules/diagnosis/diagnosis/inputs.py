@@ -32,6 +32,7 @@ class Config:
     neighbor_k: list[int]
     n_clusters_grid: list[int]
     max_cuts_per_molecule: int
+    n_permutations: int
     n_jobs: int
     output_dir: str
     aggregate_only: bool
@@ -68,6 +69,7 @@ def load_config(path: str) -> Config:
         neighbor_k=list(analysis.get("neighbor_k", [5, 10, 20])),
         n_clusters_grid=list(analysis.get("n_clusters_grid", [10, 20, 40])),
         max_cuts_per_molecule=int(analysis.get("max_cuts_per_molecule", 2000)),
+        n_permutations=int(analysis.get("n_permutations", 20)),
         n_jobs=int(n_jobs),
         output_dir=raw.get("output", {}).get("dir", "./diagnosis_output"),
         aggregate_only=bool(raw.get("output", {}).get("aggregate_only", True)),

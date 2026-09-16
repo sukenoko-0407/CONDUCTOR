@@ -41,43 +41,36 @@ project_patterns:
 
 ---
 
-## B. 実データでの較正が必要
+## B. 実データでの較正 【完了】
 
-**本マシンでは実施できない。** 診断用プロトタイプを別ブランチで構築し、実データ環境で実行した結果を持ち帰る方式で埋める（F-2）。
+2026-09-16 に診断モジュールを実データへ適用し、**B 群は解決した**。
+全数値と根拠は [`calibration_results.md`](calibration_results.md)。
 
-| # | 項目 | 出所 |
+| # | 項目 | 確定値 |
 |---|---|---|
-| B-1 | 局所平坦性 λ の閾値 | feature_space_roles |
-| B-2 | 近傍サイズ k（固定か密度適応か） | feature_space_roles |
-| B-3 | 翻訳の判別精度閾値（AUC） | feature_space_roles |
-| B-4 | 各レンズの段階A スクリーン閾値 | discovery_lenses |
-| B-5 | 段階B の足切り水準 θ₁ / θ₂ | candidate_generation |
-| B-6 | 文脈の最小サイズ下限 | candidate_generation |
-| B-7 | Jaccard 重複排除の閾値 | candidate_generation |
-| B-8 | 分位分割の刻み | candidate_generation |
-| B-9 | 深堀予算（深度3・分岐3・15回）の妥当性 | deep_dive_protocol |
-| B-11 | L3 の consensus 要求数 | discovery_lenses |
-| B-12 | 電子効果の EWG / EDG 区分閾値 | deep_dive_protocol 3.3 |
-| B-13 | 許容性判定の分散閾値 | endpoint_model 6 |
-| B-14 | 分散縮小の検出閾値（分散比） | discovery_lenses 0.1 |
-| B-15 | L7 の転写性判定に使う Spearman ρ の閾値 | discovery_lenses L7 |
-| B-16 | Similar core 判定の Tanimoto 下限と MCS coverage 下限 | discovery_lenses L2 |
-| B-17 | Cliff 判定の距離下限と Endpoint 差下限（構造空間ごと） | feature_space_roles 3.4 |
-| B-18 | L1a が実際に成立する空間があるか（全クラスタでの λ 分布） | feature_space_roles 4.2 |
+| B-0 | 測定ノイズ | σ ≈ 0.10 / σ_diff ≈ 0.14 / 信頼性 0.86 |
+| B-1 | λ の閾値 | 0.5 を平坦の目安とする（全空間で λ 中央値 0.61〜0.68） |
+| B-2 | 近傍サイズ k | k=10 を既定（k 依存性は小さい） |
+| B-4 | レンズ別スクリーン閾値 | Cliff \|Δ\| ≥ 0.42 / Tanimoto ≥ 0.75 |
+| B-11 | L3 の consensus 要求数 | 2空間（全空間が同等の λ のため妥当） |
+| B-13 | 許容性の分散上限 | σ² ≤ 0.02 |
+| B-14 | 分散縮小の検出閾値 | σ_diff² = 0.02 を基準とする |
+| B-15 | L7 の Spearman ρ 閾値 | 系列ペア 2,085 件あり、\|ρ\| ≥ 0.5 で運用可能 |
+| B-17 | Cliff の距離下限 | Tanimoto ≥ 0.75（該当 3,587 ペア） |
+| B-18 | L1a は実在するか | **不在。レンズから外す** |
 
-### B-0. 測定ノイズ 【情報なし】
+### 未測定のまま残る項目
 
-主 Endpoint は EC50、副次 Endpoint は WT と変異種の Fold change。**反復測定データは無い。**
+| # | 項目 | 扱い |
+|---|---|---|
+| B-3 | 文脈の翻訳 AUC | 診断で未実装。実装時に実測する |
+| B-5 | 段階B の足切り水準 θ₁ / θ₂ | 候補プールの実サイズを見てから決める |
+| B-6 / B-7 / B-8 | 文脈カタログのサイズ・重複排除・分位刻み | ダイジェストに含めていなかった。実装時に実測 |
+| B-9 | 深堀予算 | 初期案のまま運用し、実行後に調整 |
+| B-12 | EWG / EDG の区分閾値 | 実装時に Hammett 表と部分電荷から決める |
+| B-16 | Similar core の Tanimoto / MCS coverage 下限 | 診断で skip された。必要なら再測定 |
 
-ノイズ水準が不明なため、「効果あり」とみなす最小差を事前に置けない。診断モジュールで次を代替推定する。
-
-```text
-1. 同一化合物の重複測定があれば、その分散を直接推定
-2. 無ければ、ほぼ同一構造のペア（Tanimoto ≈ 1.0 だが別 ID）の Endpoint 差を下限推定として使う
-3. MMP における「変化なし」ペア群の分散分布から、ノイズ床を推定
-```
-
-3 は許容性判定（B-13）と同じデータを使う。ノイズ床が決まれば B-13、B-14 が連動して決まる。
+いずれも設計の骨格を変える性質のものではない。
 
 ---
 

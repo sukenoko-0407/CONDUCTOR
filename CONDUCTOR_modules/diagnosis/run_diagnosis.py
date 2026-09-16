@@ -25,7 +25,8 @@ from typing import Any, Callable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from diagnosis import (  # noqa: E402
-    digest, endpoints, independence, inputs, landscape, report, structure, transforms,
+    confounders, contexts, digest, dryrun, endpoints, fragments, independence,
+    inputs, landscape, report, structure, transforms,
 )
 
 
@@ -66,6 +67,7 @@ def main() -> int:
         ds = inputs.make_synthetic_dataset()
         outdir = "./diagnosis_output_selftest"
         descriptor_set, neighbor_k, clusters, max_cuts, n_jobs = "fast", [5, 10], [5, 10], 300, 1
+        n_perm = 3
         print(f"[selftest] 合成データ {ds.n} 化合物で実行します")
     else:
         cfg = inputs.load_config(args.config)
@@ -76,6 +78,7 @@ def main() -> int:
         clusters = cfg.n_clusters_grid
         max_cuts = cfg.max_cuts_per_molecule
         n_jobs = cfg.n_jobs
+        n_perm = cfg.n_permutations
         print(f"[input] {ds.n} 化合物を読み込みました（並列 {n_jobs}）")
 
     t_start = time.time()
@@ -95,6 +98,15 @@ def main() -> int:
            results, outdir)
     _stage("independence", "非独立性と実効標本サイズ",
            lambda: independence.run(ds), results, outdir)
+    _stage("fragments", "フラグメント統計と λ_frag（L2b の成否）",
+           lambda: fragments.run(ds, max_cuts), results, outdir)
+    _stage("contexts", "文脈カタログのサイズ・重複度・翻訳可能性",
+           lambda: contexts.run(ds, descriptor_set, clusters, n_jobs), results, outdir)
+    _stage("confounders", "交絡の強さ",
+           lambda: confounders.run(ds), results, outdir)
+    _stage("dryrun", f"パイプラインのドライラン（並べ替え {n_perm} 回）",
+           lambda: dryrun.run(ds, descriptor_set, clusters, n_jobs, max_cuts, n_perm),
+           results, outdir)
 
     meta = {
         "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),

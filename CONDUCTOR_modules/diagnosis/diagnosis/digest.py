@@ -36,6 +36,10 @@ def render(results: dict[str, Any], meta: dict[str, Any]) -> str:
     ls = results.get("landscape", {}) or {}
     ind = results.get("independence", {}) or {}
     inp = results.get("input", {}) or {}
+    frg = results.get("fragments", {}) or {}
+    ctx = results.get("contexts", {}) or {}
+    cnf = results.get("confounders", {}) or {}
+    dry = results.get("dryrun", {}) or {}
 
     A("=== CONDUCTOR DIAG DIGEST ===")
     A(f"V 0.2.1 | N {inp.get('retained_compounds', '-')} | SET {meta.get('descriptor_set')} | {meta.get('elapsed_sec')}s")
@@ -158,6 +162,79 @@ def render(results: dict[str, Any], meta: dict[str, Any]) -> str:
     s = ind.get("summary", {})
     if s:
         A(f"NEFF {s.get('n_effective_min')}-{s.get('n_effective_max')} / {s.get('n_compounds')}")
+
+    # --- フラグメント統計（L2b の成否） ---
+    cov = frg.get("fragment_context_coverage", {})
+    if cov:
+        A("[FRAG] L2b の前提: フラグメントは文脈を跨いで繰り返すか")
+        A(f"distinct={frg.get('n_distinct_fragments','-')} "
+          f"cov_med={cov.get('median','-')} cov_max={cov.get('max','-')}")
+        A(f"in1={cov.get('n_in_1_context','-')} in2plus={cov.get('n_in_2plus','-')} "
+          f"in5plus={cov.get('n_in_5plus','-')} in10plus={cov.get('n_in_10plus','-')}")
+        lf = frg.get("lambda_fragment", {})
+        if "lambda_frag" in lf:
+            A(f"lambda_frag={_n(lf['lambda_frag'])} nfrag={lf.get('n_fragments','-')}")
+        else:
+            A(f"lambda_frag ERR {lf.get('error','')}")
+        wv = frg.get("within_fragment_variation", {})
+        if wv:
+            A(f"within_sd med={_n(wv.get('median_sd'))} p90={_n(wv.get('p90_sd'))} "
+              f"n={wv.get('n_fragments','-')}")
+        sd = frg.get("series_depth", {})
+        if sd:
+            A(f"depth med={sd.get('median','-')} max={sd.get('max','-')} "
+              f"ge5={sd.get('n_ge5','-')} ge10={sd.get('n_ge10','-')} ge20={sd.get('n_ge20','-')}")
+
+    # --- 文脈カタログと翻訳可能性 ---
+    if ctx:
+        A("[CTX] 文脈カタログ")
+        bp = ctx.get("by_provenance", {})
+        A(f"total={ctx.get('n_contexts_total','-')} cluster={bp.get('cluster','-')} "
+          f"quantile={bp.get('quantile','-')} scaffold={bp.get('scaffold','-')}")
+        sz = ctx.get("size_distribution", {})
+        if sz:
+            A(f"size med={sz.get('median','-')} ge10={sz.get('n_ge10','-')} "
+              f"ge30={sz.get('n_ge30','-')} ge100={sz.get('n_ge100','-')}")
+        rd = ctx.get("redundancy", {})
+        if rd:
+            A(f"jaccard med={_n(rd.get('median'))} p99={_n(rd.get('p99'))} "
+              f"ge09={rd.get('n_pairs_ge_0_9','-')} "
+              f"dup_ctx={rd.get('n_contexts_with_a_near_duplicate_0_9','-')}")
+        tr = ctx.get("translation", {})
+        if "auc_median" in tr:
+            A(f"translate auc_med={_n(tr['auc_median'])} p10={_n(tr.get('auc_p10'))} "
+              f"ge070={_n(tr.get('fraction_auc_ge_0_70'))} "
+              f"ge080={_n(tr.get('fraction_auc_ge_0_80'))} n={tr.get('n_contexts_evaluated','-')}")
+        else:
+            A(f"translate ERR {tr.get('error','')}")
+
+    # --- 交絡 ---
+    if cnf:
+        g = cnf.get("global_confounder_r2", {})
+        A("[CONF] 交絡の強さ")
+        A(f"global_r2={_n(g.get('r2'))} all_tier1_r2={_n(cnf.get('all_tier1_r2'))}")
+        ind_c = cnf.get("individual", {})
+        A(" ".join(f"{k}={_n(v.get('pearson_r'))}" for k, v in ind_c.items()) or "-")
+        w = cnf.get("within_scaffold_confounder_r2", {})
+        if "median" in w:
+            A(f"within_scaffold_r2 med={_n(w['median'])} p90={_n(w.get('p90'))} "
+              f"n={w.get('n_scaffolds_evaluated','-')}")
+
+    # --- ドライラン（最重要） ---
+    lenses = dry.get("lenses", {})
+    if lenses:
+        A(f"[DRY] ドライラン perm={dry.get('n_permutations','-')} "
+          f"ctx={dry.get('n_contexts','-')} series={dry.get('n_series','-')}")
+        A("lens obs(3閾値) null_block(3閾値) enrich(3閾値)")
+        for lens, rows in lenses.items():
+            obs = "/".join(str(r["observed"]) for r in rows)
+            nb = "/".join(str(r["null_block_mean"]) for r in rows)
+            ng = "/".join(str(r["null_global_mean"]) for r in rows)
+            en = "/".join(
+                "-" if r["enrichment_vs_block_null"] is None
+                else str(r["enrichment_vs_block_null"]) for r in rows
+            )
+            A(f"{lens} obs={obs} nb={nb} ng={ng} enr={en}")
 
     failed = [k for k, v in results.items() if isinstance(v, dict) and "error" in v]
     if failed:
