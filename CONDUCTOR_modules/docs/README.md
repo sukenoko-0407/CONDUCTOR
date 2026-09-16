@@ -4,10 +4,13 @@ CONDUCTOR 0.2.1 の設計文書です。**協議中であり、未承認・未�
 
 まず [`CONDUCTOR_0.2.1_specification_overview.md`](CONDUCTOR_0.2.1_specification_overview.md) を読んでください。全体像と決定事項はそこにあります。
 
+**実装を担当する方**は [`CONDUCTOR_0.2.1_implementation_plan.md`](CONDUCTOR_0.2.1_implementation_plan.md) から読んでください。読む順序、実装順序、確定パラメータ、受け入れ基準がまとまっています。
+
 ## 各論
 
 | 文書 | 内容 |
 |---|---|
+| [`design/calibration_results.md`](design/calibration_results.md) | **実データ較正結果。全パラメータの根拠** |
 | [`design/endpoint_model.md`](design/endpoint_model.md) | Endpoint レジストリ、欠測パターン診断、MPO 拡張点、許容性 |
 | [`design/feature_space_roles.md`](design/feature_space_roles.md) | 特徴量空間の二役割、局所平坦性、条件付き平坦性、文脈の翻訳 |
 | [`design/discovery_lenses.md`](design/discovery_lenses.md) | 6つの発見レンズ（L1〜L6）の詳細仕様 |
@@ -32,11 +35,13 @@ Local LLM に求めるのは「賢いこと」ではなく「倦まず大量に�
 ## 工程
 
 ```text
-① 仕様概要書の最終化   ← 現在地
-② 実装計画書の作成・最終化
-③ 実装                  ← 別 Agent へ委託
+① 仕様概要書の最終化      完了
+② 実装計画書の作成・最終化  ← 現在地
+③ 実装                     別 Agent へ委託
 ```
 
 ③ の担当 Agent は設計議論に参加していないため、② は設計意図を知らない実装者が仕様どおりに実装できる水準まで具体化する。
 
-実装計画書は未着手です。先に [`design/open_questions.md`](design/open_questions.md) の未決事項を詰めます。閾値類（B 群）は本マシンで較正できないため、ブランチ `0.2.1_diagnosis` に診断用プロトタイプを構築し、実データ環境での実行結果を持ち帰る方式を想定しています（F-6）。
+閾値類は `CONDUCTOR_modules/diagnosis/` の診断モジュールを実データへ適用して確定済みです。結果は [`design/calibration_results.md`](design/calibration_results.md)。
+
+診断モジュールを本解析パイプラインへ組み込む（診断 → パラメータ自動設定 → 本解析）のは **0.2.2** で行います。0.2.1 では独立した計測ツールとして維持します。
