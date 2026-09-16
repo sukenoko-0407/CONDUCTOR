@@ -11,6 +11,21 @@ input:
   # SMILES 列
   smiles_column: "smiles"
 
+# ----------------------------------------------------------------------------
+# transform の選び方（最も間違えやすい設定です）
+#
+#   列に入っている値                          transform        変換後
+#   ----------------------------------------  ---------------  ---------------
+#   すでに pEC50 / pIC50 へ変換済み（例 8.2）  "none"           そのまま
+#   生の EC50 / IC50 を nM で保持（例 6.3）    "neg_log10"      pEC50 へ
+#   fold change などの比（例 25.0）            "log10"          log 比へ
+#
+# 対数変換済みの値へさらに neg_log10 を適用すると、
+# pEC50 5〜10 が 8.30〜8.00 に潰れます（5 log の幅が 0.3 になる）。
+# 値の見た目が元と似ているため目視では気づけません。
+# 計測は一度きりなので、この不整合を検出したら実行を停止します。
+# ----------------------------------------------------------------------------
+
 endpoints:
   # 解析対象の Endpoint を列挙します。
   # 評価系が変わって別カラムに分かれている場合は、それぞれ別 Endpoint として登録してください。
@@ -18,21 +33,19 @@ endpoints:
   - endpoint_id: "EP_EC50_CURRENT"
     column: "ec50_current"
     role: "primary"          # primary | secondary
-    # 値の変換。none | neg_log10 | log10
-    # nM 単位の EC50/IC50 をそのまま入れる場合は neg_log10 を指定してください
-    transform: "neg_log10"
+    transform: "none"        # ← すでに pEC50 の場合。生の nM なら "neg_log10"
     higher_is_better: true   # transform 適用後の向き
 
   - endpoint_id: "EP_EC50_LEGACY"
     column: "ec50_legacy"
     role: "secondary"
-    transform: "neg_log10"
+    transform: "none"
     higher_is_better: true
 
   - endpoint_id: "EP_FOLD_WT_MUT"
     column: "fold_change_wt_mut"
     role: "secondary"
-    transform: "log10"
+    transform: "log10"       # ← 生の倍率の場合。すでに log 比なら "none"
     higher_is_better: true
 
 analysis:

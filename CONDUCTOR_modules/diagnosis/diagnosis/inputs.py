@@ -89,6 +89,59 @@ def _apply_transform(values: pd.Series, transform: str) -> np.ndarray:
     return out
 
 
+def _check_transform(
+    spec: EndpointSpec, raw: np.ndarray, out: np.ndarray
+) -> list[str]:
+    """transform の指定が入力値のスケールと整合するかを検査する。
+
+    最も危険なのは「すでに対数変換済みの値へさらに neg_log10 を適用する」場合で、
+    変換後の値が元と似た大きさになるため目視では気づけない。
+    例: pEC50 5〜10 へ neg_log10 を適用すると 8.30〜8.00 となり、
+        5 log の幅が 0.3 に潰れる。
+    """
+    issues: list[str] = []
+    r = raw[np.isfinite(raw)]
+    o = out[np.isfinite(out)]
+    tag = f"[{spec.endpoint_id}] 列 '{spec.column}' / transform: \"{spec.transform}\""
+    if r.size < 5:
+        return issues
+
+    r_med = float(np.median(r))
+    r_min, r_max = float(np.min(r)), float(np.max(r))
+    o_range = float(np.max(o) - np.min(o)) if o.size else 0.0
+
+    if spec.transform in ("neg_log10", "log10"):
+        # 変換前がすでに対数スケールらしい（狭い範囲・小さい値・負値を含む）
+        looks_logged = (r_max <= 20.0 and r_min >= -5.0 and (r_max - r_min) <= 12.0)
+        if looks_logged:
+            issues.append(
+                f"{tag}\n"
+                f"  変換前の値: 最小 {r_min:.2f} / 中央 {r_med:.2f} / 最大 {r_max:.2f}\n"
+                f"  → すでに対数スケールに見えます。さらに変換すると範囲が "
+                f"{o_range:.2f} へ潰れます（変換前の幅は {r_max - r_min:.2f}）。\n"
+                f"  → 対数変換済みなら transform: \"none\" にしてください。"
+            )
+        elif o_range < 0.5:
+            issues.append(
+                f"{tag}\n"
+                f"  変換後の範囲が {o_range:.3f} しかありません。スケール指定を確認してください。"
+            )
+
+    if spec.transform == "none":
+        # 生の濃度を無変換で入れている疑い
+        positive = r[r > 0]
+        if positive.size >= 5:
+            ratio = float(np.max(positive) / np.min(positive))
+            if ratio > 1000.0 and r_med > 1.0:
+                issues.append(
+                    f"{tag}\n"
+                    f"  値が {ratio:.0f} 倍の幅を持ち、中央値が {r_med:.3g} です。\n"
+                    f"  → 生の濃度（nM 等）をそのまま入れている可能性があります。\n"
+                    f"  → その場合は transform: \"neg_log10\" にしてください。"
+                )
+    return issues
+
+
 @dataclasses.dataclass
 class Dataset:
     """診断で使う正規化済みデータ。compound ID は索引としてのみ保持する。"""
@@ -162,9 +215,26 @@ def load_dataset(cfg: Config) -> Dataset:
     issues["retained_compounds"] = len(ids)
 
     endpoints: dict[str, np.ndarray] = {}
+    problems: list[str] = []
     for spec in cfg.endpoints:
+        raw = pd.to_numeric(df[spec.column], errors="coerce").to_numpy(dtype=float)
         transformed = _apply_transform(df[spec.column], spec.transform)
         endpoints[spec.endpoint_id] = transformed[keep_idx]
+        problems.extend(_check_transform(spec, raw, transformed))
+
+    if problems:
+        raise SystemExit(
+            "\n".join(
+                ["", "=" * 66, "transform の設定が入力値と合っていない可能性があります。",
+                 "一度きりの計測なので、ここで停止します。", "=" * 66, ""]
+                + problems
+                + ["", "config.yaml の transform を修正して再実行してください。",
+                   "  すでに pEC50 / pIC50 等へ対数変換済み  -> transform: \"none\"",
+                   "  nM 単位の生の EC50 / IC50            -> transform: \"neg_log10\"",
+                   "  比・倍率（fold change）              -> transform: \"log10\"",
+                   ""]
+            )
+        )
 
     return Dataset(
         ids=ids,
