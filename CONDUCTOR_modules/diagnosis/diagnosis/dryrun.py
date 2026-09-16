@@ -271,12 +271,15 @@ def run(
     t_t = [2.0, 3.0, 4.0]
 
     def screen(ep: np.ndarray) -> dict[str, dict[str, int]]:
+        # favorable は Endpoint から毎回導出する。原本のマスクを使い回すと
+        # L6 だけ並べ替えが効かず、帰無が観測値と一致してしまう。
+        fav = ((ep >= cut) if spec.higher_is_better else (ep <= cut)) & np.isfinite(ep)
         return {
             "L1b": screen_l1b(ep, contexts, dists, global_var, lam_t),
             "L2b": screen_l2b(ep, series, t_t),
             "L3": screen_l3(ep, dists, global_var, z_t),
             "L5": screen_l5(ep, contexts, tier1, axis_of, q_t),
-            "L6": screen_l6(ep, contexts, favorable, q_t),
+            "L6": screen_l6(ep, contexts, fav, q_t),
         }
 
     import sys as _sys
@@ -297,15 +300,7 @@ def run(
     null_block: list[dict] = []
     for _p in range(n_permutations):
         null_global.append(screen(permute_global(endpoint, rng)))
-        ep_b = permute_within_blocks(endpoint, blocks, rng)
-        fav_b = ((ep_b >= cut) if spec.higher_is_better else (ep_b <= cut)) & np.isfinite(ep_b)
-        null_block.append({
-            "L1b": screen_l1b(ep_b, contexts, dists, global_var, lam_t),
-            "L2b": screen_l2b(ep_b, series, t_t),
-            "L3": screen_l3(ep_b, dists, global_var, z_t),
-            "L5": screen_l5(ep_b, contexts, tier1, axis_of, q_t),
-            "L6": screen_l6(ep_b, contexts, fav_b, q_t),
-        })
+        null_block.append(screen(permute_within_blocks(endpoint, blocks, rng)))
         if (_p + 1) % 5 == 0 or _p + 1 == n_permutations:
             _log(f"並べ替え {_p + 1}/{n_permutations} 完了 "
                  f"（経過 {(_time.time() - t0) / 60:.1f} 分）")
