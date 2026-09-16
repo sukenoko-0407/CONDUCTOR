@@ -24,7 +24,7 @@ claim:                        # 主張。型に従う
   subject_type: transformation  # transformation | compound | space | feature | cluster | region
   subject_id: T_00871
   condition_id: CTX_00213     # 条件 C。複合条件なら配列
-  condition_depth: 1          # 1 または 2
+  condition_depth: 1          # 0.2.1 では常に 1。深度2は 0.2.2 の検討事項
   effect_direction: positive  # positive | negative | emergent | flip
   effect_size: 0.62           # 単位はレンズ依存（log unit / λ / r / odds ratio）
   effect_unit: log_endpoint
@@ -216,7 +216,7 @@ Phase 6 で次を機械検証する。
 ## 9. 未決事項
 
 1. Finding ID の採番規則（Run 内通番か、レンズ別か）
-2. 複合条件（深度2）の `condition_id` 表現
+2. （0.2.2 送り: 複合条件（深度2）の `condition_id` 表現）
 3. レンズ間で重複する Finding の統合規則（同じ現象を L2 と L5 が別々に検出した場合）
 4. `effect_size` をレンズ横断で比較可能にする正規化の要否
 5. narrative の長さ上限
