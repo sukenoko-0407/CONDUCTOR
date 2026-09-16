@@ -4,7 +4,7 @@ CONDUCTOR 0.2.1 の設計文書です。**協議中であり、未承認・未�
 
 まず [`CONDUCTOR_0.2.1_specification_overview.md`](CONDUCTOR_0.2.1_specification_overview.md) を読んでください。全体像と決定事項はそこにあります。
 
-**実装を担当する方**は [`CONDUCTOR_0.2.1_implementation_plan.md`](CONDUCTOR_0.2.1_implementation_plan.md) から読んでください。読む順序、実装順序、確定パラメータ、受け入れ基準がまとまっています。
+**実装を担当する方**は [`CONDUCTOR_0.2.1_implementer_brief.md`](CONDUCTOR_0.2.1_implementer_brief.md) から読んでください。読む順序、着手前に作る文書、守るべき制約がまとまっています。
 
 ## 各論
 

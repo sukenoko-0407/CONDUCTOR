@@ -106,6 +106,31 @@ L1a / L3 / L6 は**診断指標として計算し報告してよい**。ただ�
 **診断モジュール**（`CONDUCTOR_modules/diagnosis/`）は 0.2.1 に含まれる計測ツールである。
 本解析パイプラインへの組み込みは 0.2.2 で行う。0.2.1 では独立したツールとして維持する。
 
+### 3.1 既存 0.1.x 資産の処遇 【段階0 として最初に実施すること】
+
+リポジトリには 0.1.x の実装が残っている。**着手前に仕分けること。**
+削除ではなく `Archive/` へ退避し `.gitignore` へ追加する（ドキュメントと同じ方式）。
+
+| 対象 | 処遇 |
+|---|---|
+| `.claude/skills/cs-compute-description-*`（19個） | **保持。そのまま流用する** |
+| `.claude/skills/cs-analysis-*`（10個） | **退避。** A001〜A009 は 0.2.1 に存在しない |
+| `.claude/skills/cs-compute-clustering-*`（11個） | **退避。** 0.2.1 は凝集型1手法のみで、`cs-context-builder` に内包する |
+| `.claude/skills/cs-conductor-orchestrator` / `cs-conductor-runtime` | **退避。** Phase 構成が変わるため再実装する |
+| `.claude/skills/cs-conductor-on-demand-analysis` | **退避。** 0.2.1 では On-demand を定義していない |
+| `CONDUCTOR_modules/catalog/*.json` | **退避して作り直す。** 0.1.x の Capability（A/C/I/O）を参照している |
+| `CONDUCTOR_modules/schemas/*.json` | **退避して作り直す。** 0.2.1 は Finding 中心の契約になる |
+| `CONDUCTOR_modules/tools/description_database.py` | **保持。そのまま流用する** |
+| `CONDUCTOR_modules/tools/runtime_controller.py` | **退避。** 再実装する |
+| `CONDUCTOR_modules/tools/verify_package_layout.py` | **退避して作り直す。** 検証対象が変わる |
+| `CONDUCTOR_modules/tools/install_into_project.py` | 保持し、新しいレイアウトに合わせて更新する |
+| `CONDUCTOR_modules/tests/` | **退避。** 0.1.x の契約テストである |
+| `CONDUCTOR_modules/diagnosis/` | **保持。触らない** |
+
+退避したものを参照して実装しないこと。**0.1.x の思想は引き継がない。**
+流用すると明記した資産（Description Skill、Description Database、
+MMP canonical database、Attachment 制約付き MCS）だけを使う。
+
 ---
 
 ## 4. モジュール構成
@@ -379,12 +404,21 @@ series_key -> {fragment_smiles: [compound_index, ...]}
 
 | 種類 | 生成元 |
 |---|---|
-| クラスタ所属 | 全 Clustering × 全 Description |
+| クラスタ所属 | **average-linkage 凝集型** × 全 Description × クラスタ数 grid |
 | 特徴量の範囲分割 | Tier 1/2 特徴量の分位点分割 |
 | 骨格クラス | Murcko / MCS / BRICS / RECAP |
-| 活性域 | frontier / 中域 / 低域（**L6 廃止に伴い診断目的のみ**） |
+| 活性域 | frontier / 中域 / 低域（**L6 廃止に伴い診断目的のみ。レンズの条件には使わない**） |
 
 #### 5.1.1 クラスタリングの仕様
+
+**手法は average-linkage 凝集型の1種類のみとする。** 0.1.x は Butina / DBSCAN / Leiden /
+Louvain 等 6 手法を持っていたが、0.2.1 では使わない。理由は次の2点である。
+
+- 較正は凝集型のみで実施し、**270 文脈という数と、8章の受け入れ基準（enrichment）は
+  この構成に基づいている**。手法を増やすと文脈数が数倍になり、較正値と比較できなくなる
+- 手法の多様性が「切り口の多様性」に寄与するかは未測定である
+
+複数手法の導入は 0.2.2 で、診断により有効性を確認してから判断する。
 
 | 項目 | 値 |
 |---|---|

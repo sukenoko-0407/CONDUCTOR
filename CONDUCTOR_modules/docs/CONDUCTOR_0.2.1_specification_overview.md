@@ -193,7 +193,7 @@ Program 別 Description Database による再利用（0.1.10 の設計）は健�
 
 | 種類 | 生成元 | 概数 |
 |---|---|---|
-| クラスタ所属 | 全 Clustering × 全 Description | 数百 |
+| クラスタ所属 | average-linkage 凝集型 × 全 Description × クラスタ数 grid | 較正実測で約 200 |
 | 特徴量の範囲分割 | 解釈可能特徴量の分位点分割 | 数百 |
 | 骨格クラス | Murcko / MCS / BRICS / RECAP | 数十 |
 | 活性域 | frontier / 中域 / 低域 | 数個 |
