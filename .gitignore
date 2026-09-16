@@ -43,6 +43,10 @@ dist/
 # Generated CONDUCTOR results and archived working data
 /Archive/
 /CONDUCTOR_modules/Archive/
+/CONDUCTOR_modules/docs/archive_0.1.x/
+/CONDUCTOR_modules/diagnosis/diagnosis_output/
+/CONDUCTOR_modules/diagnosis/diagnosis_output_selftest/
+/CONDUCTOR_modules/diagnosis/config.yaml
 /data/description_database/
 results/
 outputs/*

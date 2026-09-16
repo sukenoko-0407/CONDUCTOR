@@ -1,0 +1,63 @@
+# CONDUCTOR 0.2.1 診断モジュール設定
+#
+# このファイルを config.yaml へコピーして編集してください。
+# 列名は実データに合わせて変更してください。
+
+input:
+  # 入力 CSV の絶対パス
+  csv_path: "/path/to/your/sar_data.csv"
+  # compound ID 列
+  id_column: "compound_id"
+  # SMILES 列
+  smiles_column: "smiles"
+
+endpoints:
+  # 解析対象の Endpoint を列挙します。
+  # 評価系が変わって別カラムに分かれている場合は、それぞれ別 Endpoint として登録してください。
+  # （統合はしません。重なりの有無を診断で測ります。）
+  - endpoint_id: "EP_EC50_CURRENT"
+    column: "ec50_current"
+    role: "primary"          # primary | secondary
+    # 値の変換。none | neg_log10 | log10
+    # nM 単位の EC50/IC50 をそのまま入れる場合は neg_log10 を指定してください
+    transform: "neg_log10"
+    higher_is_better: true   # transform 適用後の向き
+
+  - endpoint_id: "EP_EC50_LEGACY"
+    column: "ec50_legacy"
+    role: "secondary"
+    transform: "neg_log10"
+    higher_is_better: true
+
+  - endpoint_id: "EP_FOLD_WT_MUT"
+    column: "fold_change_wt_mut"
+    role: "secondary"
+    transform: "log10"
+    higher_is_better: true
+
+analysis:
+  # 記述子空間の計算範囲
+  #   fast  : RDKit 2D, Morgan, MACCS, AtomPair, TopologicalTorsion, RDKit fragment
+  #           （数分。まずこれで全体像を掴む）
+  #   full  : fast に加えて Mordred 2D 相当の拡張記述子
+  #           （数十分。L1a の探索範囲を広げたい場合）
+  # 3D / xTB / ChemBERTa は診断では計算しません（時間対効果が低いため）。
+  descriptor_set: "fast"
+
+  # 局所平坦性 λ の近傍サイズ。複数指定すると k 依存性を測れます（B-2）。
+  neighbor_k: [5, 10, 20]
+
+  # クラスタリング（L1a / L1b 判定用）。診断では軽量な2手法のみ使います。
+  n_clusters_grid: [10, 20, 40]
+
+  # MMP fragmentation の上限（1分子あたりの切断組合せ数の上限。爆発防止）
+  max_cuts_per_molecule: 2000
+
+  # 並列プロセス数。null で CPU コア数 - 1 を自動使用
+  n_jobs: null
+
+output:
+  # 出力先ディレクトリ
+  dir: "./diagnosis_output"
+  # レポートに構造・compound ID を含めない（既定 true のまま変更しないでください）
+  aggregate_only: true
