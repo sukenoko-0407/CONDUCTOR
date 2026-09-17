@@ -859,6 +859,8 @@ T01 は必須実装とし、骨格クラス、置換基heavy atom数、極性（
 
 LLM providerは `llm.command` に設定したローカルコマンドとJSONL stdin/stdoutで通信する。schema違反・timeout・process失敗は同一論理callを最大2回再試行し、全再試行失敗後は当該Findingをnarrativeなしで保持してRunを続行する。`failed_logical_calls / attempted_logical_calls > llm.max_failure_fraction`（既定0.20）の場合だけPhaseを失敗させる。未設定commandはLLMを必要とするPhaseの設定エラーとする。fallback文章は生成しない。
 
+参照実装は、Ubuntu CPU機上で動作する`CONDUCTOR_modules/local_llm_provider/provider.py`と、別GPU機上の承認済み`vllm serve` OpenAI互換APIの組合せとする。providerは推論engineを内包せず、固定した`/v1/chat/completions` endpointへ接続する。接続先hostnameをallowlistし、非loopback HTTP、URL埋込みcredential、redirect、proxyを既定で拒否する。API keyは環境変数からだけ取得する。model運用値に基づき固定・記録したsampling parameter、固定seed、`chat_template_kwargs.enable_thinking=false`、`llm_response.schema.json`を用いたJSON Schema structured outputを指定する。vLLM xgrammarが未対応の`uniqueItems`は生成用schemaからだけ除外し、同じ一意性をproviderの事後検証で強制する。greedy decodingやbit単位のLLM出力再現性は要求しない。vLLM版、served model名、model/deployment revision、量子化、prompt版とhash、provider config hashの宣言値をprovider stderrへ出し、呼出側は成功callのstderrもattempt logへ保持する。開発機の擬似OpenAI互換server testはJSONL/HTTP契約だけを検証し、実modelの3タスクprobeを代替しない。全てのDescription計算、統計検定、template実行、状態判定、引用検証はCPU機上で行い、GPU serverへ委譲しない。
+
 ### 7.10 段階10: 統合と報告
 
 ```text

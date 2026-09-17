@@ -1,0 +1,9 @@
+schema_version: '0.2.1'
+
+# CPU機上の絶対pathへ置き換えたうえで、defaults.yamlへ重ねて
+# resolved_config.yamlを作成してください。LLM推論は別GPU機のvLLM APIで行います。
+llm:
+  command: '"<PYTHON>" "<PROJECT_ROOT>/CONDUCTOR_modules/local_llm_provider/provider.py" --config "<PROJECT_ROOT>/CONDUCTOR_modules/local_llm_provider/provider_config.json"'
+  timeout_seconds: 300
+  schema_retries: 2
+  max_failure_fraction: 0.20

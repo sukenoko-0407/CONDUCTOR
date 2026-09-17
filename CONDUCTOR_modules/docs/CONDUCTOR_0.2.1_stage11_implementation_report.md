@@ -42,7 +42,14 @@ L7 の系列平均差は R 基 label 並べ替えでは不変になるため、�
 ### 外部入力を要するもの
 
 1. 較正961化合物の実データで L2b、L5、L1b、全 lens、K=10 を再現する。
-2. `llm.command` に実際の offline provider を設定し、Phase 5〜6を end-to-end 実行する。
+2. Ubuntu CPU機で`llm.command`とvLLM接続設定を行い、別GPU機上の実modelへ3タスクをprobeした後、Phase 5〜6をend-to-end実行する。
+
+### Local LLM provider準備状況
+
+- 別GPU機上の承認済み`vllm serve` OpenAI互換APIへ接続する標準ライブラリ実装を`CONDUCTOR_modules/local_llm_provider/`へ追加した。接続先固定、credentialの環境変数取得、proxy/redirect拒否、JSON Schema structured outputを含む。
+- JSONL 1入力/1出力、固定・記録したmodel推奨sampling、固定seed、response schema拘束、request ID、task別出力、citation IDをfail-closedで検証する。
+- model hash、量子化、backend版、prompt hash、provider config hashをstderrへ出し、Skill attempt logへ保持するようにした。
+- 開発機ではWindows Application Controlがuv管理Pythonを拒否したため、JSONとGit差分の静的検証まで実施した。擬似OpenAI互換serverによる3タスクtestと、CPU機から実GPU modelへのprobeは未実施である。
 
 ### 実装適合性の完了項目
 

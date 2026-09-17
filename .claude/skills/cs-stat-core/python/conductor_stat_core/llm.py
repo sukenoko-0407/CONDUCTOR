@@ -6,6 +6,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,11 @@ def call_local_jsonl(
             validate_instance(response, response_schema)
             if response["request_id"] != request["request_id"]:
                 raise ValueError("Local LLM response request_id mismatch")
+            if completed.stderr:
+                # Successful providers may emit immutable model/prompt metadata.
+                # Preserve it in the enclosing Skill attempt log instead of
+                # silently discarding the provider's stderr.
+                print(completed.stderr, file=sys.stderr, end="" if completed.stderr.endswith("\n") else "\n")
             return response, attempt
         except Exception as exc:
             errors.append(f"attempt {attempt}: {exc}")

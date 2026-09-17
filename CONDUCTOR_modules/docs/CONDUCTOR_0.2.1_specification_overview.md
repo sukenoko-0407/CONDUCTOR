@@ -501,6 +501,8 @@ providerはJSONL stdin/stdoutで通信し、1 requestにつきschema-validなJSO
 
 プロンプト文書の存在だけではproviderの実装完了を意味しない。本番Runの前に `llm.command` を設定し、3タスク全てのschema、timeout、終了code、stdout純度をprobeしなければならない。
 
+参照構成は、Ubuntu CPU機上の`CONDUCTOR_modules/local_llm_provider/provider.py`と、別GPU機上の承認済み`vllm serve` OpenAI互換APIの組合せとする。Description計算、統計検定、template実行、状態判定、引用検証はCPU機で行い、GPU serverはLLM推論だけを担当する。擬似OpenAI互換server testは通信契約だけを確認するものであり、CPU機から実modelへ行う3タスクprobeを置き換えない。
+
 ## 11. Endpoint と MPO 対応
 
 > **単一 Endpoint で確実に仕事ができることを最優先とする。ただし多目的最適化（MPO）へ拡張できる構造で作る。**

@@ -55,6 +55,7 @@ dist/
 /CONDUCTOR_modules/diagnosis/diagnosis_output/
 /CONDUCTOR_modules/diagnosis/diagnosis_output_selftest/
 /CONDUCTOR_modules/diagnosis/config.yaml
+/CONDUCTOR_modules/local_llm_provider/provider_config.json
 /data/description_database/
 results/
 outputs/*

@@ -867,6 +867,8 @@ L5 で次を確認する。**並べ替え実装の正しさを最も鋭く検出
 
 内部LLM promptはprovider実装の入力であり、文書だけではPhase 5/6を実行できない。正式較正・本番相当確認の前に、`llm.command`を設定したoffline providerへ3タスクのfixtureを送り、次を検証する。
 
+本番構成では、Ubuntu CPU機上の`CONDUCTOR_modules/local_llm_provider/`を、別GPU機上の承認済み`vllm serve` OpenAI互換APIへ接続する参照実装とする。全ての決定論的計算はCPU機で行い、GPU serverはLLM推論だけを担当する。擬似OpenAI互換serverによる契約testは許容するが、正式受入前にはCPU機から実vLLM modelへ3タスクを各1回probeする。
+
 - request 1行に対してresponse JSON objectが1行だけ返る
 - `request_id`が保持される
 - `llm_response.schema.json`へ適合する

@@ -23,7 +23,8 @@ Status: **0.2.1 正式運用テンプレート。**
 - 設定済み閾値をRun中に下げない。`needs_design_review` では停止して報告する。
 - 既存Run rootを上書きしない。再開時だけ、同じRun IDと同じRun rootを使用する。
 - Phase 5/6を実行するRunでは、`llm.command` が設定済みであることを開始前に確認する。fallback文章は生成しない。
-- 外部APIやWeb検索へデータを送らない。Local LLMはオフラインで運用する。
+- CONDUCTORと全決定論的計算はUbuntu CPU機で実行し、LLM推論だけを承認済みの別GPU機上の`vllm serve`へ依頼する。`CONDUCTOR_modules/local_llm_provider/provider.py`はCPU機上で動作する。開発機上のfixture testは通信契約の確認だけであり、実modelの3タスクprobeを代替しない。
+- Evidenceを承認済みの内部vLLM endpoint以外へ送らない。外部APIやWeb検索を使用しない。
 
 ## 2. 置換項目
 
@@ -124,6 +125,10 @@ SMILES列: <SMILES_COLUMN>
 
 ### 3.3 Local LLM providerのPreflight
 
+事前準備は、`../../local_llm_provider/README.md`および`../../config/local_llm.api.example.yaml`を参照する。このPreflightは、CONDUCTORを実行するUbuntu CPU機から、実modelを載せた承認済みGPU vLLM endpointに対して行う。GPU modelの起動や配置をCPU機で行う必要はない。
+
+`llm.command`はMCP serverの登録ではない。CONDUCTORがLLMを1回呼ぶたびにCPU機上で起動するprovider executableのcommand lineであり、Execution側はrequest JSON 1行をproviderのstdinへ渡し、response JSON 1行をstdoutから受け取る。参照providerは、別GPU機で稼働する`vllm serve`のOpenAI互換`/v1/chat/completions`へHTTP requestを送る。Claude Codeが同じAPIへ接続済みでも、その接続設定はproviderへ自動継承されない。LLMはOS commandや解析Toolを直接実行せず、許可済みtemplateの提案または引用付き文章だけを返す。template実行、検定、状態判定、引用検証はCPU機上の決定論的なCONDUCTOR codeが行う。
+
 ```text
 CONDUCTOR 0.2.1のoffline Local LLM providerをread-onlyで検査してください。
 
@@ -133,7 +138,7 @@ Project root: <PROJECT_ROOT>
 
 llm.commandが空でなくローカルで実行可能であることを確認し、schema-validな最小fixtureを使って select_deep_dive、summarize_deep_dive、compose_component_narrative の3タスクを各1回probeしてください。入力はJSONL stdin、出力は1 callにつきJSON object 1行だけであること、request_idをそのまま返すこと、llm_response.schema.jsonへ適合すること、Markdownや余分なstdoutがないこと、timeoutと終了codeを確認してください。
 
-外部ネットワークへ接続せず、本番データ、Run state、Description Databaseを変更しないでください。各タスクの成否、応答時間、schema違反だけを報告してください。
+承認済みvLLM endpoint以外へ接続せず、本番データ、Run state、Description Databaseを変更しないでください。各タスクの成否、応答時間、schema違反だけを報告してください。
 ```
 
 ### 3.4 既存Databaseを使う新規本番Run
