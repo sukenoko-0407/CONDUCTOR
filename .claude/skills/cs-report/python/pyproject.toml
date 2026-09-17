@@ -1,0 +1,12 @@
+[build-system]
+requires=["setuptools>=69"]
+build-backend="setuptools.build_meta"
+[project]
+name="conductor-report"
+version="0.2.1"
+description="CONDUCTOR report and citation validator"
+requires-python=">=3.12,<3.13"
+dependencies=["numpy>=1.26","pandas>=2.2"]
+[tool.setuptools.packages.find]
+where=["."]
+include=["conductor_report*"]

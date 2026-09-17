@@ -1,0 +1,39 @@
+{
+  "schema_version": "0.2.1",
+  "description_skills": [
+    "cs-compute-description-rdkit-2d",
+    "cs-compute-description-morgan",
+    "cs-compute-description-maccs",
+    "cs-compute-description-atom-pair",
+    "cs-compute-description-topological-torsion",
+    "cs-compute-description-rdkit-fragment",
+    "cs-compute-description-rdkit-path-fingerprint",
+    "cs-compute-description-rdkit-pattern-fingerprint",
+    "cs-compute-description-rdkit-layered-fingerprint",
+    "cs-compute-description-avalon-fingerprint",
+    "cs-compute-description-gobbi-pharm2d",
+    "cs-compute-description-rdkit-3d",
+    "cs-compute-description-usr-usrcat",
+    "cs-compute-description-shape",
+    "cs-compute-description-mordred-2d",
+    "cs-compute-description-mordred-3d",
+    "cs-compute-description-tblite-xtb",
+    "cs-compute-description-chemberta-embedding"
+  ],
+  "pipeline_skills": [
+    "cs-stat-core",
+    "cs-runtime",
+    "cs-fragment-engine",
+    "cs-context-builder",
+    "cs-lens-l2",
+    "cs-lens-l5",
+    "cs-lens-l1b",
+    "cs-lens-l4",
+    "cs-lens-l7",
+    "cs-scoring",
+    "cs-deepdive",
+    "cs-report"
+  ],
+  "reserved_description_ids": ["D017", "D018"],
+  "checkpoint": "stage11_runtime"
+}

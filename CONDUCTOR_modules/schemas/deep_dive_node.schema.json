@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/deep_dive_node.schema.json",
+  "title": "CONDUCTOR 0.2.1 Deep Dive Node",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["node_id", "parent_node_id", "finding_id", "depth", "template_id", "parameters", "parameter_hash", "execution_status", "state", "result", "citations"],
+  "properties": {
+    "node_id": {"type": "string", "minLength": 1},
+    "parent_node_id": {"type": ["string", "null"]},
+    "finding_id": {"type": "string", "pattern": "^F[0-9]{6}$"},
+    "depth": {"type": "integer", "minimum": 0, "maximum": 3},
+    "template_id": {"enum": ["ROOT", "T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10"]},
+    "parameters": {"type": "object"},
+    "parameter_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "execution_status": {"enum": ["completed", "not_testable", "failed", "not_run"]},
+    "state": {"enum": ["not_dived", "SURVIVED", "WEAKENED", "REFUTED", "INCONCLUSIVE"]},
+    "result": {"type": ["object", "null"]},
+    "citations": {"type": "array", "items": {"type": "string"}}
+  }
+}

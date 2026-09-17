@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/context.schema.json",
+  "title": "CONDUCTOR 0.2.1 Context Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["context_id", "context_type", "axis_id", "source_space_id", "source_tier", "condition_depth", "member_count", "endpoint_valid_count", "representative_context_id", "dedup_status", "translation_status", "calibration_scope"],
+  "properties": {
+    "context_id": {"type": "string", "pattern": "^(CL|QT|SC|AD)\\|.+"},
+    "context_type": {"enum": ["cluster", "quantile", "scaffold", "activity_diagnostic"]},
+    "axis_id": {"type": "string", "minLength": 1},
+    "source_space_id": {"type": ["string", "null"]},
+    "source_tier": {"type": ["integer", "null"], "minimum": 1, "maximum": 3},
+    "condition_depth": {"const": 1},
+    "member_count": {"type": "integer", "minimum": 0},
+    "endpoint_valid_count": {"type": "integer", "minimum": 0},
+    "representative_context_id": {"type": ["string", "null"]},
+    "dedup_status": {"enum": ["representative", "near_duplicate"]},
+    "translation_status": {"enum": ["native", "translated", "untranslatable", "not_required"]},
+    "calibration_scope": {"type": "boolean"},
+    "structurality": {"enum": ["structural", "non_structural"]},
+    "feature_id": {"type": "string"},
+    "cutoff": {"type": ["number", "null"]},
+    "scaffold_type": {"type": "string"},
+    "scaffold_key": {"type": "string"},
+    "eligible": {"type": "boolean"},
+    "is_representative": {"type": "boolean"}
+  }
+}

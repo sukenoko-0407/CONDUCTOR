@@ -1,6 +1,6 @@
 # CONDUCTOR documentation
 
-CONDUCTOR 0.2.1 の設計文書です。**協議中であり、未承認・未実装です。**
+CONDUCTOR 0.2.1 の設計・実装文書です。段階11と実装適合性残件まで完了し、正式較正と offline provider を用いた本番相当確認が残っています。現在地は [`CONDUCTOR_0.2.1_stage11_implementation_report.md`](CONDUCTOR_0.2.1_stage11_implementation_report.md) を参照してください。
 
 まず [`CONDUCTOR_0.2.1_specification_overview.md`](CONDUCTOR_0.2.1_specification_overview.md) を読んでください。全体像と決定事項はそこにあります。
 
@@ -36,11 +36,11 @@ Local LLM に求めるのは「賢いこと」ではなく「倦まず大量に�
 
 ```text
 ① 仕様概要書の最終化      完了
-② 実装計画書の作成・最終化  ← 現在地
-③ 実装                     別 Agent へ委託
+② 実装計画書の作成・最終化  完了
+③ 段階1〜11の初回実装       完了
+④ 実装適合性確認             完了
+⑤ 正式較正・本番相当確認     ← 現在地
 ```
-
-③ の担当 Agent は設計議論に参加していないため、② は設計意図を知らない実装者が仕様どおりに実装できる水準まで具体化する。
 
 閾値類は `CONDUCTOR_modules/diagnosis/` の診断モジュールを実データへ適用して確定済みです。結果は [`design/calibration_results.md`](design/calibration_results.md)。
 

@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "capability_id": "LENS_L1B",
+  "skill_name": "cs-lens-l1b",
+  "display_name": "CONDUCTOR L1b Lens",
+  "version": "0.2.1",
+  "stage": 7,
+  "description": "Conditional local flatness with fixed-context Murcko-block permutation.",
+  "input_roles": ["compounds", "endpoint_table", "context_catalog", "context_membership", "feature_spaces"],
+  "output_roles": ["l1b_evidence", "l1b_tests", "l1a_diagnostics", "score_observations", "findings", "l1b_calibration"],
+  "dependencies": ["STAT_CORE", "CONTEXT_BUILDER"],
+  "platforms": ["linux-64", "win-64"]
+}

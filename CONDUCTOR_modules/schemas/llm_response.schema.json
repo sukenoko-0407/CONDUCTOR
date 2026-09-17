@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/llm_response.schema.json",
+  "title": "CONDUCTOR 0.2.1 Local LLM Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "selections", "narrative", "citations"],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "selections": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["template_id", "parameters"],
+        "properties": {
+          "template_id": {"enum": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10"]},
+          "parameters": {"type": "object"}
+        }
+      }
+    },
+    "narrative": {"type": ["string", "null"]},
+    "citations": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+  }
+}

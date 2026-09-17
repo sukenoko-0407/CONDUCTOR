@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/execution_event.schema.json",
+  "title": "CONDUCTOR 0.2.1 Execution Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "run_id", "node_id", "attempt_id", "lease_token", "event_type", "occurred_at", "payload"],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "event_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "minLength": 1},
+    "attempt_id": {"type": "string", "minLength": 1},
+    "lease_token": {"type": "string", "minLength": 1},
+    "event_type": {"enum": ["leased", "started", "succeeded", "failed", "needs_design_review", "retryable", "heartbeat"]},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "payload": {"type": "object"}
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/runtime_state.schema.json",
+  "title": "CONDUCTOR 0.2.1 Runtime Node State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "node_id", "phase_id", "skill_name", "state", "attempt_id", "lease_token", "lease_expires_at", "input_hashes", "config_hash", "code_version", "updated_at"],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "minLength": 1},
+    "phase_id": {"type": "string", "pattern": "^P[0-9]{2}$"},
+    "skill_name": {"type": "string", "pattern": "^cs-[a-z0-9-]+$"},
+    "state": {"enum": ["pending", "leased", "running", "succeeded", "failed", "needs_design_review", "retryable"]},
+    "attempt_id": {"type": ["string", "null"]},
+    "lease_token": {"type": ["string", "null"]},
+    "lease_expires_at": {"type": ["string", "null"], "format": "date-time"},
+    "input_hashes": {"type": "array", "items": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
+    "config_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "code_version": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string", "format": "date-time"}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "capability_id": "CONTEXT_BUILDER",
+  "skill_name": "cs-context-builder",
+  "display_name": "CONDUCTOR Context Builder",
+  "version": "0.2.1",
+  "stage": 5,
+  "description": "Distance-based clustering, lower quantiles, scaffold contexts, overlap deduplication, and deterministic Tier 3 translation.",
+  "input_roles": ["compounds", "endpoint_table", "feature_spaces"],
+  "output_roles": ["context_catalog", "context_membership", "context_deduplication", "context_translation", "activity_diagnostic"],
+  "dependencies": ["STAT_CORE"],
+  "platforms": ["linux-64", "win-64"]
+}

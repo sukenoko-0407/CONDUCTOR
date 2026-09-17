@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "capability_id": "RUNTIME",
+  "skill_name": "cs-runtime",
+  "display_name": "CONDUCTOR Runtime",
+  "version": "0.2.1",
+  "stage": "runtime",
+  "description": "Endpoint preparation, DAG state, lease, audit, resume, and artifact commit coordination.",
+  "input_roles": ["dataset", "endpoint_registry", "pipeline_plan"],
+  "output_roles": ["compounds", "endpoint_table", "endpoint_missingness", "endpoint_registry", "runtime_state", "runtime_summary"],
+  "dependencies": ["STAT_CORE"],
+  "platforms": ["linux-64", "win-64"]
+}

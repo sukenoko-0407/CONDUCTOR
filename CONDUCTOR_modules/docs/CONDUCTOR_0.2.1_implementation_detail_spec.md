@@ -1,6 +1,7 @@
 # CONDUCTOR 0.2.1 実装詳細仕様書
 
-Status: **レビュー待ち。実装未着手。**  
+Status: **設計回答反映済み。段階11の初回実装まで進行済み。正式較正・全体適合性確認待ち。**
+
 作成日: 2026-09-17  
 正本: [`CONDUCTOR_0.2.1_implementation_plan.md`](CONDUCTOR_0.2.1_implementation_plan.md)
 
@@ -12,11 +13,11 @@ Status: **レビュー待ち。実装未着手。**
 
 1. 実装計画書
 2. `design/calibration_results.md`
-3. 本書（レビュー承認後）
+3. 本書（2026-09-17 設計回答反映版）
 4. その他の design 文書
 5. 診断モジュール（較正値の再現と既知バグの参照実装）
 
-[`CONDUCTOR_0.2.1_implementation_questions.md`](CONDUCTOR_0.2.1_implementation_questions.md) の `blocking` は、本書内で `TBD(Q-xxx)` と記す。承認前にコードを書かない。実装計画書9章の5件は同書の時期に確認し、本書では既定案だけを保持する。
+[`CONDUCTOR_0.2.1_implementation_questions.md`](CONDUCTOR_0.2.1_implementation_questions.md) の18件は、2026-09-17 の設計回答を本書へ反映済みである。旧 `blocking` 14件を含め、確認事項由来の未確定placeholderはすべて解消した。実装計画書9章の既出5件は同書の指定時期に確認し、本書では既定案を保持する。
 
 ### 0.1 実装範囲
 
@@ -32,7 +33,7 @@ Status: **レビュー待ち。実装未着手。**
 
 ```text
 .claude/skills/
-├── cs-compute-description-*/       # 現存 D001〜D016, D019, D020 を保持。Q-002
+├── cs-compute-description-*/       # 全18件: D001〜D016, D019, D020。D017/D018は予約
 ├── cs-fragment-engine/
 ├── cs-context-builder/
 ├── cs-stat-core/
@@ -45,6 +46,7 @@ Status: **レビュー待ち。実装未着手。**
 ├── cs-lens-l7/
 ├── cs-scoring/
 ├── cs-deepdive/
+│   └── resources/hammett_constants.tsv
 ├── cs-report/
 └── cs-runtime/
 
@@ -138,7 +140,7 @@ stdout は成功・失敗を表す1個の JSON object のみ、進捗・warning�
 | 3 | 入力データ契約違反 |
 | 4 | 計算失敗、必要標本不足、dependency failure |
 | 5 | Artifact / citation / audit 不整合 |
-| 10 | Local LLM provider の恒久失敗 |
+| 10 | Local LLM command未設定、または論理call失敗率が設定閾値超過 |
 
 ### 2.2 Execution Request
 
@@ -244,6 +246,13 @@ deep_dive:
   max_children: 3
   max_tests_per_finding: 15
   stop_after_consecutive_inconclusive: 2
+  min_group_n: 3
+  robustness_iterations: 500
+llm:
+  command: null
+  timeout_seconds: 300
+  schema_retries: 2
+  max_failure_fraction: 0.20
 runtime:
   random_seed: 20260916
   workers: 0
@@ -268,7 +277,7 @@ class EndpointSpec:
     dependencies: tuple[str, ...]
 ```
 
-1 Run は `endpoint_id` を1個だけ選ぶ。内部統計には `oriented_value = value if higher_is_better else -value` を使う案を採るが、Q-012 の承認が必要。raw、transformed、oriented を別列で保持し、表示は transformed scale を使う。欠測は空文字として保存し補完しない。
+1 Run は `endpoint_id` を1個だけ選ぶ。段階1で `oriented_value = transformed_value if higher_is_better else -transformed_value` を固定し、**全解析**の効果量、中央値、95パーセンタイル、最大値、frontier score を「大きいほど良い」oriented scale で計算する。raw、transformed、oriented を別列で保持し、表示時だけ元の単位と符号へ戻す。欠測は空文字として保存し補完しない。
 
 ### 4.2 Context
 
@@ -286,9 +295,24 @@ class ContextRecord:
     representative_context_id: str | None
     dedup_status: Literal['representative', 'near_duplicate']
     translation_status: Literal['native', 'translated', 'untranslatable', 'not_required']
+    calibration_scope: bool
 ```
 
-ID は実装計画書の `CL|...`、`QT|...`、`SC|...` を使う。hash と安定採番は Q-003 で確定する。membership は compound ID の long table とし、配列位置を永続 ID にしない。
+永続 ID のhash入力は RFC 8785 canonical JSONをUTF-8化し、SHA-256の先頭16桁を使う。contextは実装計画書の可読stemを保持し、末尾へhashを付ける（`CL|<space>|k<n>|c<index>|<16hex>`、`QT|<feature>|q<percentile>|<16hex>`、`SC|<16hex>`、`AD|<endpoint>|<16hex>`）。cluster indexは最小compound ID、次に全member IDのhashでclusterを安定sortしてから採番する。その他は `FRAG|<16hex>`、`PAIR|<16hex>`、`TR|<16hex>`、`FND|<16hex>`、`TEST|<16hex>` とする。
+
+| ID | canonical hash入力 |
+|---|---|
+| cluster context | schema version、space ID、cluster count、sort済みmember compound IDs |
+| quantile context | schema version、feature ID、percentile、finiteなcutoff value、sort済みmember compound IDs |
+| scaffold context / scaffold entity | schema version、scaffold type、canonical scaffold key |
+| activity diagnostic context | schema version、Endpoint ID、band定義、oriented scaleのcutoff values |
+| fragmentation | schema version、compound ID、class、constant key、variable SMILES、attachment mapping |
+| transformation | schema version、class、lexical方向のvariable from/to、attachment mapping |
+| pair | schema version、transformation ID、constant key、方向付きcompound from/to |
+| finding key | schema version、lens、sort済みEndpoint IDs、subject/condition/direction、sort済みtest question IDs |
+| test | schema version、finding key、question、method、family key |
+
+hash衝突を検出した場合は黙って延長せずRunをfailし、ID幅の変更をschema version変更として扱う。表示用 Finding IDだけは `finding_key` の lexical sort 後に Run 内で `F000001` から安定採番する。membership は compound ID の long table とし、配列位置を永続 ID にしない。
 
 ### 4.3 Fragment / Pair / Transformation
 
@@ -324,15 +348,15 @@ class PairRecord:
     endpoint_delta_oriented: float | None
 ```
 
-canonical 方向は Q-008 で確定するまで `TBD`。同一 series・同一 fragment に複数 compound がある場合、Endpoint 平均を `FragmentObservation` 1件とし、元 compound IDs は配列 JSON として証拠表に残す。
+pair は `variable_smiles` の lexical sort で小さい側を `from`、大きい側を `to` とし、`endpoint_delta_oriented = oriented_to - oriented_from` とする。同一 series・同一 fragment に複数 compound がある場合、Endpoint 平均を `FragmentObservation` 1件とし、元 compound IDs は配列 JSON として証拠表に残す。
 
 ### 4.4 Finding
 
-Finding は JSON object 1件を1行にした `findings.jsonl` で保存し、各行を `finding.schema.json` で検証する。提案 schema は次の形とするが Q-003 承認前は固定しない。
+Finding は JSON object 1件を1行にした `findings.jsonl` で保存し、各行を `finding.schema.json` で検証する。次を0.2.1の確定 schema とし、`entities` とその6配列は空配列の場合も省略不可とする。
 
 ```yaml
 finding_id: F000042
-finding_key: sha256:...
+finding_key: FND|0123456789abcdef
 lens: L2b
 endpoint_ids: [EP_PRIMARY]
 claim:
@@ -495,7 +519,7 @@ def permute_within_blocks(values, block_labels, rng):
 | L4 | Murcko scaffold ID |
 | L7 | 系列内 R基 label |
 
-L1b の追加ランダム subset、L2b の較正互換は Q-004/Q-005 で確定する。
+L1b は context membership と距離行列を固定し、Endpointだけを Murcko骨格内で並べ替えて λ を再計算する。同サイズランダム subset は作らない。L2b は series（同一 constant key）内で Endpoint を並べ替える。診断互換 mode は任意の補助機能であり、実装・合否判定の必須条件ではない。
 
 ### 6.2 段階的 p 値
 
@@ -545,7 +569,7 @@ for each registered Endpoint:
 validate all JSON/CSV contracts
 ```
 
-欠測診断の具体判定は Q-015 の案を interface の背後へ隔離する。解析対象 Endpoint が `selection_biased` でも除外せず、全 Finding に label を伝播する。
+対象 Endpoint の測定済み群と未測定群について、他の各 Endpoint を用いた Mann-Whitney U 両側検定を行う。両群とも n≥5 の比較だけを対象とし、対象 Endpointごとの族で BH補正する。1件でも q≤0.05 なら `selection_biased` とし、rank-biserial correlationを効果量として保存する。解析対象 Endpoint が `selection_biased` でも除外せず、全 Finding に label を伝播する。
 
 MPO schema は `endpoint_ids: array`、derived dependency、Endpoint別 score map を表現するが、0.2.1 validator は解析 Finding の配列長を1に制限する。
 
@@ -571,7 +595,7 @@ Tier / structurality は `feature_spaces.json` のデータとして持つ。最
 - structural: 部分構造 fingerprint 群（Morgan、MACCS、atom-pair、torsion、path/pattern/layered、Avalon）
 - non-structural: descriptor、3D、xTB、Gobbi Pharm2D、ChemBERTa、fragment counts
 
-Q-002 が解決するまで capability 母集団を固定しない。
+0.2.1 の Description capability 母集団は現存18件（D001〜D016、D019、D020）に固定する。D017/D018 は予約番号であり、空実装や復元対象にはしない。catalogには実在する18件だけを登録する。
 
 ### 7.3 段階3: 統計基盤
 
@@ -625,7 +649,7 @@ canonical key:
 2/N-cut: canonical constant component SMILES sorted lexically and joined by ' | '
 ```
 
-環 N=3/4 mapping と N-cut constant size は Q-007。N≥5 は除外件数を記録する。変換3クラスは table、統計 family、Finding、表示を混ぜない。
+環 N=3/4 では dummy に元結合の attachment index を付け、constant側 fragmentの canonical rankと分子自己同型から全対応を列挙する。全対応が同じ canonical transformation keyになる場合だけ対称等価として採用し、それ以外は `ambiguous_mapping` で除外する。`min_constant_heavy_atoms=4` は合計ではなく**各** constant fragmentへ個別適用する。N≥5 は除外件数を記録する。変換3クラスは table、統計 family、Finding、表示を混ぜない。
 
 #### Pair と fragment table
 
@@ -633,7 +657,7 @@ canonical key:
 group accepted fragmentations by (class, constant_key)
 deduplicate duplicate (compound_id, variable_smiles)
 for each unordered member pair with different variable:
-    orient by approved canonical rule
+    orient by lexical variable SMILES
     create stable pair and transformation keys
 for each series with >=2 distinct variables:
     group same variable's compounds
@@ -641,7 +665,7 @@ for each series with >=2 distinct variables:
     emit one FragmentObservation
 ```
 
-MMP canonical DB と Similar core の移植元は Q-001。Similarity class は `exact / radius2 / radius1 / mcs_mapped`。mapping 不成立・coverage不足・ambiguous は除外理由を残す。
+MMP canonical DB と Attachment制約付き Similar coreは、Stage 0退避直前の commit `470d312d250ba55b5a564ced8211882b32164a97` にある `mmp_0111_model.py`、`mmp_engine.py`、`mmp_0111_evidence.py` から必要な純粋関数だけを移植する。旧 Runtime、Target起点処理、報告処理は移植しない。実装時の監査記録へ元 commit、元 path、移植関数、移植先、差分理由を残す。Similarity class は `exact / radius2 / radius1 / mcs_mapped`。mapping 不成立・coverage不足・ambiguous は除外理由を残す。
 
 #### Cliff 起点
 
@@ -656,17 +680,17 @@ for each Description space in parallel:
     load or compute distance matrix once
     for k in [10, 20, 40]:
         average-linkage agglomerative clustering(precomputed distance)
-        emit CL|space_id|k<k>|c<stable_cluster_index>
+        stable-sort clusters and emit CL|<space_id>|k<k>|c<index>|<sha16>
 ```
 
-cluster index は、各 cluster の最小 compound ID、次に全 member ID の hash で安定ソートしてから採番する。fingerprint は `1-Tanimoto`、descriptor は全欠損・定数列を除外、列中央値補完、z標準化後の Euclidean。別 clustering 手法を追加しない。
+fingerprint は `1-Tanimoto`、descriptor は全欠損・定数列を除外、列中央値補完、z標準化後の Euclidean。別 clustering 手法を追加しない。
 
 #### 分位・骨格・活性域
 
-- Tier 1 feature ごとに raw feature scale の q25/q50/q75 以下を `QT|feature|qNN` とする。以上側を別 context にしない
-- Murcko/MCS/BRICS/RECAP context を構造依存 Artifact として作る。Endpoint valid n≥5 は Run ごとの eligibility 列で判定する
+- Tier 1 feature ごとに raw feature scale の q25/q50/q75 以下を `QT|<feature>|q<percentile>|<16hex>` とする。以上側を別contextにしない
+- Murcko/MCS/BRICS/RECAP context を構造依存 Artifact として作る。MCS は generic Murcko topology が同一の化合物群ごとに atom/bond `CompareAny`、`ringMatchesRingOnly=true`、`completeRingsOnly=true` で群内 MCS を計算し、その SMARTS を監査可能な class key とする。Endpoint valid n≥5 は Run ごとの eligibility 列で判定する
 - 活性域は診断行だけに使い、L1b/L2/L5 の condition に渡さない
-- 270件受け入れの scope は Q-006
+- 全contextに `calibration_scope` を持たせ、診断互換の cluster + Tier 1分位 + Murckoだけを `true` とする。270±20%はこのsubsetだけへ適用し、全context数は別指標として報告する
 
 #### 重複排除
 
@@ -681,7 +705,7 @@ only representatives enter BH families and Finding generation
 
 #### 翻訳
 
-Tier 3 cluster について、Tier 1 features だけを説明変数とする L2 正則化 logistic regression を3-fold stratified CVで評価する。fold 内で欠測補完・標準化を fit し、leakage を防ぐ。AUC<0.70 は `untranslatable`。AUC≥0.70 は全データで再fitし、係数と方向を保存する。説明文は Q-018 の承認までは固定テンプレート案とする。
+Tier 3 cluster について、Tier 1 features だけを説明変数とする L2 正則化 logistic regression を3-fold stratified CVで評価する。fold 内で欠測補完・標準化を fit し、leakage を防ぐ。AUC<0.70 は `untranslatable`。AUC≥0.70 は全データで再fitし、係数と方向を保存する。標準化係数が非ゼロの特徴を絶対値降順、同値はfeature ID順で並べ、上位3件を符号付き固定テンプレートで記述する。Phase 2ではLLMを使わず、言い換えはPhase 6の narrativeだけで許可する。
 
 ### 7.6 段階6: L2b
 
@@ -702,22 +726,22 @@ for each fragment F:
     test consistent effect when m >= 2:
         t = mean(residuals) / (sample_sd(residuals) / sqrt(m))
         if sample_sd == 0: p=1
-    test context variance when m >= 3:
+    test series variance when m >= 3:
         v = sample variance(residuals)
     null:
         permute Endpoint within each series
         recompute collapse, means, residuals and statistic
 ```
 
-問い1は両側、問い2は上側。terminal と ring を別 family とし、混ぜない。fragment が2 seriesなら問い1のみ、3以上なら両方。各問いは独立 test record とし、同一 fragment の両方が通過した場合は1 Finding内に2 testsを持たせる案とする。
+問い1は両側、問い2は上側。terminal と ring を別 family とし、混ぜない。fragment が2 seriesなら問い1のみ、3以上なら両方。各問いは独立 test record とし、同一 fragment の両方が通過した場合は1 Finding内に2 testsを持たせる。
 
-段階6完了後、必ず停止する。本番系列内検定に加え、Q-005 で承認された互換 mode で enrichment 2.07 / 2.31 / 2.54 の±30%を確認し、pair数、context数、参加率、候補数、差分原因を報告する。未達なら段階7へ進まない。
+段階6完了後、必ず停止する。本番の系列内検定で `L2b enrichment > 1.5` を確認し、`series_count`、pair数、context数、参加率、候補数、診断値との差分原因を報告する。診断互換 mode は任意であり、2.07 / 2.31 / 2.54 との厳密一致を要求しない。基準未達または明示承認前は段階7へ進まない。Phase 2 contextで系列を層別する解析は、系列を一意に写像できる場合の任意追加解析とする。
 
 ### 7.7 段階7: 残りの lens
 
 #### L5
 
-axis ID ごとに context pair を作る。同一 clustering の cluster間、同一 feature の quantile間など、異なる axis は比較しない。各文脈で Tier 1/2 feature と Endpoint の Pearson r を計算し、双方 `|r|≥0.3` かつ逆符号を候補とする。観測 statistic は Fisher z 差。本番 p 値は Q-009 の決定に従う。Global r を証拠として保存する。
+axis ID ごとに context pair を作る。同一 clustering の cluster間、同一 feature の quantile間など、異なる axis は比較しない。各文脈で Tier 1/2 feature と Endpoint の Pearson r を計算し、双方 `|r|≥0.3` かつ逆符号を候補とする。観測 statistic は Fisher z 差とし、p値は EndpointのMurcko骨格内並べ替えから経験的に求める。包含を含む文脈の重なりを許容し、共有化合物数を証拠表へ記録する。Global r も証拠として保存する。
 
 #### L1b
 
@@ -727,19 +751,21 @@ Tier 1/2 space と representative context の各組について、context内各�
 lambda = 1 - mean((observed - neighbor_prediction)^2) / global_endpoint_variance
 ```
 
-を求める。対象化合物自身を近傍・λ計算に含めない。有効 n<5、global variance≤0、近傍不足は候補外。`lambda≥0.5` は診断ゲートであり、有意性は Q-004 の帰無分布から求める。L1a は全空間の min λ を診断表へ出すだけで Finding を作らない。
+を求める。対象化合物自身を近傍・λ計算に含めない。有効 n<5、global variance≤0、近傍不足は候補外。`lambda≥0.5` は診断ゲートとする。有意性は、context membershipと距離行列を固定したままEndpointだけをMurcko骨格内で並べ替える帰無分布から求める。同サイズランダムsubsetは生成しない。L1a は全空間の min λ を診断表へ出すだけで Finding を作らない。
 
 #### L2a
 
-3 pair以上の transformation だけを対象に、representative contextごとの平均シフトと分散縮小を独立 test とする。文脈内外の pair定義、delta方向、statistic は Q-008。少なくとも `n_in≥3` と `n_out≥3` を満たさない候補は検定しない。許容性は `|median delta|<0.28` かつ分散≤0.02で labelする。
+3 pair以上の transformation だけを対象に、representative contextごとの中央値シフトと分散縮小を独立 test とする。両端がcontext Cに属するpairだけを `in_C`、両端が非所属のpairだけを `out_C` とし、跨ぐpairは除外する。deltaはlexicalなvariable SMILES方向で固定する。シフト統計量は `median(delta_in)-median(delta_out)` の両側検定、分散統計量は `Var(in_C)/Var(all)` の下側片側検定とし、系列内Endpoint並べ替えごとにpairを再生成する。少なくとも `n_in≥3` と `n_out≥3` を満たさない候補は検定しない。許容性は `|median delta|<0.28` かつ分散≤0.02で labelする。
 
 #### L7
 
-同一 R基の重複 compound を平均へ集約し、共通 R基5個以上の series pairだけを列挙する。`|Spearman ρ|≥0.5` を効果ゲートとする。p値・主効果・3 Finding型は Q-011。帰無では系列内 R基 label を並べ替える。
+同一系列・同一 R基の重複 compound をEndpoint平均へ集約し、共通 R基5個以上の series pairだけを列挙する。Spearman ρ は系列BのR基labelを並べ替え、系列平均差は各共通R基の対応を保ったまま骨格A/B labelを交換し、それぞれ両側経験p値を求めて同じL7族でBH補正する。系列平均差へR基label並べ替えを適用すると統計量が不変になるため、主効果には対応付きlabel交換を使う。ρの `q≤0.05` を共通の有意性条件とし、`ρ≤-0.5` は序列逆転、`ρ≥0.5` かつ主効果 `q≤0.05` は上位互換、`ρ≥0.5` かつ主効果 `q>0.05` は独立最適化として採択する。それ以外はFindingにしない。
 
 #### L4
 
-L2 canonical transformation DB が完成してから最後に実装する。最低条件は平坦な近傍、到達経路1本以上、未観測構造、RDKit sanitize成功。領域生成、信頼下限、密度、path長は Q-010。仕様確定前に placeholder candidate generator を本番へ入れない。
+候補生成と領域評価は二段に分離する。第一段で one-step 候補を `l4_candidate_compounds.csv` に固定し、第二段で Phase 1 の `feature_spaces.json` に記録された Skill と `parameters` を使って、候補そのものについて全 Tier 1/2 Description を再実行する。`candidate_feature_spaces.json` に候補 payload を登録し、観測化合物に fit した特徴列、欠測補完値、標準化値をそのまま使って候補―観測化合物間距離を計算する。候補 Description の欠落・行失敗・ID不一致は fail-closed とし、到達元化合物の近傍を proxy にしてはならない。
+
+L2 canonical transformation DB が完成してから最後に実装する。既存化合物へ実績のあるL2変換を1本だけ適用して得られる、未観測かつRDKit sanitize済みの構造を候補とする。各Tier 1/2空間のk=10近傍を領域とし、期待値は近傍平均の片側95%下限、密度ギャップは `1 - min(n_region/min_context_size, 1)`（`min_context_size = contexts.min_endpoint_n`）、到達可能性はvalidation済み1-stepなら1とする。候補不足またはenrichmentが1.0付近でも閾値を調整せず、そのまま降格判断用に報告する。
 
 L3/L6 は診断 module と同等の集計を `diagnostic_metrics.json` へ出してよいが、candidate table と Finding factory を持たせない。
 
@@ -758,12 +784,14 @@ non_triviality:
 actionability:
     exact enum 1.0 / 0.6 / 0.2
 frontier_relevance:
-    oriented scale on Q-012 approval
+    oriented scale
 composite:
     non_triviality * actionability * frontier_relevance
 ```
 
-`n_candidates_in_lens` は最終 B=1000 と BH を完了した候補数とする。q tie は平均順位ではなく stable ordinal rank案とし、レビューで確認する。`E_adj` は Q-013。
+`n_candidates_in_lens` は最終 B=1000 と BH を完了した候補数とする。q tie は平均順位ではなく `(q, finding_key)` の stable ordinal rankとする。`E_adj` は各レンズの最小観測単位でMW、cLogP、TPSA、骨格dummyを簡潔な線形モデルで残差化し、同じ効果統計を再計算する。L1b/L5は化合物残差、L2aはpairの交絡差、L2bは系列内残差、L7は系列内residualized Endpoint、L4は到達元と生成物の予測交絡差を使う。
+
+scoring Node は `feature_spaces` の D001 payload を必須入力とし、L4 Finding が存在するときは `candidate_feature_spaces` も入力する。D001 の `rdkit2d__MolWt`、`rdkit2d__MolLogP`、`rdkit2d__TPSA` と入力構造から機械生成した Murcko scaffold class を交絡表とする。各 Lens の `score_observations` は同じ効果統計を再計算できる compound、pair、series、neighbor、context/feature の識別情報を保持する。情報不足時に説明率による縮約へ戻してはならず fail-closed とする。
 
 重複判定:
 
@@ -794,7 +822,40 @@ while queue and budget < 15:
 summarize tree with citations
 ```
 
-状態規則は実装計画書9-1をそのまま pure function にする。LLMに状態を返させない。T01〜T10 executable contract は Q-014、LLM provider は Q-016、EWG/EDG は Q-017。プロジェクト SMARTS が無くても機械分割軸で動作する。
+全テンプレートを次のシグネチャで実装する。
+
+```python
+def execute(
+    parent_finding: Finding,
+    parameter_object: Mapping[str, JSONValue],
+    artifact_registry: ArtifactRegistry,
+) -> DeepDiveTestResult: ...
+```
+
+`DeepDiveTestResult` は最低限 `template_id`、canonical parameter hash、`execution_status`（`completed|not_testable|failed`）、family key、primary/comparator の n、親/子効果量、効果方向、nullableなp/q、補助統計、判定入力、引用可能 row ID、理由を持つ。全統計はoriented scaleを使い、親レンズと同じ最小観測単位、block、欠測規則を再利用する。群の最小nは、特記がなければ `max(3, 親レンズの最小n)` とする。同一template呼出しで生成した比較を `(parent_finding_id, template_id, axis_id)` 族としてBH補正する。axisを持たないtemplateは `axis_id=global` とする。
+
+| ID | 必須 parameter / 実行契約 | 判定へ渡す主出力 |
+|---|---|---|
+| T01 | `axis_id`, `level`。各levelを「該当/非該当」の独立二値分割として親レンズの効果と検定を両群で再実行。両群が最小n以上 | 両群の n/effect/p/q、効果比、包含関係 |
+| T02 | `axis_id`。順序値が3水準以上、各水準n≥3。最小観測単位の効果proxyと軸順位のSpearman ρを親block内の並べ替えで両側検定 | ρ、p/q、水準別nと中央値 |
+| T03 | `context_ids`（1〜3件）。executorがmembership Jaccard降順で提示した親以外の代表contextから選び、親レンズ検定を再実行 | context別n/effect/p/q、Jaccard、共有n |
+| T04 | `target_ids`（1〜3件）。L2はSimilarity classと構造類似度、L5は共通compound上の特徴相関でexecutorが提示した対象から選び、親レンズ検定を再実行 | 対象別similarity、n/effect/p/q |
+| T05 | `iterations`（既定500）。親と同じblock bootstrapで効果符号を再評価 | 符号一致率、その95%区間、中央値効果。p/qはnull |
+| T06 | `context_id`, `transformation_id`。context内の未適用化合物へ既知変換を1-step適用し、未観測・sanitize・重複を検証 | 候補数、元compound、生成構造、validation理由。p/qはnull |
+| T07 | `confounders`。MW、cLogP、TPSA、骨格dummyを個別および一括で残差化し親統計を再実行 | raw/adjusted effect、説明割合、p/q |
+| T08 | `unit_type`。最小観測単位を1件ずつ除外し、効果変化最大の行を特定してその除外結果を再検定 | 最大影響row、effect変化、除外後p/q |
+| T09 | `sample_n`, `iterations`（既定1000）。親のeligible母集団から同数をblock制約付きで抽出し効果量を再計算 | 観測効果の経験p/q、null分位、参加率 |
+| T10 | `counterexample_rule`。親方向と逆の最小観測単位を明示列挙し、方向一致/不一致の二項統計を両側検定 | 反例row、反例率、符号統計、p/q |
+
+T09は観測効果の絶対値以上となるnull反復数に+1/+1を適用し、T10は一致/不一致を帰無確率0.5の正確二項両側検定とする。T03/T04/T07/T08は再実行した親レンズのp値を使用する。
+
+T01 は必須実装とし、骨格クラス、置換基heavy atom数、極性（cLogP/TPSA）、水素結合能（HBD/HBA）、環の有無、立体化学、電子効果、正規化attachment位置を機械算出軸として登録する。連続軸は親標本の有限値中央値で二値化し、category軸は各level対その他とする。プロジェクト固有SMARTSは任意追加軸であり、各patternを非排他的な二値flagとして扱い、包含関係を保存する。
+
+電子効果は版管理した `resources/hammett_constants.tsv` を使い、attachment位置がmeta/paraへ一意に対応するときだけHammett値を採用する。Hammett σは正をEWG、負をEDG、0をneutralとする。それ以外はGasteiger fragment chargeを用い、較正データの中央値/MADで標準化して `z≥0.5` をEWG、`z≤-0.5` をEDG、`|z|<0.5` をneutralとする。xTB電荷は検証列にのみ保存し区分へ使わない。TSVのversion、出典、license、sha256をmanifestへ記録する。
+
+状態規則は実装計画書9-1を pure function にし、LLMに状態を返させない。原則として q≤0.05かつ親と同符号なら `SURVIVED`、逆符号なら `REFUTED`、T01で部分集合だけが有意かつ補集合が非有意または親効果の50%未満なら `WEAKENED`、それ以外を `INCONCLUSIVE` とする。T05は95% percentile区間が0をまたがず親方向なら `SURVIVED`、逆方向なら `REFUTED`、それ以外を `INCONCLUSIVE` とする。T06は検証済み候補が1件以上なら `SURVIVED`、0件なら `INCONCLUSIVE` とし、`REFUTED`/`WEAKENED` を返さない。T01〜T10は全て0.2.1の完了条件であり、`not_available` 実装は禁止する。
+
+LLM providerは `llm.command` に設定したローカルコマンドとJSONL stdin/stdoutで通信する。schema違反・timeout・process失敗は同一論理callを最大2回再試行し、全再試行失敗後は当該Findingをnarrativeなしで保持してRunを続行する。`failed_logical_calls / attempted_logical_calls > llm.max_failure_fraction`（既定0.20）の場合だけPhaseを失敗させる。未設定commandはLLMを必要とするPhaseの設定エラーとする。fallback文章は生成しない。
 
 ### 7.10 段階10: 統合と報告
 
@@ -849,7 +910,7 @@ leased/running --lease expiry--> retryable
 | permutation参加率<50% | 結果を保存し `needs_design_review`。自動報告へ進めない |
 | worker失敗 | task keyとtracebackを記録。同じseedで1回再試行後node fail |
 | SQLite/CSV atomic commit失敗 | node fail。部分Artifactを正本manifestへ載せない |
-| Local LLM schema違反 | Q-016の回数だけ再試行。fallback文章を生成しない |
+| Local LLM schema違反・timeout・process失敗 | 同一論理callを最大2回再試行。失敗Findingはnarrativeなしで続行し、論理call失敗率が `llm.max_failure_fraction`（既定20%）を超えた場合だけPhase fail。fallback文章は生成しない |
 | citation不一致 | Phase 6 fail。draftを保持し自動修正しない |
 | K未達 | scoring結果を保持し `needs_design_review`。θを変更しない |
 
@@ -886,11 +947,13 @@ Windowsを含むため multiprocessing は `spawn` を前提とし、module impo
 - N=1/2/3/4/N≥5、ambiguous mapping、全size境界
 - same series/same fragment複数compoundの1観測化
 - context ID、distance、dedup connected component代表選択
+- RFC 8785 hash入力、ID再現性、意図的な短縮hash衝突のfail-fast
 - translation fold leakage防止、AUC境界0.70
 - 各 lens statistic と境界条件
+- L1b帰無でmembership/distance固定かつ同サイズsubsetを作らないこと、L2a crossing pair除外
 - score clip、E_raw=0、lower-is-better方向
 - duplicate Finding merge、tie-break
-- deep-dive budget、状態、連続INCONCLUSIVE、REFUTED停止
+- T01の全機械軸、T01〜T10 parameter schema、deep-dive budget、T05/T06特殊状態、連続INCONCLUSIVE、REFUTED停止
 - citation numeric tolerance、missing row、hash不一致
 
 ### 10.2 契約
@@ -905,23 +968,24 @@ Windowsを含むため multiprocessing は `spawn` を前提とし、module impo
 ### 10.3 回帰・統合
 
 - `make_synthetic_dataset()` で terminal/linker/ring の全クラス成立
-- planted L2b consistent effect とcontext varianceを検出し、null dataでFPR確認
+- planted L2b consistent effect とseries varianceを検出し、null dataでFPR確認
 - planted L5 sign flip、L1b flat subset、L7 reversed ranking
 - L1a/L3/L6がFindingを生成しないこと
 - Phase 1→6 small fixture end-to-end、Runtime resume、worker数1/N一致
-- LLMはfixture commandを使い、schema違反・timeout・引用幻覚を再現
+- LLMはfixture commandを使い、schema違反・timeout・引用幻覚を再現。論理call失敗率20%以下/超過の境界と、引用不一致が1件でPhase failする別経路を確認
 
 ### 10.4 較正再現
 
 | 項目 | 期待 | test gate |
 |---|---:|---|
-| L2b enrichment | 2.07 / 2.31 / 2.54 | ±30%、段階6停止点。Q-005 protocol |
-| L5 enrichment | 2.19 / 1.82 / 1.81 | ±30% |
-| L1b enrichment | 1.45 / 1.43 / 1.29 | ±30% |
-| TERM/RING/LINK pair | 9,548 / 1,579 / 436 | ±10%、Q-007差分併記 |
-| context count | 270 | ±20%、Q-006 scope |
+| L2b enrichment | >1.5 | 本番series内帰無で判定。段階6停止点 |
+| L5 enrichment | >1.5 | 本番Murcko block帰無で判定 |
+| L1b enrichment | 1.1〜1.8 | 本番Murcko block帰無で判定 |
+| L3 / L6 enrichment | 0.85〜1.15 | 診断値を計算した場合だけ確認。Findingは作らない |
+| TERM/RING/LINK pair | 9,548 / 1,579 / 436 | ±10%。RINGは各constant fragmentへのsize制約で減りうるため差分を併記 |
+| `calibration_scope` context count | 270 | ±20%。全context数は別指標として併記 |
 | translation AUC median | 0.96 | ≥0.90 |
-| L5 block null | 約148 against observed 325 | 全体null約3と取り違えない |
+| L5 block null | 約148 against observed 325 | 診断用参照値。全体null約3と取り違えず、block nullの方が明確に大きいことを確認 |
 
 較正dataはrepositoryへ持ち込まず、pathを環境変数/Run requestで与える。test outputはaggregate onlyとしcompound IDや構造をCI logへ出さない。
 
@@ -931,11 +995,11 @@ Windowsを含むため multiprocessing は `spawn` を前提とし、module impo
 |---|---|
 | 0 | 指定資産をArchiveへ退避、ignore、保持対象確認 |
 | 1 | schemas/catalog/Endpoint契約、contract tests green |
-| 2 | 全承認Descriptionのcache hit/miss統合、距離Artifact |
+| 2 | Description全18件のcache hit/miss統合、距離Artifact |
 | 3 | stat-core unit/regression、L5 50倍過大評価検知fixture |
 | 4 | 3クラス synthetic tests、canonical DB、pair count calibration |
-| 5 | context/dedup/translation、270 scopeとAUC calibration |
-| 6 | L2b、本番＋互換enrichment報告後に停止 |
+| 5 | context/dedup/translation、`calibration_scope`件数とAUC calibration |
+| 6 | L2b本番enrichment >1.5と診断差分の報告後に停止 |
 | 7 | L5→L1b→L2a→L7→L4、lens別 tests |
 | 8 | score/merge/K判定、全候補保持 |
 | 9 | T01〜T10、budget/state/citation付きsummary |
@@ -944,33 +1008,34 @@ Windowsを含むため multiprocessing は `spawn` を前提とし、module impo
 
 ## 12. 実装見積もり
 
-レビュー・較正data実行待ちを除く、1名相当の実装/テスト工数。blocking仕様が確定し、既存Description資産がそのまま動く前提。
+詳細仕様レビュー・較正data実行待ちを除く、1名相当の実装/テスト工数。確認事項18件の回答を反映済みで、既存Description資産がそのまま動く前提。
 
 | 段階 | 見積もり（人日） | 主な変動要因 |
 |---|---:|---|
 | 0 仕分け | 0.5（完了） | — |
-| 1 モデル・契約 | 4〜6 | Q-003、MPO schema粒度 |
-| 2 表現生成 | 4〜7 | Q-002、既存Skillの互換修正 |
-| 3 統計基盤 | 6〜9 | Q-004、決定性・並列化 |
-| 4 Fragment engine | 9〜14 | Q-001/Q-007、Similar core移植 |
-| 5 文脈構築 | 7〜10 | Q-006、全Description距離 |
-| 6 L2b＋停止検証 | 6〜9 | Q-005、較正差分調査 |
-| 7 残りlens | 18〜28 | Q-008〜Q-011、特にL4 |
-| 8 scoring | 5〜8 | Q-012/Q-013 |
-| 9 deep dive | 10〜16 | Q-014/Q-016/Q-017、Local LLM統合 |
+| 1 モデル・契約 | 4〜6 | Finding/MPO schema粒度 |
+| 2 表現生成 | 4〜7 | 既存18 Skillの互換修正 |
+| 3 統計基盤 | 6〜9 | block帰無、決定性・並列化 |
+| 4 Fragment engine | 9〜14 | N-cut対応、Similar core移植 |
+| 5 文脈構築 | 7〜10 | 全Description距離、translation |
+| 6 L2b＋停止検証 | 6〜9 | 本番較正差分調査 |
+| 7 残りlens | 18〜28 | L2a/L5/L1b/L7、特にL4 |
+| 8 scoring | 5〜8 | レンズ別残差化 |
+| 9 deep dive | 10〜16 | T01〜T10、Local LLM統合 |
 | 10 統合・報告 | 6〜9 | 引用validator、narrative再試行 |
 | 11 Runtime | 9〜14 | Phase境界レビュー、resume/lease |
 | 全体統合・installer・較正 | 7〜11 | 実data実行時間と差分原因 |
 | **合計** | **90〜141人日** | 約18〜28週（1名相当） |
 
-段階6までの最初の停止点は **36.5〜55.5人日**。多コア計算資源はwall-clockを短縮するが、実装・レビュー工数には含めない。Q-010のL4を別releaseへ送る場合は全体から概ね6〜10人日減るが、現仕様では0.2.1対象なので除外しない。
+段階6までの最初の停止点は **36.5〜55.5人日**。多コア計算資源はwall-clockを短縮するが、実装・レビュー工数には含めない。L4を含むT01〜T10の全項目が0.2.1対象であり、完了条件から除外しない。
 
-## 13. レビューで確認する順序
+## 13. 回答反映状況と残るレビュー点
 
-1. Q-001〜Q-003（資産と段階1契約）
-2. Q-004/Q-005（統計正当性と段階6停止判定）
-3. Q-006/Q-007（受け入れ件数のscope）
-4. Q-008〜Q-014（残りlens、scoring、deep dive）
-5. non-blocking 4件と実装計画書9章の既出5件
+Q-001〜Q-018は全件反映済みであり、実装開始を妨げる未回答事項はない。再レビューでは、回答そのものを再審議するのではなく、次の実装者決定が設計意図に沿うかを確認する。
 
-承認後も実装順は実装計画書5章から変更しない。段階6で報告し、明示承認を得るまで段階7へ進まない。
+1. SHA-256先頭16桁を使う永続IDのcanonical入力定義
+2. T01〜T10の最小n、統計量、BH family、特殊判定（特にT05/T06/T09/T10）
+3. Local LLM論理call失敗率の既定値20%
+4. Hammett TSVの出典・license・version管理方法
+
+実装順は実装計画書5章から変更しない。段階6でL2b本番enrichmentと差分を報告し、明示承認を得るまで段階7へ進まない。実装計画書9章の既出5件は、指定された時期に別途確認する。

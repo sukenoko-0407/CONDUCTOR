@@ -1,0 +1,22 @@
+[workspace]
+name = "cs-stat-core"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[dependencies]
+python = ">=3.12,<3.13"
+
+[pypi-dependencies]
+jsonschema = ">=4.21"
+numpy = "==2.5.1"
+pandas = ">=2.2"
+pyarrow = "==25.0.0"
+pyyaml = ">=6.0"
+rdkit = "==2026.3.4"
+scikit-learn = "==1.9.0"
+scipy = "==1.18.0"
+conductor-stat-core = { path = "../python", editable = true }
+
+[tasks]
+run = "python ../scripts/run.py"
+smoke = "python ../scripts/run.py --help"

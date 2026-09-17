@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "capability_id": "STAT_CORE",
+  "skill_name": "cs-stat-core",
+  "display_name": "CONDUCTOR deterministic statistical core",
+  "version": "0.2.1",
+  "stage": "statistics",
+  "description": "Block permutation, empirical p-values, BH correction, deterministic seeds, and block bootstrap.",
+  "input_roles": ["statistic_plan"],
+  "output_roles": ["statistic_results"],
+  "dependencies": [],
+  "platforms": ["linux-64", "win-64"]
+}

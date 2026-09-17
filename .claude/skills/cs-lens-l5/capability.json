@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "capability_id": "LENS_L5",
+  "skill_name": "cs-lens-l5",
+  "display_name": "CONDUCTOR L5 Lens",
+  "version": "0.2.1",
+  "stage": 7,
+  "description": "Same-axis context correlation sign-conflict tests with a Murcko-block null.",
+  "input_roles": ["compounds", "endpoint_table", "context_catalog", "context_membership", "feature_spaces"],
+  "output_roles": ["l5_evidence", "l5_tests", "score_observations", "findings", "l5_calibration"],
+  "dependencies": ["STAT_CORE", "CONTEXT_BUILDER"],
+  "platforms": ["linux-64", "win-64"]
+}

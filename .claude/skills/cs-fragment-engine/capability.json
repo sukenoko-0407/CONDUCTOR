@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "capability_id": "FRAGMENT_ENGINE",
+  "skill_name": "cs-fragment-engine",
+  "display_name": "CONDUCTOR Fragment Engine",
+  "version": "0.2.1",
+  "stage": 4,
+  "description": "Three-class canonical fragmentation, immutable MMP database, fragment observations, similar-core mapping, and cliff extraction audit.",
+  "input_roles": ["compounds", "endpoint_table"],
+  "output_roles": ["mmp_database", "fragment_observations", "fragmentation_exclusions", "pair_endpoint_values", "cliff_candidates"],
+  "dependencies": ["STAT_CORE"],
+  "platforms": ["linux-64", "win-64"]
+}

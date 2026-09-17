@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import yaml
+
+from conductor_lens_l1b import run_l1b
+from conductor_stat_core import SchemaValidationError, atomic_write_json, file_sha256, stable_id, validate_instance
+from conductor_stat_core.contracts import prepare_output_directory, verify_request_inputs
+
+
+ROOT = Path(__file__).resolve().parents[4]
+SCHEMAS = ROOT / "CONDUCTOR_modules" / "schemas"
+
+
+def _input(request: dict[str, Any], role: str) -> Path:
+    values = [Path(item["path"]).resolve() for item in request["inputs"] if item["role"] == role]
+    if len(values) != 1: raise ValueError(f"Exactly one {role!r} input is required")
+    return values[0]
+
+
+def _csv(frame: pd.DataFrame, path: Path) -> None:
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent); os.close(fd); temporary = Path(name)
+    try: frame.to_csv(temporary, index=False, lineterminator="\n"); os.replace(temporary, path)
+    except Exception: temporary.unlink(missing_ok=True); raise
+
+
+def _jsonl(rows: tuple[dict[str, Any], ...], path: Path) -> None:
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent); os.close(fd); temporary = Path(name)
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as handle:
+            for row in rows: handle.write(json.dumps(row, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n")
+            handle.flush(); os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception: temporary.unlink(missing_ok=True); raise
+
+
+def _artifact(output: Path, role: str, name: str, rows: int | None) -> dict[str, Any]:
+    digest = file_sha256(output / name); media = "application/json" if name.endswith(".json") else "application/x-ndjson" if name.endswith(".jsonl") else "text/csv"
+    return {"artifact_id":stable_id("ART", {"role":role,"sha256":digest}),"role":role,"path":name,"media_type":media,"schema":f"{role}@0.2.1","rows":rows,"sha256":digest}
+
+
+def execute(args: argparse.Namespace) -> dict[str, str]:
+    request = json.loads(Path(args.request).resolve().read_text(encoding="utf-8")); validate_instance(request, SCHEMAS / "execution_request.schema.json")
+    if request["identity"]["skill_name"] != "cs-lens-l1b" or request["parameters"].get("operation") != "l1b": raise SchemaValidationError("Request must target cs-lens-l1b operation l1b")
+    verify_request_inputs(request); config_path = Path(request["config_path"]).resolve(); config = yaml.safe_load(config_path.read_text(encoding="utf-8")); registry = json.loads(_input(request, "feature_spaces").read_text(encoding="utf-8"))
+    result = run_l1b(pd.read_csv(_input(request,"compounds"),dtype={"compound_id":"string"}), pd.read_csv(_input(request,"endpoint_table"),dtype={"compound_id":"string"}), pd.read_csv(_input(request,"context_catalog")), pd.read_csv(_input(request,"context_membership"),dtype={"compound_id":"string"}), registry["spaces"], request["endpoint_id"], run_seed=int(request["random_seed"]), neighbor_k=int(config["contexts"]["neighbor_k"]), min_endpoint_n=int(config["contexts"]["min_endpoint_n"]), lambda_min=float(config["lenses"]["l1b"]["lambda_min"]), screen_permutations=int(config["statistics"]["screen_permutations"]), final_permutations=int(config["statistics"]["final_permutations"]), screen_p_max=float(config["statistics"]["screen_p_max"]), report_q_max=float(config["statistics"]["report_q_max"]), calibration_permutations=int(config["statistics"]["calibration_permutations"]))
+    output = prepare_output_directory(Path(args.output_dir), args.overwrite); files = [("l1b_evidence","l1b_evidence.csv",result.evidence),("l1b_tests","l1b_tests.csv",result.tests),("l1a_diagnostics","l1a_diagnostics.csv",result.diagnostics),("score_observations","score_observations.csv",result.score_observations)]
+    for _, name, frame in files: _csv(frame, output / name)
+    _jsonl(result.findings, output / "findings.jsonl"); atomic_write_json(output / "l1b_calibration.json", result.calibration)
+    for finding in result.findings: validate_instance(finding, SCHEMAS / "finding.schema.json")
+    participation_ok = result.metrics["participation_rate"] >= float(config["statistics"]["min_permutation_participation"]); status = "succeeded" if result.calibration["acceptance_1_1_to_1_8"] and participation_ok else "needs_design_review"
+    artifacts = [_artifact(output, role, name, len(frame)) for role,name,frame in files] + [_artifact(output,"findings","findings.jsonl",len(result.findings)),_artifact(output,"l1b_calibration","l1b_calibration.json",None)]
+    manifest = {"schema_version":"0.2.1","producer":{key:request["identity"][key] for key in ("run_id","node_id","attempt_id","skill_name")},"status":status,"config_sha256":file_sha256(config_path),"input_artifacts":[{"role":item["role"],"path":item["path"],"sha256":item["sha256"]} for item in request["inputs"]],"artifacts":artifacts,"metrics":result.metrics,"warnings":[] if status=="succeeded" else ["L1b calibration or permutation participation requires design review"],"created_at":datetime.now(timezone.utc).isoformat().replace("+00:00","Z")}
+    atomic_write_json(output/"artifact_manifest.json",manifest); validate_instance(manifest,SCHEMAS/"artifact_manifest.schema.json"); return {"status":status,"manifest":"artifact_manifest.json","primary":"findings.jsonl"}
+
+
+def main() -> int:
+    parser=argparse.ArgumentParser(description="CONDUCTOR 0.2.1 L1b lens"); parser.add_argument("--request",required=True); parser.add_argument("--output-dir",required=True); parser.add_argument("--workers",type=int,default=0); parser.add_argument("--overwrite",action="store_true"); args=parser.parse_args()
+    try: response=execute(args)
+    except (json.JSONDecodeError,yaml.YAMLError,SchemaValidationError) as exc: print(json.dumps({"status":"failed","error":str(exc)}),file=sys.stderr); return 2
+    except (FileNotFoundError,ValueError,TypeError,KeyError) as exc: print(json.dumps({"status":"failed","error":str(exc)}),file=sys.stderr); return 3
+    except Exception as exc: print(json.dumps({"status":"failed","error":str(exc)}),file=sys.stderr); return 4
+    print(json.dumps(response,separators=(",",":"))); return 0
+
+
+if __name__=="__main__": raise SystemExit(main())

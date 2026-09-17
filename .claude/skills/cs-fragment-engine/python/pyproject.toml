@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "conductor-fragment-engine"
+version = "0.2.1"
+description = "Three-class canonical fragmentation engine for CONDUCTOR 0.2.1"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "conductor-stat-core==0.2.1",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "rdkit>=2024.3"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["conductor_fragment_engine*"]

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/endpoint_registry.schema.json",
+  "title": "CONDUCTOR 0.2.1 Endpoint Registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "selected_endpoint_id", "endpoints"],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "selected_endpoint_id": {"type": "string", "minLength": 1},
+    "endpoints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/endpoint"}
+    }
+  },
+  "$defs": {
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint_id", "role", "kind", "source_column", "transform", "higher_is_better", "unit", "dependencies"],
+      "properties": {
+        "endpoint_id": {"type": "string", "minLength": 1},
+        "role": {"enum": ["primary", "secondary"]},
+        "kind": {"enum": ["measured", "derived"]},
+        "source_column": {"type": ["string", "null"]},
+        "transform": {"enum": ["none", "neg_log10", "log10"]},
+        "higher_is_better": {"type": "boolean"},
+        "unit": {"type": "string"},
+        "dependencies": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "measured"}}}, "then": {"properties": {"source_column": {"type": "string", "minLength": 1}}}},
+        {"if": {"properties": {"kind": {"const": "derived"}}}, "then": {"properties": {"dependencies": {"minItems": 1}}}}
+      ]
+    }
+  }
+}

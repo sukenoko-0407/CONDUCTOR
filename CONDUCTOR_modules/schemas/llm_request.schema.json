@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/llm_request.schema.json",
+  "title": "CONDUCTOR 0.2.1 Local LLM Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "task", "finding_ids", "allowed_templates", "evidence", "output_schema"],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "task": {"enum": ["select_deep_dive", "summarize_deep_dive", "compose_component_narrative"]},
+    "finding_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^F[0-9]{6}$"}},
+    "allowed_templates": {"type": "array", "uniqueItems": true, "items": {"enum": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10"]}},
+    "evidence": {"type": "array", "items": {"type": "object"}},
+    "output_schema": {"type": "object"}
+  }
+}

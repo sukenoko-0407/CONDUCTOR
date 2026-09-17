@@ -34,23 +34,16 @@ def copy_targets(target: Path) -> list[tuple[Path, Path]]:
     selection = json.loads((MODULE_ROOT / "catalog" / "included_skills.json").read_text(encoding="utf-8"))
     selected_skills = [
         name
-        for key in ("description_skills", "clustering_skills", "analysis_skills", "interpretation_skills", "support_skills")
+        for key in ("description_skills", "pipeline_skills")
         for name in selection.get(key, [])
     ]
     pairs = [
-        (
-            SOURCE_ROOT / ".claude" / "agents" / name,
-            target / ".claude" / "agents" / name,
-        )
-        for name in ["cs-conductor-interpreter.md"]
-    ]
-    pairs.extend(
         (
             SOURCE_ROOT / ".claude" / "skills" / name,
             target / ".claude" / "skills" / name,
         )
         for name in selected_skills
-    )
+    ]
     pairs.append((MODULE_ROOT, target / "CONDUCTOR_modules"))
     return pairs
 

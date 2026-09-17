@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/mpo_contract.schema.json",
+  "title": "CONDUCTOR 0.2.1 MPO Extension Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "endpoint_ids", "dependencies", "endpoint_scores"],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "endpoint_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["derived_endpoint_id", "source_endpoint_ids"],
+        "properties": {
+          "derived_endpoint_id": {"type": "string", "minLength": 1},
+          "source_endpoint_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "endpoint_scores": {
+      "type": "object",
+      "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+    }
+  }
+}
