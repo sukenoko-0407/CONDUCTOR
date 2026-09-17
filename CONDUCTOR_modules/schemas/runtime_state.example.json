@@ -1,0 +1,18 @@
+{
+  "schema_version": "0.2.1",
+  "run_id": "RUN-EXAMPLE-001",
+  "node_id": "NODE-P01-PREPARE",
+  "phase_id": "P01",
+  "skill_name": "cs-runtime",
+  "state": "succeeded",
+  "attempt_id": "ATT-001",
+  "lease_token": null,
+  "lease_expires_at": null,
+  "input_hashes": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  ],
+  "config_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "code_version": "0.2.1",
+  "updated_at": "2026-09-17T00:00:00Z"
+}

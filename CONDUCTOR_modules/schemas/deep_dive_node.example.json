@@ -1,0 +1,13 @@
+{
+  "node_id": "DDNODE-EXAMPLE-001",
+  "parent_node_id": null,
+  "finding_id": "F000001",
+  "depth": 0,
+  "template_id": "ROOT",
+  "parameters": {},
+  "parameter_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "execution_status": "completed",
+  "state": "not_dived",
+  "result": null,
+  "citations": []
+}

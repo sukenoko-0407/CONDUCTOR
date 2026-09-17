@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "event_id": "EVENT-EXAMPLE-001",
+  "run_id": "RUN-EXAMPLE-001",
+  "node_id": "NODE-P01-PREPARE",
+  "attempt_id": "ATT-001",
+  "lease_token": "LEASE-EXAMPLE-001",
+  "event_type": "succeeded",
+  "occurred_at": "2026-09-17T00:00:00Z",
+  "payload": {
+    "manifest": "artifact_manifest.json"
+  }
+}

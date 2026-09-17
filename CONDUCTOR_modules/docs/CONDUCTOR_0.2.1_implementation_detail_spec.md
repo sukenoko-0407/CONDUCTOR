@@ -83,6 +83,8 @@ CONDUCTOR_modules/
     └── templates/                   # Skill 共通 wrapper の生成元
 ```
 
+`schemas/` の各 `*.schema.json` には、同名の `*.example.json` を併設する。通常運用で利用者が事前に作成する必須 JSON は `endpoint_registry.json` だけであり、`endpoint_registry.example.json` を複製して実データに合わせる。`llm_request` / `llm_response` の例は offline provider の実装・疎通確認用、その他の例は Runtime 生成物の契約確認用とする。
+
 各新規 Skill は最低限 `SKILL.md`、`capability.json`、`env/pixi.toml`、`env/pixi.lock`、`scripts/launch.py`、`scripts/run.py`、Skill 内 package、単体テストを持つ。実行は必ず `scripts/launch.py` を経由し、Pixi 環境・cache・一時領域を Skill の `env/` 配下へ閉じ込める。
 
 `cs-stat-core` は import 可能な versioned package と CLI の両方を持つ。他の lens Skill は各自の Pixi lock に local path dependency を明記し、暗黙の `PYTHONPATH` や system Python へ依存しない。Skill 間のデータ受け渡しは Artifact のみとし、別 Skill の作業ディレクトリを直接変更しない。

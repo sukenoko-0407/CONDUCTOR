@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.2.1",
+  "request_id": "LLMREQ-EXAMPLE-001",
+  "selections": [
+    {
+      "template_id": "T05",
+      "parameters": {
+        "iterations": 500
+      }
+    }
+  ],
+  "narrative": null,
+  "citations": []
+}

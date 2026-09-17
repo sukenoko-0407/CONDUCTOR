@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.2.1",
+  "endpoint_ids": [
+    "EP_PIC50_WT",
+    "EP_PIC50_MUTANT",
+    "EP_SELECTIVITY"
+  ],
+  "dependencies": [
+    {
+      "derived_endpoint_id": "EP_SELECTIVITY",
+      "source_endpoint_ids": [
+        "EP_PIC50_WT",
+        "EP_PIC50_MUTANT"
+      ]
+    }
+  ],
+  "endpoint_scores": {
+    "EP_PIC50_WT": 0.8,
+    "EP_PIC50_MUTANT": 0.7,
+    "EP_SELECTIVITY": 0.6
+  }
+}

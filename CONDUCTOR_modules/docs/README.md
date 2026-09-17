@@ -4,6 +4,8 @@ CONDUCTOR 0.2.1 の設計・実装文書です。段階11と実装適合性残�
 
 まず [`CONDUCTOR_0.2.1_specification_overview.md`](CONDUCTOR_0.2.1_specification_overview.md) を読んでください。全体像と決定事項はそこにあります。
 
+実行前に用意する Endpoint registry は [`../schemas/endpoint_registry.example.json`](../schemas/endpoint_registry.example.json) を複製して実データに合わせて編集してください。全 JSON Schema と具体例の区別、利用者が用意するもの、Runtime が生成するものは [`../schemas/README.md`](../schemas/README.md) にまとめています。
+
 **実装を担当する方**は [`CONDUCTOR_0.2.1_implementer_brief.md`](CONDUCTOR_0.2.1_implementer_brief.md) から読んでください。読む順序、着手前に作る文書、守るべき制約がまとまっています。
 
 ## 各論

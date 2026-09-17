@@ -1,0 +1,17 @@
+{
+  "context_id": "CL|D001|k10|c1|0123456789abcdef",
+  "context_type": "cluster",
+  "axis_id": "cluster|D001|k10",
+  "source_space_id": "D001",
+  "source_tier": 1,
+  "condition_depth": 1,
+  "member_count": 24,
+  "endpoint_valid_count": 22,
+  "representative_context_id": null,
+  "dedup_status": "representative",
+  "translation_status": "native",
+  "calibration_scope": true,
+  "structurality": "non_structural",
+  "eligible": true,
+  "is_representative": true
+}

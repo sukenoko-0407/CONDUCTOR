@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.2.1",
+  "selected_endpoint_id": "EP_PIC50",
+  "endpoints": [
+    {
+      "endpoint_id": "EP_PIC50",
+      "role": "primary",
+      "kind": "measured",
+      "source_column": "pIC50",
+      "transform": "none",
+      "higher_is_better": true,
+      "unit": "log_molar",
+      "dependencies": []
+    }
+  ]
+}

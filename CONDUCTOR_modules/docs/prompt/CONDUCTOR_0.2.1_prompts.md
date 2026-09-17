@@ -33,7 +33,7 @@ Status: **0.2.1 正式運用テンプレート。**
 | `<INPUT_CSV>` | 本番または較正データCSV |
 | `<PROGRAM_NAME>` | Description Databaseを分離するProgram名 |
 | `<RUN_ROOT>` | 新規Runの出力先、または再開対象 |
-| `<ENDPOINT_REGISTRY>` | Endpoint registry JSON |
+| `<ENDPOINT_REGISTRY>` | Endpoint registry JSON。`../../schemas/endpoint_registry.example.json` を複製し、実データに合わせて編集する |
 | `<ENDPOINT_ID>` | 今回解析する単一Endpoint |
 | `<CONFIG_PATH>` | 解決済み0.2.1設定YAML |
 | `<ID_COLUMN>` | compound ID列名 |

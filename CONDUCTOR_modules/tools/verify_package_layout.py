@@ -72,6 +72,9 @@ def verify() -> list[str]:
     ):
         if not (MODULE_ROOT / "schemas" / schema).is_file():
             errors.append(f"missing schema: {schema}")
+        example = schema.replace(".schema.json", ".example.json")
+        if not (MODULE_ROOT / "schemas" / example).is_file():
+            errors.append(f"missing schema example: {example}")
     return errors
 
 

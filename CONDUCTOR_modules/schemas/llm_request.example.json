@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.2.1",
+  "request_id": "LLMREQ-EXAMPLE-001",
+  "task": "select_deep_dive",
+  "finding_ids": [
+    "F000001"
+  ],
+  "allowed_templates": [
+    "T01",
+    "T05"
+  ],
+  "evidence": [
+    {
+      "finding_id": "F000001",
+      "axis_id": "cluster|D001|k10",
+      "allowed_levels": [
+        "CL|D001|k10|c1|0123456789abcdef"
+      ]
+    }
+  ],
+  "output_schema": {
+    "type": "object"
+  }
+}

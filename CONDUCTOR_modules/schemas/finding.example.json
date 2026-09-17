@@ -1,0 +1,81 @@
+{
+  "finding_id": "F000001",
+  "finding_key": "FND|0123456789abcdef",
+  "lens": "L1b",
+  "endpoint_ids": [
+    "EP_PIC50"
+  ],
+  "claim": {
+    "subject_type": "context",
+    "subject_id": "CL|D001|k10|c1|0123456789abcdef",
+    "condition_id": "CL|D001|k10|c1|0123456789abcdef",
+    "condition_depth": 1,
+    "effect_direction": "positive",
+    "effect_size": 0.42,
+    "effect_unit": "log_molar",
+    "support_n": 22
+  },
+  "tests": [
+    {
+      "test_id": "TEST|0123456789abcdef",
+      "question": "Is the local effect stronger than the blocked null distribution?",
+      "method": "blocked_permutation",
+      "statistic": 0.42,
+      "p_value": 0.01,
+      "q_value": 0.03,
+      "null_iterations": 1000
+    }
+  ],
+  "falsification": {
+    "type": "context_complement_replay",
+    "parameters": {
+      "context_id": "CL|D001|k10|c1|0123456789abcdef"
+    },
+    "decision_rule": "Retain only when the context-specific effect survives the registered replay."
+  },
+  "triviality": {
+    "confounders_tested": [
+      "mw",
+      "clogp",
+      "tpsa"
+    ],
+    "raw_effect_size": 0.42,
+    "adjusted_effect_size": 0.36,
+    "verdict": "notable"
+  },
+  "translation": {
+    "status": "native"
+  },
+  "entities": {
+    "context_ids": [
+      "CL|D001|k10|c1|0123456789abcdef"
+    ],
+    "scaffold_ids": [],
+    "transformation_ids": [],
+    "fragment_ids": [],
+    "compound_ids": [],
+    "feature_ids": []
+  },
+  "citations": [
+    {
+      "citation_id": "CITE-EXAMPLE-001",
+      "table_ref": "phase3/l1b_evidence.csv#row_id=EVIDENCE|0123456789abcdef"
+    }
+  ],
+  "scores": {
+    "statistical_strength": 0.9,
+    "robustness": 0.8,
+    "non_triviality": 0.75,
+    "actionability": 0.6,
+    "frontier_relevance": 0.5,
+    "composite": 0.73,
+    "rank": 1
+  },
+  "state": {
+    "pipeline": "reportable",
+    "deep_dive": "not_dived"
+  },
+  "labels": [],
+  "merged_into": null,
+  "narrative": null
+}

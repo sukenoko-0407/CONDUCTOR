@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.2.1",
+  "identity": {
+    "project": "example-program",
+    "run_id": "RUN-EXAMPLE-001",
+    "phase_id": "P01",
+    "node_id": "NODE-P01-PREPARE",
+    "attempt_id": "ATT-001",
+    "skill_name": "cs-runtime"
+  },
+  "endpoint_id": "EP_PIC50",
+  "config_path": "C:/conductor-inputs/example-program/resolved_config.yaml",
+  "random_seed": 20260916,
+  "inputs": [
+    {
+      "role": "dataset",
+      "path": "C:/conductor-inputs/example-program/input.csv",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "producer_manifest": null
+    },
+    {
+      "role": "endpoint_registry",
+      "path": "C:/conductor-inputs/example-program/endpoint_registry.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "producer_manifest": null
+    }
+  ],
+  "parameters": {
+    "operation": "prepare_phase1",
+    "id_column": "compound_id",
+    "smiles_column": "smiles"
+  },
+  "resources": {
+    "workers": 0,
+    "memory_mb": 16384
+  }
+}

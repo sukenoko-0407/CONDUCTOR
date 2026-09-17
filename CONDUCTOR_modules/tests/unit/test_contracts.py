@@ -76,3 +76,12 @@ def test_every_schema_is_valid(schema_path: Path) -> None:
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validator_class = __import__("jsonschema").validators.validator_for(schema)
     validator_class.check_schema(schema)
+
+
+@pytest.mark.parametrize("example_path", sorted((MODULE_ROOT / "schemas").glob("*.example.json")))
+def test_every_example_matches_its_schema(example_path: Path) -> None:
+    schema_name = example_path.name.replace(".example.json", ".schema.json")
+    schema_path = example_path.with_name(schema_name)
+    assert schema_path.is_file(), f"Schema is missing for example: {example_path.name}"
+    instance = json.loads(example_path.read_text(encoding="utf-8"))
+    validate_instance(instance, schema_path)
