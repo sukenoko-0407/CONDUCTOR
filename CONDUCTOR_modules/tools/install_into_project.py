@@ -23,9 +23,17 @@ OBSOLETE_CONDUCTOR_SKILLS = {
 
 
 def ignored(directory: str, names: list[str]) -> set[str]:
-    ignored_names = {"__pycache__", ".pytest_cache", ".uv-cache", ".venv", "Archive"}
+    ignored_names = {
+        "__pycache__", ".pytest_cache", ".uv-cache", ".venv", ".pixi",
+        "Archive",
+    }
     if Path(directory).name == "env":
         ignored_names.update({".pixi", "cache", "config", "data", "state", "tmp", "pixi-home"})
+    if Path(directory).name == "diagnosis":
+        ignored_names.update({
+            "config.yaml", "diagnosis_output", "diagnosis_output_selftest",
+        })
+    ignored_names.update(name for name in names if name.endswith(".egg-info"))
     ignored_names.update(name for name in names if name.endswith(".pyc"))
     return ignored_names.intersection(names)
 

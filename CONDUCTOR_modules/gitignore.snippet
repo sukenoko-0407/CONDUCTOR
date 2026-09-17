@@ -7,6 +7,18 @@
 .claude/skills/cs-*/env/tmp/
 .claude/skills/cs-*/env/pixi-home/
 
+# CONDUCTOR module and diagnosis environments/caches
+CONDUCTOR_modules/.venv/
+CONDUCTOR_modules/.uv-cache/
+CONDUCTOR_modules/.pytest_cache/
+CONDUCTOR_modules/**/__pycache__/
+CONDUCTOR_modules/**/*.egg-info/
+CONDUCTOR_modules/diagnosis/.pixi/
+CONDUCTOR_modules/diagnosis/.venv/
+
 # CONDUCTOR generated artifacts
 results/CONDUCTOR/
 CONDUCTOR_modules/Archive/
+CONDUCTOR_modules/diagnosis/config.yaml
+CONDUCTOR_modules/diagnosis/diagnosis_output/
+CONDUCTOR_modules/diagnosis/diagnosis_output_selftest/

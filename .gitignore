@@ -40,6 +40,14 @@ dist/
 .claude/skills/*/env/.bootstrap.lock
 .claude/skills/*/env/.bootstrap.lock.*
 
+# CONDUCTOR module-local environments. The generic rules above already match
+# these paths; keep the explicit rules so packaging and diagnosis intent is
+# reviewable. pixi.toml and pixi.lock remain tracked.
+/CONDUCTOR_modules/.venv/
+/CONDUCTOR_modules/.uv-cache/
+/CONDUCTOR_modules/diagnosis/.pixi/
+/CONDUCTOR_modules/diagnosis/.venv/
+
 # Generated CONDUCTOR results and archived working data
 /Archive/
 /CONDUCTOR_modules/Archive/

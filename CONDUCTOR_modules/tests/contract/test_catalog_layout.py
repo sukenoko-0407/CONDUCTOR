@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from install_into_project import ignored
 from verify_package_layout import verify
 
 
@@ -34,3 +35,16 @@ def test_installer_dry_run_is_non_mutating(tmp_path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert "Dry run only" in completed.stdout
     assert list(target.iterdir()) == []
+
+
+def test_installer_excludes_module_local_environments_and_diagnosis_outputs() -> None:
+    diagnosis_names = [
+        ".pixi", ".venv", "pixi.toml", "pixi.lock", "config.example.yaml",
+        "config.yaml", "diagnosis_output", "diagnosis_output_selftest",
+    ]
+    excluded = ignored(str(MODULE_ROOT / "diagnosis"), diagnosis_names)
+    assert excluded == {
+        ".pixi", ".venv", "config.yaml", "diagnosis_output",
+        "diagnosis_output_selftest",
+    }
+    assert {"pixi.toml", "pixi.lock", "config.example.yaml"}.isdisjoint(excluded)
