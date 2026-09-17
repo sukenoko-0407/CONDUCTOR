@@ -14,7 +14,7 @@ Status: **0.2.1 正式運用テンプレート。**
 - `<...>` を実値へ置き換えてから使用する。
 - 入力、設定、Run root、Endpoint registry には絶対パスを使う。
 - **1 Run = 1 Endpoint** とする。
-- 0.1.10/0.1.11 の Description Database は変換せず、その場で再利用する。既定配置は `<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/` とする。
+- 0.1.10/0.1.11 の Description Database は、通常は変換せずその場で再利用する。既定配置は `<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/` とする。人間が全件再計算を明示決定し、旧Databaseを復元可能な形でArchive済みの場合だけ、3.2Aと3.4Aの例外経路を使う。
 - Database の再利用条件は、同一 Program、同一 compound ID、同一 canonical SMILES、同一 `calculation_version`、同一 calculation signature とする。
 - 同一 Program 内の同一 compound ID・異構造は fail-fast とし、別IDへの置換やDatabase回避で続行しない。
 - 0.1.x の Run state、Execution Request、解析成果物、レポートは0.2.1へ移行しない。
@@ -32,6 +32,7 @@ Status: **0.2.1 正式運用テンプレート。**
 | `<PROJECT_ROOT>` | CONDUCTORを配置したProject root |
 | `<INPUT_CSV>` | 本番または較正データCSV |
 | `<PROGRAM_NAME>` | Description Databaseを分離するProgram名 |
+| `<ARCHIVED_DATABASE_ROOT>` | Archive済みの旧Description DatabaseのProgram directory |
 | `<RUN_ROOT>` | 新規Runの出力先、または再開対象 |
 | `<ENDPOINT_REGISTRY>` | Endpoint registry JSON。`../../schemas/endpoint_registry.example.json` を複製し、実データに合わせて編集する |
 | `<ENDPOINT_ID>` | 今回解析する単一Endpoint |
@@ -91,6 +92,40 @@ SMILES列: <SMILES_COLUMN>
 ファイル、Database、WAL、Run stateを変更せず、開始可否と問題点を報告してください。互換性がないrecordを削除、更新、invalid化しないでください。
 ```
 
+### 3.2A Archive後・全Description新規構築前のPreflight
+
+```text
+CONDUCTOR 0.2.1のRunを開始せず、Archive後の入力と全Description新規構築条件をread-onlyで事前確認してください。
+
+Project root: <PROJECT_ROOT>
+入力CSV: <INPUT_CSV>
+Program名: <PROGRAM_NAME>
+Archive済みDatabase root: <ARCHIVED_DATABASE_ROOT>
+Endpoint registry: <ENDPOINT_REGISTRY>
+Endpoint ID: <ENDPOINT_ID>
+設定: <CONFIG_PATH>
+compound ID列: <ID_COLUMN>
+SMILES列: <SMILES_COLUMN>
+予定Run root: <RUN_ROOT>
+
+人間が全Descriptionの再計算を明示決定し、旧Description DatabaseはArchive済みです。次を確認してください。
+- 必須列、IDの欠損・空文字・重複
+- SMILESの空欄、RDKit parse不能数
+- Endpointのtransform domain、finite件数、欠測数
+- Run rootが新規かつ空であること
+- 設定schema_versionが0.2.1であること
+- `<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/` が存在しないこと
+- `<ARCHIVED_DATABASE_ROOT>` が存在し、database_manifest.json、compound registry、Description別SQLite、audit、および存在する場合はWAL/SHM sidecarを含む旧Database一式のinventoryを取得できること
+- Archive内SQLiteをread-onlyで開け、schema_versionとintegrityに異常がないこと
+- 同じProgramを使用するwriterまたはRunが存在しないこと
+- 現行18 Descriptionのcalculation_version、calculation signature、Skill、pixi.toml、pixi.lock、model参照が解決可能であること
+- 全入力recordをcache miss、cache hitを0件として新規計算する計画であること
+- Gobbi Pharm2DでSVDを使う場合は、新しい入力dataset signatureで新規計算すること
+- 18 DescriptionのPixi環境、全特徴量、Run成果物を新規作成するための空き容量があること
+
+Archive、ファイル、Database、WAL/SHM、Pixi環境、Run stateを変更せず、開始可否、入力件数、Description別予想miss件数、必要容量の見積り、問題点を報告してください。元のDatabase pathを作成せず、Archiveをcacheとして使用せず、recordを削除、更新、invalid化しないでください。
+```
+
 ### 3.3 Local LLM providerのPreflight
 
 ```text
@@ -127,6 +162,33 @@ memory_mb: <MEMORY_MB>
 0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6では設定済みoffline providerだけを使用し、fallback文章を生成しないでください。
 
 needs_design_review、同一ID・異構造、schema/hash/citation不整合では停止し、閾値変更や成果物の自動修正を行わないでください。終了時にRun状態、Phase別状態、Description別hit/miss/registered件数、Finding件数、上位10件、LLM logical call失敗率、引用検証結果、主要成果物の絶対パスを報告してください。
+```
+
+### 3.4A Archive後に全Descriptionを新規構築する本番Run
+
+```text
+CONDUCTOR 0.2.1で、Archive済みの旧Description Databaseを使用せず、全Descriptionを新規計算する本番Runを実行してください。
+
+Project root: <PROJECT_ROOT>
+入力CSV: <INPUT_CSV>
+Program名: <PROGRAM_NAME>
+Archive済みDatabase root: <ARCHIVED_DATABASE_ROOT>
+Endpoint registry: <ENDPOINT_REGISTRY>
+Endpoint ID: <ENDPOINT_ID>
+設定: <CONFIG_PATH>
+compound ID列: <ID_COLUMN>
+SMILES列: <SMILES_COLUMN>
+Run root: <RUN_ROOT>
+workers: <WORKERS>
+memory_mb: <MEMORY_MB>
+
+最初に3.2A相当のread-only Preflightを行い、安全上または契約上の阻害要因がなければ同じ依頼の範囲で開始してください。`<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/` が既に存在する場合、Archiveが不足または変更されている場合、同じProgramのwriterが存在する場合は開始せず停止してください。
+
+ArchiveのinventoryとhashをRunの監査情報へ記録した後、Archiveを変更せず、cacheまたは計算入力にも使用せず、元の既定pathへ同じProgram名のDescription Databaseを新規構築してください。Program名を再計算回避用の別名へ変更しないでください。現行18 Descriptionについてcache hitを0件、全入力recordをmissとして現行calculation version、calculation signature、Skill環境で計算し、成功recordだけを新しいDatabaseへ登録してください。同一compound ID・異canonical SMILESはfail-fastとし、旧recordの削除、移動、invalid化、Archiveからの復元を行わないでください。
+
+0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6ではPreflight済みのoffline providerだけを使用し、fallback文章を生成しないでください。
+
+needs_design_review、同一ID・異構造、schema/hash/citation不整合では停止し、閾値変更や成果物の自動修正を行わないでください。終了時にArchive不変の確認、Run状態、Phase別状態、Description別hit=0、miss/registered/failed件数、Finding件数、上位10件、LLM logical call失敗率、引用検証結果、新Databaseと主要成果物の絶対パスを報告してください。
 ```
 
 ### 3.5 同じProgramで別Endpointの新規Run
@@ -333,7 +395,8 @@ parameter契約:
 - operator promptから、対象Program、Run、Endpoint、入力、設定が一意に決まる。
 - read-only依頼がRun stateやDatabaseを変更しない。
 - 新規Runが既存Run rootを上書きしない。
-- 0.1.10/0.1.11 Description Databaseの互換recordがhitとして再利用される。
+- 通常経路では0.1.10/0.1.11 Description Databaseの互換recordがhitとして再利用される。
+- 3.2A/3.4Aの例外経路ではArchiveが不変に保たれ、元の既定pathへ同じProgram名でhit=0の新Databaseが構築される。
 - 同一ID・異構造がfail-fastする。
 - 3種類のLLM taskがrequest/response schemaへ適合する。
 - provider stdoutにJSON以外が混入しない。
