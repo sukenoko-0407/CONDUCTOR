@@ -18,6 +18,7 @@ CONDUCTOR 0.2.1 の設計・実装文書です。段階11と実装適合性残�
 | [`design/candidate_generation.md`](design/candidate_generation.md) | 条件の語彙、探索深度、段階A/B/C、スコアリング |
 | [`design/deep_dive_protocol.md`](design/deep_dive_protocol.md) | 深堀エンジン、テンプレート集合、予算、実行例 |
 | [`design/llm_operating_contract.md`](design/llm_operating_contract.md) | Local LLM の分業線、引用強制、タスク分解 |
+| [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) | **本番運用プロンプト、Database再利用手順、Local LLM内部プロンプト** |
 | [`design/open_questions.md`](design/open_questions.md) | 未決事項。**Chemist の知識が必要な項目を A 群に集約** |
 
 ## 設計テーゼ

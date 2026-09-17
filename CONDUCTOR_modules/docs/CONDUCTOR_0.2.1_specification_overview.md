@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 仕様概要書
 
-Status: **設計協議中。未承認・未実装。今後の議論により改訂される。**
+Status: **設計確定。段階11と実装適合性確認まで完了し、正式較正・本番相当確認待ち。**
 
 ## 1. 文書の位置づけ
 
@@ -20,21 +20,21 @@ Status: **設計協議中。未承認・未実装。今後の議論により改�
 | [`design/candidate_generation.md`](design/candidate_generation.md) | 条件の語彙、探索深度、スコアリング |
 | [`design/deep_dive_protocol.md`](design/deep_dive_protocol.md) | 深堀エンジン、テンプレート集合 |
 | [`design/llm_operating_contract.md`](design/llm_operating_contract.md) | Local LLM の分業線と拘束 |
+| [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) | **正式な運用プロンプトとLocal LLM内部プロンプト契約** |
 | [`design/open_questions.md`](design/open_questions.md) | 未決事項 |
 
 ### 1.1 工程と役割
 
-0.2.1 は次の3工程で進む。
+0.2.1 は次の4工程で進めた。現在地は [`CONDUCTOR_0.2.1_stage11_implementation_report.md`](CONDUCTOR_0.2.1_stage11_implementation_report.md) を正とする。
 
 ```text
-① 仕様概要書の最終化   ← 本書および各論文書
-② 実装計画書の作成・最終化
-③ 実装                  ← 別 Agent へ委託
+① 仕様概要書の最終化             完了
+② 実装計画書の作成・最終化       完了
+③ 段階1〜11と実装適合性確認      完了
+④ 正式較正・本番相当確認         ← 現在地
 ```
 
-**③ を担当する Agent は本設計の議論に参加していない。** したがって ② は、設計意図を知らない実装者が仕様どおりに実装できる水準まで具体化されなければならない。曖昧な記述、暗黙の前提、「適切に判断する」といった委任表現を残さない。
-
-② の作成は ① の確定後に着手する。
+実装は本設計の議論に参加していないAgentへ渡せる粒度で計画し、曖昧な記述、暗黙の前提、「適切に判断する」といった委任表現を残さない方針で進めた。この原則は正式較正と本番運用にも継続して適用する。
 
 ## 2. なぜ 0.2.1 を作るか
 
@@ -484,6 +484,23 @@ Finding を単位にし、エンティティ参照を必須フィールドにす
 
 詳細は [`design/llm_operating_contract.md`](design/llm_operating_contract.md)。
 
+### 10.1 プロンプトは二層に分ける
+
+0.2.1 のプロンプトは次の二層を持つ。
+
+| 層 | 利用者 | 目的 |
+|---|---|---|
+| 運用プロンプト | 人間 → Main Agent | Preflight、新規Run、再開、状態確認、監査を一意に依頼する |
+| 内部タスクプロンプト | offline provider → Local LLM | Phase 5/6 の限定された判断と言語化を、固定JSON契約の内側で実行する |
+
+正式な文面とplaceholderは [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) を正本とする。運用プロンプトは実行権限の範囲を明示し、read-only依頼をRun進行やDatabase更新へ拡張してはならない。内部タスクプロンプトは `select_deep_dive`、`summarize_deep_dive`、`compose_component_narrative` の3種類だけを許可する。
+
+### 10.2 Local LLMの出力境界
+
+providerはJSONL stdin/stdoutで通信し、1 requestにつきschema-validなJSON objectを1行だけ返す。LLMはevidence外のID、数値、引用、検定を作らず、根拠不足時には空の選択または`null` narrativeを返す。深堀状態は決定論層が判定し、LLMへ委ねない。narrative中の引用は `[[citation_id]]` 形式とし、Phase 6で本文、`citations`配列、引用行の値を機械照合する。
+
+プロンプト文書の存在だけではproviderの実装完了を意味しない。本番Runの前に `llm.command` を設定し、3タスク全てのschema、timeout、終了code、stdout純度をprobeしなければならない。
+
 ## 11. Endpoint と MPO 対応
 
 > **単一 Endpoint で確実に仕事ができることを最優先とする。ただし多目的最適化（MPO）へ拡張できる構造で作る。**
@@ -549,7 +566,7 @@ MMP において「変換したが Endpoint に変化なし」は捨てない。
 
 網羅探索は繰り返し実行される（閾値の調整、Endpoint の切り替え）。再計算を避けるため、次を永続化して再利用する。
 
-- Description（Program 別 Database。0.1.10 の設計を流用）
+- Description（Program 別 Database。0.1.10/0.1.11 の実装を変換せず流用）
 - 文脈カタログと翻訳結果
 - MMP canonical database
 - 局所平坦性 λ（空間 × 化合物）
@@ -557,9 +574,11 @@ MMP において「変換したが Endpoint に変化なし」は捨てない。
 
 Endpoint を変更した場合、**構造に依存する成果物（Description、文脈、MMP pair、λ の空間構造）は再利用でき、Endpoint に依存する量だけ再計算する**。この分離を Artifact 設計へ反映する。
 
+Description Databaseのcache hitには、同一Program、同一compound ID、同一canonical SMILES、同一`calculation_version`、同一calculation signatureを要求する。同一ID・異構造はfail-fastとする。Gobbi Pharm2DのSVDのようなbatch-dependent計算ではdataset signatureも一致しなければならない。0.1.xのRun state、Execution Request、Finding、検定結果、narrativeは再利用対象に含めない。
+
 ## 13. 決定事項
 
-本書で確定した設計判断を列挙する。実装開始の承認は別途必要である。
+本書で確定した設計判断を列挙する。実装状況と正式受入前の残件はStage 11実装報告書を正とする。
 
 1. 出力単位を「レポートの節」から **Finding** へ変更する。格子は埋めない。
 2. 発見レンズを6つ用意する。FF 濃縮（L6）は唯一の入口ではなく6分の1とする。
@@ -613,6 +632,8 @@ Endpoint を変更した場合、**構造に依存する成果物（Description�
 39k. **フラグメント類似度による未試験フラグメントへの外挿は行わない。** λ_frag = 0.27 であり信頼できない。希少フラグメントへの軽い縮約に留める。
 39e. **空間ごとの重み付けは行わない。** 全6空間で λ が 0.61〜0.68 と横並びであり、空間の優劣は存在しない。多様な記述子の価値は「平坦さ」ではなく「**切り口の多様性**」にある。
 40. **0.1.11 の Attachment 制約付き MCS ＋ Tanimoto による Similar core 機構を継承する。** ただし Evidence を人間へ並べるのではなく、**core 類似度クラスを条件 C の一種として L2 の交互作用機構へ乗せ、結論だけを返す**。骨格比較は環系置換（厳密）／Core 類似度（中間）／L7（系列）の3層で行う。
+41. **0.2.1の正式な運用プロンプト集を版管理する。** 人間からMain Agentへの運用依頼と、offline providerからLocal LLMへの内部タスクを分離する。
+42. **内部LLM taskは3種類に限定する。** `select_deep_dive`、`summarize_deep_dive`、`compose_component_narrative`以外を0.2.1 providerへ追加せず、根拠不足時の空/null応答を正当な結果とする。
 
 ## 14. 0.1.x から技術的に流用する資産
 
@@ -626,6 +647,8 @@ Endpoint を変更した場合、**構造に依存する成果物（Description�
 | Pixi による Skill 自己完結 | 全 Skill | 実行環境の分離として妥当 |
 | Artifact 契約と監査の思想 | Phase 6 | 引用検証へ転用する |
 | ローカル平坦性（cliff/SALI）計算 | L1/L3/L4 の土台 | ただし D002 限定から**全空間・近傍単位**へ一般化する |
+
+既存Description Databaseはschema変換や一括再計算を行わず、同じProject rootとProgram名でin-place利用する。初回の0.2.1書込み前にwriter不在を確認し、SQLite backup APIで復旧可能なバックアップを作成する。互換性確認と本番Runの依頼文は正式プロンプト集3.2節および3.4節を使用する。
 
 ## 15. 非対象
 
@@ -649,19 +672,11 @@ Endpoint を変更した場合、**構造に依存する成果物（Description�
 
 いずれも 0.2.1 の設計を変更せずに載せられるよう、拡張点を確保してある。
 
-## 16. 未決事項
+## 16. 正式受入前の残件
 
-次は本書では確定せず、議論または実データでの較正により決める。
+実装を阻害する未決placeholderは解消済みである。正式受入には次の外部入力を伴う確認が残る。
 
-1. プロジェクト固有 SMARTS パターンの提供（**唯一、外部からの提供を要する項目**）
-2. スコアリング各軸の重みと結合規則
-3. 条件の語彙の粒度（分位分割の刻み、クラスタの最小サイズ）
-4. 各レンズの統計スクリーン閾値
-5. ローカル平坦性の判定閾値と近傍サイズ k
-6. 深堀予算の具体値（深度3・分岐3・15回は初期案）
-7. Finding の既定表示件数 K
-8. 許容性判定の分散閾値（測定ノイズ水準が不明なため）
+1. 較正961化合物の実データでL2b、L5、L1b、全lens、K=10を再現し、8章相当の受入値を確認する。
+2. `llm.command`へ実際のoffline providerを設定し、3種類のLLM taskをprobeした後、Phase 5〜6をend-to-endで実行する。
 
-閾値類は本マシンでは較正できない。**診断用の小規模プロトタイプを別ブランチで構築し、実データ環境で実行した結果を持ち帰る**方式で埋める。
-
-集約は [`design/open_questions.md`](design/open_questions.md)。
+プロジェクト固有SMARTSは任意追加軸であり、提供されなくても0.2.1の本番Runを開始できる。残件の完了条件と報告項目は [`CONDUCTOR_0.2.1_stage11_implementation_report.md`](CONDUCTOR_0.2.1_stage11_implementation_report.md) および [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) を正とする。

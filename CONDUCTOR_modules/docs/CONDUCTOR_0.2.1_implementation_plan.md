@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 実装計画書
 
-Status: **協議中。未承認。**
+Status: **初回実装・実装適合性確認完了。正式較正・本番相当確認待ち。**
 
 対象読者: **本設計の議論に参加していない実装担当者。**
 
@@ -15,7 +15,8 @@ Status: **協議中。未承認。**
 | 2 | [`design/calibration_results.md`](design/calibration_results.md) | **全パラメータの根拠。実測値であり推測ではない** |
 | 3 | [`design/finding_model.md`](design/finding_model.md) | 出力の中心データ構造 |
 | 4 | [`design/discovery_lenses.md`](design/discovery_lenses.md) | 各レンズの統計形式 |
-| 5 | 残りの design/ 各論 | 実装中に必要になった箇所だけ |
+| 5 | [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) | 本番運用とLocal LLM taskの正式プロンプト契約 |
+| 6 | 残りの design/ 各論 | 実装中に必要になった箇所だけ |
 
 0.1.x のドキュメントは `archive_0.1.x/`（Git 管理外）にある。**設計上の前提として参照しない。**
 流用するコード資産は本書 3 章に列挙する。
@@ -131,6 +132,8 @@ L1a / L3 / L6 は**診断指標として計算し報告してよい**。ただ�
 流用すると明記した資産（Description Skill、Description Database、
 MMP canonical database、Attachment 制約付き MCS）だけを使う。
 
+0.1.10/0.1.11のDescription Databaseは現行と同じschema version `1.0.0`、Program別・Description別SQLite配置を前提にin-place再利用する。schema変換や一括importは実装しない。cache hitは同一Program、同一compound ID、同一canonical SMILES、同一`calculation_version`、同一calculation signatureで判定する。Gobbi Pharm2D＋SVDはdataset signatureも含める。旧Run stateと旧解析Artifactは再利用しない。
+
 ---
 
 ## 4. モジュール構成
@@ -156,6 +159,7 @@ CONDUCTOR_modules/
 ├── schemas/                   # JSON Schema
 ├── catalog/
 └── docs/
+    └── prompt/                # 版管理する正式運用・内部LLMプロンプト
 ```
 
 各 Skill は `env/pixi.toml` を持ち自己完結する。
@@ -725,9 +729,12 @@ LLM がテンプレートを選んだが n 不足で実行できなかった場�
 | 担当 | 内容 |
 |---|---|
 | 決定論層 | 発見、順位付け、閾値、検定手法の選択、数値の算出 |
-| LLM | 説明、接続、深堀の分岐選択、状態判定、narrative 要約 |
+| LLM | 説明、接続、深堀の分岐選択、narrative 要約 |
 
 **LLM に発見も順位付けもさせない。** 前提は Local LLM（27B クラス、オフライン）である。
+深堀状態は段階9-1のpure functionが決定し、LLMには判断させない。
+
+providerが実装するtaskは `select_deep_dive`、`summarize_deep_dive`、`compose_component_narrative` の3種類に固定する。共通system prompt、task別prompt、空/null応答、引用marker、JSONL stdoutの制約は [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) 5章を実装契約とする。
 
 ### 段階11: Runtime
 
@@ -794,7 +801,7 @@ L5 で次を確認する。**並べ替え実装の正しさを最も鋭く検出
 
 ## 9. 実装前に確認を要する事項
 
-本書で決められなかったもの。**実装者が独断で決めず、設計担当へ確認すること。**
+以下は初期計画時に実装前確認として列挙した記録である。設計回答は実装詳細仕様書へ反映済みであり、現在の正式受入残件ではない。将来ここへ影響する変更を行う場合は、**実装者が独断で決めず、設計担当へ確認すること。**
 
 | # | 項目 | 誰が決めるか | 理由 |
 |---|---|---|---|
@@ -826,7 +833,56 @@ L5 で次を確認する。**並べ替え実装の正しさを最も鋭く検出
 
 ## 10. 進め方
 
+以下は実装時に適用した順序の記録である。段階11と実装適合性確認は完了しており、現在の次工程はStage 11実装報告書に記載した正式較正・本番相当確認である。
+
 段階6（L2b）を終えた時点で **一度止めて 8章の enrichment 検証を報告すること。**
 そこで実測値を再現できなければ、残りのレンズを実装しても無駄になる。
 
 その後は段階7〜11 を順に進め、段階10 を終えた時点で全体の enrichment 検証を再度行う。
+
+---
+
+## 11. 補足: 運用プロンプト集
+
+### 11.1 成果物
+
+0.2.1の正式プロンプト集を [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) として版管理する。0.1.xのpromptをコピーして使わない。0.1.x Runtimeに固有のRound承認、旧Node名、旧Analysis ID、On-demand操作は0.2.1 promptへ持ち込まない。
+
+プロンプト集は最低限、次を含む。
+
+1. 状態のread-only確認
+2. 入力と既存Description Databaseのread-only Preflight
+3. offline providerの3タスクprobe
+4. 既存Databaseを再利用する新規本番Run
+5. 同一Program・別Endpointの新規Run
+6. 較正データによる正式受入Run
+7. 中断Runの安全な再開
+8. 完走結果と引用のread-only監査
+9. Failed Node、record無効化、LLM失敗の特別対応
+10. 3種類の内部LLM task prompt
+
+### 11.2 実装境界
+
+運用プロンプトはMain Agentへの権限と停止条件を明示する。read-only promptからNode実行、Run state変更、Database更新へ進んではならない。新規Run promptは、明示されたProgram、Endpoint、入力、設定、Run rootの範囲だけを実行権限とする。
+
+内部LLM promptはprovider実装の入力であり、文書だけではPhase 5/6を実行できない。正式較正・本番相当確認の前に、`llm.command`を設定したoffline providerへ3タスクのfixtureを送り、次を検証する。
+
+- request 1行に対してresponse JSON objectが1行だけ返る
+- `request_id`が保持される
+- `llm_response.schema.json`へ適合する
+- 選択templateとparameterがevidence内に限定される
+- narrativeの`[[citation_id]]`と`citations`配列が一致する
+- 根拠不足時に空の`selections`または`null` narrativeを返せる
+- stdoutへログやMarkdownが混入しない
+- timeout、process failure、schema違反が設定回数だけ再試行される
+
+### 11.3 既存Databaseを使う本番移行手順
+
+1. 同じProject rootの `data/description_database/<PROGRAM_NAME>/` をread-onlyで監査する。
+2. schema version、calculation version、calculation signature、canonical SMILES整合性をDescription別に確認する。
+3. 初回書込み前にwriter不在を確認し、SQLite backup APIでバックアップする。
+4. 互換recordはhitとしてそのまま使い、missだけを計算・登録する。
+5. 0.1.x Run Artifactを移行せず、0.2.1のRun root、Execution Request、Pipeline planを新規作成する。
+6. Phase 1〜6完了後、hit/miss/registered件数、LLM失敗率、引用検証結果を監査記録へ残す。
+
+古いDatabaseがschema version `1.0.0`でない場合、または現行Capabilityより前の契約で作成されている場合は無条件に再利用しない。変換処理をその場で発明せず、read-only調査結果を設計担当へ報告する。
