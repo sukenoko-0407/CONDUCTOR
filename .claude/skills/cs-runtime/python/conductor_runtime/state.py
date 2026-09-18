@@ -291,6 +291,86 @@ class RuntimeStateStore:
             connection.commit()
         return node_ids
 
+    def requeue_failed_node(
+        self,
+        node_id: str,
+        *,
+        expected_skill_name: str,
+        operator: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Audit and requeue one failed node after an explicit implementation fix.
+
+        This is deliberately narrower than a general state editor: succeeded,
+        needs-design-review, running, leased, pending, and already-retryable
+        nodes cannot be changed through this method.
+        """
+
+        if not operator.strip():
+            raise ValueError("Administrative requeue requires an operator")
+        if not reason.strip():
+            raise ValueError("Administrative requeue requires a reason")
+        occurred_at = _timestamp(_utc_now())
+        event_id = f"ADMIN-REQUEUE-{uuid.uuid4().hex}"
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM nodes WHERE node_id=?", (node_id,)
+            ).fetchone()
+            if row is None:
+                connection.rollback()
+                raise KeyError(node_id)
+            if row["skill_name"] != expected_skill_name:
+                connection.rollback()
+                raise ValueError(
+                    "Administrative requeue skill mismatch: "
+                    f"expected {expected_skill_name!r}, found {row['skill_name']!r}"
+                )
+            if row["state"] != "failed":
+                connection.rollback()
+                raise ValueError(
+                    "Administrative requeue is allowed only from failed; "
+                    f"found {row['state']!r}"
+                )
+            payload = {
+                "operator": operator.strip(),
+                "reason": reason.strip(),
+                "previous_state": "failed",
+                "previous_attempt_id": row["attempt_id"],
+                "code_version": row["code_version"],
+            }
+            connection.execute(
+                """
+                INSERT INTO events(
+                    event_id,node_id,attempt_id,event_type,payload_json,
+                    occurred_at,accepted,rejection_reason
+                ) VALUES(?,?,?,?,?,?,1,NULL)
+                """,
+                (
+                    event_id,
+                    node_id,
+                    row["attempt_id"],
+                    "administrative_requeue",
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                    occurred_at,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE nodes SET state='retryable',attempt_id=NULL,lease_token=NULL,
+                    lease_expires_at=NULL,manifest_path=NULL,updated_at=?
+                WHERE node_id=?
+                """,
+                (occurred_at, node_id),
+            )
+            connection.commit()
+        return {
+            "event_id": event_id,
+            "node_id": node_id,
+            "state": "retryable",
+            **payload,
+        }
+
     def reusable_manifest(
         self,
         *,

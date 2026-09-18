@@ -48,3 +48,16 @@ def test_installer_excludes_module_local_environments_and_diagnosis_outputs() ->
         "diagnosis_output_selftest",
     }
     assert {"pixi.toml", "pixi.lock", "config.example.yaml"}.isdisjoint(excluded)
+
+
+def test_all_post_phase2_launchers_include_shared_pixi_asset_fallback() -> None:
+    skills = (
+        "cs-lens-l1b", "cs-lens-l4", "cs-lens-l5", "cs-lens-l7",
+        "cs-scoring", "cs-deepdive", "cs-report",
+    )
+    for skill in skills:
+        source = (
+            PROJECT_ROOT / ".claude" / "skills" / skill / "scripts" / "launch.py"
+        ).read_text(encoding="utf-8")
+        assert "/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi" in source
+        assert "Path(candidate).is_file()" in source

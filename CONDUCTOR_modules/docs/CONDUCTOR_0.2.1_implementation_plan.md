@@ -216,13 +216,21 @@ SC|<scaffold_hash>                              骨格由来
 
 ### 段階2: Phase 1 表現生成
 
+Pipeline planのDescription Nodeは`CONDUCTOR_modules/tools/description_node.py`を唯一のtracked `launch_path`とする。実行時生成scriptやRuntime外からの18 Skill直列起動は受入対象外とする。
+
 0.1.x の Description Skill と Database をそのまま使う。新規実装は次のみ。
 
 - 各空間への **Tier**（1/2/3）と **構造性**（structural / non-structural）のタグ付与
 - タグは [`design/feature_space_roles.md`](design/feature_space_roles.md) 2章と 3.5 節の表のとおり
+- 0.2.1 identityから0.1.xの厳格ID patternへの決定論的bridge
+- cache miss subsetをNode output外の一時directoryへ置き、距離Artifactを`<node-output>/distance/`へ固定
+- `resources.workers`をCPU使用可能上限として、解決済みExecution Request、子processの`--workers`、`CONDUCTOR_AVAILABLE_CPU_CORES`、`CONDUCTOR_NODE_CPU_CORES`へ同じ値で注入し、OS affinity超過は起動前に拒否
+- D015/D016は希少元素featureの構造的NaNを許容する部分有限値登録契約を持ち、それ以外は全feature有限を維持
 
 **この2軸は直交する。** ECFP4 は Tier 3 だが構造空間、RDKit 2D は Tier 1 だが非構造空間。
 混同しないこと。
+
+D015/D016の部分有限値登録は「NaNを0へ置換する」ことではない。nullをpayload/Databaseに保持し、距離校正時に全欠測列を除外した後、残る欠測だけを観測中央値で補完する。全feature非有限またはconformer生成失敗の行は登録対象外とする。
 
 ### 段階3: 統計基盤 【最重要】
 
@@ -552,6 +560,12 @@ p        (1 + #{v_perm >= v_obs}) / (1 + B)
 平均シフトだけを検定すると、「Global では効果が散るが層別すると揃う」という知見を取り逃がす。
 層ごとの効果が正負に散れば平均は 0 になり、平均シフト検定では検出されない。
 **独立に検定すること。**
+
+#### 7.2 L4の計算量を開始前に拘束すること
+
+L4は全生成候補を無条件に全Tier 1/2空間へ流してはならない。Description実行前に、到達経路数、変換の観測pair支持数、到達元化合物数、candidate IDの順で決定論的に順位付けし、既定100候補へ制限する。既定のTier 1/2空間数9に対し候補Description行数のhard上限を900とし、さらにcost classを`low=1, medium=4, high=16, very_high=64`で重み付けしたcost unitsのhard上限を10,000とする。いずれかの上限を超える設定ではsubprocessを起動せず`needs_design_review`とする。生成総数、選択数、cap除外数、空間数、予定行数、cost class別行数、cost unitsをmanifestへ記録する。
+
+このcapは無作為subsampleではなく、観測された到達可能性の支持が強い候補を優先する解析母集団の定義である。値を変更する場合はresolved configを新しく作り、Run中の自動変更は禁止する。
 
 ### 段階8: Phase 4 スコアリング
 

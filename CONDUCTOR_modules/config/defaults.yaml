@@ -35,6 +35,12 @@ fragmentation:
   max_ring_attachments: 4
 
 lenses:
+  l4:
+    # Deterministic support-ranked cap applied before Tier 1/2 recomputation.
+    candidate_cap: 100
+    max_candidate_description_rows: 900
+    # cost weights: low=1, medium=4, high=16, very_high=64.
+    max_candidate_description_cost_units: 10000
   l1b:
     lambda_min: 0.50
   l2a:

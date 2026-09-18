@@ -22,6 +22,7 @@ Status: **0.2.1 正式運用テンプレート。**
 - Endpoint を補完しない。transform domain違反や非finite値を黙って除外しない。
 - 設定済み閾値をRun中に下げない。`needs_design_review` では停止して報告する。
 - 既存Run rootを上書きしない。再開時だけ、同じRun IDと同じRun rootを使用する。
+- `workers`はRuntimeと全子processが使用できる論理CPUコア数の**上限**であり、全工程が常時その数を占有する指定ではない。重いDescriptionは上限内で並列化し、軽量処理や直列契約の処理は必要なコアだけを使う。
 - Phase 5/6を実行するRunでは、`llm.command` が設定済みであることを開始前に確認する。fallback文章は生成しない。
 - CONDUCTORと全決定論的計算はUbuntu CPU機で実行し、LLM推論だけを承認済みの別GPU機上の`vllm serve`へ依頼する。`CONDUCTOR_modules/local_llm_provider/provider.py`はCPU機上で動作する。開発機上のfixture testは通信契約の確認だけであり、実modelの3タスクprobeを代替しない。
 - Evidenceを承認済みの内部vLLM endpoint以外へ送らない。外部APIやWeb検索を使用しない。
@@ -33,16 +34,18 @@ Status: **0.2.1 正式運用テンプレート。**
 | `<PROJECT_ROOT>` | CONDUCTORを配置したProject root |
 | `<INPUT_CSV>` | 本番または較正データCSV |
 | `<PROGRAM_NAME>` | Description Databaseを分離するProgram名 |
+| `<INTERRUPTED_RUN_ROOT>` | 回復対象としてread-only監査する中断Runの出力先 |
 | `<RUN_ROOT>` | 新規Runの出力先、または再開対象 |
 | `<ENDPOINT_REGISTRY>` | Endpoint registry JSON。`../../schemas/endpoint_registry.example.json` を複製し、実データに合わせて編集する |
 | `<ENDPOINT_ID>` | 今回解析する単一Endpoint |
 | `<CONFIG_PATH>` | 解決済み0.2.1設定YAML |
 | `<ID_COLUMN>` | compound ID列名 |
 | `<SMILES_COLUMN>` | SMILES列名 |
-| `<WORKERS>` | worker数。`0`は実装既定値 |
+| `<WORKERS>` | CPU機でこのRunに使用してよい論理CPUコア数の上限。本番では明示値を使い、64コア機で全64コアを許可する場合は`64` |
 | `<MEMORY_MB>` | Runへ割り当てるメモリ上限の記録値 |
 | `<LLM_COMMAND>` | JSONL stdin/stdoutに対応するoffline provider command |
 | `<NODE_ID>` | 診断対象のRuntime Node ID |
+| `<SKILL_NAME>` | 対象Nodeに登録されているSkill名 |
 | `<CAPABILITY_ID>` | 対象DescriptionのD001〜D016、D019、D020 |
 | `<COMPOUND_ID>` | 限定調査または無効化するcompound ID |
 | `<CONFIGURATION_SIGNATURE>` | 対象recordの完全なcalculation signature |
@@ -160,12 +163,14 @@ memory_mb: <MEMORY_MB>
 
 最初にread-only Preflightを行い、安全上または契約上の阻害要因がなければ同じ依頼の範囲で開始してください。0.1.10/0.1.11で構築した data/description_database/<PROGRAM_NAME>/ を変換せず再利用し、calculation signatureが一致するrecordはcache hit、その他はmissとして必要分だけ計算・登録してください。初回の0.2.1書込み前に、writerが存在しないことを確認してSQLite backup APIによる復旧可能なバックアップを作成してください。
 
-0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6では設定済みoffline providerだけを使用し、fallback文章を生成しないでください。
+0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1 Description Nodeのlaunch_pathにはtracked `CONDUCTOR_modules/tools/description_node.py`だけを指定してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6では設定済みoffline providerだけを使用し、fallback文章を生成しないでください。
 
 needs_design_review、同一ID・異構造、schema/hash/citation不整合では停止し、閾値変更や成果物の自動修正を行わないでください。終了時にRun状態、Phase別状態、Description別hit/miss/registered件数、Finding件数、上位10件、LLM logical call失敗率、引用検証結果、主要成果物の絶対パスを報告してください。
 ```
 
-### 3.4A 全Descriptionを新規構築する本番Run
+### 3.4A 事前確認済み・全Descriptionを新規構築する本番Run
+
+このプロンプトは、同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて3.2Aが合格し、同じLLM設定、`llm.command`、provider configについて3.3が合格した後に使用する。3.4Aでは3.2A/3.3の詳細検査やLLMの3タスクprobeを繰り返さない。
 
 ```text
 CONDUCTOR 0.2.1で、既存Description Databaseを使用せず、全Descriptionを新規計算する本番Runを実行してください。
@@ -182,13 +187,49 @@ Run root: <RUN_ROOT>
 workers: <WORKERS>
 memory_mb: <MEMORY_MB>
 
-最初に3.2A相当のread-only Preflightを行い、安全上または契約上の阻害要因がなければ同じ依頼の範囲で開始してください。`<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/` が既に存在する場合、または同じProgramのwriterが存在する場合は開始せず停止してください。
+3.2Aは上記と同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて合格済みです。3.3は同じLLM設定、`llm.command`、provider configについて合格済みです。3.2A相当の全件Preflight、Description/Pixi/model inventory、容量見積り、LLMの3タスクprobeは再実行しないでください。
+
+開始直前には次の最小確認だけを行ってください。
+- 入力CSV、Endpoint registry、設定、設定が参照するprovider configが読める
+- `<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/` が存在しない
+- `<RUN_ROOT>` が存在しない
+- 同じProgramまたはRun rootを使用するwriter/coordinatorが存在しない
+- `workers`が1以上で、このUbuntu processへ割り当てられた論理CPU数以下である
+
+いずれかを満たさない場合だけ、何も作成せず停止して問題を報告してください。すべて満たす場合は追加の確認待ちにせず、直ちに本計算へ入ってください。
 
 元の既定pathへ同じProgram名のDescription Databaseを新規構築してください。Program名を再計算回避用の別名へ変更しないでください。現行18 Descriptionについてcache hitを0件、全入力recordをmissとして現行calculation version、calculation signature、Skill環境で計算し、成功recordだけを新しいDatabaseへ登録してください。同一compound ID・異canonical SMILESはfail-fastとしてください。
 
-0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6ではPreflight済みのoffline providerだけを使用し、fallback文章を生成しないでください。
+`workers`をこのCPU機で使用可能な論理CPUコア数の上限としてRuntimeから全子processへ伝播してください。`workers=64`でも全処理へ64並列を強制せず、D019は`compound_workers × cores_per_compound <= workers`、D016は実装上限8 process、その他は各Skillの安全な並列度で実行してください。L4では候補Descriptionを開始する前に、生成総候補数、support順位による選択数、Tier 1/2 space数、予定Description行数、cost class別行数、予定cost unitsを算出してください。resolved configの`lenses.l4.candidate_cap`、`max_candidate_description_rows`、`max_candidate_description_cost_units`のいずれかを超える場合は、候補Descriptionを1件も起動せず`needs_design_review`で停止してください。
+
+0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1 Description Nodeのlaunch_pathにはtracked `CONDUCTOR_modules/tools/description_node.py`だけを指定してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6ではPreflight済みのoffline providerだけを使用し、fallback文章を生成しないでください。
 
 needs_design_review、同一ID・異構造、schema/hash/citation不整合では停止し、閾値変更や成果物の自動修正を行わないでください。終了時にRun状態、Phase別状態、Description別hit=0、miss/registered/failed件数、Finding件数、上位10件、LLM logical call失敗率、引用検証結果、新Databaseと主要成果物の絶対パスを報告してください。
+```
+
+### 3.4B 中断した全Description新規構築Runからの回復
+
+```text
+CONDUCTOR 0.2.1で、中断した全Description新規構築Runの部分Databaseを監査して、新しい回復Runを実行してください。
+
+Project root: <PROJECT_ROOT>
+入力CSV: <INPUT_CSV>
+Program名: <PROGRAM_NAME>
+Endpoint registry: <ENDPOINT_REGISTRY>
+Endpoint ID: <ENDPOINT_ID>
+設定: <CONFIG_PATH>
+compound ID列: <ID_COLUMN>
+SMILES列: <SMILES_COLUMN>
+中断Run root: <INTERRUPTED_RUN_ROOT>
+新規Run root: <RUN_ROOT>
+workers: <WORKERS>
+memory_mb: <MEMORY_MB>
+
+最初に中断RunのRuntime stateと`<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/`をread-onlyで確認してください。同じProgramのwriterまたは中断Runのcoordinator/workerが存在する場合は開始せず停止してください。Databaseが当該中断Runで新規作成された部分Databaseであること、compound registryに矛盾がないこと、Description別のcalculation version、active件数、auditを報告してください。
+
+開始可能なら、初回write前にSQLite backup APIで部分Databaseをバックアップし、中断Runは再開せず、新しいRun IDと新しいRun rootを作成してください。互換recordだけをcache hitとして再利用し、契約変更されたD015/D016は`calculation_version=2`のmissとして部分有限値登録契約で計算・登録してください。旧RunのP01/P02 ArtifactやFindingは流用せず、Phase 1以降のArtifactを全て新規作成してください。Phase 1 Description Nodeのlaunch_pathにはtracked `CONDUCTOR_modules/tools/description_node.py`だけを指定してください。
+
+`workers`を全実行境界のCPU上限として伝播してください。L4は候補Description開始前に候補cap、予定行数、cost class別行数、cost unitsを評価し、設定上限超過では1件もDescriptionを起動せず`needs_design_review`で停止してください。終了時に、Description別hit/miss/registered/skipped件数、Database backup、新Run状態、主要成果物の絶対パスを報告してください。
 ```
 
 ### 3.5 同じProgramで別Endpointの新規Run
@@ -299,6 +340,23 @@ Run root: <RUN_ROOT>
 失敗したrequest JSONL、provider stderr、終了code、timeout、各retryのschema validation errorを確認し、task別に件数を集計してください。本番Evidenceを外部へ送らず、narrativeを手書きで補完せず、失敗原因をprovider起動、モデル出力、JSON parse、response schema、引用制約に分類してください。この依頼ではRunを再実行しないでください。
 ```
 
+### 4.4 実装修正後のFailed Node限定再キュー
+
+```text
+CONDUCTOR 0.2.1の実装修正後復旧として、failed Nodeを1件だけ監査付きでretryableへ戻してください。
+
+Project root: <PROJECT_ROOT>
+Run root: <RUN_ROOT>
+Node ID: <NODE_ID>
+期待するSkill: <SKILL_NAME>
+修正理由: <HUMAN_REASON>
+operator: <OPERATOR_NAME>
+
+最初に同じRunを実行中のcoordinatorまたはworkerが存在しないこと、対象Nodeがfailedであること、Skill名が一致すること、入力/config/code versionが復旧方針と一致することをread-onlyで確認してください。まず`CONDUCTOR_modules/tools/requeue_runtime_node.py`を`--apply`なしで実行し、dry-run結果を報告してください。条件が全て一致するときだけ`--apply`を付けて対象1件をretryableへ変更し、administrative_requeue event ID、旧attempt ID、operator、理由を報告してください。
+
+succeeded、needs_design_review、leased、running、pending、既にretryableのNodeは変更しないでください。他Node、成果物、Description Databaseを変更せず、この依頼ではcoordinatorの再開まで行わないでください。
+```
+
 ## 5. Local LLM内部プロンプト契約
 
 ### 5.1 providerの役割
@@ -397,6 +455,7 @@ parameter契約:
 - 新規Runが既存Run rootを上書きしない。
 - 通常経路では0.1.10/0.1.11 Description Databaseの互換recordがhitとして再利用される。
 - 3.2A/3.4Aの例外経路では元の既定pathが不存在であることを開始条件とし、同じProgram名でhit=0の新Databaseが構築される。
+- 3.4Bの回復経路では中断Runを再開せず、部分Databaseをバックアップしてから新しいRunで互換recordだけを再利用し、契約変更recordをmissとして補完する。
 - 同一ID・異構造がfail-fastする。
 - 3種類のLLM taskがrequest/response schemaへ適合する。
 - provider stdoutにJSON以外が混入しない。

@@ -10,7 +10,8 @@ from pathlib import Path
 
 def main() -> int:
     skill = Path(__file__).resolve().parents[1]
-    pixi = os.environ.get("CONDUCTOR_PIXI") or shutil.which("pixi")
+    shared = Path("/home/open-share/claude_code/skills-assets/assets_pixi-binary/latest/pixi")
+    pixi = next((str(Path(candidate).resolve()) for candidate in (os.environ.get("CONDUCTOR_PIXI"), str(shared), shutil.which("pixi")) if candidate and Path(candidate).is_file()), None)
     if not pixi:
         raise FileNotFoundError("pixi was not found; set CONDUCTOR_PIXI or add pixi to PATH")
     env = os.environ.copy()

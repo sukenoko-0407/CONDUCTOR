@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -14,6 +15,12 @@ from typing import Any
 from conductor_stat_core import atomic_write_json, file_sha256, stable_id, validate_instance
 
 from .state import RuntimeStateStore
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[5]
+CANONICAL_DESCRIPTION_NODE = (
+    PROJECT_ROOT / "CONDUCTOR_modules" / "tools" / "description_node.py"
+).resolve()
 
 
 def _utc_now() -> str:
@@ -55,6 +62,18 @@ class PipelinePlan:
                 raise ValueError(f"Duplicate node_id: {node.node_id}")
             if not node.request_template.is_file() or not node.launch_path.is_file():
                 raise FileNotFoundError(f"Node files are missing: {node.node_id}")
+            request_template = json.loads(
+                node.request_template.read_text(encoding="utf-8")
+            )
+            operation = (request_template.get("parameters") or {}).get("operation")
+            if (
+                operation == "descriptions"
+                and node.launch_path != CANONICAL_DESCRIPTION_NODE
+            ):
+                raise ValueError(
+                    "Phase 1 Description nodes must use the tracked canonical "
+                    f"launch_path {CANONICAL_DESCRIPTION_NODE}: {node.node_id}"
+                )
             identifiers.add(node.node_id)
             nodes.append(node)
         for node in nodes:
@@ -105,12 +124,19 @@ class PipelineCoordinator:
         for node in self.plan.nodes:
             self.state.register_dependencies(node.node_id, list(node.dependencies))
 
-    def _resolve_request(self, node: NodePlan, attempt: dict[str, Any], attempt_directory: Path) -> Path:
+    def _resolve_request(
+        self,
+        node: NodePlan,
+        attempt: dict[str, Any],
+        attempt_directory: Path,
+        available_cpu_cores: int,
+    ) -> Path:
         request = json.loads(node.request_template.read_text(encoding="utf-8"))
         request["identity"].update({
             "run_id": self.plan.run_id, "phase_id": node.phase_id, "node_id": node.node_id,
             "attempt_id": attempt["attempt_id"], "skill_name": node.skill_name,
         })
+        request["resources"]["workers"] = available_cpu_cores
         resolved = []
         for item in request.get("inputs", []):
             source = str(item["path"])
@@ -156,11 +182,30 @@ class PipelineCoordinator:
         self._event(node, attempt, "leased", {})
         self._event(node, attempt, "started", {})
         try:
-            request_path = self._resolve_request(node, attempt, attempt_directory)
+            if workers < 0:
+                raise ValueError("workers must be >= 0")
+            local_capacity = (
+                len(os.sched_getaffinity(0))
+                if hasattr(os, "sched_getaffinity")
+                else (os.cpu_count() or 1)
+            )
+            if workers > local_capacity:
+                raise ValueError(
+                    f"Explicit workers={workers} exceed local CPU affinity={local_capacity}"
+                )
+            available_cpu_cores = (
+                workers if workers > 0 else max(1, local_capacity - 1)
+            )
+            request_path = self._resolve_request(
+                node, attempt, attempt_directory, available_cpu_cores
+            )
             output = node.output_directory / attempt["attempt_id"]
+            environment = os.environ.copy()
+            environment["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores)
+            environment["CONDUCTOR_NODE_CPU_CORES"] = str(available_cpu_cores)
             completed = subprocess.run(
-                [sys.executable, str(node.launch_path), "--request", str(request_path), "--output-dir", str(output), "--workers", str(workers)],
-                text=True, encoding="utf-8", capture_output=True, check=False,
+                [sys.executable, str(node.launch_path), "--request", str(request_path), "--output-dir", str(output), "--workers", str(available_cpu_cores)],
+                env=environment, text=True, encoding="utf-8", capture_output=True, check=False,
             )
             (attempt_directory / "stdout.txt").write_text(completed.stdout, encoding="utf-8", newline="\n")
             (attempt_directory / "stderr.txt").write_text(completed.stderr, encoding="utf-8", newline="\n")

@@ -10,7 +10,14 @@ from rdkit import Chem
 from conductor_fragment_engine import FragmentationConfig, fragment_compound
 from conductor_lens_l1b import local_flatness
 from conductor_lens_l2 import run_l2a
-from conductor_lens_l4 import assemble_fragments, candidate_distance_matrix, generate_l4_candidates
+from conductor_lens_l4 import (
+    L4GenerationResult,
+    L4ScaleGuardError,
+    assemble_fragments,
+    candidate_distance_matrix,
+    generate_l4_candidates,
+    select_l4_candidates,
+)
 from conductor_lens_l5 import run_l5
 from conductor_lens_l7 import run_l7
 
@@ -165,3 +172,58 @@ def test_l4_uses_exact_candidate_description_with_observed_scaling(tmp_path) -> 
     del space["candidate_path"]
     with pytest.raises(ValueError, match="candidate_path"):
         candidate_distance_matrix(space, ["X"])
+
+
+def test_l4_scale_cap_is_support_ranked_and_deterministic() -> None:
+    candidates = pd.DataFrame([
+        {"compound_id": "C", "canonical_smiles": "CC", "reachability_path_count": 1, "transformation_pair_support": 3, "source_compound_count": 1},
+        {"compound_id": "A", "canonical_smiles": "CN", "reachability_path_count": 2, "transformation_pair_support": 1, "source_compound_count": 1},
+        {"compound_id": "B", "canonical_smiles": "CO", "reachability_path_count": 2, "transformation_pair_support": 5, "source_compound_count": 1},
+    ])
+    generation = L4GenerationResult(candidates, pd.DataFrame(columns=["row_id", "status", "reason"]))
+    selected, plan = select_l4_candidates(
+        generation, candidate_cap=2, description_space_count=9,
+        max_candidate_description_rows=18,
+    )
+    assert selected.candidates["compound_id"].tolist() == ["B", "A"]
+    assert plan.generated_candidate_count == 3
+    assert plan.selected_candidate_count == 2
+    assert plan.excluded_by_cap_count == 1
+    assert plan.planned_description_cost_units == 18
+    assert selected.audit.iloc[-1]["reason"] == "scale_cap"
+
+
+def test_l4_scale_guard_stops_before_description_work() -> None:
+    candidates = pd.DataFrame([
+        {"compound_id": f"C{i}", "canonical_smiles": "CC", "reachability_path_count": 1, "transformation_pair_support": 1, "source_compound_count": 1}
+        for i in range(3)
+    ])
+    generation = L4GenerationResult(candidates, pd.DataFrame())
+    with pytest.raises(L4ScaleGuardError) as caught:
+        select_l4_candidates(
+            generation, candidate_cap=3, description_space_count=9,
+            max_candidate_description_rows=20,
+        )
+    assert caught.value.plan.planned_description_rows == 27
+
+
+def test_l4_cost_guard_distinguishes_very_high_cost_descriptions() -> None:
+    candidates = pd.DataFrame([
+        {"compound_id": "C0", "canonical_smiles": "CC", "reachability_path_count": 1, "transformation_pair_support": 1, "source_compound_count": 1}
+    ])
+    generation = L4GenerationResult(candidates, pd.DataFrame())
+    with pytest.raises(L4ScaleGuardError) as caught:
+        select_l4_candidates(
+            generation,
+            candidate_cap=1,
+            description_space_count=2,
+            max_candidate_description_rows=2,
+            description_cost_classes=["low", "very_high"],
+            max_candidate_description_cost_units=64,
+        )
+    assert caught.value.plan.planned_description_rows == 2
+    assert caught.value.plan.planned_description_cost_units == 65
+    assert caught.value.plan.description_cost_class_rows == {
+        "low": 1,
+        "very_high": 1,
+    }

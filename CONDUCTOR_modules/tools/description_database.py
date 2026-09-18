@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 from contextlib import closing
@@ -18,6 +19,41 @@ COMMON_COLUMNS = (
     "description_error",
 )
 CALCULATION_VERSION_PATTERN = re.compile(r"^[1-9][0-9]*$")
+
+
+def description_registration_policy(capability: dict[str, Any]) -> dict[str, Any]:
+    """Validate the per-Description cache registration contract.
+
+    Most Description payloads remain strict.  Descriptor families such as
+    Mordred may explicitly permit structurally inapplicable feature cells to
+    be null while still requiring a substantial finite part of every row.
+    """
+
+    raw = capability.get("registration")
+    if raw is None:
+        return {
+            "nonfinite_policy": "reject_any",
+            "minimum_finite_fraction": 1.0,
+            "minimum_finite_count": 1,
+        }
+    if not isinstance(raw, dict):
+        raise ValueError("Description registration must be an object")
+    policy = str(raw.get("nonfinite_policy", "reject_any"))
+    if policy not in {"reject_any", "allow_partial"}:
+        raise ValueError(f"Unsupported Description nonfinite_policy: {policy!r}")
+    fraction = float(raw.get("minimum_finite_fraction", 1.0))
+    count = int(raw.get("minimum_finite_count", 1))
+    if not 0.0 <= fraction <= 1.0:
+        raise ValueError("minimum_finite_fraction must be between 0 and 1")
+    if count < 1:
+        raise ValueError("minimum_finite_count must be >= 1")
+    if policy == "reject_any" and fraction != 1.0:
+        raise ValueError("reject_any requires minimum_finite_fraction=1.0")
+    return {
+        "nonfinite_policy": policy,
+        "minimum_finite_fraction": fraction,
+        "minimum_finite_count": count,
+    }
 
 
 def required_calculation_version(capability: dict[str, Any]) -> str:
@@ -268,6 +304,8 @@ def calculation_signature(
         "natural_metric": capability.get("natural_metric"),
         "environment": environment_signature(Path(capability["_skill_dir"])),
     }
+    if "registration" in capability:
+        payload["registration"] = description_registration_policy(capability)
     if dataset_signature is not None:
         payload["chemical_dataset_signature"] = dataset_signature
     return object_hash(payload)
@@ -474,6 +512,7 @@ def prepare_cache_plan(
         "cache_source_versions": cache_source_versions,
         "subset_path": str(subset_path.resolve()) if subset_path else None,
         "source_run_id": source_run_id,
+        "registration_policy": description_registration_policy(capability),
     }
 
 
@@ -666,8 +705,13 @@ def finalize_cached_output(
                 "configuration_signature", "hit_count", "miss_count",
                 "structure_mismatch_count", "version_mismatch_count",
                 "configuration_mismatch_count", "cache_source_versions",
-                "batch_dependent",
+                "batch_dependent", "registration_policy",
             )
+        } | {
+            "registered_count": int(plan.get("registered_count", 0)),
+            "registration_skipped_count": int(
+                plan.get("registration_skipped_count", 0)
+            ),
         },
         "created_at": utc_now(),
     }
@@ -732,7 +776,14 @@ def register_misses(
     })
     path = Path(plan["database_path"])
     inserted = 0
+    skipped = 0
     audit_events: list[dict[str, Any]] = []
+    registration_policy = dict(plan.get("registration_policy") or {})
+    nonfinite_policy = str(registration_policy.get("nonfinite_policy", "reject_any"))
+    minimum_finite_fraction = float(
+        registration_policy.get("minimum_finite_fraction", 1.0)
+    )
+    minimum_finite_count = int(registration_policy.get("minimum_finite_count", 1))
     registry_path = program_registry_path(path)
     with closing(_connect_program_registry(registry_path)) as registry_connection:
         registry_connection.execute("BEGIN IMMEDIATE")
@@ -807,6 +858,17 @@ def register_misses(
                     else str(raw_parse_ok).strip().lower() in {"true", "1", "yes"}
                 )
                 if error and error != "invalid_smiles":
+                    skipped += 1
+                    audit_events.append({
+                        "timestamp": utc_now(),
+                        "event": "RECORD_REGISTRATION_SKIPPED",
+                        "compound_id": compound_id,
+                        "reason": "description_error",
+                        "description_error": error,
+                        "configuration_signature": plan["configuration_signature"],
+                        "source_run_id": identity["run_id"],
+                        "source_node_id": identity["node_id"],
+                    })
                     continue
                 if parse_ok:
                     numeric = row[feature_columns]
@@ -815,9 +877,44 @@ def register_misses(
                         import numpy as np
 
                         values = numeric.apply(pd.to_numeric, errors="coerce")
-                        if values.isna().any() or not np.isfinite(values.to_numpy(dtype=float)).all():
+                        finite = np.isfinite(values.to_numpy(dtype=float))
+                        finite_count = int(finite.sum())
+                        required_count = max(
+                            minimum_finite_count,
+                            int(math.ceil(len(feature_columns) * minimum_finite_fraction)),
+                        )
+                        valid_features = (
+                            bool(finite.all())
+                            if nonfinite_policy == "reject_any"
+                            else finite_count >= required_count
+                        )
+                        if not valid_features:
+                            skipped += 1
+                            audit_events.append({
+                                "timestamp": utc_now(),
+                                "event": "RECORD_REGISTRATION_SKIPPED",
+                                "compound_id": compound_id,
+                                "reason": "insufficient_finite_features",
+                                "finite_feature_count": finite_count,
+                                "feature_count": len(feature_columns),
+                                "required_finite_count": required_count,
+                                "nonfinite_policy": nonfinite_policy,
+                                "configuration_signature": plan["configuration_signature"],
+                                "source_run_id": identity["run_id"],
+                                "source_node_id": identity["node_id"],
+                            })
                             continue
                     except (TypeError, ValueError):
+                        skipped += 1
+                        audit_events.append({
+                            "timestamp": utc_now(),
+                            "event": "RECORD_REGISTRATION_SKIPPED",
+                            "compound_id": compound_id,
+                            "reason": "feature_numeric_conversion_failed",
+                            "configuration_signature": plan["configuration_signature"],
+                            "source_run_id": identity["run_id"],
+                            "source_node_id": identity["node_id"],
+                        })
                         continue
                 outcome_status = "ok" if parse_ok and not error else "invalid_smiles"
                 encoded_row = row_json(row.to_dict())
@@ -879,6 +976,8 @@ def register_misses(
             raise
     for event in audit_events:
         _append_audit(audit_path(path), event)
+    plan["registered_count"] = inserted
+    plan["registration_skipped_count"] = skipped
     return inserted
 
 

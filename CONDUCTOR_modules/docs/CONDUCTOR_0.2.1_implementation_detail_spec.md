@@ -445,7 +445,7 @@ results/CONDUCTOR/<project>/<run_id>/
 | `descriptions/<Dxxx>.*` | 既存 Skill 契約 | Description Database から hit/miss 統合後の表 |
 | `distance/<space>.npy` | NumPy | float32、対称、対角0。metadata JSONとsha256を併設 |
 
-Description Database は既存 `description_database.py` の cache plan、同一 ID・異構造 fail-fast、audit invalidate を保持する。Description Skill の生出力を変更せず、Phase 1 adapter が `feature_spaces.json` へ登録する。
+Description Database は既存 `description_database.py` の cache plan、同一 ID・異構造 fail-fast、audit invalidate を保持する。Description Skill の生出力を変更せず、Pipeline planはtracked canonical entry pointである`CONDUCTOR_modules/tools/description_node.py`をPhase 1 Description Nodeの`launch_path`として指定する。このNodeだけが`description_adapter.py`を介して18 Skillを実行し、`feature_spaces.json`と`distance/`を生成する。Claude CodeがRun root内へ同等scriptを即席生成したり、18 SkillをRuntime外から直接起動してはならない。
 
 ### 5.2 Fragment engine
 
@@ -598,6 +598,10 @@ Tier / structurality は `feature_spaces.json` のデータとして持つ。最
 - non-structural: descriptor、3D、xTB、Gobbi Pharm2D、ChemBERTa、fragment counts
 
 0.2.1 の Description capability 母集団は現存18件（D001〜D016、D019、D020）に固定する。D017/D018 は予約番号であり、空実装や復元対象にはしない。catalogには実在する18件だけを登録する。
+
+0.2.1 identityを保持するRuntimeと、0.1.xの厳格な`round_id=RNDdddd`、`node_id=Ndddddd`、`attempt_id=ATTdddd`を要求するDescription Skillの間には、共通の決定論的identity bridgeを置く。0.2.1 identityを旧Skillへ直接渡してはならない。cache miss subset CSVはNode出力先の外側に作った`TemporaryDirectory`へ置き、Skillが要求する空のoutput directoryを汚染しない。Nodeの距離Artifactは常にNode root直下の`distance/`へ置く。
+
+Description Databaseへの登録はcapability別の契約とする。既定は全featureが有限値であることを要求する。D015/D016 Mordredだけは、構造上定義されない希少元素関連featureをnullのまま保持できる`allow_partial`とし、1行あたりfeatureの50%以上かつ1件以上が有限であることを要求する。全feature非有限、計算error、conformer生成失敗は登録しない。登録契約の変更はcalculation signatureへ含め、D015/D016の`calculation_version`を更新する。距離計算では観測集合全体で一度も有限にならない列を除外し、残る欠測だけを観測中央値で補完する。
 
 ### 7.3 段階3: 統計基盤
 
@@ -767,6 +771,8 @@ lambda = 1 - mean((observed - neighbor_prediction)^2) / global_endpoint_variance
 
 候補生成と領域評価は二段に分離する。第一段で one-step 候補を `l4_candidate_compounds.csv` に固定し、第二段で Phase 1 の `feature_spaces.json` に記録された Skill と `parameters` を使って、候補そのものについて全 Tier 1/2 Description を再実行する。`candidate_feature_spaces.json` に候補 payload を登録し、観測化合物に fit した特徴列、欠測補完値、標準化値をそのまま使って候補―観測化合物間距離を計算する。候補 Description の欠落・行失敗・ID不一致は fail-closed とし、到達元化合物の近傍を proxy にしてはならない。
 
+候補Descriptionの前にscale contractを適用する。全one-step候補を、(1)異なる到達経路数、(2)利用した変換の観測pair数合計、(3)到達元化合物数の降順、(4)candidate IDの昇順でstable sortし、`lenses.l4.candidate_cap`件だけを残す。既定は100件とする。除外候補は`reason=scale_cap`としてgeneration auditへ残す。さらに`選択候補数 × Tier 1/2 space数`と、Description cost classを`low=1, medium=4, high=16, very_high=64`で重み付けしたcost unitsを事前計算する。このcost unitsはwall-clock時間ではなく、lowとvery_highを同じ1行として扱わないための相対的なschedule guardである。予定行数が`lenses.l4.max_candidate_description_rows`（既定900）、またはcost unitsが`lenses.l4.max_candidate_description_cost_units`（既定10,000）を超える場合は、Description Skillを1件も起動せず`needs_design_review`で停止する。候補capまたはコスト上限をRun中に自動拡大してはならない。
+
 L2 canonical transformation DB が完成してから最後に実装する。既存化合物へ実績のあるL2変換を1本だけ適用して得られる、未観測かつRDKit sanitize済みの構造を候補とする。各Tier 1/2空間のk=10近傍を領域とし、期待値は近傍平均の片側95%下限、密度ギャップは `1 - min(n_region/min_context_size, 1)`（`min_context_size = contexts.min_endpoint_n`）、到達可能性はvalidation済み1-stepなら1とする。候補不足またはenrichmentが1.0付近でも閾値を調整せず、そのまま降格判断用に報告する。
 
 L3/L6 は診断 module と同等の集計を `diagnostic_metrics.json` へ出してよいが、candidate table と Finding factory を持たせない。
@@ -895,9 +901,14 @@ pending -> leased -> running -> succeeded
                          |-> failed
                          |-> needs_design_review
 leased/running --lease expiry--> retryable
+failed --explicit audited administrative requeue--> retryable
 ```
 
 同じ `(node_id, input_hashes, config_hash, code_version)` の成功 Artifact は再利用可能。lease token と attempt ID が一致しない late event は監査ログへ隔離し正本状態を変更しない。Phase boundary/checkpoint は実装計画書9章の既出確認事項として別レビューする。
+
+`failed`からの再キューは一般的なstate編集ではない。修正済みSkill名、対象node ID、操作者、理由を明示し、対象が実際に`failed`である場合だけ、専用のadministrative requeueで`retryable`へ遷移させる。入力、config、計算契約が不変で、Pixi launcher解決等の実行環境だけを是正した場合に限定する。`succeeded`、`needs_design_review`、`leased`、`running`、`pending`、既に`retryable`のNodeには適用しない。旧attempt ID、理由、操作者をRuntime SQLiteのeventへ記録し、attempt/leaseをclearしてから同じRunの通常coordinatorで再開する。計算契約を変更した場合は新しいRunを作成する。
+
+Runtimeに明示された`resources.workers`はNode単位の論理CPU上限である。coordinatorは解決した値を子processの`--workers`、`CONDUCTOR_AVAILABLE_CPU_CORES`、`CONDUCTOR_NODE_CPU_CORES`だけでなく、attemptごとに解決したExecution Requestの`resources.workers`にも同じ値で記録する。明示値がOS affinityで利用可能なCPU数を超える場合はNode起動前に拒否する。
 
 ## 8. エラー処理
 
@@ -908,6 +919,7 @@ leased/running --lease expiry--> retryable
 | invalid SMILES | compounds表に失敗を記録。対象化合物を構造計算から除外し、件数をwarning。全件無効ならfail |
 | Endpoint transform domain不正 | 対象値とcompound IDを示してRun fail |
 | Description 1件失敗 | そのspaceをfailedとしてPhase 1 fail。黙ってspace数を減らさない |
+| L4候補再記述がコスト上限超過 | Skill起動前に`needs_design_review`。候補capを自動拡大せず、生成件数・選択件数・予定Description行数・cost class別行数・cost unitsを保存 |
 | fragmentation個別失敗 | exclusion tableへ理由付きで続行。class全体0件ならPhase 3依存nodeをnot-applicableではなくfail |
 | candidate標本不足 | candidate status=`not_testable`で続行。p/qを捏造しない |
 | statistic非有限・分散0 | 文書指定の境界処理（L2b p=1等）または`not_testable`。例外を握り潰さない |

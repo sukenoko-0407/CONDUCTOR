@@ -26,6 +26,7 @@ from description_database import (
     prepare_cache_plan,
     register_misses,
 )
+from identity_bridge import bridge_legacy_identity
 
 
 DESCRIPTION_IDS = tuple([f"D{number:03d}" for number in range(1, 17)] + ["D019", "D020"])
@@ -71,6 +72,7 @@ def feature_space_metadata(
         "space_id": identifier,
         "capability_id": identifier,
         "skill_name": capability["skill_name"],
+        "cost_class": str((capability.get("cost") or {}).get("class", "unknown")),
         "tier": tier,
         "structurality": structurality,
         "metric": metric,
@@ -191,78 +193,124 @@ def run_description_capability(
     parameters: dict[str, Any],
     output_directory: Path,
     identity: dict[str, str],
+    available_cpu_cores: int,
 ) -> tuple[Path, dict[str, Any]]:
+    if available_cpu_cores < 1:
+        raise ValueError("available_cpu_cores must be explicitly set to >= 1")
     skill_directory = Path(capability["_skill_path"])
-    output_directory.mkdir(parents=True, exist_ok=True)
-    plan = prepare_cache_plan(
-        project_root=project_root,
-        program_name=program_name,
-        dataset_path=dataset_path,
-        id_column=id_column,
-        smiles_column=smiles_column,
-        capability=capability,
-        parameters=parameters,
-        scratch=output_directory / "cache-plan",
-        source_run_id=identity["run_id"],
+    output_directory.parent.mkdir(parents=True, exist_ok=True)
+    legacy_identity = bridge_legacy_identity(
+        identity,
+        capability_id=str(capability["capability_id"]),
+        skill_name=str(capability["skill_name"]),
     )
-    plan["parameters"] = {**dict(capability.get("default_parameters") or {}), **parameters}
-    legacy_identity = {
-        "project": identity["project"],
-        "run_id": identity["run_id"],
-        "round_id": identity["phase_id"],
-        "node_id": identity["node_id"],
-        "attempt_id": identity["attempt_id"],
-        "capability_id": capability["capability_id"],
-        "skill_name": capability["skill_name"],
-    }
-    if plan["miss_count"]:
-        command = [
-            sys.executable,
-            str(skill_directory / "scripts" / "launch.py"),
-            "--input",
-            str(plan["subset_path"]),
-            "--id-column",
-            id_column,
-            "--smiles-column",
-            smiles_column,
-            "--output-dir",
-            str(output_directory),
-            "--format",
-            "csv",
-            "--conductor",
-            "--project",
-            identity["project"],
-            "--run-id",
-            identity["run_id"],
-            "--round-id",
-            identity["phase_id"],
-            "--node-id",
-            identity["node_id"],
-            "--attempt-id",
-            identity["attempt_id"],
-            *_parameter_arguments(parameters),
-        ]
-        completed = subprocess.run(command, cwd=project_root, check=False, text=True, capture_output=True)
-        if completed.returncode != 0:
-            raise RuntimeError(
-                f"Description Skill {capability['skill_name']} failed with code {completed.returncode}: "
-                + completed.stderr[-2000:]
+    command_parameters = dict(parameters)
+    if str(capability["capability_id"]) == "D016":
+        requested = int(
+            command_parameters.get(
+                "compound_workers",
+                (capability.get("default_parameters") or {}).get("compound_workers", 8),
             )
-        manifest = json.loads((output_directory / "description_manifest.json").read_text(encoding="utf-8"))
-        payload_name = str(manifest["output"])
-        register_misses(
-            plan=plan,
-            payload_path=output_directory / payload_name,
-            manifest=manifest,
-            identity=legacy_identity,
         )
-    request = {"identity": legacy_identity, "conductor_version": "0.2.1"}
-    payload = finalize_cached_output(
-        plan=plan,
-        output=output_directory,
-        request=request,
-        capability=capability,
-    )
+        command_parameters["compound_workers"] = min(requested, available_cpu_cores)
+        command_parameters["available_cpu_cores"] = available_cpu_cores
+    if str(capability["capability_id"]) == "D019":
+        cores_per_compound = int(
+            command_parameters.get(
+                "cores_per_compound",
+                (capability.get("implementation") or {}).get(
+                    "default_cores_per_compound", 4
+                ),
+            )
+        )
+        command_parameters["cores_per_compound"] = cores_per_compound
+        command_parameters.setdefault(
+            "compound_workers", max(1, available_cpu_cores // cores_per_compound)
+        )
+        command_parameters["available_cpu_cores"] = available_cpu_cores
+    environment = os.environ.copy()
+    environment["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores)
+    environment["CONDUCTOR_NODE_CPU_CORES"] = str(available_cpu_cores)
+    with tempfile.TemporaryDirectory(
+        prefix=".conductor-description-cache-plan-",
+        dir=output_directory.parent,
+    ) as temporary_directory:
+        plan = prepare_cache_plan(
+            project_root=project_root,
+            program_name=program_name,
+            dataset_path=dataset_path,
+            id_column=id_column,
+            smiles_column=smiles_column,
+            capability=capability,
+            parameters=parameters,
+            scratch=Path(temporary_directory),
+            source_run_id=identity["run_id"],
+        )
+        plan["parameters"] = {
+            **dict(capability.get("default_parameters") or {}),
+            **parameters,
+        }
+        if plan["miss_count"]:
+            command = [
+                sys.executable,
+                str(skill_directory / "scripts" / "launch.py"),
+                "--input",
+                str(plan["subset_path"]),
+                "--id-column",
+                id_column,
+                "--smiles-column",
+                smiles_column,
+                "--output-dir",
+                str(output_directory),
+                "--format",
+                "csv",
+                "--conductor",
+                "--project",
+                legacy_identity["project"],
+                "--run-id",
+                legacy_identity["run_id"],
+                "--round-id",
+                legacy_identity["round_id"],
+                "--node-id",
+                legacy_identity["node_id"],
+                "--attempt-id",
+                legacy_identity["attempt_id"],
+                *_parameter_arguments(command_parameters),
+            ]
+            completed = subprocess.run(
+                command,
+                cwd=project_root,
+                env=environment,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"Description Skill {capability['skill_name']} failed with code {completed.returncode}: "
+                    + completed.stderr[-2000:]
+                )
+            manifest = json.loads(
+                (output_directory / "description_manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            payload_name = str(manifest["output"])
+            register_misses(
+                plan=plan,
+                payload_path=output_directory / payload_name,
+                manifest=manifest,
+                identity=legacy_identity,
+            )
+        request = {"identity": legacy_identity, "conductor_version": "0.2.1"}
+        payload = finalize_cached_output(
+            plan=plan,
+            output=output_directory,
+            request=request,
+            capability=capability,
+        )
+        plan["subset_was_materialized"] = bool(plan["subset_path"])
+        plan["subset_path"] = None
     return payload, plan
 
 

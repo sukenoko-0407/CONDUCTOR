@@ -32,6 +32,49 @@ class L4Result:
     metrics: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class L4ScalePlan:
+    generated_candidate_count: int
+    selected_candidate_count: int
+    excluded_by_cap_count: int
+    description_space_count: int
+    planned_description_rows: int
+    planned_description_cost_units: int
+    description_cost_class_rows: dict[str, int]
+    candidate_cap: int
+    max_candidate_description_rows: int
+    max_candidate_description_cost_units: int
+
+
+DESCRIPTION_COST_WEIGHTS = {
+    "low": 1,
+    "medium": 4,
+    "high": 16,
+    "very_high": 64,
+}
+
+
+class L4ScaleGuardError(ValueError):
+    def __init__(self, plan: L4ScalePlan):
+        self.plan = plan
+        reasons: list[str] = []
+        if plan.planned_description_rows > plan.max_candidate_description_rows:
+            reasons.append(
+                "rows "
+                f"{plan.planned_description_rows}>{plan.max_candidate_description_rows}"
+            )
+        if (
+            plan.planned_description_cost_units
+            > plan.max_candidate_description_cost_units
+        ):
+            reasons.append(
+                "cost_units "
+                f"{plan.planned_description_cost_units}>"
+                f"{plan.max_candidate_description_cost_units}"
+            )
+        super().__init__("L4_SCALE_GUARD: " + ", ".join(reasons))
+
+
 def _read_table(path: Path) -> pd.DataFrame:
     if path.suffix.lower() == ".parquet":
         return pd.read_parquet(path)
@@ -86,6 +129,10 @@ def generate_l4_candidates(
     for _, row in accepted.iterrows():
         by_variable.setdefault((str(row["class"]), str(row["variable_smiles"])), []).append(row)
 
+    pair_support = {
+        str(row["transformation_id"]): int(row["pair_count"])
+        for _, row in transformations.iterrows()
+    }
     generated: dict[str, dict[str, Any]] = {}
     audit: list[dict[str, Any]] = []
     for _, transformation in transformations.sort_values("transformation_id").iterrows():
@@ -123,12 +170,127 @@ def generate_l4_candidates(
                 "source_compound_ids_json": json.dumps(sorted(item["source_compound_ids"]), separators=(",", ":")),
                 "transformation_ids_json": json.dumps(sorted(item["transformation_ids"]), separators=(",", ":")),
                 "paths_json": json.dumps(sorted([list(value) for value in item["paths"]]), separators=(",", ":")),
+                "reachability_path_count": len(item["paths"]),
+                "source_compound_count": len(item["source_compound_ids"]),
+                "transformation_pair_support": sum(
+                    pair_support.get(value, 0) for value in item["transformation_ids"]
+                ),
             }
             for candidate_id, item in sorted(generated.items())
         ],
-        columns=["compound_id", "canonical_smiles", "source_compound_ids_json", "transformation_ids_json", "paths_json"],
+        columns=[
+            "compound_id", "canonical_smiles", "source_compound_ids_json",
+            "transformation_ids_json", "paths_json", "reachability_path_count",
+            "source_compound_count", "transformation_pair_support",
+        ],
     )
     return L4GenerationResult(candidates, pd.DataFrame(audit))
+
+
+def select_l4_candidates(
+    generation: L4GenerationResult,
+    *,
+    candidate_cap: int,
+    description_space_count: int,
+    max_candidate_description_rows: int,
+    description_cost_classes: list[str] | None = None,
+    max_candidate_description_cost_units: int | None = None,
+) -> tuple[L4GenerationResult, L4ScalePlan]:
+    """Apply the deterministic pre-description L4 scale contract."""
+
+    if candidate_cap < 1:
+        raise ValueError("lenses.l4.candidate_cap must be >= 1")
+    if description_space_count < 1:
+        raise ValueError("L4 requires at least one Tier 1/2 Description space")
+    if max_candidate_description_rows < 1:
+        raise ValueError("lenses.l4.max_candidate_description_rows must be >= 1")
+    cost_classes = (
+        ["low"] * description_space_count
+        if description_cost_classes is None
+        else list(description_cost_classes)
+    )
+    if len(cost_classes) != description_space_count:
+        raise ValueError(
+            "description_cost_classes must have one entry per Tier 1/2 space"
+        )
+    unknown_cost_classes = sorted(set(cost_classes) - set(DESCRIPTION_COST_WEIGHTS))
+    if unknown_cost_classes:
+        raise ValueError(
+            f"Unsupported Description cost classes: {unknown_cost_classes}"
+        )
+    maximum_cost = (
+        max_candidate_description_rows
+        if max_candidate_description_cost_units is None
+        else int(max_candidate_description_cost_units)
+    )
+    if maximum_cost < 1:
+        raise ValueError(
+            "lenses.l4.max_candidate_description_cost_units must be >= 1"
+        )
+    generated_count = len(generation.candidates)
+    ranked = generation.candidates.sort_values(
+        [
+            "reachability_path_count",
+            "transformation_pair_support",
+            "source_compound_count",
+            "compound_id",
+        ],
+        ascending=[False, False, False, True],
+        kind="mergesort",
+    )
+    selected = ranked.head(candidate_cap).reset_index(drop=True)
+    planned_rows = len(selected) * description_space_count
+    cost_class_rows = {
+        cost_class: len(selected) * cost_classes.count(cost_class)
+        for cost_class in sorted(set(cost_classes))
+    }
+    planned_cost_units = len(selected) * sum(
+        DESCRIPTION_COST_WEIGHTS[cost_class] for cost_class in cost_classes
+    )
+    plan = L4ScalePlan(
+        generated_candidate_count=generated_count,
+        selected_candidate_count=len(selected),
+        excluded_by_cap_count=max(0, generated_count - len(selected)),
+        description_space_count=description_space_count,
+        planned_description_rows=planned_rows,
+        planned_description_cost_units=planned_cost_units,
+        description_cost_class_rows=cost_class_rows,
+        candidate_cap=candidate_cap,
+        max_candidate_description_rows=max_candidate_description_rows,
+        max_candidate_description_cost_units=maximum_cost,
+    )
+    if (
+        planned_rows > max_candidate_description_rows
+        or planned_cost_units > maximum_cost
+    ):
+        raise L4ScaleGuardError(plan)
+    excluded = ranked.iloc[len(selected):]
+    audit = generation.audit.copy()
+    if not excluded.empty:
+        cap_rows = excluded.loc[:, ["compound_id", "canonical_smiles"]].rename(
+            columns={
+                "compound_id": "candidate_id",
+                "canonical_smiles": "candidate_smiles",
+            }
+        ).copy()
+        cap_rows.insert(
+            0,
+            "row_id",
+            [
+                stable_id("L4CAP", {"candidate": str(candidate_id)})
+                for candidate_id in cap_rows["candidate_id"]
+            ],
+        )
+        cap_rows["source_compound_id"] = ""
+        cap_rows["transformation_id"] = ""
+        cap_rows["status"] = "excluded"
+        cap_rows["reason"] = "scale_cap"
+        cap_rows = cap_rows.loc[:, [
+            "row_id", "source_compound_id", "transformation_id", "candidate_id",
+            "candidate_smiles", "status", "reason",
+        ]]
+        audit = pd.concat([audit, cap_rows], ignore_index=True)
+    return L4GenerationResult(selected, audit), plan
 
 
 def candidate_distance_matrix(space: dict[str, Any], candidate_ids: list[str]) -> tuple[list[str], np.ndarray]:
@@ -199,11 +361,19 @@ def score_l4_candidates(
     if not candidate_ids:
         empty = pd.DataFrame()
         metrics = {
-            "attempt_count": len(generation.audit),
+            "attempt_count": int(
+                generation.audit.get("reason", pd.Series(dtype=str))
+                .astype(str).ne("scale_cap").sum()
+            ),
             "accepted_unique_candidate_count": 0,
             "tested_candidate_count": 0,
             "finding_count": 0,
-            "generation_failure_count": int(generation.audit["status"].eq("excluded").sum()) if not generation.audit.empty else 0,
+            "generation_failure_count": int(
+                (
+                    generation.audit["status"].eq("excluded")
+                    & generation.audit.get("reason", pd.Series("", index=generation.audit.index)).astype(str).ne("scale_cap")
+                ).sum()
+            ) if not generation.audit.empty else 0,
             "candidate_distance_mode": "exact_description_cross_distance",
         }
         return L4Result(empty, empty, generation.audit, empty, (), metrics)
@@ -279,7 +449,11 @@ def score_l4_candidates(
         for space_row in score_material[record.candidate_key]:
             for neighbor_id, value in zip(space_row["neighbor_ids"], space_row["values"], strict=True):
                 score_rows.append({"finding_key": finding["finding_key"], "row_id": stable_id("SCOREROW", {"finding": finding["finding_key"], "space": space_row["space_id"], "compound": neighbor_id}), "block_id": space_row["space_id"], "effect": float(value - global_median), "compound_id": neighbor_id, "context_id":"", "target_id":item["candidate_id"], "endpoint_value": float(value), "actionability_level": "exact", "candidate_id": item["candidate_id"], "region_score":float(record.statistic), "density_gap":density_gap, "global_median":global_median, "neighbor_k":neighbor_k})
-    metrics = {"attempt_count": len(generation.audit), "accepted_unique_candidate_count": len(generation.candidates), "tested_candidate_count": len(candidate_records), "finding_count": len(provisional), "generation_failure_count": int(generation.audit["status"].eq("excluded").sum()) if not generation.audit.empty else 0, "candidate_distance_mode": "exact_description_cross_distance"}
+    non_cap_audit = generation.audit.loc[
+        generation.audit.get("reason", pd.Series("", index=generation.audit.index))
+        .astype(str).ne("scale_cap")
+    ]
+    metrics = {"attempt_count": len(non_cap_audit), "accepted_unique_candidate_count": len(generation.candidates), "tested_candidate_count": len(candidate_records), "finding_count": len(provisional), "generation_failure_count": int(non_cap_audit["status"].eq("excluded").sum()) if not non_cap_audit.empty else 0, "candidate_distance_mode": "exact_description_cross_distance"}
     return L4Result(pd.DataFrame(evidence_rows), pd.DataFrame(test_rows), generation.audit, pd.DataFrame(score_rows), assign_finding_ids(provisional), metrics)
 
 

@@ -187,6 +187,8 @@ Phase 6  統合と報告        Finding を連結して統合 narrative を作�
 
 Program 別 Description Database による再利用（0.1.10 の設計）は健全なので技術的に流用する。同一 Program・同一 calculation_version・同一計算条件・同一 canonical SMILES の一致で再利用し、miss だけを計算する。
 
+旧Description Skillのidentity schemaへは決定論的bridgeを介して接続する。Database登録は既定で全feature有限を要求するが、D015/D016 Mordredは構造上定義されない希少元素featureのnullを許容し、行の50%以上かつ1件以上が有限の場合だけ登録する。全feature非有限または計算失敗行は登録しない。D015/D016のこの契約は`calculation_version=2`とする。
+
 ### Phase 2: 文脈の語彙構築
 
 条件 C の候補カタログを作る。語彙は4種類。
@@ -294,6 +296,8 @@ Fingerprint 空間で条件付き平坦性が見つかっても、`morgan_bit_14
 | ~~L1a~~ | 空間水準の説明力 | — | 不在 | **診断指標へ降格** |
 | ~~L3~~ | 局所期待からの逸脱 | 点 | **1.0** | **信号なし。診断指標へ降格** |
 | ~~L6~~ | 活性濃縮クラスタ | 群 | **1.0** | **信号なし。診断指標へ降格** |
+
+L4はone-step生成全件を無上限に再記述しない。候補Description前に到達経路と観測pair支持で決定論的に順位付けし、既定100候補、Tier 1/2再記述900行を上限とする。さらにDescriptionのcost class別重みを使って予定cost unitsを評価し、10,000 unitsを上限とする。予定行数またはcost unitsが上限を超える設定では計算開始前に`needs_design_review`で停止する。
 
 ### 8.0 レンズは骨格主効果に直交していなければならない 【実測から導かれた設計原理】
 

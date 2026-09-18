@@ -3,11 +3,13 @@
 作成日: 2026-09-17  
 対象: 段階7〜11（段階6停止後に明示承認を受けて着手）
 
+> **2026-09-18訂正:** 3.4A本番RunでMordred cache登録0件、L4約25万候補の無上限再記述、Pixi解決失敗が確認されたため、本書の「実装適合性残件は完了」という判断は撤回した。是正内容と再受入条件は [`CONDUCTOR_0.2.1_production_remediation_report.md`](CONDUCTOR_0.2.1_production_remediation_report.md) を正本とする。
+
 ## 結論
 
 段階7〜11の Skill、公開契約、合成データ回帰、Runtime の基本経路まで実装した。catalog の checkpoint は `stage11_runtime` で、Description 18件と pipeline 12件を収録する。
 
-実装適合性残件は追加実装と回帰試験を完了した。正式受入には、実データ較正と実際の offline provider を用いた運用確認が残るため、配布判定は引き続き保留する。
+当時の実装適合性残件は追加実装と回帰試験を完了したと判断したが、本番規模の計算量・Description互換境界を覆う受入が不足していた。2026-09-18の是正後もUbuntu本番機での限定fixture受入が残るため、配布・本番再開判定は保留する。
 
 ## 実装済み
 
