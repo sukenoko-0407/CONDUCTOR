@@ -1,0 +1,79 @@
+# CONDUCTOR 0.2.1の完全な設定例です。
+# Ubuntu CPU機でこのfileをresolved_config.yamlへ複製し、llm.command内の
+# <PYTHON>と<PROJECT_ROOT>を絶対pathへ置き換えてください。
+# provider endpoint、model、認証方式はprovider_config.json側へ記載します。
+
+schema_version: '0.2.1'
+
+measurement:
+  sigma: 0.10
+  sigma_diff: 0.14
+  neutral_abs_delta_max: 0.28
+  cliff_abs_delta_min: 0.42
+  cliff_tanimoto_min: 0.75
+  tolerance_variance_max: 0.02
+
+contexts:
+  neighbor_k: 10
+  min_endpoint_n: 5
+  jaccard_dedup_min: 0.90
+  condition_depth: 1
+  cluster_counts: [10, 20, 40]
+  quantiles: [0.25, 0.50, 0.75]
+  translation_auc_min: 0.70
+
+statistics:
+  screen_permutations: 100
+  final_permutations: 1000
+  screen_p_max: 0.05
+  report_q_max: 0.05
+  bootstrap_iterations: 200
+  min_permutation_participation: 0.50
+  calibration_permutations: 20
+
+fragmentation:
+  min_molecule_heavy_atoms: 6
+  min_constant_heavy_atoms: 4
+  max_variable_fraction: 0.60
+  min_ring_variable_heavy_atoms: 3
+  max_ring_attachments: 4
+
+lenses:
+  l1b:
+    lambda_min: 0.50
+  l2a:
+    min_transform_pairs: 3
+    min_pairs_in: 3
+    min_pairs_out: 3
+  l2b:
+    min_series_consistency: 2
+    min_series_variance: 3
+    enrichment_thresholds: [2.0, 3.0, 4.0]
+  l5:
+    min_abs_r: 0.30
+  l7:
+    min_common_r_groups: 5
+    min_abs_spearman_rho: 0.50
+
+scoring:
+  statistical_strength_min: 0.50
+  robustness_min: 0.70
+  display_k: 10
+
+deep_dive:
+  max_depth: 3
+  max_children: 3
+  max_tests_per_finding: 15
+  stop_after_consecutive_inconclusive: 2
+  min_group_n: 3
+  robustness_iterations: 500
+
+llm:
+  command: '"<PYTHON>" "<PROJECT_ROOT>/CONDUCTOR_modules/local_llm_provider/provider.py" --config "<PROJECT_ROOT>/CONDUCTOR_modules/local_llm_provider/provider_config.json"'
+  timeout_seconds: 300
+  schema_retries: 2
+  max_failure_fraction: 0.20
+
+runtime:
+  random_seed: 20260916
+  workers: 0

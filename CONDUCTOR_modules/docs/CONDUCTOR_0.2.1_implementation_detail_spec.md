@@ -201,7 +201,7 @@ created_at: ...
 
 ## 3. 設定ファイル
 
-確定パラメータは `CONDUCTOR_modules/config/defaults.yaml` に置き、コードに埋め込まない。Runtime は defaults、project config、Run override の順に deep merge し、未知 key を拒否して `resolved_config.yaml` を Run に保存する。
+確定パラメータは `CONDUCTOR_modules/config/defaults.yaml` に置き、コードに埋め込まない。Run準備時に defaults、project config、Run override の順で `load_resolved_config`によりdeep mergeし、未知 key を拒否した完全な`resolved_config.yaml`を作成する。各SkillとRuntimeへ渡す`config_path`は、この完全なfileを指すものとし、部分overlayを直接渡さない。既定値のまま運用する場合は`CONDUCTOR_modules/config/resolved_config.example.yaml`を複製し、machine固有の`llm.command`だけを置換してよい。Run開始時に同じ内容をRun rootへ保存し、そのhashを全Nodeで固定する。
 
 ```yaml
 schema_version: '0.2.1'

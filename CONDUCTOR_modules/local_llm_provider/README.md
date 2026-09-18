@@ -36,7 +36,7 @@ providerは次を強制します。
    - API key認証の有無
    - `/health`を利用できるか
 
-2. `provider_config.example.json`を`provider_config.json`へ複製し、placeholderを全て置換する。`provider_config.json`はGit管理しない。
+2. `provider_config.example.json`を同じdirectoryの`provider_config.json`へ複製し、placeholderを全て置換する。この配置を推奨し、repositoryの`.gitignore`にも登録している。別の場所でも動作するが、その場合は`llm.command`の`--config`へ当該fileの絶対pathを指定する。API keyそのものはこのJSONへ記載しない。
 
 3. `vllm serve --api-key ...`を使用している場合、CPU機上で専用の環境変数を設定する。値はfileやcommand lineへ書かない。
 
@@ -63,7 +63,9 @@ export CONDUCTOR_LLM_API_KEY='<secret>'
 
 `health_endpoint`を`null`にした場合、`--check`は設定と認証環境変数だけを検証し、推論serverへは接続しません。
 
-6. Project configの`llm.command`へ次を1行で設定する。
+6. `../config/resolved_config.example.yaml`を`../config/resolved_config.yaml`へ複製し、`llm.command`内の`<PYTHON>`と`<PROJECT_ROOT>`をCPU機上の絶対pathへ置き換える。その他の解析値を既定値のまま使う場合、追加のmerge作業は不要である。
+
+該当部分は次の形になります。
 
 ```yaml
 llm:
@@ -76,6 +78,8 @@ llm:
 `<PYTHON>`はCPU機上のPython 3.12 executableの絶対pathです。provider側のtimeoutを270秒、CONDUCTOR側を300秒とし、外側のtimeoutを長くします。GPU serverの混雑で不足する場合は両方を同じ比率で引き上げます。
 
 sampling parameterはmodel運用値に合わせて固定し、provider metadataへ記録します。vLLMはOpenAI標準外の`top_k`と`min_p`もJSON bodyで受け取れます。model repositoryの`generation_config.json`との関係も含め、正式Runでは実際に適用される値をGPU server管理者と確認してください。
+
+`enable_thinking`はCONDUCTOR 0.2.1では`false`必須です。これはvLLM全般の制約ではなく、LLM responseをJSON 1 objectだけに限定し、reasoning traceの混入、余分なtoken消費、`message.content`が空になる構成差を避けるためのprovider契約です。`true`へ変更するとproviderは開始前に拒否します。
 
 最後にプロンプト集3.3をCPU機上で実施し、実際のGPU modelへ3タスクを各1回だけprobeします。これは小さなrequest 3件だけであり、特徴量計算や本番Runは開始しません。
 

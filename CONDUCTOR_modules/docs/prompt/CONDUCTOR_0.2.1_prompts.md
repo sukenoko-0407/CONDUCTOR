@@ -125,7 +125,7 @@ SMILES列: <SMILES_COLUMN>
 
 ### 3.3 Local LLM providerのPreflight
 
-事前準備は、`../../local_llm_provider/README.md`および`../../config/local_llm.api.example.yaml`を参照する。このPreflightは、CONDUCTORを実行するUbuntu CPU機から、実modelを載せた承認済みGPU vLLM endpointに対して行う。GPU modelの起動や配置をCPU機で行う必要はない。
+事前準備は、`../../local_llm_provider/README.md`および`../../config/resolved_config.example.yaml`を参照する。`resolved_config.example.yaml`をUbuntu CPU機上で`resolved_config.yaml`へ複製し、`llm.command`内の絶対pathだけを置換する。他の解析値を変更しない場合は、そこに記載されたdefaults値をそのまま使用する。このPreflightはCPU機から、実modelを載せた承認済みGPU vLLM endpointに対して行う。GPU modelの起動や配置をCPU機で行う必要はない。
 
 `llm.command`はMCP serverの登録ではない。CONDUCTORがLLMを1回呼ぶたびにCPU機上で起動するprovider executableのcommand lineであり、Execution側はrequest JSON 1行をproviderのstdinへ渡し、response JSON 1行をstdoutから受け取る。参照providerは、別GPU機で稼働する`vllm serve`のOpenAI互換`/v1/chat/completions`へHTTP requestを送る。Claude Codeが同じAPIへ接続済みでも、その接続設定はproviderへ自動継承されない。LLMはOS commandや解析Toolを直接実行せず、許可済みtemplateの提案または引用付き文章だけを返す。template実行、検定、状態判定、引用検証はCPU機上の決定論的なCONDUCTOR codeが行う。
 
