@@ -126,6 +126,30 @@ SMILES列: <SMILES_COLUMN>
 入力、設定、Database path、Pixi環境、Run stateを変更せず、開始可否、入力件数、Description別予想miss件数、必要容量の見積り、問題点を報告してください。このPreflightではDatabase pathを作成せず、recordの削除、更新、invalid化を行わないでください。
 ```
 
+### 3.2B Ubuntu本番機での修正受入fixture
+
+コード、Pixi lock、Description計算契約、CPU並列化またはL4 scale guardを変更した後、最初の本番Run前に1回だけ使用する。Runごとに繰り返す必要はない。本番入力、本番Description Database、本番Run rootは使用せず、fixtureの入力、出力、DatabaseはOSのTemporaryDirectoryへ作成する。必要なPixi環境の解決・作成は許可する。
+
+```text
+CONDUCTOR 0.2.1のUbuntu本番機限定受入fixtureを実行してください。本番Runは開始しないでください。
+
+Project root: <PROJECT_ROOT>
+設定: <CONFIG_PATH>
+利用可能CPU上限: <WORKERS>
+
+fixtureの入力、出力、DatabaseにはOSのTemporaryDirectoryだけを使い、次を確認してください。
+
+1. D015とD016をエタノール、ベンゼン、アスピリンの3化合物で実行する。
+2. D015/D016の`calculation_version`が`2`であることを確認する。
+3. Se/Pb/Sn/As系などの構造的NaNを含んでも、featureの50%以上かつ1件以上が有限で`description_error`がない行は登録されることを確認する。
+4. 全featureが非有限のsynthetic行と`description_error`を持つsynthetic行は登録されないことを確認する。
+5. D019をfixture 2化合物、`compound_workers=2`、`cores_per_compound=2`、`available_cpu_cores=4`で実行し、Linux CPU affinityがworker間で重複せず、使用CPU数が宣言上限以下であることをmanifestで確認する。
+6. L4 scale guardの対象試験を実行し、support順位による選択数が100以下、予定Description行数が900以下、予定cost unitsが10000以下であること、および上限超過時にDescriptionを起動する前に停止することを確認する。
+7. Runtime fixtureで`workers=<WORKERS>`がExecution Request、Skill CLI、`CONDUCTOR_AVAILABLE_CPU_CORES`、`CONDUCTOR_NODE_CPU_CORES`へ同じ値で伝播し、このUbuntu processのCPU affinityを超える値が拒否されることを確認する。
+
+本番入力、本番Description Database、本番Run root、resolved config、provider configを変更しないでください。TemporaryDirectory以外のfixture成果物を残さず、各項目の成否、実測worker数、CPU affinity、D015/D016のregistered/skipped件数、L4 scale planを報告してください。1項目でも不合格なら3.4/3.4Aへ進まず停止してください。
+```
+
 ### 3.3 Local LLM providerのPreflight
 
 事前準備は、`../../local_llm_provider/README.md`および`../../config/resolved_config.example.yaml`を参照する。`resolved_config.example.yaml`をUbuntu CPU機上で`resolved_config.yaml`へ複製し、`llm.command`内の絶対pathだけを置換する。他の解析値を変更しない場合は、そこに記載されたdefaults値をそのまま使用する。このPreflightはCPU機から、実modelを載せた承認済みGPU vLLM endpointに対して行う。GPU modelの起動や配置をCPU機で行う必要はない。
@@ -170,7 +194,7 @@ needs_design_review、同一ID・異構造、schema/hash/citation不整合では
 
 ### 3.4A 事前確認済み・全Descriptionを新規構築する本番Run
 
-このプロンプトは、同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて3.2Aが合格し、同じLLM設定、`llm.command`、provider configについて3.3が合格した後に使用する。3.4Aでは3.2A/3.3の詳細検査やLLMの3タスクprobeを繰り返さない。
+このプロンプトは、同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて3.2Aが合格し、実装修正後の初回Runでは3.2BがUbuntu本番機で合格し、同じLLM設定、`llm.command`、provider configについて3.3が合格した後に使用する。3.4Aでは3.2A/3.2B/3.3の検査を繰り返さない。
 
 ```text
 CONDUCTOR 0.2.1で、既存Description Databaseを使用せず、全Descriptionを新規計算する本番Runを実行してください。
@@ -187,7 +211,7 @@ Run root: <RUN_ROOT>
 workers: <WORKERS>
 memory_mb: <MEMORY_MB>
 
-3.2Aは上記と同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて合格済みです。3.3は同じLLM設定、`llm.command`、provider configについて合格済みです。3.2A相当の全件Preflight、Description/Pixi/model inventory、容量見積り、LLMの3タスクprobeは再実行しないでください。
+3.2Aは上記と同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて合格済みです。実装修正後の3.2BはこのUbuntu本番機で合格済みです。3.3は同じLLM設定、`llm.command`、provider configについて合格済みです。3.2A相当の全件Preflight、3.2Bのfixture、Description/Pixi/model inventory、容量見積り、LLMの3タスクprobeは再実行しないでください。
 
 開始直前には次の最小確認だけを行ってください。
 - 入力CSV、Endpoint registry、設定、設定が参照するprovider configが読める
@@ -455,6 +479,7 @@ parameter契約:
 - 新規Runが既存Run rootを上書きしない。
 - 通常経路では0.1.10/0.1.11 Description Databaseの互換recordがhitとして再利用される。
 - 3.2A/3.4Aの例外経路では元の既定pathが不存在であることを開始条件とし、同じProgram名でhit=0の新Databaseが構築される。
+- 実装修正後の初回本番Runでは3.2BがUbuntu本番機で合格し、fixtureが本番入力、Database、Run rootを変更しない。
 - 3.4Bの回復経路では中断Runを再開せず、部分Databaseをバックアップしてから新しいRunで互換recordだけを再利用し、契約変更recordをmissとして補完する。
 - 同一ID・異構造がfail-fastする。
 - 3種類のLLM taskがrequest/response schemaへ適合する。
