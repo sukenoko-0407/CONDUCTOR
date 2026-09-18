@@ -12,7 +12,7 @@ LLMはOS commandや解析Toolを直接実行しません。許可済みtemplate�
 
 - `provider.py`: stdin 1行を受け、stdoutへ応答JSON 1行だけを返すvLLM adapter。
 - `prompts.json`: 0.2.1で固定したsystem/task prompt。
-- `provider_config.example.json`: 接続先とmodel情報の雛形。
+- `provider_config.example.json`: 信頼済み社内HTTP・認証なしのvLLM接続を前提とする、接続先とmodel情報の雛形。
 
 providerは次を強制します。
 
@@ -36,9 +36,9 @@ providerは次を強制します。
    - API key認証の有無
    - `/health`を利用できるか
 
-2. `provider_config.example.json`を同じdirectoryの`provider_config.json`へ複製し、placeholderを全て置換する。この配置を推奨し、repositoryの`.gitignore`にも登録している。別の場所でも動作するが、その場合は`llm.command`の`--config`へ当該fileの絶対pathを指定する。API keyそのものはこのJSONへ記載しない。
+2. `provider_config.example.json`を同じdirectoryの`provider_config.json`へ複製し、placeholderを全て置換する。この雛形は今回の運用条件である信頼済み社内HTTP・認証なしを表すため、`http://...`、`allow_plaintext_http: true`、`authentication: "none"`、`api_key_env: null`を設定済みである。この配置を推奨し、repositoryの`.gitignore`にも登録している。別の場所でも動作するが、その場合は`llm.command`の`--config`へ当該fileの絶対pathを指定する。
 
-3. `vllm serve --api-key ...`を使用している場合、CPU機上で専用の環境変数を設定する。値はfileやcommand lineへ書かない。
+3. 今回の認証なし運用ではAPI key環境変数は設定しない。将来`vllm serve --api-key ...`へ変更する場合だけ、CPU機上で専用の環境変数を設定し、値はfileやcommand lineへ書かない。
 
 ```bash
 export CONDUCTOR_LLM_API_KEY='<secret>'
