@@ -1,0 +1,206 @@
+{
+  "schema_version": "0.2.1",
+  "blueprint_id": "CONDUCTOR-PRODUCTION-0.2.1",
+  "description": "Canonical Phase 1-6 production DAG. Compiled by cs-production-run; never hand-edit per Run.",
+  "nodes": [
+    {
+      "node_id": "P01-PREPARE",
+      "phase_id": "P01",
+      "skill_name": "cs-runtime",
+      "operation": "prepare_phase1",
+      "dependencies": [],
+      "inputs": [
+        {"role": "dataset", "ref": "external://input_csv"},
+        {"role": "endpoint_registry", "ref": "external://endpoint_registry"}
+      ],
+      "parameters": {"id_column": "$id_column", "smiles_column": "$smiles_column"}
+    },
+    {
+      "node_id": "P01-DESCRIPTIONS",
+      "phase_id": "P01",
+      "skill_name": "cs-runtime",
+      "operation": "descriptions",
+      "launch": "canonical_description_node",
+      "dependencies": ["P01-PREPARE"],
+      "inputs": [{"role": "compounds", "ref": "node://P01-PREPARE/compounds"}],
+      "parameters": {"program_name": "$program_name", "id_column": "compound_id", "smiles_column": "canonical_smiles", "description_parameters": "$description_parameters"}
+    },
+    {
+      "node_id": "P02-CONTEXT",
+      "phase_id": "P02",
+      "skill_name": "cs-context-builder",
+      "operation": "build_contexts",
+      "dependencies": ["P01-PREPARE", "P01-DESCRIPTIONS"],
+      "inputs": [
+        {"role": "compounds", "ref": "node://P01-PREPARE/compounds"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"},
+        {"role": "feature_spaces", "ref": "node://P01-DESCRIPTIONS/feature_spaces"}
+      ]
+    },
+    {
+      "node_id": "P02-FRAGMENT",
+      "phase_id": "P02",
+      "skill_name": "cs-fragment-engine",
+      "operation": "build_database",
+      "dependencies": ["P01-PREPARE"],
+      "inputs": [
+        {"role": "compounds", "ref": "node://P01-PREPARE/compounds"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"}
+      ]
+    },
+    {
+      "node_id": "P03-L2A",
+      "phase_id": "P03",
+      "skill_name": "cs-lens-l2",
+      "operation": "l2a",
+      "dependencies": ["P01-PREPARE", "P02-CONTEXT", "P02-FRAGMENT"],
+      "inputs": [
+        {"role": "fragment_observations", "ref": "node://P02-FRAGMENT/fragment_observations"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"},
+        {"role": "mmp_database", "ref": "node://P02-FRAGMENT/mmp_database"},
+        {"role": "context_catalog", "ref": "node://P02-CONTEXT/context_catalog"},
+        {"role": "context_membership", "ref": "node://P02-CONTEXT/context_membership"}
+      ]
+    },
+    {
+      "node_id": "P03-L2B",
+      "phase_id": "P03",
+      "skill_name": "cs-lens-l2",
+      "operation": "l2b",
+      "dependencies": ["P01-PREPARE", "P02-CONTEXT", "P02-FRAGMENT"],
+      "inputs": [
+        {"role": "fragment_observations", "ref": "node://P02-FRAGMENT/fragment_observations"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"},
+        {"role": "mmp_database", "ref": "node://P02-FRAGMENT/mmp_database"},
+        {"role": "context_catalog", "ref": "node://P02-CONTEXT/context_catalog"},
+        {"role": "context_membership", "ref": "node://P02-CONTEXT/context_membership"}
+      ]
+    },
+    {
+      "node_id": "P03-L1B",
+      "phase_id": "P03",
+      "skill_name": "cs-lens-l1b",
+      "operation": "l1b",
+      "dependencies": ["P01-PREPARE", "P01-DESCRIPTIONS", "P02-CONTEXT"],
+      "inputs": [
+        {"role": "compounds", "ref": "node://P01-PREPARE/compounds"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"},
+        {"role": "context_catalog", "ref": "node://P02-CONTEXT/context_catalog"},
+        {"role": "context_membership", "ref": "node://P02-CONTEXT/context_membership"},
+        {"role": "feature_spaces", "ref": "node://P01-DESCRIPTIONS/feature_spaces"}
+      ]
+    },
+    {
+      "node_id": "P03-L4",
+      "phase_id": "P03",
+      "skill_name": "cs-lens-l4",
+      "operation": "l4",
+      "dependencies": ["P01-PREPARE", "P01-DESCRIPTIONS", "P02-FRAGMENT"],
+      "inputs": [
+        {"role": "compounds", "ref": "node://P01-PREPARE/compounds"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"},
+        {"role": "mmp_database", "ref": "node://P02-FRAGMENT/mmp_database"},
+        {"role": "feature_spaces", "ref": "node://P01-DESCRIPTIONS/feature_spaces"}
+      ]
+    },
+    {
+      "node_id": "P03-L5",
+      "phase_id": "P03",
+      "skill_name": "cs-lens-l5",
+      "operation": "l5",
+      "dependencies": ["P01-PREPARE", "P01-DESCRIPTIONS", "P02-CONTEXT"],
+      "inputs": [
+        {"role": "compounds", "ref": "node://P01-PREPARE/compounds"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"},
+        {"role": "context_catalog", "ref": "node://P02-CONTEXT/context_catalog"},
+        {"role": "context_membership", "ref": "node://P02-CONTEXT/context_membership"},
+        {"role": "feature_spaces", "ref": "node://P01-DESCRIPTIONS/feature_spaces"}
+      ]
+    },
+    {
+      "node_id": "P03-L7",
+      "phase_id": "P03",
+      "skill_name": "cs-lens-l7",
+      "operation": "l7",
+      "dependencies": ["P01-PREPARE", "P02-FRAGMENT"],
+      "inputs": [
+        {"role": "fragment_observations", "ref": "node://P02-FRAGMENT/fragment_observations"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"}
+      ]
+    },
+    {
+      "node_id": "P04-SCORING",
+      "phase_id": "P04",
+      "skill_name": "cs-scoring",
+      "operation": "score",
+      "dependencies": ["P01-PREPARE", "P01-DESCRIPTIONS", "P03-L1B", "P03-L2A", "P03-L2B", "P03-L4", "P03-L5", "P03-L7"],
+      "inputs": [
+        {"role": "findings", "ref": "node://P03-L1B/findings"},
+        {"role": "findings", "ref": "node://P03-L2A/findings"},
+        {"role": "findings", "ref": "node://P03-L2B/findings"},
+        {"role": "findings", "ref": "node://P03-L4/findings"},
+        {"role": "findings", "ref": "node://P03-L5/findings"},
+        {"role": "findings", "ref": "node://P03-L7/findings"},
+        {"role": "score_observations", "ref": "node://P03-L1B/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L2A/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L2B/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L4/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L5/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L7/score_observations"},
+        {"role": "endpoint_table", "ref": "node://P01-PREPARE/endpoint_table"},
+        {"role": "feature_spaces", "ref": "node://P01-DESCRIPTIONS/feature_spaces"},
+        {"role": "candidate_feature_spaces", "ref": "node://P03-L4/l4_candidate_feature_spaces"}
+      ]
+    },
+    {
+      "node_id": "P05-DEEPDIVE",
+      "phase_id": "P05",
+      "skill_name": "cs-deepdive",
+      "operation": "deep_dive",
+      "dependencies": ["P01-PREPARE", "P02-CONTEXT", "P03-L1B", "P03-L2A", "P03-L2B", "P03-L4", "P03-L5", "P03-L7", "P04-SCORING"],
+      "inputs": [
+        {"role": "findings_scored", "ref": "node://P04-SCORING/findings_scored"},
+        {"role": "score_observations", "ref": "node://P03-L1B/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L2A/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L2B/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L4/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L5/score_observations"},
+        {"role": "score_observations", "ref": "node://P03-L7/score_observations"},
+        {"role": "compounds", "ref": "node://P01-PREPARE/compounds"},
+        {"role": "l4_candidates", "ref": "node://P03-L4/l4_candidates"},
+        {"role": "context_membership", "ref": "node://P02-CONTEXT/context_membership"}
+      ]
+    },
+    {
+      "node_id": "P06-REPORT",
+      "phase_id": "P06",
+      "skill_name": "cs-report",
+      "operation": "report",
+      "dependencies": ["P01-PREPARE", "P02-FRAGMENT", "P03-L1B", "P03-L2A", "P03-L2B", "P03-L4", "P03-L5", "P03-L7", "P05-DEEPDIVE"],
+      "inputs": [
+        {"role": "findings_deep_dived", "ref": "node://P05-DEEPDIVE/findings_deep_dived"},
+        {"role": "compounds", "ref": "node://P01-PREPARE/compounds"},
+        {"role": "mmp_database", "ref": "node://P02-FRAGMENT/mmp_database"},
+        {"role": "evidence_table", "ref": "node://P03-L1B/l1b_evidence"},
+        {"role": "evidence_table", "ref": "node://P03-L1B/l1b_tests"},
+        {"role": "evidence_table", "ref": "node://P03-L2A/l2a_evidence"},
+        {"role": "evidence_table", "ref": "node://P03-L2A/l2a_tests"},
+        {"role": "evidence_table", "ref": "node://P03-L2B/l2b_evidence"},
+        {"role": "evidence_table", "ref": "node://P03-L2B/l2b_tests"},
+        {"role": "evidence_table", "ref": "node://P03-L4/l4_evidence"},
+        {"role": "evidence_table", "ref": "node://P03-L4/l4_tests"},
+        {"role": "evidence_table", "ref": "node://P03-L5/l5_evidence"},
+        {"role": "evidence_table", "ref": "node://P03-L5/l5_tests"},
+        {"role": "evidence_table", "ref": "node://P03-L7/l7_evidence"},
+        {"role": "evidence_table", "ref": "node://P03-L7/l7_tests"},
+        {"role": "artifact_manifest", "ref": "manifest://P03-L1B"},
+        {"role": "artifact_manifest", "ref": "manifest://P03-L2A"},
+        {"role": "artifact_manifest", "ref": "manifest://P03-L2B"},
+        {"role": "artifact_manifest", "ref": "manifest://P03-L4"},
+        {"role": "artifact_manifest", "ref": "manifest://P03-L5"},
+        {"role": "artifact_manifest", "ref": "manifest://P03-L7"}
+      ],
+      "parameters": {"run_root": "$run_root"}
+    }
+  ]
+}

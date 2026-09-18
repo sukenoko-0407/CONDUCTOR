@@ -1055,3 +1055,84 @@ Q-001〜Q-018は全件反映済みであり、実装開始を妨げる未回答�
 4. Hammett TSVの出典・license・version管理方法
 
 実装順は実装計画書5章から変更しない。段階6でL2b本番enrichmentと差分を報告し、明示承認を得るまで段階7へ進まない。実装計画書9章の既出5件は、指定された時期に別途確認する。
+
+## 14. Production Run compiler詳細仕様
+
+### 14.1 目的と非目標
+
+`cs-production-run`は、3.2A、3.2B、3.3が完了した3.4A本番Runを短時間で安全に開始するための決定論的compilerである。Agentが起動時に各Skillの`capability.json`、source、fixtureを読み直してDAGを発明することはしない。固定Blueprintの変更は通常運用ではなく、versioned implementation changeとしてreview/testする。
+
+### 14.2 入力契約
+
+入力は`run_spec.schema.json`へ適合するJSON 1件とする。必須scopeは、project、Project root、Program、入力CSV、Endpoint registry、Endpoint ID、resolved config、provider config、ID/SMILES列、Run root、workers、memory、`mode=new_database`、3件のreceipt pathである。全pathは絶対pathとし、Run Specは3件のPreflightより前に確定する。
+
+receiptは`check_id`が`3.2A`、`3.2B`、`3.3`の各1件で、次を保存する。
+
+- Run scopeの完全値
+- 入力CSV、Endpoint registry、resolved config、provider config、Run SpecのSHA-256
+- Production BlueprintのSHA-256
+- `.claude/skills`、`CONDUCTOR_modules/tools`、`pipeline`、`schemas`、`defaults.yaml`から得る実装fingerprint
+- hostname、CPU affinity、完了時刻、確認者、短い根拠
+
+receipt生成は`create_preflight_receipt.py`でのみ行い、既存fileを上書きしない。Run Spec、対象file、Blueprint、実装、machineが変われば3.4Aはfail-fastする。
+
+### 14.3 Compile結果
+
+最小guard合格後、Run rootを新規作成して次を固定保存する。
+
+```text
+<RUN_ROOT>/
+├── control/
+│   ├── run_spec.json
+│   ├── resolved_config.yaml
+│   ├── provider_config.json
+│   ├── production_pipeline.v0.2.1.json
+│   ├── preflight_receipts/{3.2A,3.2B,3.3}.json
+│   ├── requests/<NODE_ID>.json
+│   ├── pipeline_plan.json
+│   ├── coordinator_request.json
+│   └── compilation_manifest.json
+├── nodes/<NODE_ID>/<ATTEMPT_ID>/
+├── attempts/
+├── events/
+├── runtime.sqlite
+└── runtime_summary.json
+```
+
+Run IDは明示値がなければscope、入力hash、Blueprint hash、実装fingerprintから`RUN-<20 hex>`として決定論的に導出する。全NodeはRun rootにfreezeした同じ`resolved_config.yaml`を参照する。freeze時には`llm.command`内の絶対provider config pathを`control/provider_config.json`へ置換し、Preflight後に元fileが変更されてもRun中のprovider設定が変化しないようにする。Execution Requestの`resources.workers`はRun Spec値とし、Runtimeが同じ値をCLIと`CONDUCTOR_AVAILABLE_CPU_CORES`、`CONDUCTOR_NODE_CPU_CORES`へ注入する。
+
+### 14.4 固定DAG
+
+Blueprintは13 Nodeを持つ。
+
+| Phase | Node |
+|---|---|
+| P01 | `P01-PREPARE`, `P01-DESCRIPTIONS` |
+| P02 | `P02-CONTEXT`, `P02-FRAGMENT` |
+| P03 | `P03-L1B`, `P03-L2A`, `P03-L2B`, `P03-L4`, `P03-L5`, `P03-L7` |
+| P04 | `P04-SCORING` |
+| P05 | `P05-DEEPDIVE` |
+| P06 | `P06-REPORT` |
+
+Description Nodeのlaunch pathはtracked `CONDUCTOR_modules/tools/description_node.py`へ固定する。他Nodeは各tracked Skillの`scripts/launch.py`へ固定する。Artifactは`node://<producer>/<role>`で解決する。Reportへ親Manifestそのものを渡す場合だけ`manifest://<producer>`を使う。Runtimeは参照先が当該Nodeの宣言済みdependencyで、親が`succeeded`、Manifest/fileが存在することを検証してから実pathとSHA-256へ置換する。Manifestを自己ArtifactとしてManifest内へ記載してはならない。
+
+### 14.5 排他、失敗、再開
+
+compilerは`<PROJECT_ROOT>/.conductor/locks/`へProgram lockとRun-root lockを`O_EXCL`で作り、compileからcoordinator終了まで保持する。既存lockはactive/staleを自動判定・削除せず、所有情報を報告して停止する。Run root、Database path、receipt、入力hashの不整合はRun root作成前に失敗させる。
+
+Node開始後のretry、`failed`、`needs_design_review`、resumeは`cs-runtime`の既存single-writer state machineに従う。compilerは成功済みNodeを書き換えず、閾値変更、成果物修正、fallback narrativeを行わない。
+
+### 14.6 Local LLM境界
+
+`llm.command`はClaude Code tool callでもMCPでもない。Deep Dive/Report codeが論理callごとにprovider subprocessを起動し、request JSON 1行をstdinへ渡し、response JSON 1行をstdoutから受ける。providerは承認済みvLLM APIへHTTP requestを送り、LLM出力をschemaへ整形・検証する。LLMはtemplate候補選択と引用付き文章化だけを担当し、特徴量計算、clustering、Lens検定、p/q値、state判定、citation validationはCPU機上の決定論的codeが担当する。
+
+契約の正本は`llm_request.schema.json`、`llm_response.schema.json`、`local_llm_provider/provider.py`、本書、実装計画書11.2節とする。`CONDUCTOR_0.2.1_prompts.md`第5章はproviderへ与えるprompt契約であり、Claude Code Agentのtool契約ではない。
+
+### 14.7 テストと受入条件
+
+- package verifierが`cs-production-run`と3つの新Schema/exampleを検証する。
+- Skill quick validationがfrontmatterと必須fileを検証する。
+- integration testが13 Nodeをcompileし、`PipelinePlan.load`でDAG、canonical Description launcher、主要Nodeを検証する。
+- input変更後にreceipt hash mismatchとなり、Run rootが作成されないことを検証する。
+- Runtime integration testが宣言済みdependencyの`manifest://`を実Manifest path/hashへ解決することを検証する。
+- 3.4A Agentがcontract抽出やrequest自作をせず、Run Spec 1件から本計算を開始できることをUbuntu fixtureで確認する。

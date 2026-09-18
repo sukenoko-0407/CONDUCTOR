@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/pipeline_plan.schema.json",
+  "title": "CONDUCTOR 0.2.1 Pipeline Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "code_version", "blueprint_sha256", "implementation_sha256", "nodes"],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "code_version": {"const": "0.2.1"},
+    "blueprint_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "implementation_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node_id", "phase_id", "skill_name", "dependencies", "request_template", "launch_path", "output_directory"],
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1},
+          "phase_id": {"type": "string", "pattern": "^P[0-9]{2}$"},
+          "skill_name": {"type": "string", "pattern": "^cs-[a-z0-9-]+$"},
+          "dependencies": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "request_template": {"type": "string", "minLength": 1},
+          "launch_path": {"type": "string", "minLength": 1},
+          "output_directory": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

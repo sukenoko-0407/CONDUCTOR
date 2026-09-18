@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/run_spec.schema.json",
+  "title": "CONDUCTOR 0.2.1 Production Run Specification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project", "project_root", "program_name", "input_csv",
+    "endpoint_registry", "endpoint_id", "config_path", "provider_config_path",
+    "id_column", "smiles_column", "run_root", "workers", "memory_mb",
+    "mode", "preflight_receipts"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "project": {"type": "string", "minLength": 1},
+    "project_root": {"type": "string", "minLength": 1},
+    "program_name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "input_csv": {"type": "string", "minLength": 1},
+    "endpoint_registry": {"type": "string", "minLength": 1},
+    "endpoint_id": {"type": "string", "minLength": 1},
+    "config_path": {"type": "string", "minLength": 1},
+    "provider_config_path": {"type": "string", "minLength": 1},
+    "id_column": {"type": "string", "minLength": 1},
+    "smiles_column": {"type": "string", "minLength": 1},
+    "run_root": {"type": "string", "minLength": 1},
+    "workers": {"type": "integer", "minimum": 1},
+    "memory_mb": {"type": "integer", "minimum": 1},
+    "mode": {"const": "new_database"},
+    "random_seed": {"type": "integer", "minimum": 0},
+    "run_id": {"type": "string", "pattern": "^RUN-[A-Za-z0-9._-]+$"},
+    "description_parameters": {"type": "object"},
+    "preflight_receipts": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

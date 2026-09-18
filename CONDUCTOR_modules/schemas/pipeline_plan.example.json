@@ -1,0 +1,18 @@
+{
+  "schema_version": "0.2.1",
+  "run_id": "RUN-EXAMPLE",
+  "code_version": "0.2.1",
+  "blueprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "implementation_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "nodes": [
+    {
+      "node_id": "P01-PREPARE",
+      "phase_id": "P01",
+      "skill_name": "cs-runtime",
+      "dependencies": [],
+      "request_template": "/data/example/run/control/requests/P01-PREPARE.json",
+      "launch_path": "/opt/CONDUCTOR/.claude/skills/cs-runtime/scripts/launch.py",
+      "output_directory": "/data/example/run/nodes/P01-PREPARE"
+    }
+  ]
+}

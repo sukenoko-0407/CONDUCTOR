@@ -68,13 +68,23 @@ def verify() -> list[str]:
         "artifact_manifest.schema.json", "context.schema.json", "deep_dive_node.schema.json",
         "endpoint_registry.schema.json", "execution_event.schema.json", "execution_request.schema.json",
         "finding.schema.json", "llm_request.schema.json", "llm_response.schema.json",
-        "mpo_contract.schema.json", "runtime_state.schema.json",
+        "mpo_contract.schema.json", "pipeline_plan.schema.json",
+        "preflight_receipt.schema.json", "run_spec.schema.json",
+        "runtime_state.schema.json",
     ):
         if not (MODULE_ROOT / "schemas" / schema).is_file():
             errors.append(f"missing schema: {schema}")
         example = schema.replace(".schema.json", ".example.json")
         if not (MODULE_ROOT / "schemas" / example).is_file():
             errors.append(f"missing schema example: {example}")
+    for relative in (
+        "pipeline/production_pipeline.v0.2.1.json",
+        "tools/production_run.py",
+        "tools/create_preflight_receipt.py",
+        "docs/images/CONDUCTOR_0.2.1_process_overview.png",
+    ):
+        if not (MODULE_ROOT / relative).is_file():
+            errors.append(f"missing production-run asset: {relative}")
     return errors
 
 

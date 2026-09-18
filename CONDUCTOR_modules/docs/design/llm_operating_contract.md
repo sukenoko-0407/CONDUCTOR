@@ -1,6 +1,8 @@
 # LLM 運用契約
 
-Status: **設計協議中。未承認・未実装。**
+Status: **設計履歴（非規範）。0.2.1の実装契約としては使用しない。**
+
+この文書は初期協議の記録であり、現在の`llm.command`やLLM責務の正本ではない。現行契約は、[`../CONDUCTOR_0.2.1_implementation_plan.md`](../CONDUCTOR_0.2.1_implementation_plan.md) 11.2/11.4節、[`../CONDUCTOR_0.2.1_implementation_detail_spec.md`](../CONDUCTOR_0.2.1_implementation_detail_spec.md) 14.6節、`CONDUCTOR_modules/schemas/llm_request.schema.json`、`llm_response.schema.json`、`CONDUCTOR_modules/local_llm_provider/provider.py`を参照する。特に、現行実装では深堀state判定をLLMへ委ねない。
 
 親文書: [`../CONDUCTOR_0.2.1_specification_overview.md`](../CONDUCTOR_0.2.1_specification_overview.md)
 

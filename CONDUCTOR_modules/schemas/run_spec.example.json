@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.2.1",
+  "project": "example-program",
+  "project_root": "/opt/CONDUCTOR",
+  "program_name": "EXAMPLE_PROGRAM",
+  "input_csv": "/data/example/input.csv",
+  "endpoint_registry": "/data/example/endpoint_registry.json",
+  "endpoint_id": "EP_PIC50",
+  "config_path": "/data/example/resolved_config.yaml",
+  "provider_config_path": "/data/example/provider_config.json",
+  "id_column": "compound_id",
+  "smiles_column": "smiles",
+  "run_root": "/data/example/runs/run-001",
+  "workers": 64,
+  "memory_mb": 32768,
+  "mode": "new_database",
+  "random_seed": 20260916,
+  "description_parameters": {},
+  "preflight_receipts": [
+    "/data/example/preflight/3.2A.json",
+    "/data/example/preflight/3.2B.json",
+    "/data/example/preflight/3.3.json"
+  ]
+}

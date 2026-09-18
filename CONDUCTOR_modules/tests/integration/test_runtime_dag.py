@@ -113,3 +113,57 @@ def test_pipeline_rejects_noncanonical_description_node(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="tracked canonical"):
         PipelinePlan.load(plan)
+
+
+def test_runtime_resolves_declared_dependency_manifest(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("schema_version: '0.2.1'\n", encoding="utf-8")
+    upstream_request = tmp_path / "upstream.json"
+    downstream_request = tmp_path / "downstream.json"
+    base = {
+        "schema_version": "0.2.1",
+        "endpoint_id": "EP",
+        "config_path": str(config),
+        "random_seed": 1,
+        "parameters": {"operation": "fixture"},
+        "resources": {"workers": 1, "memory_mb": 128},
+    }
+    upstream_request.write_text(json.dumps({
+        **base,
+        "identity": {"project": "P", "run_id": "RUN", "phase_id": "P01", "node_id": "A", "attempt_id": "TEMPLATE", "skill_name": "cs-stat-core"},
+        "inputs": [],
+    }), encoding="utf-8")
+    downstream_request.write_text(json.dumps({
+        **base,
+        "identity": {"project": "P", "run_id": "RUN", "phase_id": "P02", "node_id": "B", "attempt_id": "TEMPLATE", "skill_name": "cs-stat-core"},
+        "inputs": [{"role": "artifact_manifest", "path": "manifest://A", "sha256": "a" * 64, "producer_manifest": None}],
+    }), encoding="utf-8")
+    upstream_launch = tmp_path / "upstream.py"
+    upstream_launch.write_text(
+        "import argparse,json\nfrom pathlib import Path\n"
+        "p=argparse.ArgumentParser();p.add_argument('--request');p.add_argument('--output-dir');p.add_argument('--workers');a=p.parse_args()\n"
+        "o=Path(a.output_dir);o.mkdir(parents=True);(o/'artifact_manifest.json').write_text(json.dumps({'status':'succeeded','artifacts':[]}))\n",
+        encoding="utf-8",
+    )
+    downstream_launch = tmp_path / "downstream.py"
+    downstream_launch.write_text(
+        "import argparse,json\nfrom pathlib import Path\n"
+        "p=argparse.ArgumentParser();p.add_argument('--request');p.add_argument('--output-dir');p.add_argument('--workers');a=p.parse_args()\n"
+        "r=json.load(open(a.request));m=Path(r['inputs'][0]['path']);assert m.name=='artifact_manifest.json';assert r['inputs'][0]['producer_manifest']==str(m)\n"
+        "o=Path(a.output_dir);o.mkdir(parents=True);(o/'artifact_manifest.json').write_text(json.dumps({'status':'succeeded','artifacts':[]}))\n",
+        encoding="utf-8",
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps({
+        "run_id": "RUN", "code_version": "0.2.1", "nodes": [
+            {"node_id": "A", "phase_id": "P01", "skill_name": "cs-stat-core", "dependencies": [], "request_template": str(upstream_request), "launch_path": str(upstream_launch), "output_directory": str(tmp_path / "A")},
+            {"node_id": "B", "phase_id": "P02", "skill_name": "cs-stat-core", "dependencies": ["A"], "request_template": str(downstream_request), "launch_path": str(downstream_launch), "output_directory": str(tmp_path / "B")},
+        ],
+    }), encoding="utf-8")
+    coordinator = PipelineCoordinator(
+        PipelinePlan.load(plan_path),
+        RuntimeStateStore(tmp_path / "run" / "runtime.sqlite"),
+        tmp_path / "run",
+        Path(__file__).resolve().parents[2] / "schemas",
+    )
+    assert coordinator.run(workers=1)["status"] == "succeeded"

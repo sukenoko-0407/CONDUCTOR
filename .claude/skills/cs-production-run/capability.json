@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.2.1",
+  "capability_id": "PRODUCTION_RUN",
+  "skill_name": "cs-production-run",
+  "display_name": "CONDUCTOR Production Run",
+  "version": "0.2.1",
+  "stage": "runtime",
+  "description": "Hash-bound preflight validation and deterministic compilation of the canonical Phase 1-6 production DAG.",
+  "input_roles": ["run_spec", "preflight_receipt"],
+  "output_roles": ["pipeline_plan", "execution_requests", "runtime_state", "runtime_summary"],
+  "dependencies": ["RUNTIME", "STAT_CORE"],
+  "platforms": ["linux-64", "win-64"]
+}

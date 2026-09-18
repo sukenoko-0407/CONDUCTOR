@@ -36,9 +36,12 @@ Status: **0.2.1 正式運用テンプレート。**
 | `<PROGRAM_NAME>` | Description Databaseを分離するProgram名 |
 | `<INTERRUPTED_RUN_ROOT>` | 回復対象としてread-only監査する中断Runの出力先 |
 | `<RUN_ROOT>` | 新規Runの出力先、または再開対象 |
+| `<RUN_SPEC>` | `run_spec.example.json`を複製して実値を記載した、3.2A/3.2B/3.3/3.4A共通の絶対path |
+| `<PREFLIGHT_DIR>` | 3件のhash付きPreflight receiptを保存する既存directoryの絶対path |
 | `<ENDPOINT_REGISTRY>` | Endpoint registry JSON。`../../schemas/endpoint_registry.example.json` を複製し、実データに合わせて編集する |
 | `<ENDPOINT_ID>` | 今回解析する単一Endpoint |
 | `<CONFIG_PATH>` | 解決済み0.2.1設定YAML |
+| `<PROVIDER_CONFIG>` | Local LLM provider設定JSONの絶対path |
 | `<ID_COLUMN>` | compound ID列名 |
 | `<SMILES_COLUMN>` | SMILES列名 |
 | `<WORKERS>` | CPU機でこのRunに使用してよい論理CPUコア数の上限。本番では明示値を使い、64コア機で全64コアを許可する場合は`64` |
@@ -53,6 +56,10 @@ Status: **0.2.1 正式運用テンプレート。**
 | `<OPERATOR_NAME>` | 監査ログへ記録する操作者名 |
 
 ## 3. 日常運用プロンプト
+
+### 3.0 3.4A用Run Specの準備
+
+3.2Aより先に`../../schemas/run_spec.example.json`を複製して`run_spec.json`を作る。`project_root`、入力、Endpoint、resolved config、provider config、Run root、`workers`、`memory_mb`を実値へ置換し、`preflight_receipts`にはこれから作る`3.2A.json`、`3.2B.json`、`3.3.json`の絶対pathを先に記載する。以後、この3件のPreflightと3.4Aは同じRun Specだけを参照する。Run Specを変更した場合、既存receiptはhash不一致となるため3件とも作り直す。
 
 ### 3.1 状態だけを確認
 
@@ -100,6 +107,7 @@ SMILES列: <SMILES_COLUMN>
 ```text
 CONDUCTOR 0.2.1のRunを開始せず、入力と全Description新規構築条件をread-onlyで事前確認してください。
 
+Run Spec: <RUN_SPEC>
 Project root: <PROJECT_ROOT>
 入力CSV: <INPUT_CSV>
 Program名: <PROGRAM_NAME>
@@ -124,6 +132,8 @@ SMILES列: <SMILES_COLUMN>
 - 18 DescriptionのPixi環境、全特徴量、Run成果物を新規作成するための空き容量があること
 
 入力、設定、Database path、Pixi環境、Run stateを変更せず、開始可否、入力件数、Description別予想miss件数、必要容量の見積り、問題点を報告してください。このPreflightではDatabase pathを作成せず、recordの削除、更新、invalid化を行わないでください。
+
+開始可能と判断した場合に限り、`CONDUCTOR_modules/tools/create_preflight_receipt.py`を`--check-id 3.2A --run-spec <RUN_SPEC> --output <PREFLIGHT_DIR>/3.2A.json --checked-by <OPERATOR_NAME> --evidence-summary "<短い合格根拠>"`で1回実行してください。既存receiptを上書きしないでください。
 ```
 
 ### 3.2B Ubuntu本番機での修正受入fixture
@@ -133,6 +143,7 @@ SMILES列: <SMILES_COLUMN>
 ```text
 CONDUCTOR 0.2.1のUbuntu本番機限定受入fixtureを実行してください。本番Runは開始しないでください。
 
+Run Spec: <RUN_SPEC>
 Project root: <PROJECT_ROOT>
 設定: <CONFIG_PATH>
 利用可能CPU上限: <WORKERS>
@@ -148,6 +159,8 @@ fixtureの入力、出力、DatabaseにはOSのTemporaryDirectoryだけを使い
 7. Runtime fixtureで`workers=<WORKERS>`がExecution Request、Skill CLI、`CONDUCTOR_AVAILABLE_CPU_CORES`、`CONDUCTOR_NODE_CPU_CORES`へ同じ値で伝播し、このUbuntu processのCPU affinityを超える値が拒否されることを確認する。
 
 本番入力、本番Description Database、本番Run root、resolved config、provider configを変更しないでください。TemporaryDirectory以外のfixture成果物を残さず、各項目の成否、実測worker数、CPU affinity、D015/D016のregistered/skipped件数、L4 scale planを報告してください。1項目でも不合格なら3.4/3.4Aへ進まず停止してください。
+
+全項目が合格した場合に限り、`CONDUCTOR_modules/tools/create_preflight_receipt.py`を`--check-id 3.2B --run-spec <RUN_SPEC> --output <PREFLIGHT_DIR>/3.2B.json --checked-by <OPERATOR_NAME> --evidence-summary "<短い合格根拠>"`で1回実行してください。既存receiptを上書きしないでください。
 ```
 
 ### 3.3 Local LLM providerのPreflight
@@ -159,6 +172,7 @@ fixtureの入力、出力、DatabaseにはOSのTemporaryDirectoryだけを使い
 ```text
 CONDUCTOR 0.2.1のoffline Local LLM providerをread-onlyで検査してください。
 
+Run Spec: <RUN_SPEC>
 Project root: <PROJECT_ROOT>
 設定: <CONFIG_PATH>
 予定command: <LLM_COMMAND>
@@ -166,6 +180,8 @@ Project root: <PROJECT_ROOT>
 llm.commandが空でなくローカルで実行可能であることを確認し、schema-validな最小fixtureを使って select_deep_dive、summarize_deep_dive、compose_component_narrative の3タスクを各1回probeしてください。入力はJSONL stdin、出力は1 callにつきJSON object 1行だけであること、request_idをそのまま返すこと、llm_response.schema.jsonへ適合すること、Markdownや余分なstdoutがないこと、timeoutと終了codeを確認してください。
 
 承認済みvLLM endpoint以外へ接続せず、本番データ、Run state、Description Databaseを変更しないでください。各タスクの成否、応答時間、schema違反だけを報告してください。
+
+3タスクがすべて合格した場合に限り、`CONDUCTOR_modules/tools/create_preflight_receipt.py`を`--check-id 3.3 --run-spec <RUN_SPEC> --output <PREFLIGHT_DIR>/3.3.json --checked-by <OPERATOR_NAME> --evidence-summary "<短い合格根拠>"`で1回実行してください。既存receiptを上書きしないでください。
 ```
 
 ### 3.4 既存Databaseを使う新規本番Run
@@ -194,41 +210,18 @@ needs_design_review、同一ID・異構造、schema/hash/citation不整合では
 
 ### 3.4A 事前確認済み・全Descriptionを新規構築する本番Run
 
-このプロンプトは、同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて3.2Aが合格し、実装修正後の初回Runでは3.2BがUbuntu本番機で合格し、同じLLM設定、`llm.command`、provider configについて3.3が合格した後に使用する。3.4Aでは3.2A/3.2B/3.3の検査を繰り返さない。
+このプロンプトは、同じRun Specに結び付いた3.2A、3.2B、3.3のreceiptが揃った後に使用する。3.4Aでは検査や契約調査を繰り返さず、版管理された`cs-production-run`だけで固定DAGをコンパイルして開始する。
 
 ```text
 CONDUCTOR 0.2.1で、既存Description Databaseを使用せず、全Descriptionを新規計算する本番Runを実行してください。
 
-Project root: <PROJECT_ROOT>
-入力CSV: <INPUT_CSV>
-Program名: <PROGRAM_NAME>
-Endpoint registry: <ENDPOINT_REGISTRY>
-Endpoint ID: <ENDPOINT_ID>
-設定: <CONFIG_PATH>
-compound ID列: <ID_COLUMN>
-SMILES列: <SMILES_COLUMN>
-Run root: <RUN_ROOT>
-workers: <WORKERS>
-memory_mb: <MEMORY_MB>
+Run Spec: <RUN_SPEC>
 
-3.2Aは上記と同じ入力、Program、Endpoint registry、Endpoint ID、設定、予定Run rootについて合格済みです。実装修正後の3.2BはこのUbuntu本番機で合格済みです。3.3は同じLLM設定、`llm.command`、provider configについて合格済みです。3.2A相当の全件Preflight、3.2Bのfixture、Description/Pixi/model inventory、容量見積り、LLMの3タスクprobeは再実行しないでください。
+`cs-production-run`の`scripts/launch.py --run-spec <RUN_SPEC>`を実行してください。このSkillが3件のreceiptについて、Run scope、入力/config/provider config/Run Spec hash、固定Blueprint hash、実装fingerprint、hostname、CPU affinityを検証し、開始直前の最小guardとして入力fileの可読性、resolved configの`llm.command`、既定Database path不存在、Run root不存在、`workers`上限を確認します。
 
-開始直前には次の最小確認だけを行ってください。
-- 入力CSV、Endpoint registry、設定、設定が参照するprovider configが読める
-- `<PROJECT_ROOT>/data/description_database/<PROGRAM_NAME>/` が存在しない
-- `<RUN_ROOT>` が存在しない
-- 同じProgramまたはRun rootを使用するwriter/coordinatorが存在しない
-- `workers`が1以上で、このUbuntu processへ割り当てられた論理CPU数以下である
+合格した場合は追加の確認待ちにせず、固定`production_pipeline.v0.2.1.json`から全Execution RequestとPipeline planを生成し、`cs-runtime`でPhase 1〜6を開始してください。request templateの自作、各Skill契約の再抽出、fixture plan探索、Runtime実装の再調査、3.2A/3.2B/3.3の再実行は禁止します。
 
-いずれかを満たさない場合だけ、何も作成せず停止して問題を報告してください。すべて満たす場合は追加の確認待ちにせず、直ちに本計算へ入ってください。
-
-元の既定pathへ同じProgram名のDescription Databaseを新規構築してください。Program名を再計算回避用の別名へ変更しないでください。現行18 Descriptionについてcache hitを0件、全入力recordをmissとして現行calculation version、calculation signature、Skill環境で計算し、成功recordだけを新しいDatabaseへ登録してください。同一compound ID・異canonical SMILESはfail-fastとしてください。
-
-`workers`をこのCPU機で使用可能な論理CPUコア数の上限としてRuntimeから全子processへ伝播してください。`workers=64`でも全処理へ64並列を強制せず、D019は`compound_workers × cores_per_compound <= workers`、D016は実装上限8 process、その他は各Skillの安全な並列度で実行してください。L4では候補Descriptionを開始する前に、生成総候補数、support順位による選択数、Tier 1/2 space数、予定Description行数、cost class別行数、予定cost unitsを算出してください。resolved configの`lenses.l4.candidate_cap`、`max_candidate_description_rows`、`max_candidate_description_cost_units`のいずれかを超える場合は、候補Descriptionを1件も起動せず`needs_design_review`で停止してください。
-
-0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1 Description Nodeのlaunch_pathにはtracked `CONDUCTOR_modules/tools/description_node.py`だけを指定してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6ではPreflight済みのoffline providerだけを使用し、fallback文章を生成しないでください。
-
-needs_design_review、同一ID・異構造、schema/hash/citation不整合では停止し、閾値変更や成果物の自動修正を行わないでください。終了時にRun状態、Phase別状態、Description別hit=0、miss/registered/failed件数、Finding件数、上位10件、LLM logical call失敗率、引用検証結果、新Databaseと主要成果物の絶対パスを報告してください。
+guardまたはreceipt検証に失敗した場合はRun rootを作成せず停止し、該当項目だけを報告してください。実行開始後は`needs_design_review`、同一ID・異構造、schema/hash/citation不整合で停止し、閾値や成果物を自動修正しないでください。終了時にRun状態、Phase別状態、Description別hit=0、miss/registered/failed件数、Finding件数、上位10件、LLM logical call失敗率、引用検証結果、新Databaseと主要成果物の絶対pathを報告してください。
 ```
 
 ### 3.4B 中断した全Description新規構築Runからの回復
@@ -487,3 +480,5 @@ parameter契約:
 - narrativeの引用markerとcitations配列が一致する。
 - 引用できない主張や数値を生成せず、根拠不足時に空/nullを返せる。
 - Phase 6の引用検証が不整合を自動修正せずfail-closedする。
+- 3.4Aでは3.2A/3.2B/3.3のhash付きreceiptが同一Run Spec、同一machine、同一実装へ結び付き、変更時に流用できない。
+- 3.4Aでは`cs-production-run`が固定Blueprintから13 Nodeを生成し、Agentがrequest templateやPipeline planを自作しない。

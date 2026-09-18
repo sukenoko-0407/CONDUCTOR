@@ -21,6 +21,7 @@
     {"capability_id":"D020","skill_name":"cs-compute-description-chemberta-embedding","stage":"description"},
     {"capability_id":"STAT_CORE","skill_name":"cs-stat-core","stage":3},
     {"capability_id":"RUNTIME","skill_name":"cs-runtime","stage":"runtime"},
+    {"capability_id":"PRODUCTION_RUN","skill_name":"cs-production-run","stage":"runtime"},
     {"capability_id":"FRAGMENT_ENGINE","skill_name":"cs-fragment-engine","stage":4},
     {"capability_id":"CONTEXT_BUILDER","skill_name":"cs-context-builder","stage":5},
     {"capability_id":"LENS_L2","skill_name":"cs-lens-l2","stage":6},

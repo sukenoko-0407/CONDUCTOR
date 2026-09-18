@@ -23,6 +23,7 @@
   "pipeline_skills": [
     "cs-stat-core",
     "cs-runtime",
+    "cs-production-run",
     "cs-fragment-engine",
     "cs-context-builder",
     "cs-lens-l2",

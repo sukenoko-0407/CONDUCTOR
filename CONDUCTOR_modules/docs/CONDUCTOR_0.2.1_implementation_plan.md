@@ -902,3 +902,32 @@ L5 で次を確認する。**並べ替え実装の正しさを最も鋭く検出
 6. Phase 1〜6完了後、hit/miss/registered件数、LLM失敗率、引用検証結果を監査記録へ残す。
 
 古いDatabaseがschema version `1.0.0`でない場合、または現行Capabilityより前の契約で作成されている場合は無条件に再利用しない。変換処理をその場で発明せず、read-only調査結果を設計担当へ報告する。
+
+### 11.4 事前確認済み本番Runの決定論的開始経路
+
+3.4AではMain AgentにPipeline planやExecution Requestを設計させない。`cs-production-run`を正式な本番開始Skillとし、利用者が用意する単一の`run_spec.json`を、版管理された`CONDUCTOR_modules/pipeline/production_pipeline.v0.2.1.json`へ決定論的に展開する。
+
+実装物は次のとおりとする。
+
+- `.claude/skills/cs-production-run/`: receipt検証、固定DAG compile、Runtime委譲
+- `CONDUCTOR_modules/schemas/run_spec.schema.json`: 入力、Program、Endpoint、config、provider config、Run root、CPU/memory上限の単一入力契約
+- `CONDUCTOR_modules/schemas/preflight_receipt.schema.json`: 3.2A、3.2B、3.3の合格証跡
+- `CONDUCTOR_modules/schemas/pipeline_plan.schema.json`: compile済みDAG契約
+- `CONDUCTOR_modules/tools/create_preflight_receipt.py`: 合格済みPreflightをscope/hashへ結び付けるCLI
+- `CONDUCTOR_modules/tools/production_run.py`: 13 NodeのRequestとPipeline planを生成するcompiler/launcher
+
+3件のreceiptは同じRun Spec、入力CSV、Endpoint registry、resolved config、provider config、固定Blueprint、実装fingerprint、Ubuntu hostname、CPU affinityへ結び付ける。Run Specまたは実装を変更した場合はhash不一致として拒否し、古い合格判断を流用しない。
+
+3.4A開始時に再確認するのは、receipt整合性と次の最小guardだけとする。
+
+1. 入力/config/provider configが読め、resolved configに非空の`llm.command`がある。
+2. `data/description_database/<PROGRAM_NAME>/`が存在しない。
+3. Run rootが存在しない。
+4. ProgramとRun rootの排他lockを取得できる。
+5. `workers`が現在のCPU affinity以下である。
+
+合格後は確認待ちを挟まず、固定DAGを`cs-runtime`へ渡す。request templateの手作業、Skill契約の再抽出、fixture plan探索、Runtime sourceの再調査は本番開始手順に含めない。これらはBlueprintまたは契約を変更する開発時だけ行う。
+
+Runtimeは`node://<node>/<role>`に加え、Reportが親NodeのManifestを引用検証へ渡すための`manifest://<node>`を解決する。両参照ともPipeline planで宣言された依存Nodeかつ`succeeded`状態に限定する。
+
+本番処理の全体像は[`images/CONDUCTOR_0.2.1_process_overview.png`](images/CONDUCTOR_0.2.1_process_overview.png)を社内説明用の基準図とする。`llm.command`の実行契約の正本は、本計画11.2節、実装詳細計画書のLocal LLM節、`llm_request.schema.json`/`llm_response.schema.json`、および`local_llm_provider/provider.py`であり、プロンプト集は運用手順を示す。

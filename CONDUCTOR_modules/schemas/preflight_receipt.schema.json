@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://conductor.local/schemas/preflight_receipt.schema.json",
+  "title": "CONDUCTOR 0.2.1 Preflight Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "check_id", "status", "run_scope", "input_hashes",
+    "blueprint_sha256", "implementation_sha256", "code_version", "machine", "completed_at", "checked_by",
+    "evidence_summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.2.1"},
+    "check_id": {"enum": ["3.2A", "3.2B", "3.3"]},
+    "status": {"const": "passed"},
+    "run_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_root", "program_name", "input_csv", "endpoint_registry",
+        "endpoint_id", "config_path", "provider_config_path", "run_root", "workers"
+      ],
+      "properties": {
+        "project_root": {"type": "string", "minLength": 1},
+        "program_name": {"type": "string", "minLength": 1},
+        "input_csv": {"type": "string", "minLength": 1},
+        "endpoint_registry": {"type": "string", "minLength": 1},
+        "endpoint_id": {"type": "string", "minLength": 1},
+        "config_path": {"type": "string", "minLength": 1},
+        "provider_config_path": {"type": "string", "minLength": 1},
+        "run_root": {"type": "string", "minLength": 1},
+        "workers": {"type": "integer", "minimum": 1}
+      }
+    },
+    "input_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_csv", "endpoint_registry", "config_path", "provider_config_path", "run_spec"],
+      "properties": {
+        "input_csv": {"$ref": "#/$defs/sha256"},
+        "endpoint_registry": {"$ref": "#/$defs/sha256"},
+        "config_path": {"$ref": "#/$defs/sha256"},
+        "provider_config_path": {"$ref": "#/$defs/sha256"},
+        "run_spec": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "blueprint_sha256": {"$ref": "#/$defs/sha256"},
+    "implementation_sha256": {"$ref": "#/$defs/sha256"},
+    "code_version": {"const": "0.2.1"},
+    "machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostname", "cpu_affinity"],
+      "properties": {
+        "hostname": {"type": "string", "minLength": 1},
+        "cpu_affinity": {"type": "integer", "minimum": 1}
+      }
+    },
+    "completed_at": {"type": "string", "format": "date-time"},
+    "checked_by": {"type": "string", "minLength": 1},
+    "evidence_summary": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

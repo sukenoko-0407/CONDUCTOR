@@ -142,6 +142,10 @@ class PipelineCoordinator:
             source = str(item["path"])
             if source.startswith("node://"):
                 dependency_id, role = source.removeprefix("node://").split("/", 1)
+                if dependency_id not in node.dependencies:
+                    raise ValueError(
+                        f"Artifact reference is not a declared dependency: {source}"
+                    )
                 parent = self.state.get_node(dependency_id)
                 if parent["state"] != "succeeded" or not parent["manifest_path"]:
                     raise ValueError(f"Dependency artifact is unavailable: {source}")
@@ -153,6 +157,28 @@ class PipelineCoordinator:
                 artifact = matches[0]
                 artifact_path = (manifest_path.parent / artifact["path"]).resolve()
                 resolved.append({"role": item["role"], "path": str(artifact_path), "sha256": artifact["sha256"], "producer_manifest": str(manifest_path)})
+            elif source.startswith("manifest://"):
+                dependency_id = source.removeprefix("manifest://")
+                if not dependency_id or "/" in dependency_id:
+                    raise ValueError(f"Invalid manifest reference: {source}")
+                if dependency_id not in node.dependencies:
+                    raise ValueError(
+                        f"Manifest reference is not a declared dependency: {source}"
+                    )
+                parent = self.state.get_node(dependency_id)
+                if parent["state"] != "succeeded" or not parent["manifest_path"]:
+                    raise ValueError(f"Dependency manifest is unavailable: {source}")
+                manifest_path = Path(parent["manifest_path"]).resolve()
+                if not manifest_path.is_file():
+                    raise FileNotFoundError(
+                        f"Dependency manifest path is missing: {manifest_path}"
+                    )
+                resolved.append({
+                    "role": item["role"],
+                    "path": str(manifest_path),
+                    "sha256": file_sha256(manifest_path),
+                    "producer_manifest": str(manifest_path),
+                })
             else:
                 artifact_path = Path(source).resolve()
                 resolved.append({**item, "path": str(artifact_path), "sha256": file_sha256(artifact_path)})

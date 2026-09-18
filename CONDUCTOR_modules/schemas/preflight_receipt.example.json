@@ -1,0 +1,30 @@
+{
+  "schema_version": "0.2.1",
+  "check_id": "3.2A",
+  "status": "passed",
+  "run_scope": {
+    "project_root": "/opt/CONDUCTOR",
+    "program_name": "EXAMPLE_PROGRAM",
+    "input_csv": "/data/example/input.csv",
+    "endpoint_registry": "/data/example/endpoint_registry.json",
+    "endpoint_id": "EP_PIC50",
+    "config_path": "/data/example/resolved_config.yaml",
+    "provider_config_path": "/data/example/provider_config.json",
+    "run_root": "/data/example/runs/run-001",
+    "workers": 64
+  },
+  "input_hashes": {
+    "input_csv": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "endpoint_registry": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "config_path": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "provider_config_path": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "run_spec": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "blueprint_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "implementation_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "code_version": "0.2.1",
+  "machine": {"hostname": "ubuntu-analysis-01", "cpu_affinity": 64},
+  "completed_at": "2026-09-18T01:23:45Z",
+  "checked_by": "operator-name",
+  "evidence_summary": "3.2A passed; full report retained by the operator."
+}
