@@ -5,6 +5,10 @@
 
 > **2026-09-18訂正:** 3.4A本番RunでMordred cache登録0件、L4約25万候補の無上限再記述、Pixi解決失敗が確認されたため、本書の「実装適合性残件は完了」という判断は撤回した。是正内容と再受入条件は [`CONDUCTOR_0.2.1_production_remediation_report.md`](CONDUCTOR_0.2.1_production_remediation_report.md) を正本とする。
 
+> **2026-09-19再訂正:** 是正後の本番Runで、L5が64コア予算を受け取りながら実質1コアで8時間以上継続した。`workers`伝播は実worker利用を保証せず、long-only membershipとcontext-pair loopが相関を重複計算していた。本書の段階7およびRuntime並列化の完了判断も撤回する。履歴と再設計案は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
+
+> **全Lens横断追補:** L1b、L2a、L2b、L7もworker未接続である。L4は候補DescriptionへCPU予算を伝播しD016/D019を明示並列化するが、generation/scoreとspace間は逐次である。L5以外に本番遅延が発生したとは未確認だが、本書の全Lens性能・並列化受入判断は撤回する。科学的fixture合格は維持し、性能、resource safety、checkpoint、KILL復旧を別途再受入する。
+
 ## 結論
 
 段階7〜11の Skill、公開契約、合成データ回帰、Runtime の基本経路まで実装した。catalog の checkpoint は `stage11_runtime` で、Description 18件と pipeline 12件を収録する。

@@ -1,6 +1,10 @@
 # CONDUCTOR 0.2.1 実装詳細仕様書
 
-Status: **設計回答反映済み。段階11の初回実装まで進行済み。正式較正・全体適合性確認待ち。**
+> **2026-09-19本番訂正:** 本書5.3節のlong-only context membership、7.7節L5、9章の並列化記述は、本番規模の計算量と実worker消費を拘束できなかった。現行L5は64コア予算を受け取っても実質1コアで動き、相関をcontext pairごとに重複計算する。科学的検定契約は維持し、Boolean membership matrixを使うmatrix-first engineと長時間Node管理へ再設計する。履歴、原因、未実装の変更案、受入条件は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を正とする。再設計が実装・受入されるまでL5を本番受入済みと扱わない。
+
+Status: **初回実装後の本番規模L5不適合を確認。全Lens/Runtimeの性能再評価・独立レビュー・再受入待ち。**
+
+> **全Lens横断追補:** L1b、L2a、L2b、L7の`--workers`も計算kernelへ未接続である。L4はCPU予算を全候補Description subprocessへ渡しD016/D019へ明示的なcompound並列parameterを設定するが、generation/scoreとDescription space間は逐次である。科学的契約が誤っていることや全Lensが本番で遅いことを意味するものではない。Lens別の確認済み契約、実装課題、未確認リスク、設計候補は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)6章を参照し、benchmarkと独立レビュー前に単一案を確定仕様としない。
 
 作成日: 2026-09-17  
 正本: [`CONDUCTOR_0.2.1_implementation_plan.md`](CONDUCTOR_0.2.1_implementation_plan.md)

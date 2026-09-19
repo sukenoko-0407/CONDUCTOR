@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 実装計画書
 
-Status: **初回実装・実装適合性確認完了。正式較正・本番相当確認待ち。**
+Status: **本番規模L5の不適合を確認。全Lensの実worker消費・計算量・長時間Node管理を横断再評価中。**
 
 対象読者: **本設計の議論に参加していない実装担当者。**
 
@@ -16,10 +16,11 @@ Status: **初回実装・実装適合性確認完了。正式較正・本番相�
 | 3 | [`design/finding_model.md`](design/finding_model.md) | 出力の中心データ構造 |
 | 4 | [`design/discovery_lenses.md`](design/discovery_lenses.md) | 各レンズの統計形式 |
 | 5 | [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) | 本番運用とLocal LLM taskの正式プロンプト契約 |
-| 6 | 残りの design/ 各論 | 実装中に必要になった箇所だけ |
+| 6 | [`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md) | 実装判断履歴、本番障害、0.1.x Boolean matrixを踏まえたL5/Runtime再設計案 |
+| 7 | 残りの design/ 各論 | 実装中に必要になった箇所だけ |
 
-0.1.x のドキュメントは `archive_0.1.x/`（Git 管理外）にある。**設計上の前提として参照しない。**
-流用するコード資産は本書 3 章に列挙する。
+0.1.x のドキュメントは `archive_0.1.x/`（Git 管理外）にある。科学的仕様の前提にはしない。ただし、科学的意味から独立した計算表現・atomic promotion・sharding等は、[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)の区分に従って再評価する。
+当初から流用対象としたコード資産は本書3章に列挙する。
 
 ---
 
@@ -544,6 +545,10 @@ p        (1 + #{v_perm >= v_obs}) / (1 + B)
 末端置換の系列とは別の系列集合として扱い、**混ぜない**。多重比較の族も分ける。
 
 ### 段階7: 残りのレンズ
+
+> **2026-09-19本番訂正:** 現行L5は統計手続きの形は実装したが、同じcontext×feature相関をcontext pairごとに再計算し、`--workers`を実計算へ接続していない。961化合物・64コア・755 GiB RAMの専用機で実質1コアのまま8時間以上継続したため、本節の受入は撤回する。Boolean context membership matrix、相関表の一回計算、符号集合からの候補生成、checkpoint可能なparallel taskへ再設計する。詳細は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
+
+> **横断監査追補:** L1b、L2a、L2b、L7もworker未接続である。L4はCPU予算を候補Descriptionへ伝播しD016/D019を明示並列化するが、generation/scoreとDescription space間は逐次である。ただしL5以外の本番律速は未計測であるため、一律に再実装せず、Lens別baselineと複数prototypeを比較して変更範囲を決める。同文書6章の「問題ないこと／確認済み課題／未確認リスク／第一候補案」を区別する。
 
 優先順に実装する。
 

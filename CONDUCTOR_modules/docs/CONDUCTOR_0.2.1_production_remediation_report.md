@@ -8,6 +8,8 @@
 
 修正後も、停止した今回のRunをそのまま再開してはならない。P01/P02が旧Mordred登録契約で成功済みのため、P03だけを再開するとD015/D016が未登録のDatabaseを残す。Ubuntu本番機へ修正を反映し、下記の限定検証を通した後、部分構築Databaseを入力にした新しい回復Runを作成する。
 
+> **2026-09-19追補:** R-01〜R-08是正後のRunで新たにR-09を確認した。L5はCPU予算64を受け取るが`--workers`を計算kernelへ接続せず、context pairごとに同じ相関を再計算するため、専用64コア・755 GiB RAM機で実質1コアのまま8時間以上継続した。R-03はCPU予算の伝播だけを保証し、実消費を保証していなかった。L5と長時間Node管理は未是正であり、本報告の「限定受入後は本番再開可能」という結論を再度保留する。詳細は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
+
 ## 2. 原因と修正
 
 | ID | 原因 | 修正 | 受入条件 |
@@ -20,6 +22,8 @@
 | R-06 | cache miss subsetをoutput配下へ先に作成した | output外の`TemporaryDirectory`へ変更 | Skill起動時にoutput directoryが不存在または空 |
 | R-07 | Mordredの構造的NaNを全行失敗と扱った | D015/D016だけ部分有限値登録を許可し、calculation versionを2へ更新 | 50%以上有限ならnull保持で登録、全NaN/計算失敗は拒否 |
 | R-08 | L4に候補capと再記述cost guardがなかった | 支持順位で既定100候補、最大900 Description行、最大10,000 cost units | 超過時はSkill起動前に`needs_design_review` |
+| R-09 | L5がlong membershipからcontext pairごとに相関を再計算し、`workers`を消費しなかった | Boolean context matrix、context×feature相関表の一回計算、符号集合候補生成、permutation shardを第一prototype候補とし、他方式と比較する。checkpoint、Runtime heartbeat/resource enforcementも評価する | worker 1/2/64で科学的同値、実CPU利用、wall-clock/CPU/RSS比較、KILL後の未完了shard再開、CPU 64・memory 700 GiB上限。speedup下限はbenchmark後に確定 |
+| R-10 | L1b/L2a/L2b/L7もworker未接続、L4は部分利用で、全Lensの本番性能受入が欠落 | Lens別baselineを取得し、問題ない契約、確認済み課題、未確認リスクを分離。複数prototypeと独立レビュー後にLens別変更を決定 | 科学的同値、worker 1/2/64決定性、wall-clock/CPU/RSS、再計算counter、長時間NodeのKILL復旧をLens別に報告 |
 
 ## 3. D015/D016の契約
 
@@ -59,4 +63,4 @@ L4はone-step候補を次のstable順で並べる。
 - Mordred/L4/RDKitとPhase 1〜6のsmall fixtureを含むworkspace回帰: 101件合格
 - Ubuntu本番機固有のPixi環境、Linux CPU affinity、64コア予算、実データ規模については、本番開始前の限定fixtureと3.2Aで確認する。
 
-したがって本報告時点の状態は「修正実装と自動回帰は合格、Ubuntu本番機固有の限定受入待ち」である。限定受入と3.2A/3.3が合格した後は、全件再構築なら3.4A、部分Databaseを保持するなら3.4Bへ進む。
+R-01〜R-08については「修正実装と自動回帰は合格」である。しかし、2026-09-19にR-09が判明したため、文書全体としての状態は「L5/Runtime再設計・実装・本番規模受入待ち」へ戻す。R-09の受入条件を満たすまで3.4A/3.4Bの本番Runを再開してはならない。再開判断と移行方法は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を正とする。
