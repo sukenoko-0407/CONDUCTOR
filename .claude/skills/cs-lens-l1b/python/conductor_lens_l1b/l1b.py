@@ -101,7 +101,7 @@ def run_l1b(
     if "translation_status" not in catalog: catalog["translation_status"] = "native"
     catalog = catalog.loc[catalog["is_representative"].astype(bool) & catalog["eligible"].astype(bool) & ~catalog["translation_status"].eq("untranslatable")]
     context_ids = sorted(value for value in catalog["context_id"].astype(str) if value in membership and len(membership[value]) >= max(min_endpoint_n, neighbor_k + 1))
-    spaces: dict[str, tuple[np.ndarray, int]] = {}
+    spaces: dict[str, tuple[np.ndarray, int, np.ndarray]] = {}
     diagnostics: list[dict[str, Any]] = []
     for space in sorted((item for item in feature_spaces if int(item["tier"]) <= 2), key=lambda item: item["space_id"]):
         metadata = json.loads(Path(space["distance_metadata_path"]).read_text(encoding="utf-8"))
@@ -109,19 +109,50 @@ def run_l1b(
         source_position = {value: index for index, value in enumerate(source_ids)}
         if any(value not in source_position for value in ids):
             raise ValueError(f"Distance artifact is missing Endpoint compounds: {space['space_id']}")
+        eligible_ids = {
+            str(value)
+            for value in metadata.get("eligible_compound_ids", source_ids)
+        }
+        if not eligible_ids.issubset(source_position):
+            raise ValueError(
+                f"Distance eligibility contains unknown compounds: {space['space_id']}"
+            )
         matrix = np.load(Path(space["distance_path"]), mmap_mode="r", allow_pickle=False)
         order = [source_position[value] for value in ids]
         aligned = np.asarray(matrix[np.ix_(order, order)], dtype=float)
-        if aligned.shape != (len(ids), len(ids)) or not np.allclose(aligned, aligned.T, atol=1e-6):
+        eligible_indices = np.asarray(
+            [index for index, value in enumerate(ids) if value in eligible_ids],
+            dtype=int,
+        )
+        eligible_distance = aligned[np.ix_(eligible_indices, eligible_indices)]
+        if (
+            aligned.shape != (len(ids), len(ids))
+            or not np.isfinite(eligible_distance).all()
+            or not np.allclose(eligible_distance, eligible_distance.T, atol=1e-6)
+        ):
             raise ValueError(f"Invalid distance matrix: {space['space_id']}")
-        spaces[str(space["space_id"])] = (aligned, int(space["tier"]))
-        global_lambda, _, _ = local_flatness(aligned, y, np.arange(len(ids)), neighbor_k=neighbor_k, global_variance=global_variance)
+        spaces[str(space["space_id"])] = (
+            aligned,
+            int(space["tier"]),
+            eligible_indices,
+        )
+        global_lambda, _, _ = local_flatness(
+            aligned,
+            y,
+            eligible_indices,
+            neighbor_k=neighbor_k,
+            global_variance=global_variance,
+        )
         diagnostics.append({"row_id": stable_id("L1A", {"space": space["space_id"], "endpoint": endpoint_id}), "space_id": space["space_id"], "global_lambda": global_lambda, "finding_generated": False})
     universe: list[dict[str, Any]] = []
     candidates: dict[str, dict[str, Any]] = {}
-    for space_id, (distance, tier) in sorted(spaces.items()):
+    for space_id, (distance, tier, eligible_indices) in sorted(spaces.items()):
         for context_id in context_ids:
-            indices = membership[context_id]
+            indices = np.intersect1d(
+                membership[context_id], eligible_indices, assume_unique=True
+            )
+            if len(indices) < max(min_endpoint_n, neighbor_k + 1):
+                continue
             value, predictions, errors = local_flatness(distance, y, indices, neighbor_k=neighbor_k, global_variance=global_variance)
             row = {"space_id": space_id, "tier": tier, "context_id": context_id, "indices": indices, "lambda": value, "predictions": predictions, "errors": errors, "distance": distance}
             universe.append(row)

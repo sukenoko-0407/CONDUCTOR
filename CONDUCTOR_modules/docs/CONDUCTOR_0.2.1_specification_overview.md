@@ -741,6 +741,8 @@ R1-17. **L4 の候補 cap を 100 から 250,000 へ引き上げる（R1-10 と 
 
 R1-18. **Findingの`support_n`は統計量へ実際に使用した一意な観測単位数とする。** L5では特徴量とEndpointがともにfiniteな化合物だけを数え、focal contextとaxis内補集合の有限観測和集合を`support_n`とする。R1-2の両群は排他的なので`shared_n=0`、`support_n=n_a+n_b`でなければならない。この不変条件は置換計算の開始前に検証する。生のContext共通所属数を特徴量別の`n_a/n_b`から減算してはならない。
 
+R1-19. **固定条件でのConformer生成不能はCapability単位のterminal SKIPとしてnegative cacheへ登録し、Runを継続する。** Description Skillは入力行を欠落させず`description_error`と`conformer_generation_failed`を記録し、Databaseは同じcalculation signatureのactive recordを`outcome_status=skipped`として保存する。SKIPは次回cache hitとするが、未知の実装例外や資源障害をnegative cacheへ登録してはならない。run-scoped payloadは全入力行を保持し、distance metadataが空間別eligible集合と非適格理由を明示する。ContextおよびLensはSKIP行を補完値による仮想観測として使用しない。
+
 ---
 
 39f. **L3 と L6 をレンズから外し、診断指標へ降格する。** 実データのドライランで enrichment 1.0（並べ替えと区別がつかない）。骨格主効果と交絡しており、骨格が既に与える情報を超えていない。

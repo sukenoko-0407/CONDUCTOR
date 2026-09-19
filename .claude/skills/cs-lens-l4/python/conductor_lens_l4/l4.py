@@ -300,7 +300,18 @@ def candidate_distance_matrix(space: dict[str, Any], candidate_ids: list[str]) -
     if missing:
         raise ValueError(f"L4 feature space is missing fields {sorted(missing)}: {space.get('space_id')}")
     metadata = json.loads(Path(space["distance_metadata_path"]).read_text(encoding="utf-8"))
-    observed_ids = [str(value) for value in metadata["compound_ids"]]
+    all_observed_ids = [str(value) for value in metadata["compound_ids"]]
+    eligible_ids = {
+        str(value)
+        for value in metadata.get("eligible_compound_ids", all_observed_ids)
+    }
+    if not eligible_ids.issubset(set(all_observed_ids)):
+        raise ValueError(
+            f"Distance eligibility contains unknown compounds: {space['space_id']}"
+        )
+    observed_ids = [
+        value for value in all_observed_ids if value in eligible_ids
+    ]
     columns = [str(value) for value in metadata["feature_columns"]]
     observed = _read_table(Path(space["path"])).assign(compound_id=lambda frame: frame["compound_id"].astype(str)).set_index("compound_id")
     candidates = _read_table(Path(space["candidate_path"])).assign(compound_id=lambda frame: frame["compound_id"].astype(str)).set_index("compound_id")

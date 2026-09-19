@@ -19,6 +19,8 @@ COMMON_COLUMNS = (
     "description_error",
 )
 CALCULATION_VERSION_PATTERN = re.compile(r"^[1-9][0-9]*$")
+TERMINAL_SKIP_ERROR_TYPES = frozenset({"conformer_generation_failed"})
+CONFORMER_FAILURE_MESSAGE = "RDKit conformer generation failed"
 
 
 def description_registration_policy(capability: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +123,79 @@ def row_json(row: dict[str, Any]) -> str:
         separators=(",", ":"),
         default=_json_default,
     )
+
+
+def _row_error(row: Any) -> str:
+    raw = row.get("description_error", "")
+    try:
+        import pandas as pd
+
+        return "" if pd.isna(raw) else str(raw)
+    except (TypeError, ValueError):
+        return str(raw or "")
+
+
+def _row_parse_ok(row: Any) -> bool:
+    raw = row.get("mol_parse_ok", False)
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in {"true", "1", "yes"}
+
+
+def _manifest_error_types(manifest: dict[str, Any]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for item in manifest.get("errors") or []:
+        if not isinstance(item, dict) or "compound_id" not in item:
+            continue
+        result[str(item["compound_id"])] = str(
+            item.get("error_type", "description_error")
+        )
+    return result
+
+
+def _row_outcome(row: Any, error_type: str | None = None) -> tuple[str, str] | None:
+    """Classify reusable Description outcomes.
+
+    ``None`` means that the row failure is not a deterministic terminal
+    outcome and therefore must not become a cache hit.  Conformer generation
+    uses fixed inputs and settings under the calculation signature, so its
+    known failure is a reusable per-capability SKIP rather than a Node failure.
+    """
+
+    error = _row_error(row)
+    if not _row_parse_ok(row):
+        return "invalid_smiles", "invalid_smiles"
+    if not error:
+        return "ok", ""
+    normalized_type = str(error_type or "")
+    if (
+        normalized_type in TERMINAL_SKIP_ERROR_TYPES
+        or error.strip() == CONFORMER_FAILURE_MESSAGE
+    ):
+        return "skipped", "conformer_generation_failed"
+    return None
+
+
+def _resolved_feature_columns(
+    plan: dict[str, Any], declared: Iterable[str]
+) -> list[str]:
+    """Resolve a failure-only miss batch against the active cache schema."""
+
+    calculated = [str(value) for value in declared]
+    hits = _active_rows(plan, plan.get("hit_ids") or [])
+    cached: list[str] = []
+    if hits:
+        cached = [
+            str(value)
+            for value in json.loads(
+                next(iter(hits.values()))["feature_columns_json"]
+            )
+        ]
+    if calculated and cached and calculated != cached:
+        raise RuntimeError(
+            "Description cache feature schema differs from the newly calculated payload"
+        )
+    return calculated or cached
 
 
 def canonical_smiles(value: Any) -> tuple[str, bool]:
@@ -406,6 +481,7 @@ def prepare_cache_plan(
     version_mismatch_ids: list[str] = []
     configuration_mismatch_ids: list[str] = []
     cache_source_versions: dict[str, int] = {}
+    cache_outcome_counts: dict[str, int] = {}
     registry_path = program_registry_path(db_path)
     registry: dict[str, str] = {}
     if registry_path.is_file():
@@ -425,7 +501,8 @@ def prepare_cache_plan(
             for item in identities:
                 row = connection.execute(
                     """
-                    SELECT record_id, calculation_version, skill_version
+                    SELECT record_id, calculation_version, skill_version,
+                           outcome_status
                     FROM records
                     WHERE configuration_signature=? AND compound_id=?
                       AND calculation_smiles_sha256=? AND record_status='active'
@@ -445,6 +522,10 @@ def prepare_cache_plan(
                     )
                     cache_source_versions[source_key] = (
                         cache_source_versions.get(source_key, 0) + 1
+                    )
+                    outcome = str(row["outcome_status"])
+                    cache_outcome_counts[outcome] = (
+                        cache_outcome_counts.get(outcome, 0) + 1
                     )
                     continue
                 miss_ids.append(item["compound_id"])
@@ -478,6 +559,7 @@ def prepare_cache_plan(
         hit_ids = []
         miss_ids = [item["compound_id"] for item in identities]
         cache_source_versions = {}
+        cache_outcome_counts = {}
     subset_path: Path | None = None
     if miss_ids:
         selected = frame.loc[frame[id_column].astype(str).isin(set(miss_ids))].copy()
@@ -510,6 +592,7 @@ def prepare_cache_plan(
         "version_mismatch_count": len(version_mismatch_ids),
         "configuration_mismatch_count": len(configuration_mismatch_ids),
         "cache_source_versions": cache_source_versions,
+        "cache_outcome_counts": cache_outcome_counts,
         "subset_path": str(subset_path.resolve()) if subset_path else None,
         "source_run_id": source_run_id,
         "registration_policy": description_registration_policy(capability),
@@ -610,24 +693,37 @@ def finalize_cached_output(
             raise ValueError(
                 "Description miss payload order/content differs from the cache plan"
             )
-        columns = list(miss_frame.columns)
-        if hits:
-            cached_features = json.loads(
-                next(iter(hits.values()))["feature_columns_json"]
-            )
-            calculated_features = [
-                column for column in columns if column not in COMMON_COLUMNS
+        calculated_features = [
+            str(column)
+            for column in miss_frame.columns
+            if column not in COMMON_COLUMNS
+        ]
+        feature_columns = _resolved_feature_columns(plan, calculated_features)
+        missing_features = [
+            column for column in feature_columns if column not in miss_frame.columns
+        ]
+        if missing_features:
+            successful = miss_frame.loc[
+                miss_frame.apply(lambda row: _row_outcome(row) == ("ok", ""), axis=1)
             ]
-            if cached_features != calculated_features:
+            if not successful.empty:
                 raise RuntimeError(
-                    "Description cache feature schema differs from the newly calculated payload"
+                    "Successful Description miss rows are missing cached feature columns"
                 )
+            for column in missing_features:
+                miss_frame[column] = None
+        columns = [column for column in COMMON_COLUMNS if column in miss_frame.columns]
+        columns.extend(
+            column for column in feature_columns if column not in columns
+        )
     else:
         if not hits:
             raise RuntimeError("Warm Description cache plan has no active records")
         first = next(iter(hits.values()))
         columns = [*COMMON_COLUMNS]
-        feature_columns = json.loads(first["feature_columns_json"])
+        feature_columns = [
+            str(value) for value in json.loads(first["feature_columns_json"])
+        ]
         columns.extend(column for column in feature_columns if column not in columns)
         payload_path = output / f"{capability['output']['basename']}.csv"
         output.mkdir(parents=True, exist_ok=True)
@@ -659,9 +755,10 @@ def finalize_cached_output(
         for _, row in full.loc[
             full["description_error"].fillna("").astype(str).ne("")
         ].iterrows():
+            outcome = _row_outcome(row)
             errors.append({
                 "compound_id": str(row["compound_id"]),
-                "error_type": str(row["description_error"]),
+                "error_type": outcome[1] if outcome is not None else "description_error",
                 "message": str(row["description_error"]),
             })
     warnings = [f"{len(errors)} row-level errors were recorded"] if errors else []
@@ -705,10 +802,12 @@ def finalize_cached_output(
                 "configuration_signature", "hit_count", "miss_count",
                 "structure_mismatch_count", "version_mismatch_count",
                 "configuration_mismatch_count", "cache_source_versions",
-                "batch_dependent", "registration_policy",
+                "cache_outcome_counts", "batch_dependent", "registration_policy",
             )
         } | {
             "registered_count": int(plan.get("registered_count", 0)),
+            "registered_ok_count": int(plan.get("registered_ok_count", 0)),
+            "registered_skip_count": int(plan.get("registered_skip_count", 0)),
             "registration_skipped_count": int(
                 plan.get("registration_skipped_count", 0)
             ),
@@ -768,7 +867,30 @@ def register_misses(
     frame = _read_payload(payload_path)
     frame["compound_id"] = frame["compound_id"].astype(str)
     rows = frame.loc[frame["compound_id"].isin(set(plan["miss_ids"]))]
-    feature_columns = [str(value) for value in manifest["feature_columns"]]
+    feature_columns = _resolved_feature_columns(
+        plan, [str(value) for value in manifest["feature_columns"]]
+    )
+    error_types = _manifest_error_types(manifest)
+    missing_features = [
+        column for column in feature_columns if column not in rows.columns
+    ]
+    if missing_features:
+        successful = rows.loc[
+            rows.apply(
+                lambda row: _row_outcome(
+                    row, error_types.get(str(row["compound_id"]))
+                )
+                == ("ok", ""),
+                axis=1,
+            )
+        ]
+        if not successful.empty:
+            raise RuntimeError(
+                "Successful Description miss rows are missing cached feature columns"
+            )
+        rows = rows.copy()
+        for column in missing_features:
+            rows[column] = None
     schema_signature = object_hash({
         "feature_columns": feature_columns,
         "value_semantics": manifest["value_semantics"],
@@ -776,6 +898,7 @@ def register_misses(
     })
     path = Path(plan["database_path"])
     inserted = 0
+    registered_skips = 0
     skipped = 0
     audit_events: list[dict[str, Any]] = []
     registration_policy = dict(plan.get("registration_policy") or {})
@@ -844,20 +967,12 @@ def register_misses(
             for _, row in rows.iterrows():
                 compound_id = str(row["compound_id"])
                 item = identity_by_id[compound_id]
-                raw_error = row.get("description_error", "")
-                try:
-                    import pandas as pd
-
-                    error = "" if pd.isna(raw_error) else str(raw_error)
-                except (TypeError, ValueError):
-                    error = str(raw_error or "")
-                raw_parse_ok = row.get("mol_parse_ok", False)
-                parse_ok = (
-                    bool(raw_parse_ok)
-                    if isinstance(raw_parse_ok, bool)
-                    else str(raw_parse_ok).strip().lower() in {"true", "1", "yes"}
+                error = _row_error(row)
+                parse_ok = _row_parse_ok(row)
+                outcome = _row_outcome(
+                    row, error_types.get(compound_id)
                 )
-                if error and error != "invalid_smiles":
+                if outcome is None:
                     skipped += 1
                     audit_events.append({
                         "timestamp": utc_now(),
@@ -870,7 +985,21 @@ def register_misses(
                         "source_node_id": identity["node_id"],
                     })
                     continue
-                if parse_ok:
+                outcome_status, outcome_reason = outcome
+                if outcome_status == "skipped" and not feature_columns:
+                    skipped += 1
+                    audit_events.append({
+                        "timestamp": utc_now(),
+                        "event": "RECORD_REGISTRATION_SKIPPED",
+                        "compound_id": compound_id,
+                        "reason": "terminal_skip_without_feature_schema",
+                        "description_error": error,
+                        "configuration_signature": plan["configuration_signature"],
+                        "source_run_id": identity["run_id"],
+                        "source_node_id": identity["node_id"],
+                    })
+                    continue
+                if outcome_status == "ok" and parse_ok:
                     numeric = row[feature_columns]
                     try:
                         import pandas as pd
@@ -916,7 +1045,6 @@ def register_misses(
                             "source_node_id": identity["node_id"],
                         })
                         continue
-                outcome_status = "ok" if parse_ok and not error else "invalid_smiles"
                 encoded_row = row_json(row.to_dict())
                 existing = connection.execute(
                     """
@@ -963,9 +1091,14 @@ def register_misses(
                     ),
                 )
                 inserted += 1
+                if outcome_status == "skipped":
+                    registered_skips += 1
                 audit_events.append({
                     "timestamp": utc_now(), "event": "RECORD_REGISTERED",
                     "compound_id": compound_id,
+                    "outcome_status": outcome_status,
+                    "outcome_reason": outcome_reason,
+                    "description_error": error,
                     "configuration_signature": plan["configuration_signature"],
                     "source_run_id": identity["run_id"],
                     "source_node_id": identity["node_id"],
@@ -977,6 +1110,8 @@ def register_misses(
     for event in audit_events:
         _append_audit(audit_path(path), event)
     plan["registered_count"] = inserted
+    plan["registered_ok_count"] = inserted - registered_skips
+    plan["registered_skip_count"] = registered_skips
     plan["registration_skipped_count"] = skipped
     return inserted
 

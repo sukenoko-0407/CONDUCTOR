@@ -27,7 +27,7 @@
 
 ## 3. D015/D016の契約
 
-D015/D016はSe/Pb/Sn/As等の構造的に該当しないdescriptorを0へ変換しない。payloadとDatabaseではnullを保持する。1行のfeatureの50%以上かつ1件以上が有限なら登録し、全feature非有限または`description_error`を持つ行は登録しない。距離計算時は全化合物で常に非有限の列を除外し、残る欠測だけを観測中央値で補完する。
+D015/D016はSe/Pb/Sn/As等の構造的に該当しないdescriptorを0へ変換しない。payloadとDatabaseではnullを保持する。1行のfeatureの50%以上かつ1件以上が有限なら登録する。全feature非有限かつ理由のない行、または未知の`description_error`を持つ行は登録しない。一方、固定条件でのConformer生成不能は`outcome_status=skipped`、理由`conformer_generation_failed`のactive negative-cache recordとして登録する。距離計算時は全化合物で常に非有限の列を除外し、eligible行内の残る欠測だけを観測中央値で補完する。SKIP行を補完値による観測として使用しない。
 
 この契約変更によりD015/D016の`calculation_version`は`2`となる。旧version 1 recordをversion 2のcache hitとして扱ってはならない。
 

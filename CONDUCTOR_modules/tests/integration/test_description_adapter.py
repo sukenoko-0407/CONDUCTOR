@@ -14,7 +14,12 @@ from description_adapter import (
     feature_space_metadata,
     run_description_capability,
 )
-from description_database import finalize_cached_output, prepare_cache_plan, register_misses
+from description_database import (
+    finalize_cached_output,
+    inspect_records,
+    prepare_cache_plan,
+    register_misses,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -97,6 +102,234 @@ def test_all_18_description_capabilities_support_cold_and_warm_cache(tmp_path) -
             capability=capability,
         )
         assert pd.read_csv(merged)["compound_id"].tolist() == ["A", "B"]
+
+
+def test_conformer_failure_is_negative_cached_and_excluded_from_distance(
+    tmp_path,
+) -> None:
+    capability = next(
+        item
+        for item in discover_description_capabilities(PROJECT_ROOT / ".claude" / "skills")
+        if item["capability_id"] == "D012"
+    )
+    identity = {
+        "project": "test",
+        "run_id": "RUN-1",
+        "round_id": "P01",
+        "node_id": "NODE-D012",
+        "attempt_id": "ATT-1",
+        "capability_id": "D012",
+        "skill_name": capability["skill_name"],
+    }
+    initial_dataset = tmp_path / "initial.csv"
+    pd.DataFrame(
+        [
+            {"compound_id": "A", "smiles": "CCO"},
+            {"compound_id": "C", "smiles": "CCN"},
+        ]
+    ).to_csv(initial_dataset, index=False)
+    initial_output = tmp_path / "initial-output"
+    initial_output.mkdir()
+    initial_plan = prepare_cache_plan(
+        project_root=tmp_path,
+        program_name="negative-cache",
+        dataset_path=initial_dataset,
+        id_column="compound_id",
+        smiles_column="smiles",
+        capability=capability,
+        parameters={},
+        scratch=tmp_path / "initial-scratch",
+        source_run_id="RUN-1",
+    )
+    initial_payload = initial_output / "D012_rdkit_3d.csv"
+    pd.DataFrame(
+        [
+            {"compound_id": "A", "input_smiles": "CCO", "mol_parse_ok": True, "description_error": "", "rdkit3d__PMI1": 1.0},
+            {"compound_id": "C", "input_smiles": "CCN", "mol_parse_ok": True, "description_error": "", "rdkit3d__PMI1": 3.0},
+        ]
+    ).to_csv(initial_payload, index=False)
+    initial_manifest = {
+        "feature_columns": ["rdkit3d__PMI1"],
+        "value_semantics": capability["value_semantics"],
+        "natural_metric": capability["natural_metric"],
+        "errors": [],
+    }
+    assert register_misses(
+        plan=initial_plan,
+        payload_path=initial_payload,
+        manifest=initial_manifest,
+        identity=identity,
+    ) == 2
+
+    expanded_dataset = tmp_path / "expanded.csv"
+    pd.DataFrame(
+        [
+            {"compound_id": "A", "smiles": "CCO"},
+            {"compound_id": "C", "smiles": "CCN"},
+            {"compound_id": "B", "smiles": "CCC"},
+        ]
+    ).to_csv(expanded_dataset, index=False)
+    failure_output = tmp_path / "failure-output"
+    failure_output.mkdir()
+    failure_plan = prepare_cache_plan(
+        project_root=tmp_path,
+        program_name="negative-cache",
+        dataset_path=expanded_dataset,
+        id_column="compound_id",
+        smiles_column="smiles",
+        capability=capability,
+        parameters={},
+        scratch=tmp_path / "failure-scratch",
+        source_run_id="RUN-2",
+    )
+    assert failure_plan["hit_count"] == 2
+    assert failure_plan["miss_ids"] == ["B"]
+    failure_payload = failure_output / "D012_rdkit_3d.csv"
+    pd.DataFrame(
+        [
+            {
+                "compound_id": "B",
+                "input_smiles": "CCC",
+                "mol_parse_ok": True,
+                "description_error": "RDKit conformer generation failed",
+            }
+        ]
+    ).to_csv(failure_payload, index=False)
+    failure_manifest = {
+        "feature_columns": [],
+        "value_semantics": capability["value_semantics"],
+        "natural_metric": capability["natural_metric"],
+        "errors": [
+            {
+                "compound_id": "B",
+                "error_type": "conformer_generation_failed",
+                "message": "RDKit conformer generation failed",
+            }
+        ],
+    }
+    assert register_misses(
+        plan=failure_plan,
+        payload_path=failure_payload,
+        manifest=failure_manifest,
+        identity={**identity, "run_id": "RUN-2", "attempt_id": "ATT-2"},
+    ) == 1
+    assert failure_plan["registered_ok_count"] == 0
+    assert failure_plan["registered_skip_count"] == 1
+    merged = finalize_cached_output(
+        plan=failure_plan,
+        output=failure_output,
+        request={
+            "identity": {**identity, "run_id": "RUN-2", "attempt_id": "ATT-2"},
+            "conductor_version": "0.2.1",
+        },
+        capability=capability,
+    )
+    merged_frame = pd.read_csv(merged)
+    assert merged_frame["compound_id"].tolist() == ["A", "C", "B"]
+    assert pd.isna(
+        merged_frame.loc[
+            merged_frame["compound_id"].eq("B"), "rdkit3d__PMI1"
+        ].iloc[0]
+    )
+
+    records = inspect_records(Path(failure_plan["database_path"]), "B")
+    assert len(records) == 1
+    assert records[0]["outcome_status"] == "skipped"
+    assert "conformer generation failed" in records[0]["row_json"]
+
+    warm_plan = prepare_cache_plan(
+        project_root=tmp_path,
+        program_name="negative-cache",
+        dataset_path=expanded_dataset,
+        id_column="compound_id",
+        smiles_column="smiles",
+        capability=capability,
+        parameters={},
+        scratch=tmp_path / "warm-scratch",
+        source_run_id="RUN-3",
+    )
+    assert warm_plan["hit_count"] == 3
+    assert warm_plan["miss_count"] == 0
+    assert warm_plan["cache_outcome_counts"] == {"ok": 2, "skipped": 1}
+
+    distance, metadata = compute_distance_matrix(
+        merged,
+        {"space_id": "D012", "metric": "euclidean"},
+    )
+    assert distance.shape == (3, 3)
+    assert metadata["eligible_compound_ids"] == ["A", "C"]
+    assert metadata["ineligible_count"] == 1
+    assert np.isnan(distance[2]).all()
+    assert np.isnan(distance[:, 2]).all()
+
+    transient_dataset = tmp_path / "transient.csv"
+    pd.DataFrame(
+        [
+            {"compound_id": "A", "smiles": "CCO"},
+            {"compound_id": "C", "smiles": "CCN"},
+            {"compound_id": "B", "smiles": "CCC"},
+            {"compound_id": "D", "smiles": "CCCl"},
+        ]
+    ).to_csv(transient_dataset, index=False)
+    transient_plan = prepare_cache_plan(
+        project_root=tmp_path,
+        program_name="negative-cache",
+        dataset_path=transient_dataset,
+        id_column="compound_id",
+        smiles_column="smiles",
+        capability=capability,
+        parameters={},
+        scratch=tmp_path / "transient-scratch",
+        source_run_id="RUN-4",
+    )
+    assert transient_plan["hit_count"] == 3
+    assert transient_plan["miss_ids"] == ["D"]
+    transient_payload = tmp_path / "transient-output.csv"
+    pd.DataFrame(
+        [
+            {
+                "compound_id": "D",
+                "input_smiles": "CCCl",
+                "mol_parse_ok": True,
+                "description_error": "unexpected worker failure",
+                "rdkit3d__PMI1": None,
+            }
+        ]
+    ).to_csv(transient_payload, index=False)
+    transient_manifest = {
+        "feature_columns": ["rdkit3d__PMI1"],
+        "value_semantics": capability["value_semantics"],
+        "natural_metric": capability["natural_metric"],
+        "errors": [
+            {
+                "compound_id": "D",
+                "error_type": "description_error",
+                "message": "unexpected worker failure",
+            }
+        ],
+    }
+    assert register_misses(
+        plan=transient_plan,
+        payload_path=transient_payload,
+        manifest=transient_manifest,
+        identity={**identity, "run_id": "RUN-4", "attempt_id": "ATT-4"},
+    ) == 0
+    assert transient_plan["registered_ok_count"] == 0
+    assert transient_plan["registered_skip_count"] == 0
+    assert transient_plan["registration_skipped_count"] == 1
+    retry_plan = prepare_cache_plan(
+        project_root=tmp_path,
+        program_name="negative-cache",
+        dataset_path=transient_dataset,
+        id_column="compound_id",
+        smiles_column="smiles",
+        capability=capability,
+        parameters={},
+        scratch=tmp_path / "retry-scratch",
+        source_run_id="RUN-5",
+    )
+    assert retry_plan["hit_count"] == 3
+    assert retry_plan["miss_ids"] == ["D"]
 
 
 def test_distance_contract_for_structural_and_descriptor_spaces(tmp_path) -> None:

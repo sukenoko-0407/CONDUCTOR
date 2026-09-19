@@ -497,11 +497,16 @@ def compute_mordred_3d_parallel(
         if values is not None:
             rows[index].update(values)
         else:
-            rows[index]["description_error"] = message or "Mordred 3D calculation failed"
+            resolved_message = message or "Mordred 3D calculation failed"
+            rows[index]["description_error"] = resolved_message
             errors.append({
                 "compound_id": rows[index]["compound_id"],
-                "error_type": "description_error",
-                "message": message,
+                "error_type": (
+                    "conformer_generation_failed"
+                    if resolved_message == "RDKit conformer generation failed"
+                    else "description_error"
+                ),
+                "message": resolved_message,
                 "traceback": trace,
             })
     metadata = {
@@ -741,8 +746,14 @@ def run() -> int:
             try:
                 rows[index].update(compute_one(mol, args))
             except Exception as exc:
-                rows[index]["description_error"] = str(exc)
-                errors.append({"compound_id": rows[index]["compound_id"], "error_type": "description_error", "message": str(exc), "traceback": traceback.format_exc()})
+                message = str(exc)
+                error_type = (
+                    "conformer_generation_failed"
+                    if message == "RDKit conformer generation failed"
+                    else "description_error"
+                )
+                rows[index]["description_error"] = message
+                errors.append({"compound_id": rows[index]["compound_id"], "error_type": error_type, "message": message, "traceback": traceback.format_exc()})
     result = pd.DataFrame(rows)
     features = sorted(column for column in result.columns if column not in COMMON_COLUMNS)
     result = result[COMMON_COLUMNS + features]

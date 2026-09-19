@@ -701,3 +701,22 @@ M-1 はこの両方を起動前に停止する。**次の Lens でも同じく�
 
 M-7 / M-8 は別の欠陥に対応する。**較正時の設定と本番の設定が違っていた**ことを検出できるようにする。
 R0 はこれを検出できず、`fast` 設定の enrichment を本番の受入基準として書いていた。
+
+---
+
+## 10. R1-3 productionで判明した追加是正 M-17
+
+### M-17 Description terminal SKIPのnegative cache化
+
+3D Descriptionでは、SMILESが妥当でも固定条件でConformerを生成できない化合物が存在し得る。これは行単位・Capability単位の非適格であり、Description Node全体またはRun全体の失敗ではない。
+
+- 3D Skillは入力行を欠落させず、`description_error`とmanifestの`error_type=conformer_generation_failed`を記録する。
+- Description Databaseは当該行を同じcalculation signatureのactive recordとして保存し、`outcome_status=skipped`、理由`conformer_generation_failed`を監査ログへ残す。
+- terminal SKIPは次回Runでcache hitとし、同じ条件で無限に再計算しない。
+- 任意の実装例外、依存関係障害、資源枯渇はterminal SKIPへ格上げせず、negative cacheにも登録しない。
+- miss-only batchがSKIP行だけでも、既存active recordのfeature schemaでnull列を補い、run-scoped payloadを全入力順で完成させる。
+- distance metadataは`eligible_compound_ids`と非適格理由を持つ。SKIP行を中央値補完した仮想観測として解析へ入れない。
+- Context clustering、L1b、L4は空間別eligible集合だけを使用する。L5は従来どおりfinite feature行だけを使用する。
+- 少数のterminal SKIPがあってもP01を成功させ、下流Nodeを継続する。全化合物が非適格でfeature schemaを解決できないCapabilityは黙って捨てず停止する。
+
+受入fixtureは「既存hit＋Conformer生成不能だけのmiss batch」を必須とし、SKIP recordの再利用、run-scoped payloadのnull行、distanceからの除外、次回miss=0を検証する。

@@ -65,6 +65,20 @@ def test_contexts_are_deterministic_quantiles_are_lower_only_and_translation_is_
         _space(tmp_path, "D001", 1, values, identifiers),
         _space(tmp_path, "D002", 3, values, identifiers),
     ]
+    skipped_matrix_path = Path(spaces[1]["distance_path"])
+    skipped_matrix = np.load(skipped_matrix_path)
+    skipped_matrix[-1, :] = np.nan
+    skipped_matrix[:, -1] = np.nan
+    np.save(skipped_matrix_path, skipped_matrix, allow_pickle=False)
+    Path(spaces[1]["distance_metadata_path"]).write_text(
+        json.dumps(
+            {
+                "compound_ids": identifiers,
+                "eligible_compound_ids": identifiers[:-1],
+            }
+        ),
+        encoding="utf-8",
+    )
     compounds = pd.DataFrame(
         {
             "compound_id": identifiers,
@@ -113,6 +127,16 @@ def test_contexts_are_deterministic_quantiles_are_lower_only_and_translation_is_
     assert not translated.empty
     assert translated["auc"].max() >= 0.95
     assert result.catalog["calibration_scope"].any()
+    d002_contexts = set(
+        result.catalog.loc[
+            result.catalog["source_space_id"].eq("D002"), "context_id"
+        ].astype(str)
+    )
+    d002_members = result.membership.loc[
+        result.membership["context_id"].astype(str).isin(d002_contexts),
+        "compound_id",
+    ]
+    assert "C11" not in set(d002_members.astype(str))
     assert set(result.activity_diagnostic["favorable"]) == {False, True}
     scaffold_members = (
         result.membership.merge(result.catalog[["context_id", "scaffold_type"]], on="context_id")

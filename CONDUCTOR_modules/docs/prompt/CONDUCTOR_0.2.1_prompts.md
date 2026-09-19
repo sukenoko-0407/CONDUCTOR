@@ -153,7 +153,7 @@ fixtureの入力、出力、DatabaseにはOSのTemporaryDirectoryだけを使い
 1. D015とD016をエタノール、ベンゼン、アスピリンの3化合物で実行する。
 2. D015/D016の`calculation_version`が`2`であることを確認する。
 3. Se/Pb/Sn/As系などの構造的NaNを含んでも、featureの50%以上かつ1件以上が有限で`description_error`がない行は登録されることを確認する。
-4. 全featureが非有限のsynthetic行と`description_error`を持つsynthetic行は登録されないことを確認する。
+4. 全featureが非有限で理由のないsynthetic行と、未知の`description_error`を持つsynthetic行は登録されないことを確認する。`conformer_generation_failed`は例外として`outcome_status=skipped`のactive negative-cache recordへ登録され、次回cache hitとなることを確認する。
 5. D019をfixture 2化合物、`compound_workers=2`、`cores_per_compound=2`、`available_cpu_cores=4`で実行し、Linux CPU affinityがworker間で重複せず、使用CPU数が宣言上限以下であることをmanifestで確認する。
 6. L4 scale guardの対象試験を実行し、support順位による選択数が100以下、予定Description行数が900以下、予定cost unitsが10000以下であること、および上限超過時にDescriptionを起動する前に停止することを確認する。
 7. Runtime fixtureで`workers=<WORKERS>`がExecution Request、Skill CLI、`CONDUCTOR_AVAILABLE_CPU_CORES`、`CONDUCTOR_NODE_CPU_CORES`へ同じ値で伝播し、このUbuntu processのCPU affinityを超える値が拒否されることを確認する。

@@ -99,11 +99,49 @@ def _numeric_features(frame: pd.DataFrame) -> tuple[list[str], np.ndarray]:
     return columns, numeric.to_numpy(dtype=float)
 
 
+def _description_row_eligibility(
+    frame: pd.DataFrame,
+) -> tuple[np.ndarray, list[dict[str, str]]]:
+    if "mol_parse_ok" in frame:
+        parse_ok = frame["mol_parse_ok"].map(
+            lambda value: value is True
+            or str(value).strip().lower() in {"true", "1", "yes"}
+        ).to_numpy(dtype=bool)
+    else:
+        parse_ok = np.ones(len(frame), dtype=bool)
+    errors = (
+        frame["description_error"].fillna("").astype(str)
+        if "description_error" in frame
+        else pd.Series("", index=frame.index, dtype=str)
+    )
+    eligible = parse_ok & errors.eq("").to_numpy(dtype=bool)
+    ineligible: list[dict[str, str]] = []
+    identifiers = frame["compound_id"].astype(str).tolist()
+    for index in np.flatnonzero(~eligible):
+        message = str(errors.iloc[index])
+        reason = "invalid_smiles" if not parse_ok[index] else (
+            "conformer_generation_failed"
+            if message.strip() == "RDKit conformer generation failed"
+            else "description_error"
+        )
+        ineligible.append(
+            {
+                "compound_id": identifiers[index],
+                "reason": reason,
+                "description_error": message,
+            }
+        )
+    return eligible, ineligible
+
+
 def compute_distance_matrix(payload_path: Path, space: dict[str, Any]) -> tuple[np.ndarray, dict[str, Any]]:
     frame = _load_payload(payload_path)
     if "compound_id" not in frame.columns or frame["compound_id"].astype(str).duplicated().any():
         raise ValueError("Description payload requires unique compound_id values")
     columns, matrix = _numeric_features(frame)
+    eligible, ineligible = _description_row_eligibility(frame)
+    if not bool(eligible.any()):
+        raise ValueError(f"No eligible compounds in {space['space_id']}")
     if space["metric"] == "tanimoto":
         matrix = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
         dot = matrix @ matrix.T
@@ -112,31 +150,61 @@ def compute_distance_matrix(payload_path: Path, space: dict[str, Any]) -> tuple[
         similarity = np.divide(dot, denominator, out=np.zeros_like(dot), where=denominator > 0)
         distance = 1.0 - similarity
     else:
-        finite_any = np.isfinite(matrix).any(axis=0)
+        finite_any = np.isfinite(matrix[eligible]).any(axis=0)
         matrix = matrix[:, finite_any]
         retained = [column for column, keep in zip(columns, finite_any, strict=True) if keep]
         if matrix.shape[1] == 0:
             raise ValueError(f"All features are missing in {space['space_id']}")
-        medians = np.nanmedian(matrix, axis=0)
+        row_has_finite = np.isfinite(matrix).any(axis=1)
+        newly_ineligible = eligible & ~row_has_finite
+        if bool(newly_ineligible.any()):
+            identifiers = frame["compound_id"].astype(str).tolist()
+            for index in np.flatnonzero(newly_ineligible):
+                ineligible.append(
+                    {
+                        "compound_id": identifiers[index],
+                        "reason": "no_finite_features",
+                        "description_error": "",
+                    }
+                )
+            eligible = eligible & row_has_finite
+        if not bool(eligible.any()):
+            raise ValueError(f"No eligible compounds in {space['space_id']}")
+        medians = np.nanmedian(matrix[eligible], axis=0)
         missing = np.where(~np.isfinite(matrix))
         matrix[missing] = medians[missing[1]]
-        standard_deviation = np.std(matrix, axis=0, ddof=0)
+        standard_deviation = np.std(matrix[eligible], axis=0, ddof=0)
         keep = standard_deviation > 0
         matrix = matrix[:, keep]
         retained = [column for column, value in zip(retained, keep, strict=True) if value]
         if matrix.shape[1] == 0:
             raise ValueError(f"All features are constant in {space['space_id']}")
-        matrix = (matrix - np.mean(matrix, axis=0)) / np.std(matrix, axis=0, ddof=0)
+        matrix = (
+            matrix - np.mean(matrix[eligible], axis=0)
+        ) / np.std(matrix[eligible], axis=0, ddof=0)
         distance = squareform(pdist(matrix, metric="euclidean"))
         columns = retained
     distance = np.asarray(distance, dtype=np.float32)
     distance = (distance + distance.T) / np.float32(2.0)
     np.fill_diagonal(distance, 0.0)
+    distance[~eligible, :] = np.nan
+    distance[:, ~eligible] = np.nan
+    compound_ids = frame["compound_id"].astype(str).tolist()
     metadata = {
         "schema_version": "0.2.1",
         "space_id": space["space_id"],
         "metric": space["metric"],
-        "compound_ids": frame["compound_id"].astype(str).tolist(),
+        "compound_ids": compound_ids,
+        "eligible_compound_ids": [
+            compound_id
+            for compound_id, keep in zip(compound_ids, eligible, strict=True)
+            if keep
+        ],
+        "ineligible_compounds": sorted(
+            ineligible, key=lambda item: item["compound_id"]
+        ),
+        "eligible_count": int(eligible.sum()),
+        "ineligible_count": int((~eligible).sum()),
         "feature_columns": columns,
         "shape": list(distance.shape),
         "dtype": "float32",

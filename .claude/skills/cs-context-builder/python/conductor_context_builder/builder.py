@@ -81,14 +81,29 @@ def _cluster_contexts(
         source_ids = [str(value) for value in metadata["compound_ids"]]
         if set(source_ids) != expected or matrix.shape != (len(source_ids), len(source_ids)):
             raise ValueError(f"Distance artifact does not match compounds for {space['space_id']}")
+        eligible_set = {
+            str(value)
+            for value in metadata.get("eligible_compound_ids", source_ids)
+        }
+        if not eligible_set.issubset(expected):
+            raise ValueError(
+                f"Distance eligibility contains unknown compounds for {space['space_id']}"
+            )
+        eligible_ids = [
+            identifier for identifier in compound_ids if identifier in eligible_set
+        ]
         positions = {identifier: index for index, identifier in enumerate(source_ids)}
-        order = [positions[identifier] for identifier in compound_ids]
+        order = [positions[identifier] for identifier in eligible_ids]
         aligned = np.asarray(matrix[np.ix_(order, order)], dtype=float)
+        if not np.isfinite(aligned).all():
+            raise ValueError(
+                f"Eligible distance artifact contains non-finite values for {space['space_id']}"
+            )
         for count in sorted(set(int(value) for value in cluster_counts)):
-            if count < 2 or count > len(compound_ids):
+            if count < 2 or count > len(eligible_ids):
                 continue
             labels = AgglomerativeClustering(n_clusters=count, metric="precomputed", linkage="average").fit_predict(aligned)
-            clusters = [sorted(compound_ids[index] for index in np.where(labels == label)[0]) for label in sorted(set(labels))]
+            clusters = [sorted(eligible_ids[index] for index in np.where(labels == label)[0]) for label in sorted(set(labels))]
             clusters.sort(key=lambda values: (values[0], content_hash(values)))
             for index, values in enumerate(clusters):
                 context_id = _cluster_id(str(space["space_id"]), count, index, values)

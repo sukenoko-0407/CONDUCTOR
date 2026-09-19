@@ -189,8 +189,17 @@ def execute(request_path: Path, output_path: Path, overwrite: bool) -> dict[str,
                     "hit_count": int(plan["hit_count"]),
                     "miss_count": int(plan["miss_count"]),
                     "registered_count": int(plan.get("registered_count", 0)),
+                    "registered_ok_count": int(
+                        plan.get("registered_ok_count", 0)
+                    ),
+                    "registered_skip_count": int(
+                        plan.get("registered_skip_count", 0)
+                    ),
                     "registration_skipped_count": int(
                         plan.get("registration_skipped_count", 0)
+                    ),
+                    "cache_outcome_counts": dict(
+                        plan.get("cache_outcome_counts") or {}
                     ),
                 }
                 for capability_id, plan in sorted(plans.items())

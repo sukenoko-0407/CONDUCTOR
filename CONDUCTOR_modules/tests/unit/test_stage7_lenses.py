@@ -65,6 +65,70 @@ def test_l1b_family_is_split_by_space(tmp_path) -> None:
     }
 
 
+def test_l1b_excludes_description_skips_per_space(tmp_path) -> None:
+    identifiers = [f"C{index:02d}" for index in range(12)]
+    positions = np.arange(12, dtype=float)
+    distance = np.abs(positions[:, None] - positions[None, :]).astype(np.float32)
+    distance[-1, :] = np.nan
+    distance[:, -1] = np.nan
+    distance_path = tmp_path / "distance.npy"
+    metadata_path = tmp_path / "distance.json"
+    np.save(distance_path, distance)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "compound_ids": identifiers,
+                "eligible_compound_ids": identifiers[:-1],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = run_l1b(
+        pd.DataFrame(
+            {"compound_id": identifiers, "canonical_smiles": ["CC"] * 12}
+        ),
+        pd.DataFrame(
+            {
+                "compound_id": identifiers,
+                "endpoint_id": ["EP"] * 12,
+                "oriented_value": positions,
+            }
+        ),
+        pd.DataFrame(
+            [
+                {
+                    "context_id": "CTX",
+                    "is_representative": True,
+                    "eligible": True,
+                    "translation_status": "native",
+                }
+            ]
+        ),
+        pd.DataFrame(
+            [{"context_id": "CTX", "compound_id": value} for value in identifiers]
+        ),
+        [
+            {
+                "space_id": "D012",
+                "tier": 2,
+                "distance_path": str(distance_path),
+                "distance_metadata_path": str(metadata_path),
+            }
+        ],
+        "EP",
+        run_seed=3,
+        neighbor_k=2,
+        min_endpoint_n=5,
+        screen_permutations=1,
+        final_permutations=1,
+        screen_p_max=1.0,
+        report_q_max=1.0,
+        calibration_permutations=1,
+    )
+    assert set(result.evidence["endpoint_n"]) == {11}
+    assert "C11" not in set(result.score_observations["compound_id"])
+
+
 def test_l5_detects_planted_same_axis_sign_reversal(tmp_path) -> None:
     identifiers = [f"C{index:02d}" for index in range(20)]
     local_x = np.tile(np.arange(10, dtype=float), 2)
@@ -418,11 +482,18 @@ def test_l4_uses_exact_candidate_description_with_observed_scaling(tmp_path) -> 
         [
             {"compound_id": "A", "x": 0.0, "constant": 7.0},
             {"compound_id": "B", "x": 2.0, "constant": 7.0},
+            {"compound_id": "C", "x": 100.0, "constant": 7.0},
         ]
     ).to_csv(observed_path, index=False)
     pd.DataFrame([{"compound_id": "X", "x": 1.0, "constant": 99.0}]).to_csv(candidate_path, index=False)
     metadata_path.write_text(
-        json.dumps({"compound_ids": ["A", "B"], "feature_columns": ["x"]}),
+        json.dumps(
+            {
+                "compound_ids": ["A", "B", "C"],
+                "eligible_compound_ids": ["A", "B"],
+                "feature_columns": ["x"],
+            }
+        ),
         encoding="utf-8",
     )
     space = {

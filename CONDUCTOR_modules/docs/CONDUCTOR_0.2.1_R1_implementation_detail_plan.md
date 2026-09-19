@@ -659,3 +659,60 @@ schema version は 0.2.1 のままとし、artifact schema が任意 metrics を
 - stage R1-3後に本番データの族サイズとFinding件数を報告し、一旦停止する。
 
 この改訂版の報告後、R1-1のコード実装へ進んでよい。新しい不明点が生じた場合は、`CONDUCTOR_0.2.1_R1_implementation_questions.md` へ同じ形式で追記し、独断で決めない。
+
+## 11. R1-3 production hotfix: Description terminal SKIP
+
+### 11.1 対象
+
+- `CONDUCTOR_modules/tools/description_database.py`
+- `CONDUCTOR_modules/tools/description_adapter.py`
+- `CONDUCTOR_modules/tools/description_node.py`
+- D012/D013/D014/D016/D019のDescription Skill runner
+- `cs-context-builder`、`cs-lens-l1b`、`cs-lens-l4`の空間別eligibility消費箇所
+- Description adapter、Context、Lensのintegration/unit fixture
+
+### 11.2 wire/storage契約
+
+既知の決定論的Conformer生成失敗だけをterminal SKIPとする。
+
+```text
+payload.description_error = "RDKit conformer generation failed"
+manifest.errors[].error_type = "conformer_generation_failed"
+records.outcome_status = "skipped"
+records.record_status = "active"
+audit.outcome_reason = "conformer_generation_failed"
+```
+
+`row_json`は共通列と正規feature schemaの全列を持ち、feature値はnullとする。DB schemaは変更せず、既存の`outcome_status`を用いる。成功recordのcalculation version/signatureは変更しない。
+
+任意の`description_error`をnegative cacheにしてはならない。未知の行エラーは`RECORD_REGISTRATION_SKIPPED`として監査し、次回もmissにする。
+
+### 11.3 failure-only miss batch
+
+miss-only Skill出力のfeature列が空で、同じconfiguration signatureに既存hitがある場合は、そのactive recordの`feature_columns_json`を正規schemaとする。成功行が存在するのにfeature列が欠ける場合はschema不整合としてfail-fastする。既存schemaがなく全行SKIPの場合はnegative recordを作らず、Capability全体の解析不能として停止する。
+
+### 11.4 解析eligibility
+
+距離行列は入力全件の順序と正方形shapeを維持するが、SKIP行・列を非finiteとし、metadataへ次を追加する。
+
+```json
+{
+  "eligible_compound_ids": ["..."],
+  "ineligible_compounds": [
+    {"compound_id": "...", "reason": "conformer_generation_failed", "description_error": "..."}
+  ],
+  "eligible_count": 0,
+  "ineligible_count": 0
+}
+```
+
+Context clusteringはeligible部分行列だけをcluster化する。L1bは各spaceでcontext membershipとeligible集合の積集合を使い、`min_endpoint_n`と`neighbor_k`を再判定する。L4はcandidate-to-observed距離のobserved側をeligible集合へ限定する。L5はfeature/Endpoint finite maskを用いるため追加の擬似補完を行わない。
+
+### 11.5 必須fixture
+
+1. 既存成功hitが2件、Conformer生成不能missが1件だけのfailure-only batch。
+2. miss出力のfeature列が空でも、既存schemaでnull列を補ってmergeできる。
+3. SKIP recordが`outcome_status=skipped`でactive登録され、次回planがhit=3、miss=0となる。
+4. distance metadataのeligible集合が成功2件だけで、SKIP行・列は非finiteとなる。
+5. Context、L1b、L4がSKIP化合物を当該spaceの観測として使用しない。
+6. 未知の実装例外はnegative cacheへ登録されない。
