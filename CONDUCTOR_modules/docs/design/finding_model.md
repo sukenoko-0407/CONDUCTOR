@@ -84,6 +84,8 @@ deep_dive_summary: {...}      # 子ノードの要約。詳細は別 Artifact
 narrative: "..."              # 引用付きの短い文章
 ```
 
+`claim.support_n`は、Findingの統計量を実際に計算する際に使用した一意な観測単位の件数とする。欠測・非finite値・join不能により統計量から除外したrecordを数えてはならず、単なるContext所属件数や入力行数で代用しない。L5では特徴量とEndpointがともにfiniteな化合物について、focal contextとaxis内補集合の和集合の一意件数を記録する。両群は排他的でなければならず、`support_n = n_a + n_b`、`shared_n = 0`を置換計算前に検証する。
+
 ## 3. 型
 
 Finding は次の5要素を必ず持つ。欠けるものは Finding として成立しない。

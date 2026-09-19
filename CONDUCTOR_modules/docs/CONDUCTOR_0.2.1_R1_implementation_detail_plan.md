@@ -333,8 +333,9 @@ run_l5(..., config: Mapping[str, Any], progress: ProgressCallback | None = None)
 - after: 各 focal context を同じ axis の union から focal context を除いた complement と比較する。
 - 新規データ: axis ごとの boolean membership matrix、`condition_id="<context_id>|complement"`。
 - evidence: entity は focal context のみ。complement を別の context entity として捏造しない。
+- support契約: 特徴量とEndpointがともにfiniteで相関へ実際に使用した一意な化合物indexの和集合を`support_n`とする。focalとcomplementの非重複、`shared_n=0`、`support_n=n_a+n_b>=1`を置換loop開始前に検証し、evidenceへ`support_n`を記録する。
 - estimate: 4.1 の `C` を使用。
-- test: 3 context の axis fixture で比較数が3、complement membership が厳密、他 axis compound を含まない、空/不足 complement を skip。
+- test: 3 context の axis fixtureで比較数が3、complement membershipが厳密、他axis compoundを含まない、空/不足complementをskipする。加えて、生のContext共通所属数が`n_a+n_b`を超える重複Contextと部分NaN特徴量を含むfixtureで、finite unionとFindingの`support_n`が一致することを必須とする。
 - validation: planted sign conflict の direction/p 値を手計算 fixture と照合。
 
 ### M-4 L5 family

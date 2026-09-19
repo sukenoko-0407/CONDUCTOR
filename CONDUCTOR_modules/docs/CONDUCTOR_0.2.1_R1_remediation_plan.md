@@ -174,6 +174,8 @@ axis A に属する文脈 C について
 
 Finding の `condition_id` は `{context_id}|complement` とする。`entities.context_ids` は当該文脈のみとする。
 
+`support_n`は、特徴量とEndpointがともにfiniteで相関へ実際に使用した一意な化合物indexの和集合件数とする。focal contextとaxis内補集合は排他的なので、置換計算前に`shared_n=0`、`support_n=n_a+n_b>=1`を検証する。変更前実装のように、特徴量欠測を含む生のContext共通所属数を特徴量別の`n_a/n_b`から減算してはならない。重複Contextと部分NaN特徴量を組み合わせ、旧式では`support_n<=0`になる回帰fixtureを必須とする。
+
 ### M-4 【仕様変更】L5 の BH 族を axis 分割
 
 **変更前**: `family_key = "L5|correlation_sign_conflict"`（単一族）

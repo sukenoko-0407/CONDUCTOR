@@ -5,6 +5,7 @@
 ## 再利用方針
 
 - R1-1〜R1-3はDescriptionの`calculation_version`とcalculation signatureを変更していない。このため、同一Program、同一compound ID、同一canonical SMILES、同一`calculation_version`、同一calculation signatureを満たすDescription Database recordはcache hitとして再利用できる。Gobbi Pharm2DでSVDを使う場合はdataset signatureも一致させる。
+- L5の`support_n`再発防止はLens実装、evidence、unit fixture、文書だけの変更であり、Descriptionの`calculation_version`、calculation signature、Database schema、既存recordを変更しない。これを理由にDescription Databaseを再計算またはinvalid化しない。
 - 修正前Runの`runtime.sqlite`、Execution Request、Pipeline plan、P01/P02のrun-scoped成果物、検定結果、Findingは直接流用しない。修正前Runをresumeしない。
 - 新しいRun IDとRun rootを使い、P01は既存Description Databaseからrun-scoped特徴量成果物を作り直す。互換recordは再計算せず、真のmissだけを計算する。P02とP03は新規計算する。
 - Description Databaseを削除、移動、Archive、再構築しない。Program名を変更してcacheを回避しない。
@@ -51,7 +52,7 @@ memory_mb: <MEMORY_MB>
 目的は、R1-1〜R1-3のコードでPhase 1〜3だけを新規Runとして実行し、各Lensの最大族サイズとFinding件数を測定することです。Phase 4〜6およびR1-4以降は実行しないでください。
 
 最初の確認は次の最小項目だけに限定してください。
-1. Git pull後のworking treeとHEADを記録し、R1-1〜R1-3の実装ファイルが存在すること。
+1. Git pull後のworking treeとHEADを記録し、R1-1〜R1-3の実装ファイル、およびL5のfinite support契約と部分NaN回帰fixture `test_l5_support_uses_feature_finite_observations_with_overlapping_contexts` が存在すること。開発側で全test成功済みなので、実機でtest suite全体を再実行しないこと。
 2. `<CONFIG_PATH>`がschema_version 0.2.1で、次を解決済み値として含むこと。
    - runtime.budgets: node_wall_seconds=3600、run_wall_seconds=21600、peak_memory_bytes=68719476736、family_size=500
    - runtime.progress: min_seconds=5、min_fraction=0.01、stall_multiplier=20、stall_min_seconds=60、stall_max_seconds=600
@@ -68,6 +69,8 @@ memory_mb: <MEMORY_MB>
 現行`cs-production-run`は「Database path不存在からPhase 1〜6を実行する3.4A専用」です。既存Databaseを使う今回のcheckpointには起動しないでください。checkpoint用のrequestとplanは`<RUN_ROOT>/control/`以下だけへ生成し、このためにrepositoryのsource、canonical blueprint、旧Runを変更しないでください。
 
 Phase 1では既存Description Databaseを使用してください。同一Program、同一compound ID、同一canonical SMILES、同一calculation_version、同一calculation signatureのrecordをcache hitとし、Gobbi Pharm2DでSVDを使う場合はdataset signatureも一致条件に含めてください。互換recordを再計算しないでください。真のmissだけを計算・登録し、同一ID・異canonical SMILESではfail-fastしてください。Database、旧Run、旧成果物を削除、移動、invalid化しないでください。修正前RunのP01/P02成果物を新Runへ直接コピーまたは参照せず、新RunのP01成果物はDatabase recordから生成し、P02とP03は新規計算してください。
+
+L5では`support_n`を特徴量とEndpointがともにfiniteで相関へ実際に使用した一意な化合物数として扱ってください。focal contextとaxis内補集合が非重複、`shared_n=0`、`support_n=n_a+n_b>=1`であることを置換loop開始前に検証してください。生のContext共通所属数を`n_a/n_b`から減算しないでください。不変条件違反時は長時間の置換loopへ入らず、入力と該当axis/context/featureを報告して停止してください。
 
 Description Databaseへの最初の書込み可能性が生じる前に、同じProgramのwriterがいないことを再確認し、SQLite backup APIで復旧可能なbackupを1回作成してください。WAL/SHMをファイルコピーで個別に扱わないでください。
 

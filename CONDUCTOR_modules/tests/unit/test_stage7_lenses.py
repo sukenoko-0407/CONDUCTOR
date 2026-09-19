@@ -5,8 +5,6 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from rdkit import Chem
-
 from conductor_fragment_engine import FragmentationConfig, fragment_compound
 from conductor_lens_l1b import local_flatness, run_l1b
 from conductor_lens_l2 import run_l2a
@@ -20,6 +18,7 @@ from conductor_lens_l4 import (
 )
 from conductor_lens_l5 import run_l5
 from conductor_lens_l7 import run_l7
+from rdkit import Chem
 
 
 def test_l1b_flatness_excludes_self_and_requires_full_neighbor_count() -> None:
@@ -166,6 +165,87 @@ def test_l5_complement_is_axis_local_and_skips_an_insufficient_axis(tmp_path) ->
     assert not set(result.score_observations["compound_id"]).intersection(
         identifiers[group_size * 3 :]
     )
+
+
+def test_l5_support_uses_feature_finite_observations_with_overlapping_contexts(
+    tmp_path,
+) -> None:
+    identifiers = [f"C{index:02d}" for index in range(30)]
+    feature = np.full(30, np.nan)
+    endpoint = np.zeros(30, dtype=float)
+
+    # The contexts share 20 raw members, but the feature is finite for only four
+    # of them.  The retired pairwise formula produced 9 + 9 - 20 = -2 even
+    # though the actual unique finite support was 14.
+    feature[:4] = [25.0, 30.0, 30.0, 35.0]
+    endpoint[:4] = 30.0
+    feature[20:25] = [10.0, 20.0, 30.0, 40.0, 50.0]
+    endpoint[20:25] = [10.0, 20.0, 30.0, 40.0, 50.0]
+    feature[25:30] = [10.0, 20.0, 30.0, 40.0, 50.0]
+    endpoint[25:30] = [50.0, 40.0, 30.0, 20.0, 10.0]
+    feature_path = tmp_path / "features_with_missing_values.csv"
+    pd.DataFrame({"compound_id": identifiers, "feature": feature}).to_csv(
+        feature_path, index=False
+    )
+
+    contexts = pd.DataFrame(
+        [
+            {
+                "context_id": context_id,
+                "axis_id": "AX",
+                "is_representative": True,
+                "eligible": True,
+                "translation_status": "native",
+            }
+            for context_id in ("A", "B")
+        ]
+    )
+    membership = pd.DataFrame(
+        [
+            {"context_id": context_id, "compound_id": identifiers[index]}
+            for context_id, indices in (
+                ("A", range(25)),
+                ("B", (*range(20), *range(25, 30))),
+            )
+            for index in indices
+        ]
+    )
+
+    result = run_l5(
+        pd.DataFrame(
+            {"compound_id": identifiers, "canonical_smiles": ["CCc1ccccc1"] * 30}
+        ),
+        pd.DataFrame(
+            {
+                "compound_id": identifiers,
+                "endpoint_id": ["EP"] * 30,
+                "oriented_value": endpoint,
+            }
+        ),
+        contexts,
+        membership,
+        [{"space_id": "D015", "tier": 1, "path": str(feature_path)}],
+        "EP",
+        run_seed=23,
+        min_endpoint_n=5,
+        min_abs_r=0.30,
+        screen_permutations=1,
+        final_permutations=1,
+        screen_p_max=1.0,
+        report_q_max=1.0,
+        calibration_permutations=1,
+    )
+
+    assert 9 + 9 - 20 == -2
+    assert len(result.findings) == 2
+    assert set(result.evidence["n_a"]) == {9}
+    assert set(result.evidence["n_b"]) == {5}
+    assert set(result.evidence["shared_n"]) == {0}
+    assert set(result.evidence["support_n"]) == {14}
+    assert {finding["claim"]["support_n"] for finding in result.findings} == {14}
+    assert set(
+        result.score_observations.groupby("finding_key")["compound_id"].nunique()
+    ) == {14}
 
 
 def test_l5_bh_family_is_independent_between_axes(tmp_path) -> None:

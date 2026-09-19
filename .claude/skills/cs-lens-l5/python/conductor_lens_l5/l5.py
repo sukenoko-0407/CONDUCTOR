@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from rdkit import Chem
-from rdkit.Chem.Scaffolds import MurckoScaffold
-
 from conductor_stat_core import (
     TestRecord,
     assign_finding_ids,
@@ -23,7 +20,8 @@ from conductor_stat_core import (
     permute_within_blocks,
     stable_id,
 )
-
+from rdkit import Chem
+from rdkit.Chem.Scaffolds import MurckoScaffold
 
 COMMON_COLUMNS = frozenset({"compound_id", "input_smiles", "mol_parse_ok", "description_error"})
 
@@ -80,7 +78,26 @@ def _murcko_blocks(compounds: pd.DataFrame, compound_ids: list[str]) -> list[str
     return blocks
 
 
+def _finite_observation_indices(x: np.ndarray, y: np.ndarray, indices: np.ndarray) -> np.ndarray:
+    """Return the compounds actually used by a feature correlation."""
+    return indices[np.isfinite(x[indices]) & np.isfinite(y[indices])]
+
+
+def _correlation_from_selected(
+    x: np.ndarray, y: np.ndarray, selected: np.ndarray
+) -> tuple[float, int]:
+    if selected.size < 3:
+        return math.nan, int(selected.size)
+    left, right = x[selected], y[selected]
+    if float(np.std(left)) == 0.0 or float(np.std(right)) == 0.0:
+        return math.nan, int(selected.size)
+    return float(np.corrcoef(left, right)[0, 1]), int(selected.size)
+
+
 def _correlation(x: np.ndarray, y: np.ndarray, indices: np.ndarray) -> tuple[float, int]:
+    # Keep the permutation hot path equivalent to the original scalar
+    # implementation.  Exact support accounting is performed once while the
+    # observed universe is built, not repeatedly for every permutation.
     selected = indices[np.isfinite(x[indices]) & np.isfinite(y[indices])]
     if selected.size < 3:
         return math.nan, int(selected.size)
@@ -160,6 +177,10 @@ def run_l5(
         for context_id in context_ids:
             focal = membership[context_id]
             complement = np.setdiff1d(axis_union, focal, assume_unique=True)
+            if np.intersect1d(focal, complement, assume_unique=True).size:
+                raise ValueError(
+                    "L5 focal context and axis-local complement must be disjoint"
+                )
             if focal.size < min_endpoint_n or complement.size < min_endpoint_n:
                 continue
             comparisons.append((axis_id, context_id, complement))
@@ -168,10 +189,26 @@ def run_l5(
     candidates: list[dict[str, Any]] = []
     for axis_id, context_id, complement_indices in comparisons:
         for feature_id, x in feature_values.items():
-            left_r, left_n = _correlation(x, y, membership[context_id])
-            right_r, right_n = _correlation(x, y, complement_indices)
+            left_support = _finite_observation_indices(x, y, membership[context_id])
+            right_support = _finite_observation_indices(x, y, complement_indices)
+            left_r, left_n = _correlation_from_selected(x, y, left_support)
+            right_r, right_n = _correlation_from_selected(x, y, right_support)
             if left_n < min_endpoint_n or right_n < min_endpoint_n or not math.isfinite(left_r) or not math.isfinite(right_r):
                 continue
+            shared_support = np.intersect1d(
+                left_support, right_support, assume_unique=True
+            )
+            support_n = int(
+                np.union1d(left_support, right_support).size
+            )
+            if shared_support.size:
+                raise ValueError(
+                    "L5 finite focal and complement support must be disjoint"
+                )
+            if support_n < 1 or support_n != left_n + right_n:
+                raise ValueError(
+                    "L5 support_n must equal the unique finite observations used by both correlations"
+                )
             row = {
                 "axis_id": axis_id,
                 "context_a": context_id,
@@ -182,7 +219,8 @@ def run_l5(
                 "r_b": right_r,
                 "n_a": left_n,
                 "n_b": right_n,
-                "shared_n": 0,
+                "shared_n": int(shared_support.size),
+                "support_n": support_n,
                 "statistic": _fisher_difference(left_r, right_r),
                 "global_r": _correlation(x, y, np.arange(len(y), dtype=int))[0],
                 "x": x,
@@ -256,6 +294,7 @@ def run_l5(
             "context_a": row["context_a"], "context_b": row["context_b"], "feature_id": row["feature_id"],
             "r_a": row["r_a"], "r_b": row["r_b"], "global_r": row["global_r"],
             "n_a": row["n_a"], "n_b": row["n_b"], "shared_n": row["shared_n"],
+            "support_n": row["support_n"],
             "fisher_z_difference": row["statistic"],
         })
         test_rows.append({
@@ -267,7 +306,14 @@ def run_l5(
         })
         if record.status != "final" or adjusted_record.q_value is None or adjusted_record.q_value > report_q_max:
             continue
-        involved = sorted(set(compound_ids[index] for index in np.concatenate((membership[row["context_a"]], row["complement_indices"]))))
+        involved = sorted(
+            {
+                compound_ids[index]
+                for index in np.concatenate(
+                    (membership[row["context_a"]], row["complement_indices"])
+                )
+            }
+        )
         test = {
             "test_id": record.test_id, "question": "correlation_sign_conflict", "method": "murcko_block_permutation_fisher_z",
             "statistic": float(record.statistic), "p_value": float(record.p_value), "q_value": float(adjusted_record.q_value),
@@ -278,7 +324,7 @@ def run_l5(
             lens="L5", endpoint_id=endpoint_id, subject_type="feature", subject_id=subject,
             condition_id=f"{row['context_a']}|complement", effect_direction="mixed",
             effect_size=float(row["statistic"]), effect_unit="fisher_z_difference",
-            support_n=int(row["n_a"] + row["n_b"] - row["shared_n"]), tests=[test],
+            support_n=int(row["support_n"]), tests=[test],
             falsification_type="murcko_block_permutation",
             falsification_parameters={"membership_fixed": True, "axis_id": row["axis_id"]},
             falsification_rule=f"BH q <= {report_q_max} with opposite correlation signs",
