@@ -30,6 +30,8 @@ Status: **協議中。未承認。**
 | 4 | `CONDUCTOR_0.2.1_spec_conformance_audit.md` | なぜこうなったか |
 | 5 | `CONDUCTOR_0.2.1_independent_performance_review.md` | 性能面の詳細評価 |
 
+**実装担当者は [`CONDUCTOR_0.2.1_R1_implementer_brief.md`](CONDUCTOR_0.2.1_R1_implementer_brief.md) から読み始めてください。** 本書はその正本として参照されます。
+
 **R0 の実装計画書・詳細仕様書は引き続き有効である。** 本書は差分だけを定める。
 
 ---
