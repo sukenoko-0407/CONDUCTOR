@@ -79,3 +79,21 @@ llm:
 runtime:
   random_seed: 20260916
   workers: 0
+  budgets:
+    node_wall_seconds: 3600
+    run_wall_seconds: 21600
+    peak_memory_bytes: 68719476736
+    family_size: 500
+  progress:
+    min_seconds: 5
+    min_fraction: 0.01
+    stall_multiplier: 20
+    stall_min_seconds: 60
+    stall_max_seconds: 600
+  units_per_second:
+    l5: 3650000
+    l1b: 29800000
+    l2a: 7230000
+    l4: 31700
+    l2b: 50858
+    l7: 6004

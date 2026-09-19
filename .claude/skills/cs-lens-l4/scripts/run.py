@@ -39,6 +39,8 @@ from conductor_stat_core.contracts import (  # noqa: E402
     verify_request_inputs,
 )
 from identity_bridge import bridge_legacy_identity  # noqa: E402
+from lens_work_estimators import estimate_work  # noqa: E402
+from work_contract import ProgressReporter, WorkEstimate  # noqa: E402
 
 
 SCHEMAS = ROOT / "CONDUCTOR_modules" / "schemas"
@@ -185,6 +187,7 @@ def _describe_candidates(
     output: Path,
     identity: dict[str, Any],
     available_cpu_cores: int,
+    progress_callback: Any | None = None,
 ) -> tuple[list[dict[str, Any]], list[tuple[str, str, int]]]:
     candidate_file = output / "l4_candidate_compounds.csv"
     _csv(candidates, candidate_file)
@@ -193,10 +196,11 @@ def _describe_candidates(
     environment = os.environ.copy()
     environment["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores)
     environment["CONDUCTOR_NODE_CPU_CORES"] = str(available_cpu_cores)
-    for space in sorted(
+    selected_spaces = sorted(
         (item for item in spaces if int(item["tier"]) <= 2),
         key=lambda item: str(item["space_id"]),
-    ):
+    )
+    for completed_spaces, space in enumerate(selected_spaces, start=1):
         space_id = str(space["space_id"])
         skill_name = str(space["skill_name"])
         skill_directory = ROOT / ".claude" / "skills" / skill_name
@@ -287,6 +291,8 @@ def _describe_candidates(
                 "candidate_manifest_path": str(manifest_path.resolve()),
             }
         )
+        if progress_callback is not None:
+            progress_callback(completed_spaces, len(selected_spaces))
     return described, artifacts
 
 
@@ -395,7 +401,7 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         manifest = {
             **_base_manifest(request, config_path, "needs_design_review"),
             "artifacts": artifacts,
-            "metrics": asdict(exc.plan),
+            "metrics": {**asdict(exc.plan), "progress_granularity": "loop"},
             "warnings": [str(exc)],
         }
         atomic_write_json(output / "artifact_manifest.json", manifest)
@@ -407,6 +413,13 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         }
 
     available_cpu_cores = _available_cpu_cores(request, args.workers)
+    progress_space_count = len(tier_spaces) if not generation.candidates.empty else 0
+    progress_total = progress_space_count + len(generation.candidates)
+    progress = ProgressReporter.from_environment(
+        progress_total,
+        min_seconds=float(((config.get("runtime") or {}).get("progress") or {}).get("min_seconds", 5)),
+        min_fraction=float(((config.get("runtime") or {}).get("progress") or {}).get("min_fraction", 0.01)),
+    )
     candidate_artifacts: list[tuple[str, str, int]] = []
     candidate_file = output / "l4_candidate_compounds.csv"
     if generation.candidates.empty:
@@ -419,6 +432,7 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
             output,
             request["identity"],
             available_cpu_cores,
+            progress_callback=lambda completed, total: progress.update(completed),
         )
     atomic_write_json(
         output / "candidate_feature_spaces.json",
@@ -432,9 +446,12 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         neighbor_k=int(config["contexts"]["neighbor_k"]),
         min_context_size=int(config["contexts"]["min_endpoint_n"]),
         report_q_max=float(config["statistics"]["report_q_max"]),
+        progress_callback=lambda completed, total: progress.update(progress_space_count + completed),
     )
+    progress.finish()
     result.metrics.update(asdict(scale_plan))
     result.metrics["available_cpu_cores"] = available_cpu_cores
+    result.metrics["progress_granularity"] = "loop"
     files = [
         ("l4_evidence", "l4_evidence.csv", result.evidence),
         ("l4_tests", "l4_tests.csv", result.tests),
@@ -481,15 +498,26 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def estimate(args: argparse.Namespace) -> WorkEstimate:
+    request = json.loads(Path(args.request).resolve().read_text(encoding="utf-8"))
+    validate_instance(request, SCHEMAS / "execution_request.schema.json")
+    if request["identity"]["skill_name"] != "cs-lens-l4" or request["parameters"].get("operation") != "l4":
+        raise SchemaValidationError("Request must target cs-lens-l4 operation l4")
+    verify_request_inputs(request)
+    config = yaml.safe_load(Path(request["config_path"]).resolve().read_text(encoding="utf-8"))
+    return estimate_work(request, config, workers=max(1, int(args.workers)))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="CONDUCTOR 0.2.1 L4 lens")
     parser.add_argument("--request", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--estimate-work", action="store_true")
     args = parser.parse_args()
     try:
-        response = execute(args)
+        response = estimate(args).to_dict() if args.estimate_work else execute(args)
     except (json.JSONDecodeError, yaml.YAMLError, SchemaValidationError) as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}), file=sys.stderr)
         return 2

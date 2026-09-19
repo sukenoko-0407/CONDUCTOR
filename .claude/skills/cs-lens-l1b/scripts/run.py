@@ -12,12 +12,16 @@ from typing import Any
 import pandas as pd
 import yaml
 
+ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT / "CONDUCTOR_modules" / "tools"))
+
 from conductor_lens_l1b import run_l1b
 from conductor_stat_core import SchemaValidationError, atomic_write_json, file_sha256, stable_id, validate_instance
 from conductor_stat_core.contracts import prepare_output_directory, verify_request_inputs
+from lens_work_estimators import estimate_work
+from work_contract import ProgressReporter, WorkEstimate
 
 
-ROOT = Path(__file__).resolve().parents[4]
 SCHEMAS = ROOT / "CONDUCTOR_modules" / "schemas"
 
 
@@ -52,7 +56,14 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
     request = json.loads(Path(args.request).resolve().read_text(encoding="utf-8")); validate_instance(request, SCHEMAS / "execution_request.schema.json")
     if request["identity"]["skill_name"] != "cs-lens-l1b" or request["parameters"].get("operation") != "l1b": raise SchemaValidationError("Request must target cs-lens-l1b operation l1b")
     verify_request_inputs(request); config_path = Path(request["config_path"]).resolve(); config = yaml.safe_load(config_path.read_text(encoding="utf-8")); registry = json.loads(_input(request, "feature_spaces").read_text(encoding="utf-8"))
-    result = run_l1b(pd.read_csv(_input(request,"compounds"),dtype={"compound_id":"string"}), pd.read_csv(_input(request,"endpoint_table"),dtype={"compound_id":"string"}), pd.read_csv(_input(request,"context_catalog")), pd.read_csv(_input(request,"context_membership"),dtype={"compound_id":"string"}), registry["spaces"], request["endpoint_id"], run_seed=int(request["random_seed"]), neighbor_k=int(config["contexts"]["neighbor_k"]), min_endpoint_n=int(config["contexts"]["min_endpoint_n"]), lambda_min=float(config["lenses"]["l1b"]["lambda_min"]), screen_permutations=int(config["statistics"]["screen_permutations"]), final_permutations=int(config["statistics"]["final_permutations"]), screen_p_max=float(config["statistics"]["screen_p_max"]), report_q_max=float(config["statistics"]["report_q_max"]), calibration_permutations=int(config["statistics"]["calibration_permutations"]))
+    progress = ProgressReporter.from_environment(
+        int(config["statistics"]["final_permutations"]),
+        min_seconds=float(((config.get("runtime") or {}).get("progress") or {}).get("min_seconds", 5)),
+        min_fraction=float(((config.get("runtime") or {}).get("progress") or {}).get("min_fraction", 0.01)),
+    )
+    result = run_l1b(pd.read_csv(_input(request,"compounds"),dtype={"compound_id":"string"}), pd.read_csv(_input(request,"endpoint_table"),dtype={"compound_id":"string"}), pd.read_csv(_input(request,"context_catalog")), pd.read_csv(_input(request,"context_membership"),dtype={"compound_id":"string"}), registry["spaces"], request["endpoint_id"], run_seed=int(request["random_seed"]), neighbor_k=int(config["contexts"]["neighbor_k"]), min_endpoint_n=int(config["contexts"]["min_endpoint_n"]), lambda_min=float(config["lenses"]["l1b"]["lambda_min"]), screen_permutations=int(config["statistics"]["screen_permutations"]), final_permutations=int(config["statistics"]["final_permutations"]), screen_p_max=float(config["statistics"]["screen_p_max"]), report_q_max=float(config["statistics"]["report_q_max"]), calibration_permutations=int(config["statistics"]["calibration_permutations"]), progress_callback=lambda completed, total: progress.update(completed))
+    progress.finish()
+    result.metrics["progress_granularity"] = "loop"
     output = prepare_output_directory(Path(args.output_dir), args.overwrite); files = [("l1b_evidence","l1b_evidence.csv",result.evidence),("l1b_tests","l1b_tests.csv",result.tests),("l1a_diagnostics","l1a_diagnostics.csv",result.diagnostics),("score_observations","score_observations.csv",result.score_observations)]
     for _, name, frame in files: _csv(frame, output / name)
     _jsonl(result.findings, output / "findings.jsonl"); atomic_write_json(output / "l1b_calibration.json", result.calibration)
@@ -63,9 +74,19 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
     atomic_write_json(output/"artifact_manifest.json",manifest); validate_instance(manifest,SCHEMAS/"artifact_manifest.schema.json"); return {"status":status,"manifest":"artifact_manifest.json","primary":"findings.jsonl"}
 
 
+def estimate(args: argparse.Namespace) -> WorkEstimate:
+    request = json.loads(Path(args.request).resolve().read_text(encoding="utf-8"))
+    validate_instance(request, SCHEMAS / "execution_request.schema.json")
+    if request["identity"]["skill_name"] != "cs-lens-l1b" or request["parameters"].get("operation") != "l1b":
+        raise SchemaValidationError("Request must target cs-lens-l1b operation l1b")
+    verify_request_inputs(request)
+    config = yaml.safe_load(Path(request["config_path"]).resolve().read_text(encoding="utf-8"))
+    return estimate_work(request, config, workers=max(1, int(args.workers)))
+
+
 def main() -> int:
-    parser=argparse.ArgumentParser(description="CONDUCTOR 0.2.1 L1b lens"); parser.add_argument("--request",required=True); parser.add_argument("--output-dir",required=True); parser.add_argument("--workers",type=int,default=0); parser.add_argument("--overwrite",action="store_true"); args=parser.parse_args()
-    try: response=execute(args)
+    parser=argparse.ArgumentParser(description="CONDUCTOR 0.2.1 L1b lens"); parser.add_argument("--request",required=True); parser.add_argument("--output-dir",required=True); parser.add_argument("--workers",type=int,default=0); parser.add_argument("--overwrite",action="store_true"); parser.add_argument("--estimate-work",action="store_true"); args=parser.parse_args()
+    try: response=estimate(args).to_dict() if args.estimate_work else execute(args)
     except (json.JSONDecodeError,yaml.YAMLError,SchemaValidationError) as exc: print(json.dumps({"status":"failed","error":str(exc)}),file=sys.stderr); return 2
     except (FileNotFoundError,ValueError,TypeError,KeyError) as exc: print(json.dumps({"status":"failed","error":str(exc)}),file=sys.stderr); return 3
     except Exception as exc: print(json.dumps({"status":"failed","error":str(exc)}),file=sys.stderr); return 4

@@ -2,11 +2,11 @@
 
 ## 0. 文書状態
 
-- 状態: **実装前レビュー用**
+- 状態: **設計回答反映済み・実装着手可能**
 - 対象: `CONDUCTOR_0.2.1_R1_implementer_brief.md` が定義する R1.1
 - 作成日: 2026-09-19
 - この文書の作成時点では、R1 のコード変更を開始していない。
-- 未解決事項は `CONDUCTOR_0.2.1_R1_implementation_questions.md` に分離した。blocking 質問に依存する部分は、回答前に実装へ移さない。
+- `CONDUCTOR_0.2.1_R1_implementation_questions.md` の7件には設計担当から確定回答があり、blocking は残っていない。以後は回答後に改訂された正本と、その回答を実装判断に用いる。
 
 ## 1. 正本と優先順位
 
@@ -35,21 +35,24 @@ R1.1 は、単なる速度改善ではない。まず統計的 family を意味�
 - `.claude/skills/cs-lens-l4/scripts/run.py`
 - `.claude/skills/cs-lens-l5/python/conductor_lens_l5/l5.py`
 - `.claude/skills/cs-lens-l5/scripts/run.py`
+- `.claude/skills/cs-lens-l7/scripts/run.py`（estimate と node-level heartbeat のみ）
 - 各 Lens の `launch.py`（estimate mode の引数透過に必要な最小変更）
 - `CONDUCTOR_modules/config/defaults.yaml`
 - Runtime/Lens の unit・integration・performance test
 - R1 の運用・実装文書
 
+M-6 の feature deduplication は `cs-lens-l5` のみに適用する。L1b は M-1/M-2/M-10 の対象ではあるが M-6 の対象ではない。M-6 のために context builder、Phase 1、distance artifacts を変更・再生成しない。
+
 ### 2.2 原則として変更しない対象
 
 - stat-core の検定、p 値、BH 実装
-- `.claude/skills/cs-lens-l2/python/conductor_lens_l2/l2b.py`
-- `.claude/skills/cs-lens-l7/python/conductor_lens_l7/l7.py`
+- `.claude/skills/cs-lens-l2/python/conductor_lens_l2/l2b.py` の統計契約とアルゴリズム
+- `.claude/skills/cs-lens-l7/python/conductor_lens_l7/l7.py` の統計契約とアルゴリズム
 - context builder
 - scoring、deep dive、report の意味論
 - ProcessPool、shard、resource token、mmap、checkpoint の新設
 
-L2b/L7 へ work estimate と progress をどこまで適用するかは、引き継ぎ書内の「全 Lens」と「l2b.py/L7 を変更しない」の両方を満たす必要があるため、Q-002/Q-003 の回答後に確定する。
+L2b/L7 にも work estimate と時間 gate を適用する。進捗は core loop を変更せず runner の node-level liveness heartbeat とし、統計契約とアルゴリズムは変更しない。
 
 ## 3. 共通実装契約
 
@@ -63,6 +66,7 @@ class WorkEstimate:
     unit_count: int
     family_size: int
     peak_memory_bytes: int
+    estimated_seconds: float
     detail: dict[str, int]
 
     def to_dict(self) -> dict[str, object]: ...
@@ -74,7 +78,7 @@ class WorkEstimate:
 JSON は次の固定 field だけを stdout へ1行で返す。
 
 ```json
-{"unit_count":0,"family_size":0,"peak_memory_bytes":0,"detail":{}}
+{"unit_count":0,"family_size":0,"peak_memory_bytes":0,"estimated_seconds":0.0,"detail":{}}
 ```
 
 各 Lens runner の CLI を次のように拡張する。
@@ -102,9 +106,9 @@ _write_guard_manifest(...) -> Path
 
 判定順は固定する。
 
-1. `family_size > 500` かつ L4 ではない場合は `needs_design_review`。
+1. `family_size > 500` かつ L4 ではない場合は `needs_design_review`。L4 は parametric t-test であるためこの gate から除外するが、manifest に `family_gate: "exempt_parametric"` を必ず記録する。L4 以外は `family_gate: "applied"` とする。
 2. `peak_memory_bytes > 64 * 1024**3` なら `needs_design_review`。
-3. `unit_count / units_per_second > 3600` なら node を `needs_design_review`。
+3. `estimated_seconds > 3600` なら node を `needs_design_review`。Runtime は Lens 固有のコスト式や `units_per_second` を解釈しない。
 4. 当該 Run の実績時間と未実行 node の推定時間の合計が 21600 秒を超えるなら、次 node を開始せず `needs_design_review`。
 5. 閾値変更、candidate 削減、permutation 削減を Runtime が自動実行しない。
 
@@ -119,6 +123,11 @@ stdout/stderr 契約を汚さないため、Runtime が attempt ごとに空の 
 ```
 
 更新は「直近更新から5秒以上」または「総量の1%以上進んだ」の**遅い方**、すなわち両条件を満たした時だけ行う。Runtime は `subprocess.Popen` で process を監視し、stdout/stderr は別 thread で drain して deadlock を防ぐ。
+
+- L1b/L2a/L4/L5: `progress_granularity="loop"`。core callback から実進捗を出す。
+- L2b/L7: `progress_granularity="node"`。runner の liveness heartbeat のみを出す。
+
+選択した粒度は全 Lens の manifest に記録する。node 粒度では架空の `completed_units=0` を loop progress として報告せず、process 生存と elapsed time を heartbeat event に記録する。
 
 heartbeat がない時間の閾値は `clamp(20 * observed_interval, 60, 600)` 秒とする。超過時は node state を変更・kill せず、`heartbeat` event の payload に `stalled=true` を記録する。進捗再開時は `stalled=false` を記録する。
 
@@ -148,7 +157,7 @@ M-3/M-4/M-10b/M-11b を一つの統計契約変更として同一 stage で適�
 
 ## 4. Lens 別 work estimate 式
 
-全式で `B` は final permutation 数（既定1000）、実計算には観測統計1回を含むため `B1 = B + 1` とする。`family_size` は設定値からの粗い上限ではなく、入力を read-only で走査して実際の eligibility predicate と family key を適用した最大 family 件数とする。
+全式で `B` は final permutation 数（既定1000）、実計算には観測統計1回を含むため `B1 = B + 1` とする。`family_size` は設定値からの粗い上限ではなく、入力を read-only で走査して実際の eligibility predicate と family key を適用した最大 family 件数とする。`units_per_second` は設定に置く estimator 内部定数であり、Runtime は参照しない。L4 を含む全 Lens が保守係数1.25を含む `estimated_seconds` を返す。
 
 ### 4.1 L5
 
@@ -166,6 +175,7 @@ M-3/M-4/M-10b/M-11b を一つの統計契約変更として同一 stage で適�
 unit_count = B1 * C * F
 family_size = H5
 peak_memory_bytes = 8 * (4*N*F + C*N + 8*C*F + 2*F + 2*K)
+estimated_seconds = unit_count / 3_650_000 * 1.25
 ```
 
 `detail` は `compound_count, comparison_count, feature_count, block_count, permutations` を持つ。null distribution 全体を保持せず exceedance counter を更新する設計を前提とする。Python object/ID table 用の安全係数は上式へ 1.25 を掛け、ceil した値を最終 `peak_memory_bytes` とする。
@@ -176,19 +186,21 @@ peak_memory_bytes = 8 * (4*N*F + C*N + 8*C*F + 2*F + 2*K)
 
 - `N`: finite endpoint compound 数
 - `S`: eligible space 数
-- `T`: 全 space・context の eligible member 数合計
+- `T`: `sum((space, context) の eligible member 数)`。space 次元をすでに含む
 - `K`: neighbor_k
+- `Mmax`: eligible context の最大 member 数
 - `H1`: 同一 `(L1b, space, question)` の candidate test 最大数
 
 式:
 
 ```text
-unit_count = B1 * S * T
+unit_count = B1 * T
 family_size = H1
-peak_memory_bytes = 8 * (S*N*N + S*T*K + 4*S*T + 2*N)
+peak_memory_bytes = 8 * (S*N*N + T*K + 2*T + 2*N + 2*Mmax*Mmax)
+estimated_seconds = unit_count / 29_800_000 * 1.25
 ```
 
-float32 distance artifact も guard では float64 相当で保守的に数える。M-10a 後は space ごとの stable neighbor table を一度だけ作る。M-6 を L1b へ適用する具体的意味は Q-004 の回答で確定する。
+float32 distance artifact も guard では float64 相当で保守的に数える。M-10a は各 `(space, context)` の文脈部分行列だけを一度 stable sort し、選ばれた target/neighbor index を連結する。`2*Mmax^2` は部分距離行列と整列添字の一時領域であり、全体順位表 `S*N*N*4` は作らない。M-6 は L1b へ適用せず、既存 distance artifact と context catalog をそのまま使う。
 
 ### 4.3 L2a
 
@@ -206,6 +218,7 @@ float32 distance artifact も guard では float64 相当で保守的に数え�
 unit_count = B1 * P
 family_size = H2
 peak_memory_bytes = 8 * (N + 6*P + G + 3*Q)
+estimated_seconds = unit_count / 7_230_000 * 1.25
 ```
 
 `detail` は `pair_count, transformation_count, class_count, series_member_count, test_count, permutations` を持つ。
@@ -226,6 +239,7 @@ M-12 前の現行アルゴリズムを guard する式:
 unit_count = C4 * S4
 family_size = C4  # L4 は family_size gate の例外
 peak_memory_bytes = 8 * (C4*N*Fmax + C4*Fmax + N*Fmax)
+estimated_seconds = ((C4*S4)/31_700 + W*0.00804/available_workers) * 1.25
 ```
 
 M-12a 後の式:
@@ -234,13 +248,45 @@ M-12a 後の式:
 unit_count = C4 * S4
 family_size = C4
 peak_memory_bytes = 8 * (C4*N + C4*Fmax + N*Fmax + 4*C4)
+estimated_seconds = ((C4*S4)/31_700 + W*0.00804/available_workers) * 1.25
 ```
 
-`detail` は `candidate_count, space_count, observation_count, max_feature_count, description_cost_units` を持つ。`C4*S4` と description cost `W` を一つの node wall-time estimate へ結合する方法は Q-006 の回答で確定する。
+`detail` は `candidate_count, space_count, observation_count, max_feature_count, description_cost_units, available_workers` を持つ。複合コストは L4 estimator 内だけで秒へ換算され、Runtime に Lens 固有の例外式を置かない。L4 manifest は `family_gate="exempt_parametric"` を記録する。
 
-### 4.5 L2b/L7
+### 4.5 L2b
 
-family size と peak memory は read-only prepass で記録可能である。一方、R1.1 が採用する `units_per_second` が定義されていないため、3600秒 gate の式は Q-002 の回答待ちとする。未回答のまま未知の速度を仮定して合格させない。
+記号:
+
+- `O2b`: 全系列内で `_contributions` が走査する observation 延べ数
+- `H2b`: 現行 family key に属する test 最大数
+
+式:
+
+```text
+unit_count = B1 * O2b
+family_size = H2b
+estimated_seconds = unit_count / 50_858 * 1.25
+```
+
+peak memory は read-only prepass で、入力表、prepared series、contribution/null counter の live array を合算して返す。時間 gate は他 Lens と同じく `estimated_seconds` に適用する。`progress_granularity="node"` とする。
+
+### 4.6 L7
+
+記号:
+
+- `C7`: eligible candidate 数
+- `Q7=2`: 固定 question 数
+- `H7`: 現行 family key に属する test 最大数
+
+式:
+
+```text
+unit_count = B1 * C7 * Q7
+family_size = H7
+estimated_seconds = unit_count / 6_004 * 1.25
+```
+
+peak memory は read-only prepass で input/candidate/null counter の live array を合算して返す。時間 gate の例外を作らず、`progress_granularity="node"` とする。L2b/L7 の統計契約とアルゴリズムは変更しない。
 
 ## 5. M-1〜M-16 実装項目
 
@@ -248,14 +294,15 @@ family size と peak memory は read-only prepass で記録可能である。一
 
 - 対象: 共通 `work_contract.py`、4 Lens の core/runner、Runtime `PipelineCoordinator.execute_node()`。
 - before: Runtime は node 起動前に input-dependent workload を知らず、`subprocess.run()` で直ちに workload を開始する。
-- after: 各 Lens の `estimate(args) -> WorkEstimate` を副作用なしで実行し、Runtime gate 合格後だけ workload を起動する。
-- 新規状態: attempt 単位の estimate、guard decision、estimated seconds。
+- after: 各 Lens の `estimate(args) -> WorkEstimate` を副作用なしで実行し、各 Lens 自身がコストモデルから `estimated_seconds` を算出する。Runtime は共通 gate 合格後だけ workload を起動する。
+- 新規状態: attempt 単位の estimate、guard decision、estimated seconds、family gate mode。
 - artifact: `attempts/<id>/work_estimate.json`、event payload、manifest metrics。
 - estimate 式: 4章の式を使用する。
 - test:
   - dataclass JSON round-trip、負値/未知 field 拒否。
   - estimate mode が output directory、DB、Runtime state を作らない。
-  - threshold の境界値 `==` は合格、`>` は停止。
+  - `estimated_seconds` と memory/family threshold の境界値 `==` は合格、`>` は停止。
+  - L4 は family gate を黙って skip せず `exempt_parametric` を記録する。
   - Skill subprocess が呼ばれないことを mock で確認。
 - validation: fixture の estimate と actual unit の一致、estimate/actual ratio を収集。
 
@@ -263,7 +310,7 @@ family size と peak memory は read-only prepass で記録可能である。一
 
 - 対象: Runtime `dag.py/state.py`、対象 Lens の長時間 loop と runner。
 - before: `subprocess.run()` 終了時まで Runtime から内部進捗を観測できない。
-- after: `Popen`、atomic progress file、反復 heartbeat event、stalled warning を使用する。
+- after: `Popen`、atomic progress file、反復 heartbeat event、stalled warning を使用し、manifest に `progress_granularity` を記録する。
 - core signature:
 
 ```python
@@ -274,8 +321,8 @@ run_l5(..., config: Mapping[str, Any]) -> L5Result
 run_l5(..., config: Mapping[str, Any], progress: ProgressCallback | None = None) -> L5Result
 ```
 
-  同じ keyword-only callback を L1b/L2a/L4 へ追加する。
-- artifact/state: latest progress、heartbeat interval、stalled warning。node state は `running` のまま。
+  同じ keyword-only callback を L1b/L2a/L4 へ追加する。L2b/L7 は core loop を変えず runner の liveness heartbeat とする。
+- artifact/state: latest progress、heartbeat interval、stalled warning、`progress_granularity="loop"|"node"`。node state は `running` のまま。
 - test: 5秒/1% throttling、60/600秒 clamp、反復 event ID、停滞後復帰、stdout/stderr 大量出力時の deadlock 回避。
 - validation: 既知時間の slow fixture で Runtime summary が単調増加し、stall が process kill を起こさない。
 
@@ -313,13 +360,13 @@ run_l5(..., config: Mapping[str, Any], progress: ProgressCallback | None = None)
 
 ### M-6 Correlation deduplication
 
-- 対象: L5 と L1b。共通 helper と mapping artifact を追加する。
+- 対象: **L5 のみ**。L5 helper と mapping artifact を追加する。L1b、context builder、Phase 1、distance artifacts は変更しない。
 - before: Tier1/2 の高相関 feature をすべて計算対象にする。
-- after: pairwise finite Pearson の `abs(r)>=0.95` を edge とする connected component を作り、`tier` 昇順、次に feature ID lexical の代表だけを計算する。
+- after: L5 の Tier1/2 feature について pairwise finite Pearson の `abs(r)>=0.95` を edge とする connected component を作り、`tier` 昇順、次に feature ID lexical の代表だけを計算する。
 - artifact: `feature_representative_map.jsonl`。各 row に `excluded_feature_id, representative_feature_id, component_id, abs_correlation, rule_version`。
-- estimate: L5 の `F` は代表数。L1b の扱いは Q-004 回答に従う。
+- estimate: L5 の `F` は代表数。L1b の estimator と入力は不変。
 - test: chain A-B/B-C で A-C が閾値未満でも1 component、tie-break、NaN pair、入力列順非依存。
-- validation: representative 数、family size、Finding の科学的差分を明示し、単なる性能同値とは扱わない。
+- validation: representative 数、family size、Finding の科学的差分を明示し、単なる性能同値とは扱わない。L1b context/distance artifact の hash が M-6 前後で不変であることも確認する。
 
 ### M-7 Calibration signature
 
@@ -336,7 +383,8 @@ run_l5(..., config: Mapping[str, Any], progress: ProgressCallback | None = None)
 - artifact: `calibration_signature` object と `calibration_signature_sha256`。
 - mismatch: warning only。threshold を自動変更しない。
 - test: field/順序変更、同値 canonical JSON、warning-only。
-- validation: reference の置き場所と比較主体は Q-005 回答後に固定。
+- reference: `calibration.reference_manifest` は project root からの相対 path とする。未指定または不存在は `not_compared`、不一致は warning のみで Run を止めない。M-8 完了後に生成物を既定 reference として `defaults.yaml` へ設定する。
+- validation: 開発機と Ubuntu 本番機の異なる project root で同じ相対 path が解決されることを確認する。
 
 ### M-8 Calibration regeneration
 
@@ -356,11 +404,11 @@ run_l5(..., config: Mapping[str, Any], progress: ProgressCallback | None = None)
 - 合格: Finding exact、数値契約を満たし、parallel section の `CPU time / wall time >= workers*0.5`。speedup 倍率自体は保証しない。
 - test/validation: 専有 Ubuntu 64-core/755 GiB 機で実測し、Windows 開発機の値を受入値にしない。
 
-### M-10a L1b stable neighbor table
+### M-10a L1b context-local stable neighbor table
 
 - 対象: `local_flatness()`, `run_l1b()`。
 - before: context/permutation の内側で距離順序と近傍抽出を反復する。
-- after: space ごとに stable exact sort した full neighbor table を一度作り、context member index を連結して利用する。距離 tie は compound ID lexical で決定する。
+- after: **各 `(space, context)` について、その文脈の member だけから成る部分距離行列を取り出し、その中で k 近傍を一度だけ選ぶ。** 各 target の候補集合は必ず同一 context の member に限定し、自己を除外する。全化合物に対する上位 k を先に切り出してから context member へ絞り込む実装は禁止する。距離 tie は距離昇順、次に compound ID 昇順で決定する。
 - signature:
 
 ```python
@@ -368,13 +416,15 @@ run_l5(..., config: Mapping[str, Any], progress: ProgressCallback | None = None)
 local_flatness(distance, endpoint, indices, *, neighbor_k, global_variance)
 
 # after
-build_neighbor_table(distance, compound_ids, *, neighbor_k) -> NeighborTable
+build_context_neighbor_table(
+    distance, compound_ids, context_indices, *, neighbor_k
+) -> ContextNeighborTable
 local_flatness_from_neighbors(neighbors, endpoint, indices, *, global_variance)
 ```
 
-- state: `neighbor_indices`, `neighbor_distances`, context member offsets。
+- state: context-local `target_indices`, `neighbor_indices`、context offsets。`context_indices` は compound ID 昇順を保ち、部分行列に `np.argsort(..., kind="stable")` を用いる。全体順位表は保持しない。
 - estimate: 4.2。
-- test: old exact sort reference と lambda relative difference `<=1e-9`、p/Finding exact、distance tie の再現性。
+- test: 現行 `np.lexsort` reference と **neighbor index、lambda、p値、Finding を完全一致**させる。連続距離 fixture に加え、整数距離行列で同順位距離を含む fixture を必須とする。文脈外 compound が全体距離の上位を占めても、選ばれる k 件がすべて文脈内であることを検証する。
 
 ### M-10b L1b family
 
@@ -403,7 +453,7 @@ pair_deltas(arrays, endpoint_vector, permutation_indices=None) -> np.ndarray
 
 - state: integer arrays、group offsets。candidate 0件なら permutation engine を起動せず空成果物を返す。
 - estimate: 4.3。
-- test: old reference exact delta、permutation seed、missing ID、empty candidates、入力行順非依存。
+- test: old reference と delta **完全一致**、permutation seed、missing ID、empty candidates、入力行順非依存。
 
 ### M-11b L2a family
 
@@ -434,7 +484,7 @@ pair_deltas(arrays, endpoint_vector, permutation_indices=None) -> np.ndarray
   - `t.ppf` は設定ごとに一度だけ計算する。
   - t statistic/p 値は mean/std/n から vectorized に算出する。
 - state: neighbor index matrix、summary arrays。2M row guard は出力前に評価。
-- test: scalar reference relative difference `<=1e-9`、p/Finding exact、tie、多数 candidate、K未満。
+- test: scalar reference と lower bound/p値/Finding を完全一致、tie、多数 candidate、K未満。
 - validation: peak RSS、wall time、row count。
 
 ### M-13 D019 exclusion
@@ -469,10 +519,15 @@ runtime:
     l1b: 29800000
     l2a: 7230000
     l4: 31700
+    l2b: 50858
+    l7: 6004
+  l4:
+    candidate_cap: 100
 ```
 
-- L4 は family size gate 例外。`estimate/actual >=3` は warning。
-- candidate cap は Q-001 の回答まで現行100を維持する。
+- 全 Lens estimator が内部定数と保守係数1.25を使って `estimated_seconds` を返し、Runtime はその値だけを時間 gate と比較する。
+- L4 は family size gate の parametric 例外であり、manifest に `family_gate="exempt_parametric"` を記録する。`estimate/actual >=3` は warning。
+- candidate cap は R1-1〜R1-9 で現行100を維持し、R1-10 の別 commit だけで変更する。
 - test: config validation、各 budget、run cumulative budget、3x warning。
 - validation: production fixture の estimate が監査 report の測定値と整合。
 
@@ -480,7 +535,7 @@ runtime:
 
 - 対象: `defaults.yaml` の L4 cap、scale guard test。
 - 見解: **条件付き採用候補**。M-12/M-13、64 GiB preflight、2M row guard、1時間 node budgetを全て合格した後に限り、探索の豊富さを回復する選択肢として採用する価値がある。ただし R1 の必須修正と結合せず、別 commit/stage とする。
-- before/after: `100 -> 250000` は Q-001 の明示回答後だけ行う。
+- before/after: R1-1〜R1-9 は100。M-15を採用する場合だけ、R1-10 の別 commit で `100 -> 250000` とする。
 - test: 249,999/250,000/250,001 境界、estimate stop、row guard。
 - validation: 10k、50k、250k の段階測定。250k を直接本番投入しない。
 
@@ -500,7 +555,7 @@ runtime:
 1. R1-1: M-1/M-14/M-16。WorkEstimate と pre-launch guard。
 2. R1-2: M-2。progress/heartbeat/stalled。
 3. R1-3: M-3/M-4/M-10b/M-11b。統計 family 修正。
-4. **ここで停止して中間報告する。** full production Run はまだ実施しない。
+4. **ここで本番データを族分割までのコードで実行し、必ず停止して中間報告する。** L5/L1b/L2a/L2b/L7 の最大族サイズと Finding 件数を報告し、次の期待値（L5 52/axis、L1b 84/space、L2a 117、L2b 75、L7 86）から外れた場合は原因を解消するまで R1-4 へ進まない。族をさらに細分化して合わせない。
 5. R1-4: M-6。
 6. R1-5: M-5/M-10a/M-11a/M-12。
 7. R1-6: M-13。
@@ -541,8 +596,11 @@ runtime:
 
 ### 7.3 数値・決定性の合格条件
 
-- M-5/M-10a/M-12: reference との relative difference `<=1e-9`。
-- p 値と Finding 集合: brief が exact を要求する項目は exact 一致。
+- M-5 の相関値と M-12a の距離: reference との relative difference `<=1e-9`。
+- M-10a: 文脈内 neighbor index と lambda を reference に**完全一致**させる。同順位距離 fixture を必須とする。
+- M-11a: delta を reference に**完全一致**させる。
+- M-12b: lower bound、p 値、Finding を reference に完全一致させる。
+- 全対象の p 値と Finding 集合: exact 一致。
 - worker 1/2/64: Finding exact 一致。
 - stable sort/argpartition tie: 入力行順、hash seed、worker 数に依存しない。
 - fixed `run_seed` と同じ input/config/code hash で rerun 可能。
@@ -554,7 +612,7 @@ runtime:
 - `work_estimate.json`
 - progress/heartbeat Runtime event
 - runtime summary の latest progress/stalled/guard decision
-- manifest metrics の estimate、actual、ratio warning
+- manifest metrics の estimate、actual、ratio warning、`progress_granularity`、`family_gate`
 - family key
 - `feature_representative_map.jsonl`
 - calibration signature/hash
@@ -573,7 +631,7 @@ schema version は 0.2.1 のままとし、artifact schema が任意 metrics を
 |M-3|1–1.5|L5 comparison 再定義|
 |M-4|0.5–1|L5 family と回帰 test|
 |M-5|4–6|GEMM/permutation engine、数値同値|
-|M-6|3–5|L1b 解釈確定後。科学的差分検証を含む|
+|M-6|3–5|L5のみ。representative mapping と科学的差分検証を含む|
 |M-7|2–3|signature、参照比較、warning|
 |M-8|1–2|運用準備・比較 report。計算待ちは除外|
 |M-9|3–5|専有機での1/2/64測定と解析|
@@ -587,15 +645,16 @@ schema version は 0.2.1 のままとし、artifact schema が任意 metrics を
 |M-15|0.5–1|採用時のみ。段階測定は別|
 |M-16|1–2|M-1/M-12 と重複する memory model|
 
-重複作業を統合した全体見積りは **29–44 person-day**。blocking 質問の回答によって、特に M-1/M-2/M-6/M-7/M-15 は変動する。
+重複作業を統合した全体見積りは **29–44 person-day**。7件の設計回答を反映済みで、この見積りを実装基準値とする。正式 production/calibration Run の経過時間は含まない。
 
-## 10. 初回レビューの出口条件
+## 10. 実装着手条件の充足
 
-次を満たすまでコード実装へ進まない。
+初回レビューの出口条件は次のとおりすべて充足した。
 
-- blocking 質問への回答が得られている。
-- WorkEstimate の全 Lens 適用範囲と L4 複合コスト式が確定している。
-- L1b に対する M-6 の科学的意味が確定している。
-- M-15 の cap default が確定している。
-- stage R1-3 後に一旦停止することが合意されている。
+- blocking 質問7件への回答済み。未解決blockingは0件。
+- WorkEstimate は全 Lens に適用し、各 Lens が `estimated_seconds` を返す。L4 複合式も確定済み。
+- M-6 はL5だけに適用し、L1b/context builder/Phase 1 artifactsへ適用しない。
+- M-15 はR1-9までcap 100を維持し、採用時だけR1-10の別commitで変更する。
+- stage R1-3後に本番データの族サイズとFinding件数を報告し、一旦停止する。
 
+この改訂版の報告後、R1-1のコード実装へ進んでよい。新しい不明点が生じた場合は、`CONDUCTOR_0.2.1_R1_implementation_questions.md` へ同じ形式で追記し、独断で決めない。

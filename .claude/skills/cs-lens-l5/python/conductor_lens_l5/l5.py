@@ -1,13 +1,12 @@
-"""L5 context-pair correlation sign-conflict tests."""
+"""L5 context-versus-axis-complement correlation sign-conflict tests."""
 
 from __future__ import annotations
 
 import json
 import math
 from dataclasses import dataclass
-from itertools import combinations
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -112,6 +111,7 @@ def run_l5(
     screen_p_max: float = 0.05,
     report_q_max: float = 0.05,
     calibration_permutations: int = 20,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> L5Result:
     if not 1 <= calibration_permutations <= screen_permutations <= final_permutations:
         raise ValueError("Permutation counts must satisfy calibration <= screen <= final")
@@ -128,7 +128,16 @@ def run_l5(
     position = {value: index for index, value in enumerate(compound_ids)}
     membership: dict[str, np.ndarray] = {}
     for context_id, group in context_membership.groupby(context_membership["context_id"].astype(str), sort=True):
-        membership[str(context_id)] = np.asarray(sorted(position[value] for value in group["compound_id"].astype(str) if value in position), dtype=int)
+        membership[str(context_id)] = np.asarray(
+            sorted(
+                {
+                    position[value]
+                    for value in group["compound_id"].astype(str)
+                    if value in position
+                }
+            ),
+            dtype=int,
+        )
     eligible = context_catalog.copy()
     for column, default in (("is_representative", True), ("eligible", True)):
         if column not in eligible:
@@ -140,27 +149,40 @@ def run_l5(
         str(axis): sorted(str(value) for value in group["context_id"] if str(value) in membership)
         for axis, group in eligible.groupby("axis_id", sort=True)
     }
-    context_pairs = [(axis, left, right) for axis, ids in sorted(axes.items()) for left, right in combinations(ids, 2)]
+    comparisons: list[tuple[str, str, np.ndarray]] = []
+    for axis_id, context_ids in sorted(axes.items()):
+        if not context_ids:
+            continue
+        axis_union = np.asarray(
+            sorted({int(index) for context_id in context_ids for index in membership[context_id]}),
+            dtype=int,
+        )
+        for context_id in context_ids:
+            focal = membership[context_id]
+            complement = np.setdiff1d(axis_union, focal, assume_unique=True)
+            if focal.size < min_endpoint_n or complement.size < min_endpoint_n:
+                continue
+            comparisons.append((axis_id, context_id, complement))
     feature_values = {name: features[name].to_numpy(dtype=float) for name in sorted(features.columns)}
     universe: list[dict[str, Any]] = []
     candidates: list[dict[str, Any]] = []
-    for axis_id, left_id, right_id in context_pairs:
-        shared_n = len(set(membership[left_id]).intersection(set(membership[right_id])))
+    for axis_id, context_id, complement_indices in comparisons:
         for feature_id, x in feature_values.items():
-            left_r, left_n = _correlation(x, y, membership[left_id])
-            right_r, right_n = _correlation(x, y, membership[right_id])
+            left_r, left_n = _correlation(x, y, membership[context_id])
+            right_r, right_n = _correlation(x, y, complement_indices)
             if left_n < min_endpoint_n or right_n < min_endpoint_n or not math.isfinite(left_r) or not math.isfinite(right_r):
                 continue
             row = {
                 "axis_id": axis_id,
-                "context_a": left_id,
-                "context_b": right_id,
+                "context_a": context_id,
+                "context_b": "complement",
+                "complement_indices": complement_indices,
                 "feature_id": feature_id,
                 "r_a": left_r,
                 "r_b": right_r,
                 "n_a": left_n,
                 "n_b": right_n,
-                "shared_n": shared_n,
+                "shared_n": 0,
                 "statistic": _fisher_difference(left_r, right_r),
                 "global_r": _correlation(x, y, np.arange(len(y), dtype=int))[0],
                 "x": x,
@@ -171,7 +193,7 @@ def run_l5(
     nulls: dict[str, list[float]] = {}
     candidate_by_key: dict[str, dict[str, Any]] = {}
     for row in candidates:
-        key = stable_id("L5C", {name: row[name] for name in ("axis_id", "context_a", "context_b", "feature_id")})
+        key = stable_id("L5C", {name: row[name] for name in ("axis_id", "context_a", "feature_id")})
         row["candidate_key"] = key
         candidate_by_key[key] = row
         nulls[key] = []
@@ -184,13 +206,15 @@ def run_l5(
             count = 0
             for row in universe:
                 left_r, _ = _correlation(row["x"], permuted, membership[row["context_a"]])
-                right_r, _ = _correlation(row["x"], permuted, membership[row["context_b"]])
+                right_r, _ = _correlation(row["x"], permuted, row["complement_indices"])
                 count += bool(math.isfinite(left_r) and math.isfinite(right_r) and abs(left_r) >= min_abs_r and abs(right_r) >= min_abs_r and left_r * right_r < 0)
             calibration_counts.append(count)
         for key, row in candidate_by_key.items():
             left_r, _ = _correlation(row["x"], permuted, membership[row["context_a"]])
-            right_r, _ = _correlation(row["x"], permuted, membership[row["context_b"]])
+            right_r, _ = _correlation(row["x"], permuted, row["complement_indices"])
             nulls[key].append(_fisher_difference(left_r, right_r) if math.isfinite(left_r) and math.isfinite(right_r) else math.nan)
+        if progress_callback is not None:
+            progress_callback(iteration + 1, final_permutations)
     screen_p = {key: empirical_p_value(row["statistic"], nulls[key], "two_sided_abs") for key, row in candidate_by_key.items()}
     survivors = {key for key, value in screen_p.items() if value <= screen_p_max}
     for iteration in range(screen_permutations, final_permutations):
@@ -201,15 +225,17 @@ def run_l5(
         for key in sorted(survivors):
             row = candidate_by_key[key]
             left_r, _ = _correlation(row["x"], permuted, membership[row["context_a"]])
-            right_r, _ = _correlation(row["x"], permuted, membership[row["context_b"]])
+            right_r, _ = _correlation(row["x"], permuted, row["complement_indices"])
             nulls[key].append(_fisher_difference(left_r, right_r) if math.isfinite(left_r) and math.isfinite(right_r) else math.nan)
+        if progress_callback is not None:
+            progress_callback(iteration + 1, final_permutations)
     records: list[TestRecord] = []
     for key, row in sorted(candidate_by_key.items()):
         final = key in survivors
         records.append(TestRecord(
             candidate_key=key,
             test_id=stable_id("TEST", {"lens": "L5", "candidate": key, "question": "correlation_sign_conflict"}),
-            family_key="L5|correlation_sign_conflict",
+            family_key=f"L5|{row['axis_id']}|correlation_sign_conflict",
             statistic=float(row["statistic"]),
             alternative="two_sided_abs",
             p_value=empirical_p_value(row["statistic"], nulls[key], "two_sided_abs") if final else 1.0,
@@ -241,27 +267,30 @@ def run_l5(
         })
         if record.status != "final" or adjusted_record.q_value is None or adjusted_record.q_value > report_q_max:
             continue
-        involved = sorted(set(compound_ids[index] for index in np.concatenate((membership[row["context_a"]], membership[row["context_b"]]))))
+        involved = sorted(set(compound_ids[index] for index in np.concatenate((membership[row["context_a"]], row["complement_indices"]))))
         test = {
             "test_id": record.test_id, "question": "correlation_sign_conflict", "method": "murcko_block_permutation_fisher_z",
             "statistic": float(record.statistic), "p_value": float(record.p_value), "q_value": float(adjusted_record.q_value),
             "null_iterations": int(record.null_iterations),
         }
-        subject = f"{row['feature_id']}|{row['context_a']}|{row['context_b']}"
+        subject = f"{row['feature_id']}|{row['context_a']}|complement"
         finding = base_finding(
             lens="L5", endpoint_id=endpoint_id, subject_type="feature", subject_id=subject,
-            condition_id=f"{row['context_a']}|{row['context_b']}", effect_direction="mixed",
+            condition_id=f"{row['context_a']}|complement", effect_direction="mixed",
             effect_size=float(row["statistic"]), effect_unit="fisher_z_difference",
             support_n=int(row["n_a"] + row["n_b"] - row["shared_n"]), tests=[test],
             falsification_type="murcko_block_permutation",
             falsification_parameters={"membership_fixed": True, "axis_id": row["axis_id"]},
             falsification_rule=f"BH q <= {report_q_max} with opposite correlation signs",
-            entities={"context_ids": [row["context_a"], row["context_b"]], "feature_ids": [row["feature_id"]], "compound_ids": involved},
+            entities={"context_ids": [row["context_a"]], "feature_ids": [row["feature_id"]], "compound_ids": involved},
             citations=[{"citation_id": stable_id("CIT", {"row_id": evidence_id}), "table_ref": f"l5_evidence.csv#row_id={evidence_id}"}],
         )
         provisional.append(finding)
-        for context_id, role, sign in ((row["context_a"], "a", 1.0), (row["context_b"], "b", -1.0)):
-            for index in membership[context_id]:
+        for context_id, role, sign, indices in (
+            (row["context_a"], "focal", 1.0, membership[row["context_a"]]),
+            ("complement", "complement", -1.0, row["complement_indices"]),
+        ):
+            for index in indices:
                 if np.isfinite(row["x"][index]):
                     score_rows.append({
                         "finding_key": finding["finding_key"], "row_id": stable_id("SCOREROW", {"finding": finding["finding_key"], "context": context_id, "compound": compound_ids[index]}),
@@ -275,5 +304,7 @@ def run_l5(
     metrics = {
         "universe_count": len(universe), "screen_candidate_count": len(candidates), "final_candidate_count": len(survivors),
         "finding_count": len(provisional), "participation_rate": float(np.mean(participation)) if participation else 0.0,
+        "compound_count": len(compound_ids), "comparison_count": len(comparisons),
+        "feature_count": len(feature_values), "block_count": len(set(blocks)),
     }
     return L5Result(pd.DataFrame(evidence_rows), pd.DataFrame(test_rows), pd.DataFrame(score_rows), assign_finding_ids(provisional), calibration, metrics)

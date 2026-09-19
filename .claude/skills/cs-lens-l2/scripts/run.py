@@ -13,13 +13,17 @@ from typing import Any
 import pandas as pd
 import yaml
 
+SKILL_DIR = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = SKILL_DIR.parents[2]
+sys.path.insert(0, str(PROJECT_ROOT / "CONDUCTOR_modules" / "tools"))
+
 from conductor_lens_l2 import run_l2a, run_l2b
 from conductor_stat_core import SchemaValidationError, atomic_write_json, file_sha256, stable_id, validate_instance
 from conductor_stat_core.contracts import prepare_output_directory, verify_request_inputs
+from lens_work_estimators import estimate_work
+from work_contract import ProgressReporter, WorkEstimate
 
 
-SKILL_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = SKILL_DIR.parents[2]
 SCHEMA_DIR = PROJECT_ROOT / "CONDUCTOR_modules" / "schemas"
 
 
@@ -110,6 +114,11 @@ def _run(args: argparse.Namespace) -> dict[str, str]:
     statistics = config["statistics"]
     if operation == "l2a":
         lens = config["lenses"]["l2a"]
+        progress = ProgressReporter.from_environment(
+            int(statistics["final_permutations"]),
+            min_seconds=float(((config.get("runtime") or {}).get("progress") or {}).get("min_seconds", 5)),
+            min_fraction=float(((config.get("runtime") or {}).get("progress") or {}).get("min_fraction", 0.01)),
+        )
         result = run_l2a(
             _database_pairs(_one_input(request, "mmp_database")),
             pd.read_csv(_one_input(request, "endpoint_table"), dtype={"compound_id": "string"}),
@@ -120,7 +129,10 @@ def _run(args: argparse.Namespace) -> dict[str, str]:
             neutral_abs_delta_max=float(config["measurement"]["neutral_abs_delta_max"]), tolerance_variance_max=float(config["measurement"]["tolerance_variance_max"]),
             screen_permutations=int(statistics["screen_permutations"]), final_permutations=int(statistics["final_permutations"]),
             screen_p_max=float(statistics["screen_p_max"]), report_q_max=float(statistics["report_q_max"]),
+            progress_callback=lambda completed, total: progress.update(completed),
         )
+        progress.finish()
+        result.metrics["progress_granularity"] = "loop"
         for finding in result.findings:
             validate_instance(finding, SCHEMA_DIR / "finding.schema.json")
         _write_csv(result.evidence, output / "l2a_evidence.csv")
@@ -148,6 +160,7 @@ def _run(args: argparse.Namespace) -> dict[str, str]:
         calibration_permutations=int(statistics["calibration_permutations"]),
         enrichment_thresholds=lens["enrichment_thresholds"],
     )
+    result.metrics["progress_granularity"] = "node"
     for finding in result.findings:
         validate_instance(finding, SCHEMA_DIR / "finding.schema.json")
     _write_csv(result.evidence, output / "l2b_evidence.csv")
@@ -195,15 +208,28 @@ def _run(args: argparse.Namespace) -> dict[str, str]:
     return {"status": status, "manifest": manifest_path.name, "primary": "findings.jsonl"}
 
 
+def estimate(args: argparse.Namespace) -> WorkEstimate:
+    request = json.loads(Path(args.request).resolve().read_text(encoding="utf-8"))
+    validate_instance(request, SCHEMA_DIR / "execution_request.schema.json")
+    if request["identity"]["skill_name"] != "cs-lens-l2":
+        raise SchemaValidationError("Execution Request skill_name does not match cs-lens-l2")
+    if request["parameters"].get("operation") not in {"l2a", "l2b"}:
+        raise SchemaValidationError("parameters.operation must be 'l2a' or 'l2b'")
+    verify_request_inputs(request)
+    config = yaml.safe_load(Path(request["config_path"]).resolve().read_text(encoding="utf-8"))
+    return estimate_work(request, config, workers=max(1, int(args.workers)))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="CONDUCTOR 0.2.1 L2 lens")
     parser.add_argument("--request", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--estimate-work", action="store_true")
     args = parser.parse_args()
     try:
-        response = _run(args)
+        response = estimate(args).to_dict() if args.estimate_work else _run(args)
     except (json.JSONDecodeError, yaml.YAMLError, SchemaValidationError) as exc:
         print(json.dumps({"status": "failed", "error": str(exc)}), file=sys.stderr)
         return 2

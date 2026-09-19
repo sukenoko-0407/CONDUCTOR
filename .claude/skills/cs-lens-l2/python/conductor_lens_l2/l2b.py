@@ -503,6 +503,7 @@ def run_l2b(
     participating_observations = sum(len(items) for items in series.values())
     metrics = {
         "series_count": len(series),
+        "observation_work_count": participating_observations,
         "fragment_count": len(eligible),
         "test_count": len(tests),
         "final_candidate_count": int(tests["status"].eq("final").sum()) if not tests.empty else 0,

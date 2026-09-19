@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -349,6 +349,7 @@ def score_l4_candidates(
     neighbor_k: int = 10,
     min_context_size: int = 5,
     report_q_max: float = 0.05,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> L4Result:
     selected = endpoints.loc[endpoints["endpoint_id"].astype(str).eq(endpoint_id), ["compound_id", "oriented_value"]].copy()
     selected["compound_id"] = selected["compound_id"].astype(str)
@@ -435,6 +436,8 @@ def score_l4_candidates(
         )
         score_material[key] = space_rows
         material_by_candidate[key] = {"candidate_id": candidate_id, "sources": sources, "transformations": transformations, "evidence_id": evidence_id}
+        if progress_callback is not None:
+            progress_callback(candidate_index + 1, len(generation.candidates))
 
     adjusted = benjamini_hochberg(candidate_records)
     test_rows: list[dict[str, Any]] = []; score_rows: list[dict[str, Any]] = []; provisional: list[dict[str, Any]] = []

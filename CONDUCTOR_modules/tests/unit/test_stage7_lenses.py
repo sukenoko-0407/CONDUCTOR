@@ -8,7 +8,7 @@ import pytest
 from rdkit import Chem
 
 from conductor_fragment_engine import FragmentationConfig, fragment_compound
-from conductor_lens_l1b import local_flatness
+from conductor_lens_l1b import local_flatness, run_l1b
 from conductor_lens_l2 import run_l2a
 from conductor_lens_l4 import (
     L4GenerationResult,
@@ -33,6 +33,37 @@ def test_l1b_flatness_excludes_self_and_requires_full_neighbor_count() -> None:
     assert len(predictions) == 12
     assert predictions[0] == 1.5
     assert errors[0] == 2.25
+
+
+def test_l1b_family_is_split_by_space(tmp_path) -> None:
+    identifiers = [f"C{index:02d}" for index in range(12)]
+    positions = np.arange(12, dtype=float)
+    distance_path = tmp_path / "distance.npy"
+    metadata_path = tmp_path / "distance.json"
+    np.save(distance_path, np.abs(positions[:, None] - positions[None, :]).astype(np.float32))
+    metadata_path.write_text(json.dumps({"compound_ids": identifiers}), encoding="utf-8")
+    result = run_l1b(
+        pd.DataFrame({"compound_id": identifiers, "canonical_smiles": ["CC"] * 12}),
+        pd.DataFrame({"compound_id": identifiers, "endpoint_id": ["EP"] * 12, "oriented_value": positions}),
+        pd.DataFrame([{"context_id": "CTX", "is_representative": True, "eligible": True, "translation_status": "native"}]),
+        pd.DataFrame([{"context_id": "CTX", "compound_id": value} for value in identifiers]),
+        [
+            {"space_id": "D001", "tier": 1, "distance_path": str(distance_path), "distance_metadata_path": str(metadata_path)},
+            {"space_id": "D002", "tier": 1, "distance_path": str(distance_path), "distance_metadata_path": str(metadata_path)},
+        ],
+        "EP",
+        run_seed=3,
+        neighbor_k=2,
+        screen_permutations=1,
+        final_permutations=1,
+        screen_p_max=1.0,
+        report_q_max=0.05,
+        calibration_permutations=1,
+    )
+    assert set(result.tests["family_key"]) == {
+        "L1b|D001|conditional_flatness",
+        "L1b|D002|conditional_flatness",
+    }
 
 
 def test_l5_detects_planted_same_axis_sign_reversal(tmp_path) -> None:
@@ -62,9 +93,161 @@ def test_l5_detects_planted_same_axis_sign_reversal(tmp_path) -> None:
         report_q_max=0.20,
         calibration_permutations=20,
     )
-    assert len(result.findings) == 1
-    assert result.evidence.iloc[0]["r_a"] > 0.99
-    assert result.evidence.iloc[0]["r_b"] < -0.99
+    assert len(result.findings) == 2
+    assert set(result.evidence["context_b"]) == {"complement"}
+    assert set(result.tests["family_key"]) == {"L5|AX|correlation_sign_conflict"}
+    assert result.evidence.loc[result.evidence["context_a"].eq("A"), "r_a"].iloc[0] > 0.99
+    assert result.evidence.loc[result.evidence["context_a"].eq("A"), "r_b"].iloc[0] < -0.99
+
+
+def test_l5_complement_is_axis_local_and_skips_an_insufficient_axis(tmp_path) -> None:
+    group_size = 6
+    identifiers = [f"C{index:02d}" for index in range(group_size * 4)]
+    feature = np.tile(np.arange(group_size, dtype=float), 4)
+    endpoint = np.concatenate(
+        (
+            np.arange(group_size, dtype=float),
+            np.arange(group_size - 1, -1, -1, dtype=float),
+            np.arange(group_size - 1, -1, -1, dtype=float),
+            np.arange(group_size, dtype=float),
+        )
+    )
+    feature_path = tmp_path / "features.csv"
+    pd.DataFrame({"compound_id": identifiers, "feature": feature}).to_csv(
+        feature_path, index=False
+    )
+    contexts = pd.DataFrame(
+        [
+            {
+                "context_id": context_id,
+                "axis_id": axis_id,
+                "is_representative": True,
+                "eligible": True,
+                "translation_status": "native",
+            }
+            for context_id, axis_id in (("A", "AX"), ("B", "AX"), ("C", "AX"), ("D", "OTHER"))
+        ]
+    )
+    membership = pd.DataFrame(
+        [
+            {"context_id": "ABCD"[index // group_size], "compound_id": compound_id}
+            for index, compound_id in enumerate(identifiers)
+        ]
+    )
+    result = run_l5(
+        pd.DataFrame(
+            {"compound_id": identifiers, "canonical_smiles": ["CCc1ccccc1"] * len(identifiers)}
+        ),
+        pd.DataFrame(
+            {
+                "compound_id": identifiers,
+                "endpoint_id": ["EP"] * len(identifiers),
+                "oriented_value": endpoint,
+            }
+        ),
+        contexts,
+        membership,
+        [{"space_id": "D001", "tier": 1, "path": str(feature_path)}],
+        "EP",
+        run_seed=7,
+        min_endpoint_n=group_size,
+        min_abs_r=0.0,
+        screen_permutations=1,
+        final_permutations=1,
+        screen_p_max=1.0,
+        report_q_max=1.0,
+        calibration_permutations=1,
+    )
+    assert result.metrics["comparison_count"] == 3
+    focal = result.evidence.loc[result.evidence["context_a"].eq("A")].iloc[0]
+    assert focal["n_a"] == group_size
+    assert focal["n_b"] == group_size * 2
+    assert focal["shared_n"] == 0
+    assert not set(result.score_observations["compound_id"]).intersection(
+        identifiers[group_size * 3 :]
+    )
+
+
+def test_l5_bh_family_is_independent_between_axes(tmp_path) -> None:
+    group_size = 6
+    identifiers = [f"C{index:02d}" for index in range(group_size * 4)]
+    feature_path = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "compound_id": identifiers,
+            "feature": np.tile(np.arange(group_size, dtype=float), 4),
+        }
+    ).to_csv(feature_path, index=False)
+    endpoint = np.concatenate(
+        tuple(
+            np.arange(group_size, dtype=float)
+            if group_index % 2 == 0
+            else np.arange(group_size - 1, -1, -1, dtype=float)
+            for group_index in range(4)
+        )
+    )
+    all_contexts = pd.DataFrame(
+        [
+            {
+                "context_id": context_id,
+                "axis_id": axis_id,
+                "is_representative": True,
+                "eligible": True,
+                "translation_status": "native",
+            }
+            for context_id, axis_id in (("A", "AX"), ("B", "AX"), ("C", "AY"), ("D", "AY"))
+        ]
+    )
+    membership = pd.DataFrame(
+        [
+            {"context_id": "ABCD"[index // group_size], "compound_id": compound_id}
+            for index, compound_id in enumerate(identifiers)
+        ]
+    )
+    common = (
+        pd.DataFrame(
+            {"compound_id": identifiers, "canonical_smiles": ["CCc1ccccc1"] * len(identifiers)}
+        ),
+        pd.DataFrame(
+            {
+                "compound_id": identifiers,
+                "endpoint_id": ["EP"] * len(identifiers),
+                "oriented_value": endpoint,
+            }
+        ),
+    )
+
+    def execute(contexts: pd.DataFrame):
+        return run_l5(
+            *common,
+            contexts,
+            membership,
+            [{"space_id": "D001", "tier": 1, "path": str(feature_path)}],
+            "EP",
+            run_seed=17,
+            min_endpoint_n=group_size,
+            min_abs_r=0.0,
+            screen_permutations=9,
+            final_permutations=19,
+            screen_p_max=1.0,
+            report_q_max=1.0,
+            calibration_permutations=1,
+        )
+
+    baseline = execute(all_contexts.loc[all_contexts["axis_id"].eq("AX")])
+    combined = execute(all_contexts)
+    baseline_ax = baseline.tests.loc[
+        baseline.tests["family_key"].eq("L5|AX|correlation_sign_conflict")
+    ].sort_values("candidate_key")
+    combined_ax = combined.tests.loc[
+        combined.tests["family_key"].eq("L5|AX|correlation_sign_conflict")
+    ].sort_values("candidate_key")
+    assert set(combined.tests["family_key"]) == {
+        "L5|AX|correlation_sign_conflict",
+        "L5|AY|correlation_sign_conflict",
+    }
+    assert baseline_ax["candidate_key"].tolist() == combined_ax["candidate_key"].tolist()
+    assert baseline_ax["q_value"].tolist() == combined_ax["q_value"].tolist()
 
 
 def test_l2a_excludes_crossing_pairs_and_keeps_shift_and_variance_questions() -> None:
@@ -92,6 +275,10 @@ def test_l2a_excludes_crossing_pairs_and_keeps_shift_and_variance_questions() ->
     assert evidence["n_in"] == 5
     assert evidence["n_out"] == 5
     assert set(result.tests["question"]) == {"mean_shift", "variance_reduction"}
+    assert set(result.tests["family_key"]) == {
+        "L2a|terminal_substitution|TR|same|mean_shift",
+        "L2a|terminal_substitution|TR|same|variance_reduction",
+    }
 
 
 def test_l7_detects_reversed_common_r_group_ranking() -> None:

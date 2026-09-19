@@ -7,6 +7,8 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +20,12 @@ from .state import RuntimeStateStore
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[5]
+TOOLS_DIRECTORY = PROJECT_ROOT / "CONDUCTOR_modules" / "tools"
+if str(TOOLS_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIRECTORY))
+
+from work_contract import WorkEstimate  # noqa: E402
+
 CANONICAL_DESCRIPTION_NODE = (
     PROJECT_ROOT / "CONDUCTOR_modules" / "tools" / "description_node.py"
 ).resolve()
@@ -25,6 +33,18 @@ CANONICAL_DESCRIPTION_NODE = (
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _stall_threshold_seconds(
+    observed_interval: float, settings: dict[str, float]
+) -> float:
+    return min(
+        settings["stall_max_seconds"],
+        max(
+            settings["stall_min_seconds"],
+            settings["stall_multiplier"] * observed_interval,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -95,16 +115,28 @@ def _assert_acyclic(nodes: list[NodePlan]) -> None:
 
 
 class PipelineCoordinator:
-    def __init__(self, plan: PipelinePlan, state: RuntimeStateStore, run_directory: Path, schema_directory: Path):
+    LENS_SKILLS = {
+        "cs-lens-l1b",
+        "cs-lens-l2",
+        "cs-lens-l4",
+        "cs-lens-l5",
+        "cs-lens-l7",
+    }
+
+    def __init__(self, plan: PipelinePlan, state: RuntimeStateStore, run_directory: Path, schema_directory: Path, config: dict[str, Any] | None = None):
         self.plan = plan
         self.state = state
         self.run_directory = run_directory.resolve()
         self.schema_directory = schema_directory.resolve()
+        self.config = config or {}
         self.by_id = {node.node_id: node for node in plan.nodes}
         self.events = self.run_directory / "events"
         self.attempts = self.run_directory / "attempts"
         self.events.mkdir(parents=True, exist_ok=True)
         self.attempts.mkdir(parents=True, exist_ok=True)
+        self._event_sequences: dict[tuple[str, str, str], int] = {}
+        self._run_started_at = time.monotonic()
+        self._admitted_estimated_seconds = 0.0
 
     def register(self) -> None:
         for node in self.plan.nodes:
@@ -188,10 +220,14 @@ class PipelineCoordinator:
         validate_instance(request, self.schema_directory / "execution_request.schema.json")
         return request_path
 
-    def _event(self, node: NodePlan, attempt: dict[str, Any], event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _event(self, node: NodePlan, attempt: dict[str, Any], event_type: str, payload: dict[str, Any], *, sequence: int | None = None) -> dict[str, Any]:
+        sequence_key = (node.node_id, str(attempt["attempt_id"]), event_type)
+        if sequence is None:
+            sequence = self._event_sequences.get(sequence_key, 0)
+            self._event_sequences[sequence_key] = sequence + 1
         event = {
             "schema_version": "0.2.1",
-            "event_id": stable_id("EVENT", {"node": node.node_id, "attempt": attempt["attempt_id"], "type": event_type}),
+            "event_id": stable_id("EVENT", {"node": node.node_id, "attempt": attempt["attempt_id"], "type": event_type, "sequence": sequence}),
             "run_id": self.plan.run_id, "node_id": node.node_id, "attempt_id": attempt["attempt_id"],
             "lease_token": attempt["lease_token"], "event_type": event_type, "occurred_at": _utc_now(), "payload": payload,
         }
@@ -200,6 +236,329 @@ class PipelineCoordinator:
         atomic_write_json(self.events / event_filename, event)
         self.state.apply_event(event)
         return event
+
+    def _runtime_settings(self) -> tuple[dict[str, float], dict[str, float]]:
+        runtime = self.config.get("runtime") or {}
+        configured_budgets = runtime.get("budgets") or {}
+        configured_progress = runtime.get("progress") or {}
+        budgets = {
+            "node_wall_seconds": float(configured_budgets.get("node_wall_seconds", 3600)),
+            "run_wall_seconds": float(configured_budgets.get("run_wall_seconds", 21600)),
+            "peak_memory_bytes": float(configured_budgets.get("peak_memory_bytes", 64 * 1024**3)),
+            "family_size": float(configured_budgets.get("family_size", 500)),
+        }
+        progress = {
+            "min_seconds": float(configured_progress.get("min_seconds", 5)),
+            "min_fraction": float(configured_progress.get("min_fraction", 0.01)),
+            "stall_multiplier": float(configured_progress.get("stall_multiplier", 20)),
+            "stall_min_seconds": float(configured_progress.get("stall_min_seconds", 60)),
+            "stall_max_seconds": float(configured_progress.get("stall_max_seconds", 600)),
+        }
+        if any(value <= 0 for value in budgets.values()):
+            raise ValueError("Runtime budgets must be positive")
+        if progress["min_seconds"] <= 0 or not 0 < progress["min_fraction"] <= 1:
+            raise ValueError("Runtime progress settings are invalid")
+        return budgets, progress
+
+    @staticmethod
+    def _progress_granularity(request: dict[str, Any]) -> str:
+        operation = str((request.get("parameters") or {}).get("operation", ""))
+        return "node" if operation in {"l2b", "l7"} else "loop"
+
+    def _estimate_node_work(
+        self,
+        node: NodePlan,
+        request_path: Path,
+        attempt_directory: Path,
+        output: Path,
+        environment: dict[str, str],
+        workers: int,
+    ) -> WorkEstimate:
+        command = [
+            sys.executable,
+            str(node.launch_path),
+            "--request",
+            str(request_path),
+            "--output-dir",
+            str(output),
+            "--workers",
+            str(workers),
+            "--estimate-work",
+        ]
+        completed = subprocess.run(
+            command,
+            env=environment,
+            text=True,
+            encoding="utf-8",
+            capture_output=True,
+            check=False,
+        )
+        (attempt_directory / "estimate_stdout.txt").write_text(
+            completed.stdout, encoding="utf-8", newline="\n"
+        )
+        (attempt_directory / "estimate_stderr.txt").write_text(
+            completed.stderr, encoding="utf-8", newline="\n"
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"work estimate exited {completed.returncode}: {completed.stderr[-2000:]}"
+            )
+        lines = [line for line in completed.stdout.splitlines() if line.strip()]
+        if len(lines) != 1:
+            raise ValueError(
+                "--estimate-work must write exactly one non-empty JSON line to stdout"
+            )
+        payload = json.loads(lines[0])
+        if not isinstance(payload, dict):
+            raise ValueError("--estimate-work response must be a JSON object")
+        estimate = WorkEstimate.from_dict(payload)
+        atomic_write_json(attempt_directory / "work_estimate.json", estimate.to_dict())
+        return estimate
+
+    def _work_guard(
+        self, node: NodePlan, estimate: WorkEstimate
+    ) -> tuple[str | None, str]:
+        budgets, _ = self._runtime_settings()
+        family_gate = "exempt_parametric" if node.skill_name == "cs-lens-l4" else "applied"
+        if family_gate == "applied" and estimate.family_size > budgets["family_size"]:
+            return (
+                f"family_size {estimate.family_size}>{int(budgets['family_size'])}",
+                family_gate,
+            )
+        if estimate.peak_memory_bytes > budgets["peak_memory_bytes"]:
+            return (
+                f"peak_memory_bytes {estimate.peak_memory_bytes}>{int(budgets['peak_memory_bytes'])}",
+                family_gate,
+            )
+        if estimate.estimated_seconds > budgets["node_wall_seconds"]:
+            return (
+                f"estimated_seconds {estimate.estimated_seconds:.6g}>{budgets['node_wall_seconds']:.6g}",
+                family_gate,
+            )
+        elapsed_run_seconds = time.monotonic() - self._run_started_at
+        projected_run_seconds = max(
+            elapsed_run_seconds, self._admitted_estimated_seconds
+        ) + estimate.estimated_seconds
+        if projected_run_seconds > budgets["run_wall_seconds"]:
+            return (
+                f"projected_run_seconds {projected_run_seconds:.6g}>{budgets['run_wall_seconds']:.6g}",
+                family_gate,
+            )
+        return None, family_gate
+
+    def _write_guard_manifest(
+        self,
+        node: NodePlan,
+        attempt: dict[str, Any],
+        request: dict[str, Any],
+        output: Path,
+        estimate: WorkEstimate,
+        reason: str,
+        family_gate: str,
+    ) -> Path:
+        output.mkdir(parents=True, exist_ok=False)
+        manifest = {
+            "schema_version": "0.2.1",
+            "producer": {
+                key: request["identity"][key]
+                for key in ("run_id", "node_id", "attempt_id", "skill_name")
+            },
+            "status": "needs_design_review",
+            "config_sha256": file_sha256(Path(request["config_path"])),
+            "input_artifacts": [
+                {"role": item["role"], "path": item["path"], "sha256": item["sha256"]}
+                for item in request.get("inputs", [])
+            ],
+            "artifacts": [],
+            "metrics": {
+                "work_estimate": estimate.to_dict(),
+                "family_gate": family_gate,
+                "guard_decision": "needs_design_review",
+            },
+            "warnings": [f"R1 work guard stopped the node: {reason}"],
+            "created_at": _utc_now(),
+        }
+        validate_instance(manifest, self.schema_directory / "artifact_manifest.schema.json")
+        manifest_path = output / "artifact_manifest.json"
+        atomic_write_json(manifest_path, manifest)
+        return manifest_path
+
+    @staticmethod
+    def _drain_stream(stream: Any, destination: Any) -> None:
+        try:
+            for chunk in iter(lambda: stream.read(8192), ""):
+                destination.write(chunk)
+                destination.flush()
+        finally:
+            stream.close()
+
+    def _run_monitored(
+        self,
+        node: NodePlan,
+        attempt: dict[str, Any],
+        command: list[str],
+        environment: dict[str, str],
+        attempt_directory: Path,
+        progress_path: Path,
+        granularity: str,
+    ) -> tuple[int, float, bool]:
+        _, settings = self._runtime_settings()
+        stdout_file = (attempt_directory / "stdout.txt").open(
+            "w", encoding="utf-8", newline="\n"
+        )
+        stderr_file = (attempt_directory / "stderr.txt").open(
+            "w", encoding="utf-8", newline="\n"
+        )
+        started = time.monotonic()
+        process = subprocess.Popen(
+            command,
+            env=environment,
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert process.stdout is not None and process.stderr is not None
+        threads = [
+            threading.Thread(
+                target=self._drain_stream,
+                args=(process.stdout, stdout_file),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=self._drain_stream,
+                args=(process.stderr, stderr_file),
+                daemon=True,
+            ),
+        ]
+        for thread in threads:
+            thread.start()
+        last_mtime_ns: int | None = None
+        last_progress_at = started
+        previous_progress_at: float | None = None
+        observed_intervals: list[float] = []
+        last_node_heartbeat = started
+        stalled = False
+        try:
+            while process.poll() is None:
+                now = time.monotonic()
+                if granularity == "loop" and progress_path.is_file():
+                    stat = progress_path.stat()
+                    if last_mtime_ns != stat.st_mtime_ns:
+                        progress_payload = json.loads(progress_path.read_text(encoding="utf-8"))
+                        required = {"completed_units", "total_units", "elapsed_seconds"}
+                        if set(progress_payload) != required:
+                            raise ValueError("Invalid progress side-channel fields")
+                        completed_units = int(progress_payload["completed_units"])
+                        total_units = int(progress_payload["total_units"])
+                        elapsed_seconds = float(progress_payload["elapsed_seconds"])
+                        if completed_units < 0 or total_units < 0 or completed_units > total_units or elapsed_seconds < 0:
+                            raise ValueError("Invalid progress side-channel values")
+                        if previous_progress_at is not None:
+                            observed_intervals.append(now - previous_progress_at)
+                        previous_progress_at = now
+                        last_progress_at = now
+                        last_mtime_ns = stat.st_mtime_ns
+                        payload = {
+                            "progress_granularity": "loop",
+                            **progress_payload,
+                            "stalled": False,
+                        }
+                        self._event(node, attempt, "heartbeat", payload)
+                        stalled = False
+                elif granularity == "node" and now - last_node_heartbeat >= settings["min_seconds"]:
+                    self._event(
+                        node,
+                        attempt,
+                        "heartbeat",
+                        {
+                            "progress_granularity": "node",
+                            "elapsed_seconds": now - started,
+                            "process_alive": True,
+                            "stalled": False,
+                        },
+                    )
+                    last_node_heartbeat = now
+                if granularity == "loop":
+                    observed = (
+                        sum(observed_intervals[-5:]) / len(observed_intervals[-5:])
+                        if observed_intervals
+                        else settings["min_seconds"]
+                    )
+                    stall_after = _stall_threshold_seconds(observed, settings)
+                    if not stalled and now - last_progress_at > stall_after:
+                        self._event(
+                            node,
+                            attempt,
+                            "heartbeat",
+                            {
+                                "progress_granularity": "loop",
+                                "elapsed_seconds": now - started,
+                                "stalled": True,
+                                "stall_threshold_seconds": stall_after,
+                            },
+                        )
+                        stalled = True
+                time.sleep(min(1.0, max(0.1, settings["min_seconds"] / 2)))
+            returncode = process.wait()
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            for thread in threads:
+                thread.join(timeout=30)
+            stdout_file.close()
+            stderr_file.close()
+        elapsed = time.monotonic() - started
+        final_progress: dict[str, Any] = {}
+        if granularity == "loop" and progress_path.is_file():
+            candidate = json.loads(progress_path.read_text(encoding="utf-8"))
+            if set(candidate) == {"completed_units", "total_units", "elapsed_seconds"}:
+                completed_units = int(candidate["completed_units"])
+                total_units = int(candidate["total_units"])
+                if 0 <= completed_units <= total_units and float(candidate["elapsed_seconds"]) >= 0:
+                    final_progress = candidate
+                    if completed_units == total_units:
+                        stalled = False
+        self._event(
+            node,
+            attempt,
+            "heartbeat",
+            {
+                "progress_granularity": granularity,
+                "elapsed_seconds": elapsed,
+                **final_progress,
+                "process_alive": False,
+                "stalled": stalled,
+            },
+        )
+        return returncode, elapsed, stalled
+
+    @staticmethod
+    def _augment_manifest(
+        manifest_path: Path,
+        estimate: WorkEstimate,
+        *,
+        actual_seconds: float,
+        family_gate: str,
+        progress_granularity: str,
+        stalled: bool,
+    ) -> dict[str, Any]:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        metrics = manifest.setdefault("metrics", {})
+        metrics["work_estimate"] = estimate.to_dict()
+        metrics["actual_wall_seconds"] = actual_seconds
+        metrics["progress_granularity"] = progress_granularity
+        metrics["family_gate"] = family_gate
+        ratio = estimate.estimated_seconds / actual_seconds if actual_seconds > 0 else None
+        metrics["estimate_actual_ratio"] = ratio
+        warnings = manifest.setdefault("warnings", [])
+        if ratio is not None and ratio >= 3:
+            warnings.append(f"work estimate/actual ratio is {ratio:.3f} (>=3)")
+        if stalled:
+            warnings.append("Runtime observed a stalled progress interval; process was not killed")
+        atomic_write_json(manifest_path, manifest)
+        return manifest
 
     def execute_node(self, node: NodePlan, *, lease_seconds: int = 3600, workers: int = 0) -> None:
         attempt = self.state.lease(node.node_id, seconds=lease_seconds)
@@ -225,24 +584,95 @@ class PipelineCoordinator:
             request_path = self._resolve_request(
                 node, attempt, attempt_directory, available_cpu_cores
             )
+            request = json.loads(request_path.read_text(encoding="utf-8"))
             output = node.output_directory / attempt["attempt_id"]
             environment = os.environ.copy()
             environment["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores)
             environment["CONDUCTOR_NODE_CPU_CORES"] = str(available_cpu_cores)
-            completed = subprocess.run(
-                [sys.executable, str(node.launch_path), "--request", str(request_path), "--output-dir", str(output), "--workers", str(available_cpu_cores)],
-                env=environment, text=True, encoding="utf-8", capture_output=True, check=False,
+            estimate: WorkEstimate | None = None
+            family_gate = "not_applicable"
+            if node.skill_name in self.LENS_SKILLS:
+                estimate = self._estimate_node_work(
+                    node,
+                    request_path,
+                    attempt_directory,
+                    output,
+                    environment,
+                    available_cpu_cores,
+                )
+                self._event(
+                    node,
+                    attempt,
+                    "heartbeat",
+                    {"kind": "work_estimate", "work_estimate": estimate.to_dict()},
+                )
+                guard_reason, family_gate = self._work_guard(node, estimate)
+                if guard_reason is not None:
+                    manifest_path = self._write_guard_manifest(
+                        node,
+                        attempt,
+                        request,
+                        output,
+                        estimate,
+                        guard_reason,
+                        family_gate,
+                    )
+                    self._event(
+                        node,
+                        attempt,
+                        "needs_design_review",
+                        {
+                            "manifest_path": str(manifest_path),
+                            "guard_reason": guard_reason,
+                        },
+                    )
+                    return
+            progress_path = attempt_directory / "progress.json"
+            environment["CONDUCTOR_PROGRESS_PATH"] = str(progress_path)
+            granularity = (
+                self._progress_granularity(request)
+                if node.skill_name in self.LENS_SKILLS
+                else "node"
             )
-            (attempt_directory / "stdout.txt").write_text(completed.stdout, encoding="utf-8", newline="\n")
-            (attempt_directory / "stderr.txt").write_text(completed.stderr, encoding="utf-8", newline="\n")
+            command = [
+                sys.executable,
+                str(node.launch_path),
+                "--request",
+                str(request_path),
+                "--output-dir",
+                str(output),
+                "--workers",
+                str(available_cpu_cores),
+            ]
+            returncode, actual_seconds, stalled = self._run_monitored(
+                node,
+                attempt,
+                command,
+                environment,
+                attempt_directory,
+                progress_path,
+                granularity,
+            )
             manifest_path = output / "artifact_manifest.json"
-            if completed.returncode == 0 and manifest_path.is_file():
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if returncode == 0 and manifest_path.is_file():
+                if estimate is not None:
+                    manifest = self._augment_manifest(
+                        manifest_path,
+                        estimate,
+                        actual_seconds=actual_seconds,
+                        family_gate=family_gate,
+                        progress_granularity=granularity,
+                        stalled=stalled,
+                    )
+                else:
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 status = str(manifest["status"])
                 if status in {"succeeded", "needs_design_review"}:
-                    self._event(node, attempt, status, {"manifest_path": str(manifest_path), "returncode": completed.returncode})
+                    if estimate is not None:
+                        self._admitted_estimated_seconds += estimate.estimated_seconds
+                    self._event(node, attempt, status, {"manifest_path": str(manifest_path), "returncode": returncode})
                     return
-            reason = f"worker exit {completed.returncode}; manifest_exists={manifest_path.is_file()}"
+            reason = f"worker exit {returncode}; manifest_exists={manifest_path.is_file()}"
         except Exception as exc:
             reason = str(exc)
         prior = self.state.event_count(node.node_id, ("retryable",))
@@ -262,7 +692,23 @@ class PipelineCoordinator:
             for row in ready:
                 self.execute_node(self.by_id[row["node_id"]], lease_seconds=lease_seconds, workers=workers)
         final = self.state.list_nodes(self.plan.run_id)
+        summary_nodes = []
+        for row in final:
+            heartbeat = self.state.latest_event_payload(row["node_id"], "heartbeat")
+            latest_progress = None
+            if heartbeat is not None and "progress_granularity" in heartbeat:
+                latest_progress = heartbeat
+            summary_nodes.append({
+                "node_id": row["node_id"],
+                "phase_id": row["phase_id"],
+                "skill_name": row["skill_name"],
+                "state": row["state"],
+                "attempt_id": row["attempt_id"],
+                "manifest_path": row["manifest_path"],
+                "latest_progress": latest_progress,
+                "stalled": bool((heartbeat or {}).get("stalled", False)),
+            })
         return {
             "schema_version": "0.2.1", "run_id": self.plan.run_id, "status": status,
-            "nodes": [{"node_id": row["node_id"], "phase_id": row["phase_id"], "skill_name": row["skill_name"], "state": row["state"], "attempt_id": row["attempt_id"], "manifest_path": row["manifest_path"]} for row in final],
+            "nodes": summary_nodes,
         }

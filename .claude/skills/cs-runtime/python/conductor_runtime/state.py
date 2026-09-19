@@ -267,6 +267,20 @@ class RuntimeStateStore:
             ).fetchone()
         return int(row["count"])
 
+    def latest_event_payload(
+        self, node_id: str, event_type: str
+    ) -> dict[str, Any] | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """
+                SELECT payload_json FROM events
+                WHERE node_id=? AND event_type=? AND accepted=1
+                ORDER BY occurred_at DESC,rowid DESC LIMIT 1
+                """,
+                (node_id, event_type),
+            ).fetchone()
+        return None if row is None else json.loads(str(row["payload_json"]))
+
     def expire_leases(self, *, now: datetime | None = None) -> list[str]:
         current = _timestamp(now or _utc_now())
         with closing(self._connect()) as connection:

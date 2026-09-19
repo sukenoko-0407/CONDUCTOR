@@ -63,7 +63,7 @@ def _run(args: argparse.Namespace) -> dict[str, str]:
         if plan.run_id != request["identity"]["run_id"]:
             raise SchemaValidationError("Pipeline plan run_id does not match Execution Request")
         store = RuntimeStateStore(output / "runtime.sqlite")
-        summary = PipelineCoordinator(plan, store, output, SCHEMA_DIR).run(
+        summary = PipelineCoordinator(plan, store, output, SCHEMA_DIR, config=config).run(
             lease_seconds=int(request["parameters"].get("lease_seconds", 3600)),
             workers=int(request["resources"]["workers"]),
         )

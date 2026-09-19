@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -76,6 +76,7 @@ def run_l1b(
     screen_p_max: float = 0.05,
     report_q_max: float = 0.05,
     calibration_permutations: int = 20,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> L1BResult:
     if not 1 <= calibration_permutations <= screen_permutations <= final_permutations:
         raise ValueError("Permutation counts must satisfy calibration <= screen <= final")
@@ -135,6 +136,8 @@ def run_l1b(
             calibration_counts.append(sum(local_flatness(row["distance"], permuted, row["indices"], neighbor_k=neighbor_k, global_variance=global_variance)[0] >= lambda_min for row in universe))
         for key, row in candidates.items():
             nulls[key].append(local_flatness(row["distance"], permuted, row["indices"], neighbor_k=neighbor_k, global_variance=global_variance)[0])
+        if progress_callback is not None:
+            progress_callback(iteration + 1, final_permutations)
     screen_p = {key: empirical_p_value(row["lambda"], nulls[key], "upper") for key, row in candidates.items()}
     survivors = {key for key, value in screen_p.items() if value <= screen_p_max}
     for iteration in range(screen_permutations, final_permutations):
@@ -144,7 +147,9 @@ def run_l1b(
         for key in sorted(survivors):
             row = candidates[key]
             nulls[key].append(local_flatness(row["distance"], permuted, row["indices"], neighbor_k=neighbor_k, global_variance=global_variance)[0])
-    records = [TestRecord(candidate_key=key, test_id=stable_id("TEST", {"lens": "L1b", "candidate": key}), family_key="L1b|conditional_flatness", statistic=float(row["lambda"]), alternative="upper", p_value=empirical_p_value(row["lambda"], nulls[key], "upper") if key in survivors else 1.0, null_iterations=final_permutations if key in survivors else screen_permutations, participation=float(np.mean(participation)) if participation else 0.0, status="final" if key in survivors else "screened_out") for key, row in sorted(candidates.items())]
+        if progress_callback is not None:
+            progress_callback(iteration + 1, final_permutations)
+    records = [TestRecord(candidate_key=key, test_id=stable_id("TEST", {"lens": "L1b", "candidate": key}), family_key=f"L1b|{row['space_id']}|conditional_flatness", statistic=float(row["lambda"]), alternative="upper", p_value=empirical_p_value(row["lambda"], nulls[key], "upper") if key in survivors else 1.0, null_iterations=final_permutations if key in survivors else screen_permutations, participation=float(np.mean(participation)) if participation else 0.0, status="final" if key in survivors else "screened_out") for key, row in sorted(candidates.items())]
     adjusted = benjamini_hochberg(records)
     evidence_rows: list[dict[str, Any]] = []; test_rows: list[dict[str, Any]] = []; score_rows: list[dict[str, Any]] = []; provisional: list[dict[str, Any]] = []
     translation_by_context = dict(zip(catalog["context_id"].astype(str), catalog["translation_status"].astype(str), strict=True))
@@ -164,5 +169,5 @@ def run_l1b(
             score_rows.append({"finding_key": finding["finding_key"], "row_id": stable_id("SCOREROW", {"finding": finding["finding_key"], "compound": ids[compound_index]}), "block_id": blocks[compound_index], "effect": float(global_variance - row["errors"][local_index]), "compound_id": ids[compound_index], "context_id":row["context_id"], "target_id":row["space_id"], "neighbor_compound_ids_json":json.dumps(neighbor_ids,separators=(",",":")), "neighbor_order_compound_ids_json":json.dumps(ordered_neighbor_ids,separators=(",",":")), "neighbor_k":neighbor_k, "global_variance":global_variance, "endpoint_value": float(y[compound_index]), "actionability_level": "descriptive"})
     observed = len(candidates); null_mean = float(np.mean(calibration_counts)) if calibration_counts else 0.0; enrichment = float(observed / null_mean) if null_mean > 0 else None
     calibration = {"iterations": calibration_permutations, "observed": observed, "null_mean": null_mean, "enrichment": enrichment, "acceptance_1_1_to_1_8": enrichment is not None and 1.1 <= enrichment <= 1.8}
-    metrics = {"universe_count": len(universe), "screen_candidate_count": len(candidates), "final_candidate_count": len(survivors), "finding_count": len(provisional), "participation_rate": float(np.mean(participation)) if participation else 0.0}
+    metrics = {"universe_count": len(universe), "screen_candidate_count": len(candidates), "final_candidate_count": len(survivors), "finding_count": len(provisional), "participation_rate": float(np.mean(participation)) if participation else 0.0, "compound_count": len(ids), "space_count": len(spaces), "context_count": len(context_ids), "member_work_count": sum(len(row["indices"]) for row in universe), "max_context_members": max((len(membership[value]) for value in context_ids), default=0), "block_count": len(set(blocks))}
     return L1BResult(pd.DataFrame(evidence_rows), pd.DataFrame(test_rows), pd.DataFrame(diagnostics), pd.DataFrame(score_rows), assign_finding_ids(provisional), calibration, metrics)
