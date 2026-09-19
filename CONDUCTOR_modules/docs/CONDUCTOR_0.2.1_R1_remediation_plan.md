@@ -97,7 +97,7 @@ L4 の 25万候補は是正報告 R-08 の guard で起動前に停止してお�
 | **M-3** | L5 の比較単位を「文脈 vs 軸内補集合」へ | **仕様変更** | L5 |
 | **M-4** | L5 の BH 族を axis ごとに分割 | **仕様変更** | L5 |
 | **M-5** | 相関表の一回計算（行列化） | 実装 | L5 |
-| **M-6** | Tier 1/2 特徴量の重複排除 | **仕様変更** | L5 / L1b |
+| **M-6** | Tier 1/2 特徴量の重複排除 | **仕様変更** | **L5 のみ**（R1.1 で L1b を除外） |
 | **M-7** | 較正設定 hash の記録と照合 | 実装 | Runtime |
 | **M-8** | 本番設定での較正やり直し | 運用 | — |
 | **M-9** | 受入基準へ計算量を追加 | 実装 | test |
@@ -218,8 +218,17 @@ R   = np.where(den > 0, num / den, np.nan)
 1. Tier 1/2 全特徴量の pairwise |Pearson r| を計算する
 2. |r| >= 0.95 を辺として連結成分を作る
 3. 各成分から代表を1つ選ぶ（Tier 昇順、次に feature ID 辞書順）
-4. L5 と L1b は代表特徴量だけを使う。除外分は代表への参照つきで記録する
+4. **L5 だけ**が代表特徴量を使う。除外分は代表への参照つきで記録する
 ```
+
+> **【R1.1 改訂】対象は L5 のみである。L1b へは適用しない。**
+>
+> 理由は3つある。
+> 1. **L1b の入力は space 単位の距離行列であり feature 列ではない。** 代表 feature 化には距離の再構築が要り、文脈カタログの再生成を伴う。影響範囲が桁違いである。
+> 2. **M-10a 適用後、L1b の計算量に feature 数は現れない。** コストは `(space × context × member) × k` の gather である。
+> 3. **dedup は族を縮めない。** L1b の族は M-10b（空間別分割）が 763 → 84 にする。
+>
+> **context builder と Phase 1 artifacts は変更しない。**
 
 **この変更の目的は計算量と可読性である。検出力の問題は M-3/M-4 が解決する。**
 実測で族はほぼ変わらない（初版測定で 1,155,558 → 1,154,917）。近似的に同一の記述子を5件の Finding として報告しないための措置でもある。
@@ -446,21 +455,70 @@ L4 の現行 guard は記述子の行数と cost unit しか見ておらず、�
 | **Node メモリ予算** | **64 GiB**（修正後の最大は L4 の 1.79 GiB。R0 の 2,864 GiB を確実に弾く） |
 | **進捗報告間隔** | **5 秒、または全体の 1% のいずれか遅い方** |
 | **stalled 判定** | **報告間隔の 20 倍。下限 60 秒、上限 600 秒** |
-| **L4 候補 cap** | **250,000（据え置き）** |
+| **L4 候補 cap** | **100（現行維持）。** 引き上げは M-15 で別 stage として行う |
 | **k_min** | **10**（設計担当が決定済み） |
 
-`max_units` は固定値を置かない。**各 Lens が `unit_count` と較正済みの `units_per_second`
-を報告し、Runtime は `unit_count / units_per_second ≤ Node wall-clock 予算` を検査する。**
-固定の `max_units` はデータ規模が変わると意味を失うが、wall-clock 換算なら意味を保つ。
+`max_units` は固定値を置かない。固定件数はデータ規模が変わると意味を失うためである。
 
-`units_per_second` は実装時に本書の測定値で初期化し、Run ごとに実測比を記録して更新する。
+> **【R1.1 改訂】Runtime の時間 gate は `WorkEstimate.estimated_seconds` を直接見る。**
 
-| Lens | unit の定義 | 本機12コアでの実測 `units_per_second` |
-|---|---|---|
-| L5 | 比較 × 特徴量 | 1,595,592 / 0.437 秒 ≈ **3.65e6** |
-| L1b | (空間 × 文脈 × メンバー) | 922,752 / 0.031 秒 ≈ **2.98e7** |
-| L2a | ペア | 11,563 / 0.0016 秒 ≈ **7.23e6** |
-| L4 | 候補 × 空間 | 2,250,000 / 71 秒 ≈ **3.17e4** |
+```python
+@dataclass(frozen=True)
+class WorkEstimate:
+    unit_count: int
+    family_size: int
+    peak_memory_bytes: int
+    estimated_seconds: float      # 各 Lens が自分のコストモデルで算出する
+    detail: dict[str, int]
+```
+
+| 役割 | 担当 |
+|---|---|
+| Runtime の時間 gate | **`estimated_seconds ≤ Node wall-clock 予算`** |
+| `units_per_second` | **各 Lens の estimator の内部定数**（設定に置く） |
+| `unit_count` | **`estimate/actual` 比の検証用**に残す |
+
+初版は `unit_count / units_per_second` を Runtime 側の共通規則としていたが、
+**L4 は「候補×空間のスコアリング」と「記述子の cost unit」という異なる2つのコストを持ち、
+単一の `unit_count` では表せない。** Lens 固有の式を Runtime へ漏らさないため、
+**各 Lens が秒を返す形へ改める。**
+
+```text
+L4 以外 : estimated_seconds = unit_count / units_per_second * 1.25
+L4      : estimated_seconds = ((C4*S4)/units_per_second_l4 + W*0.00804/workers) * 1.25
+          C4=候補数  S4=D019除外後の空間数  W=候補記述子の cost unit 合計
+```
+
+保守係数 **1.25** は M-16 のメモリ係数と同じ値である。記述子計算が worker 数へ完全には
+反比例しない可能性を吸収する。`units_per_second` は実装時に下表の測定値で初期化し、
+Run ごとに実測比を記録して更新する。
+
+| Lens | unit の定義 | B=1000 の所要 | 本機12コアでの実測 `units_per_second` |
+|---|---|---|---|
+| L5 | 比較 × 特徴量 | 7.3 分 | 1,595,592 / 0.437 秒 ≈ **3.65e6** |
+| L1b | (空間 × 文脈 × メンバー) | 0.5 分 | 922,752 / 0.031 秒 ≈ **2.98e7** |
+| L2a | ペア | 1.6 秒 | 11,563 / 0.0016 秒 ≈ **7.23e6** |
+| L4 | 候補 × 空間 | 1.2 分 | 2,250,000 / 71 秒 ≈ **3.17e4** |
+| **L2b** | **系列内 observation 数** | **1.03 分** | 3,155 / 0.062 秒 ≈ **5.09e4** |
+| **L7** | **candidate × question** | **14.3 秒** | 86 / 0.0143 秒 ≈ **6.00e3** |
+
+**【R1.1 追補】L2b と L7 の値も実測した。時間 gate は全 Lens に適用する。例外は作らない。**
+L7 の値が小さいのは `np.random.default_rng()` を candidate ごと・反復ごとに生成しているためである。
+**総時間が 14.3 秒なので最適化しない。** 遅い理由を把握した上で据え置く。
+
+### 進捗報告の粒度
+
+M-2 の目的は「人間が気づけること」である。**14 秒の Node に進捗率は要らない。**
+
+| Lens | `progress_granularity` |
+|---|---|
+| L1b / L2a / L4 / L5 | **`loop`**。core callback で実進捗を出す |
+| L2b / L7 | **`node`**。wrapper の liveness heartbeat のみ |
+
+**`l2b.py` と `l7.py` へ callback を入れることは禁じていない。**
+「変更しない」とは統計的契約とアルゴリズムを変えないという意味である。
+ただし総所要時間から見て割に合わないため、`node` 粒度でよい。
+**採った粒度を manifest へ記録すること。**
 
 **進捗報告 10 分・stalled 10 分という初版の値は破棄する。** 修正後の最長 Node より長く、検知器として働かない。
 
