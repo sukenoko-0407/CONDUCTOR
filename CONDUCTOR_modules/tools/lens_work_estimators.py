@@ -40,10 +40,45 @@ def _read_csv(path: Path, *, ids: bool = False) -> pd.DataFrame:
     return pd.read_csv(path, dtype={"compound_id": "string"} if ids else None)
 
 
-def _family_size(tests: pd.DataFrame) -> int:
+def _family_census(tests: pd.DataFrame) -> dict[str, Any]:
     if tests.empty or "family_key" not in tests:
-        return 0
-    return int(tests.groupby("family_key", sort=True).size().max())
+        return {
+            "family_count": 0,
+            "test_count": 0,
+            "max_family_key": None,
+            "family_sizes": {},
+        }
+    sizes = tests.groupby("family_key", sort=True).size().astype(int)
+    maximum = int(sizes.max())
+    # Stable lexical tie break makes the audit reproducible.
+    maximum_key = str(sorted(sizes.loc[sizes.eq(maximum)].index.astype(str))[0])
+    return {
+        "family_count": int(len(sizes)),
+        "test_count": int(sizes.sum()),
+        "max_family_key": maximum_key,
+        "family_sizes": {str(key): int(value) for key, value in sizes.items()},
+    }
+
+
+def _permutation_census(config: dict[str, Any], tests: pd.DataFrame) -> dict[str, Any]:
+    census = _family_census(tests)
+    alpha = float(config["statistics"].get("report_q_max", 0.05))
+    if not 0 < alpha <= 1:
+        raise ValueError("statistics.report_q_max must be in (0, 1]")
+    k_min = int(((config.get("runtime") or {}).get("budgets") or {}).get("k_min", 10))
+    if k_min <= 0:
+        raise ValueError("runtime.budgets.k_min must be positive")
+    family_size = max(census["family_sizes"].values(), default=0)
+    required = max(1, int(math.ceil(family_size / (alpha * k_min)) - 1))
+    configured = _permutations(config)
+    return {
+        **census,
+        "report_q_max": alpha,
+        "k_min": k_min,
+        "configured_final_permutations": configured,
+        "required_final_permutations": required,
+        "statistical_budget_satisfied": required <= configured,
+    }
 
 
 def _rate(config: dict[str, Any], lens: str) -> int:
@@ -119,12 +154,14 @@ def _estimate_l1b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
         + 2 * n
         + 2 * maximum * maximum
     )
+    census = _permutation_census(config, result.tests)
     return WorkEstimate(
         units,
-        _family_size(result.tests),
+        max(census["family_sizes"].values(), default=0),
         _peak(memory),
         units / _rate(config, "l1b") * SAFETY_FACTOR,
         {
+            **census,
             "compound_count": n,
             "space_count": spaces,
             "member_work_count": member_work,
@@ -176,12 +213,14 @@ def _estimate_l2a(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
         + int(metrics["series_member_count"])
         + 3 * question_count
     )
+    census = _permutation_census(config, result.tests)
     return WorkEstimate(
         units,
-        _family_size(result.tests),
+        max(census["family_sizes"].values(), default=0),
         _peak(memory),
         units / _rate(config, "l2a") * SAFETY_FACTOR,
         {
+            **census,
             "pair_count": pair_count,
             "transformation_count": int(metrics["eligible_transformation_count"]),
             "class_count": int(metrics["class_count"]),
@@ -214,12 +253,14 @@ def _estimate_l2b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
     b1 = _permutations(config) + 1
     units = b1 * observations_work
     memory = 8 * (12 * len(observations) + 8 * observations_work + tests * (b1 + 10))
+    census = _permutation_census(config, result.tests)
     return WorkEstimate(
         units,
-        _family_size(result.tests),
+        max(census["family_sizes"].values(), default=0),
         _peak(memory),
         units / _rate(config, "l2b") * SAFETY_FACTOR,
         {
+            **census,
             "observation_count": observations_work,
             "series_count": int(result.metrics["series_count"]),
             "test_count": tests,
@@ -361,12 +402,14 @@ def _estimate_l5(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
         + 2 * features
         + 2 * blocks
     )
+    census = _permutation_census(config, result.tests)
     return WorkEstimate(
         units,
-        _family_size(result.tests),
+        max(census["family_sizes"].values(), default=0),
         _peak(memory),
         units / _rate(config, "l5") * SAFETY_FACTOR,
         {
+            **census,
             "compound_count": n,
             "comparison_count": comparisons,
             "feature_count": features,
@@ -397,12 +440,14 @@ def _estimate_l7(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
     b1 = _permutations(config) + 1
     units = b1 * candidates * 2
     memory = 8 * (12 * len(observations) + candidates * 2 * (b1 + 8))
+    census = _permutation_census(config, result.tests)
     return WorkEstimate(
         units,
-        _family_size(result.tests),
+        max(census["family_sizes"].values(), default=0),
         _peak(memory),
         units / _rate(config, "l7") * SAFETY_FACTOR,
         {
+            **census,
             "candidate_count": candidates,
             "question_count": 2,
             "test_count": tests,

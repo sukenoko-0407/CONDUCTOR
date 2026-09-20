@@ -13,6 +13,7 @@ import pandas as pd
 
 from conductor_stat_core import (
     TestRecord,
+    assign_finding_ids,
     benjamini_hochberg,
     derive_seed,
     empirical_p_value,
@@ -494,9 +495,7 @@ def run_l2b(
                     "actionability_level": "direction_only",
                 }
             )
-    provisional_findings.sort(key=lambda item: item["finding_key"])
-    for index, finding in enumerate(provisional_findings, start=1):
-        finding["finding_id"] = f"F{index:06d}"
+    findings = assign_finding_ids(provisional_findings)
 
     calibration = _calibration_summary(observed, null_statistics, calibration_permutations, enrichment_thresholds)
     total_observations = len(observations.loc[observations["transform_class"].isin(SUPPORTED_CLASSES)])
@@ -511,4 +510,4 @@ def run_l2b(
         "participation_rate": participating_observations / total_observations if total_observations else 0.0,
         "calibration_acceptance": calibration["acceptance_gt_1_5"],
     }
-    return L2BResult(evidence, tests, pd.DataFrame(score_rows), tuple(provisional_findings), calibration, metrics)
+    return L2BResult(evidence, tests, pd.DataFrame(score_rows), findings, calibration, metrics)

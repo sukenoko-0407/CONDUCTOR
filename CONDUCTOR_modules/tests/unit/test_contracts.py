@@ -37,6 +37,7 @@ def test_config_deep_merge_preserves_defaults(tmp_path: Path) -> None:
     config = load_resolved_config(MODULE_ROOT / "config" / "defaults.yaml", project)
     assert config["contexts"]["neighbor_k"] == 7
     assert config["statistics"]["final_permutations"] == 1000
+    assert config["runtime"]["budgets"]["k_min"] == 10
     assert config["lenses"]["l4"] == {
         "candidate_cap": 100,
         "max_candidate_description_rows": 900,

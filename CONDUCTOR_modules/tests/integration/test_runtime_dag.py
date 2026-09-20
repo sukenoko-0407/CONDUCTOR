@@ -223,6 +223,87 @@ def test_runtime_work_guard_stops_lens_before_workload(tmp_path: Path) -> None:
     assert manifest["metrics"]["family_gate"] == "applied"
     assert manifest["metrics"]["work_estimate"]["family_size"] == 501
     assert not (attempt_output / "workload_started").exists()
+    census = json.loads(
+        (tmp_path / "run" / "work_census.json").read_text(encoding="utf-8")
+    )
+    assert census["status"] == "blocked"
+    assert census["nodes"][0]["node_id"] == "L5"
+
+
+def test_runtime_censuses_all_ready_lenses_before_any_workload(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("schema_version: '0.2.1'\n", encoding="utf-8")
+    launch = tmp_path / "lens.py"
+    launch.write_text(
+        "import argparse,json\nfrom pathlib import Path\n"
+        "p=argparse.ArgumentParser();p.add_argument('--request');p.add_argument('--output-dir');p.add_argument('--workers');p.add_argument('--estimate-work',action='store_true');a=p.parse_args()\n"
+        "r=json.load(open(a.request));blocked=r['identity']['node_id']=='L5'\n"
+        "if a.estimate_work: print(json.dumps({'unit_count':1,'family_size':501 if blocked else 10,'peak_memory_bytes':1,'estimated_seconds':1.0,'detail':{}}))\n"
+        "else: o=Path(a.output_dir);o.mkdir(parents=True);(o/'workload_started').write_text('yes')\n",
+        encoding="utf-8",
+    )
+    nodes = []
+    for node_id, skill_name, operation in (
+        ("L5", "cs-lens-l5", "l5"),
+        ("L7", "cs-lens-l7", "l7"),
+    ):
+        request = tmp_path / f"{node_id}.json"
+        request.write_text(
+            json.dumps(
+                {
+                    "schema_version": "0.2.1",
+                    "identity": {
+                        "project": "P",
+                        "run_id": "RUN",
+                        "phase_id": "P03",
+                        "node_id": node_id,
+                        "attempt_id": "TEMPLATE",
+                        "skill_name": skill_name,
+                    },
+                    "endpoint_id": "EP",
+                    "config_path": str(config),
+                    "random_seed": 1,
+                    "inputs": [],
+                    "parameters": {"operation": operation},
+                    "resources": {"workers": 1, "memory_mb": 128},
+                }
+            ),
+            encoding="utf-8",
+        )
+        nodes.append(
+            {
+                "node_id": node_id,
+                "phase_id": "P03",
+                "skill_name": skill_name,
+                "dependencies": [],
+                "request_template": str(request),
+                "launch_path": str(launch),
+                "output_directory": str(tmp_path / node_id),
+            }
+        )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps({"run_id": "RUN", "code_version": "0.2.1", "nodes": nodes}),
+        encoding="utf-8",
+    )
+    coordinator = PipelineCoordinator(
+        PipelinePlan.load(plan_path),
+        RuntimeStateStore(tmp_path / "run" / "runtime.sqlite"),
+        tmp_path / "run",
+        Path(__file__).resolve().parents[2] / "schemas",
+        config={"runtime": {"budgets": {"family_size": 500}}},
+    )
+    summary = coordinator.run(workers=1)
+    assert summary["status"] == "needs_design_review"
+    census = json.loads(
+        (tmp_path / "run" / "work_census.json").read_text(encoding="utf-8")
+    )
+    assert {entry["node_id"] for entry in census["nodes"]} == {"L5", "L7"}
+    assert {entry["status"] for entry in census["nodes"]} == {
+        "blocked",
+        "admissible",
+    }
+    assert not (tmp_path / "L7").exists()
 
 
 def test_runtime_work_guard_boundaries_and_l4_family_exemption(tmp_path: Path) -> None:

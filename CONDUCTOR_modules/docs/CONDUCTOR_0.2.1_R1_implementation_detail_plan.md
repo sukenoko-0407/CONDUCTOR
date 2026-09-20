@@ -2,10 +2,10 @@
 
 ## 0. 文書状態
 
-- 状態: **設計回答反映済み・実装着手可能**
+- 状態: **R1.2本番census是正を実装中**
 - 対象: `CONDUCTOR_0.2.1_R1_implementer_brief.md` が定義する R1.1
 - 作成日: 2026-09-19
-- この文書の作成時点では、R1 のコード変更を開始していない。
+- R1-1〜R1-3およびM-17実装後の本番結果を反映している。
 - `CONDUCTOR_0.2.1_R1_implementation_questions.md` の7件には設計担当から確定回答があり、blocking は残っていない。以後は回答後に改訂された正本と、その回答を実装判断に用いる。
 
 ## 1. 正本と優先順位
@@ -19,6 +19,9 @@
 5. 現行コード、テスト、既存の実装計画・履歴文書
 
 R1.1 は、単なる速度改善ではない。まず統計的 family を意味のある単位へ分割し、次に同じ検定をより少ない計算で実行し、最後に Runtime が実行前に時間・メモリ・多重性を判定できるようにする。
+
+> **R1.2優先規則:** R1.1の52/84/117/75はexact acceptance valueではない。
+> 本番入力から決定論的に得た`work_census.json`を優先し、旧見込み値との差だけで停止しない。
 
 ## 2. 変更境界
 
@@ -556,7 +559,11 @@ runtime:
 1. R1-1: M-1/M-14/M-16。WorkEstimate と pre-launch guard。
 2. R1-2: M-2。progress/heartbeat/stalled。
 3. R1-3: M-3/M-4/M-10b/M-11b。統計 family 修正。
-4. **ここで本番データを族分割までのコードで実行し、必ず停止して中間報告する。** L5/L1b/L2a/L2b/L7 の最大族サイズと Finding 件数を報告し、次の期待値（L5 52/axis、L1b 84/space、L2a 117、L2b 75、L7 86）から外れた場合は原因を解消するまで R1-4 へ進まない。族をさらに細分化して合わせない。
+4. **R1-3Cとして、P03 workload前に全Lensのwork censusを一括取得して中間報告する。**
+   52/84/117/75/86は参考値として併記できるが、exact一致を要求しない。各Lensの最大family key、
+   family size、family数、test数、configured/required final permutations、推定時間・memory、guard理由を報告する。
+   一件のblockerがあっても残りLensのestimateを完了してから一度だけ停止する。Finding件数はworkloadを
+   実行できたLensだけを報告し、blocked Lensへ要求しない。族を旧値へ合わせるために細分化しない。
 5. R1-4: M-6。
 6. R1-5: M-5/M-10a/M-11a/M-12。
 7. R1-6: M-13。
@@ -620,6 +627,56 @@ runtime:
 - L4 `space_ids_json`
 
 schema version は 0.2.1 のままとし、artifact schema が任意 metrics を許す範囲で追加する。schema に列挙が必要なら schema と example を同じ stage で更新する。既存 Run state を in-place migration しない。
+
+### 8.1 R1.2の具体的変更
+
+#### L1b identity
+
+- `base_finding()`へ渡すsubjectを`space_id`、conditionを`context_id`にする。
+- evidence/test/family keyは変更しない。
+- 同一context・2 spaces・`report_q_max=1.0`のfixtureで2 Findingと2 finding keyを確認する。
+- L2bを含む全Lensが共通`assign_finding_ids()`で重複keyを拒否する。
+
+#### WorkEstimate detail
+
+`detail`は有限なJSON値を許し、全permutation Lensが次を返す。
+
+```json
+{
+  "family_count": 0,
+  "test_count": 0,
+  "max_family_key": null,
+  "family_sizes": {},
+  "report_q_max": 0.05,
+  "k_min": 10,
+  "configured_final_permutations": 1000,
+  "required_final_permutations": 1,
+  "statistical_budget_satisfied": true
+}
+```
+
+`required_final_permutations = max(1, ceil(family_size / (alpha * k_min)) - 1)`とする。
+Runtimeは新detailがある場合、この真偽値をfamily gateの正本にする。detailを持たない旧estimator fixtureだけ
+`runtime.budgets.family_size`をfallbackとして使う。
+
+#### Batch censusと状態管理
+
+Runtimeはpending/retryableなP03 Lensがすべてreadyになった時点で、全件をnode ID順にestimateする。
+`<RUN_ROOT>/work_census/<NODE_ID>/`へresolved requestとestimate stdout/stderrを置き、集約結果を
+`<RUN_ROOT>/work_census.json`へatomic writeする。estimateは同一coordinator process内の後続workloadへ
+引き渡し、二重実行しない。
+
+一件でもblockerがあれば、全estimate完了後に該当Nodeだけをlease/startし、workloadを起動せず
+`needs_design_review` manifestを作る。admissible Nodeはpendingのまま保持する。estimate errorも同じcensusへ
+集約し、他Lens workloadを開始しない。全件admissibleの場合だけ通常実行へ進む。
+
+#### 回帰試験
+
+- 全ready Lensのうち1件がblockされても、全Lensがcensusに含まれること。
+- blockされたbatchでadmissible Lensのworkload markerが作られないこと。
+- `work_census.json`がRuntime manifestのartifactになること。
+- nested family census detailのround-tripと非finite拒否。
+- 既存の境界値、L4 `exempt_parametric`、resume/state transition試験を維持すること。
 
 ## 9. 実装工数見積り
 

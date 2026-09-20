@@ -2,7 +2,13 @@
 
 Status: **協議中。未承認。**
 作成日: 2026-09-19
-改訂: **R1.1（2026-09-19）。全レンズへ拡張し、未確定事項をゼロにした。**
+改訂: **R1.2（2026-09-20）。本番 census で判明した基準値欠陥とL1b identity欠陥を是正。**
+
+> **R1.2 緊急訂正:** R1.1 の L5「52」は `10,227 tests / 196 axes` の平均であり、
+> 最大族サイズではなかった。L1b 84、L2a 117も較正標本からの見込み値であり、
+> 現行コード・本番入力に対する exact acceptance value ではない。本番で観測した
+> L5最大族2092を、52へ合わせるために族を細分化してはならない。旧表の数値は
+> 設計履歴としてのみ残し、以後の受入判定にはR1.2の全Lens work censusを用いる。
 
 > **R1.1 での変更点**
 > - 本番定数が確定した（64コア / 700 GiB / 専有、Mordred 1800列）。
@@ -58,6 +64,9 @@ Status: **協議中。未承認。**
 
 > **L5 / L1b / L2a は、統計予算（k_min ≤ 10）を超過している。**
 > **速くしても Finding はゼロのままである。統計を先に直す。**
+
+この表の「修正後」はR1.1時点の推定・平均であり、R1.2以降の最大族の受入値ではない。
+本番入力に対する最大値は`work_census.json`の`detail.family_sizes`から求める。
 
 ### 1.3 【R1.1】L4 について正確に述べる
 
@@ -720,3 +729,61 @@ R0 はこれを検出できず、`fast` 設定の enrichment を本番の受入�
 - 少数のterminal SKIPがあってもP01を成功させ、下流Nodeを継続する。全化合物が非適格でfeature schemaを解決できないCapabilityは黙って捨てず停止する。
 
 受入fixtureは「既存hit＋Conformer生成不能だけのmiss batch」を必須とし、SKIP recordの再利用、run-scoped payloadのnull行、distanceからの除外、次回miss=0を検証する。
+
+---
+
+## 11. R1.2 本番checkpoint後の追加是正 M-18〜M-20
+
+### 11.1 判明した事実
+
+- L5の実測最大族は2092であり、固定上限500を超えた。R1.1の52は最大値ではなく平均値だった。
+- L1bは同じcontextが複数spaceでFindingになったとき、両方を
+  `subject=context, condition=context`として同じFinding keyへ写像していた。
+- RuntimeはLensごとに`estimate → guard → workload`を行うため、全Lensの問題を把握する前に
+  長時間workloadまたは最初の停止へ入っていた。
+- L7の実測86は一致したが、それだけで他Lensの見込み値をexact baselineとは扱えない。
+
+### 11.2 M-18: L1b Finding identity
+
+L1bの科学的単位を`(feature space, context)`とし、Findingは
+`subject_type=feature, subject_id=space_id, condition_id=context_id`とする。
+同じcontextを共有する2 spaceがともに有意なfixtureで、2件の異なるFinding keyを生成することを必須とする。
+shared Finding hash式そのものは変更しない。
+全Lensの終端を監査し、L2bの手書きID採番も共通`assign_finding_ids()`へ統一する。
+これにより将来のidentity衝突をL2bだけが黙って通す例外を残さない。
+
+### 11.3 M-19: 全Lens work censusをworkloadより先に完了する
+
+P03の全Lens依存が解決した時点で、Runtimeは全ready Lensの`--estimate-work`を先に実行する。
+結果はRun root直下の`work_census.json`へ一括保存し、各Lensについて次を記録する。
+
+- 最大族サイズと最大family key
+- family key別件数と族数・test数
+- configured final permutations
+- `n ≤ α(B+1)k_min`を満たすためのrequired final permutations
+- 推定時間、推定peak memory、各guard判定と全Lens合計時間
+
+一件でもestimate errorまたはguard違反があれば、他Lens workloadを開始しない。全件のcensusを残してから
+該当Nodeを`needs_design_review`にする。これにより問題を一件ずつ露出させない。
+
+### 11.4 M-20: baselineと停止条件の分離
+
+52/84/117/75/86は再現必須のexact gateではない。旧値との差はwarningとして原因を分類するが、
+それだけでは停止しない。停止するのは次に限定する。
+
+- input/config/code hashまたはschema/identityの不整合
+- estimate自体の失敗
+- peak memory、node/run wall timeの予算超過
+- `n ≤ α(B+1)k_min`を満たさない統計予算超過
+- 科学的・契約的不変条件違反
+
+L5実測2092、`α=0.05`、`k_min=10`では必要なfinal permutationsは最低4183である。
+現行B=1000のまま上限だけを緩めることは禁止する。M-5の高速化・同値性試験を先に完了し、
+その実測性能を使ってBを4183以上へ設定できるかを判断する。追加の族分割は、独立した科学的根拠なしに行わない。
+
+### 11.5 改訂後の段階
+
+1. R1-3C: P01/P02後に全P03 Lens censusを一括取得する。これはFinding生成を要求しない情報取得段階である。
+2. R1-3F: identity/contract欠陥を修正し、統計・時間予算に適合したLensだけを実行する。
+3. L5はM-5を先に完了し、必要Bと実測時間が両方予算内になってからfull workloadを実行する。
+4. baseline差は観測値としてversioned記録し、exact一致を理由にRunを停止しない。

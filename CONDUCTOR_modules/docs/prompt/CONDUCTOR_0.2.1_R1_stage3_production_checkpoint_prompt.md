@@ -1,6 +1,11 @@
 # CONDUCTOR 0.2.1 R1-3 実機チェックポイント用プロンプト
 
-このプロンプトは、R1-1〜R1-3を実装したコードをUbuntu本番機へ反映した後、正式なR1-3中間報告に必要な族サイズとFinding件数を取得するために使う。Phase 4以降、R1-4以降には進まない。
+このプロンプトは、R1-1〜R1-3とR1.2のcensus/L1b identity修正をUbuntu本番機へ反映した後、
+P03 workloadより先に全Lensの族サイズ・必要permutation・資源見積りを一括取得するために使う。
+全Lensがadmissibleな場合だけP03 workloadへ進む。Phase 4以降には進まない。
+
+旧期待値L5=52、L1b=84、L2a=117、L2b=75はexact acceptance valueではない。
+これらとの差だけを理由に停止しない。L7=86を含め、旧値は比較用の履歴値としてのみ扱う。
 
 ## 再利用方針
 
@@ -50,12 +55,14 @@ SMILES列: <SMILES_COLUMN>
 workers: <WORKERS>
 memory_mb: <MEMORY_MB>
 
-目的は、R1-1〜R1-3のコードでPhase 1〜3だけを新規Runとして実行し、各Lensの最大族サイズとFinding件数を測定することです。Phase 4〜6およびR1-4以降は実行しないでください。
+目的は、R1-1〜R1-3とR1.2のコードでPhase 1〜2を実行した後、全P03 Lensのwork censusを
+workload前に一括取得することです。全Lensがadmissibleな場合だけPhase 3 workloadを実行し、
+最大族サイズとFinding件数を測定してください。Phase 4〜6には進まないでください。
 
 最初の確認は次の最小項目だけに限定してください。
 1. Git pull後のworking treeとHEADを記録し、R1-1〜R1-3およびM-17の実装ファイル、L5のfinite support契約と部分NaN回帰fixture `test_l5_support_uses_feature_finite_observations_with_overlapping_contexts`、Conformer失敗のnegative-cache回帰fixture `test_conformer_failure_is_negative_cached_and_excluded_from_distance` が存在すること。開発側で全test成功済みなので、実機でtest suite全体を再実行しないこと。
 2. `<CONFIG_PATH>`がschema_version 0.2.1で、次を解決済み値として含むこと。
-   - runtime.budgets: node_wall_seconds=3600、run_wall_seconds=21600、peak_memory_bytes=68719476736、family_size=500
+   - runtime.budgets: node_wall_seconds=3600、run_wall_seconds=21600、peak_memory_bytes=68719476736、k_min=10、family_size=500（旧estimator fallbackのみ）
    - runtime.progress: min_seconds=5、min_fraction=0.01、stall_multiplier=20、stall_min_seconds=60、stall_max_seconds=600
    - runtime.units_per_second: l5=3650000、l1b=29800000、l2a=7230000、l4=31700、l2b=50858、l7=6004
    - lenses.l4.candidate_cap=100
@@ -77,17 +84,27 @@ L5では`support_n`を特徴量とEndpointがともにfiniteで相関へ実際�
 
 Description Databaseへの最初の書込み可能性が生じる前に、同じProgramのwriterがいないことを再確認し、SQLite backup APIで復旧可能なbackupを1回作成してください。WAL/SHMをファイルコピーで個別に扱わないでください。
 
-各Lensのwork estimateをworkload起動前に実行してください。family_size>500（L4を除く）、peak_memory_bytes>68719476736、estimated_seconds>3600、またはRun予算超過なら、そのNodeのworkloadを開始せずneeds_design_reviewで停止してください。L4はfamily gateを免除しますが、manifestへfamily_gate="exempt_parametric"を記録してください。閾値、permutation数、candidate capを変更して通過させないでください。
+P03の全Lensがreadyになったら、各workloadを一件も起動する前にRuntimeのbatch work censusを完了してください。
+`<RUN_ROOT>/work_census.json`へ全Lensのestimate、最大family key、family key別件数、configured/required final permutations、
+peak memory、estimated seconds、guard理由を保存してください。一件のestimate errorまたはguard違反があっても、残りLensの
+estimateを完了してから一度だけ停止してください。その場合、admissible Lensのworkloadも開始しないでください。
 
-P01〜P03が終了したら、P04へ進まず停止してください。各`*_tests.csv`についてfamily_key別件数を集計し、Lensごとの最大族サイズを求めてください。各`findings.jsonl`の行数をFinding件数として数えてください。結果を次の表で報告してください。
+L4以外は`family_size ≤ report_q_max × (B+1) × k_min`をLensごとのBで評価してください。
+peak_memory_bytes>68719476736、estimated_seconds>3600、または全Lens合計を含むRun予算超過もblockerです。
+L4はfamily gateを免除しますが、manifestへfamily_gate="exempt_parametric"を記録してください。
+旧期待値との差はwarningでありblockerではありません。閾値、permutation数、candidate cap、族定義をRun中に変更して通過させないでください。
 
-| Lens | 最大族サイズ | 期待値 | Finding件数 | 判定 |
-|---|---:|---:|---:|---|
-| L5 | 実測値と最大family_key | 52 / axis | 実測値 | 一致/不一致 |
-| L1b | 実測値と最大family_key | 84 / space | 実測値 | 一致/不一致 |
-| L2a | 実測値と最大family_key | 117 | 実測値 | 一致/不一致 |
-| L2b | 実測値と最大family_key | 75 | 実測値 | 一致/不一致 |
-| L7 | 実測値と最大family_key | 86 | 実測値 | 一致/不一致 |
+censusにblockerがなければP03を実行し、P04へ進まず停止してください。その場合は各`*_tests.csv`について
+family_key別件数を集計し、各`findings.jsonl`の行数をFinding件数として数えてください。
+censusにblockerがあればtests/findingsが存在しないLensへ件数を要求せず、census値を次の表で報告してください。
+
+| Lens | 最大family key | 最大族 | configured B | required B | 推定時間 | guard | Finding件数 |
+|---|---|---:|---:|---:|---:|---|---:|
+| L5 | census値 | census値 | census値 | census値 | census値 | admissible/blocked | 実行時のみ |
+| L1b | census値 | census値 | census値 | census値 | census値 | admissible/blocked | 実行時のみ |
+| L2a | census値 | census値 | census値 | census値 | census値 | admissible/blocked | 実行時のみ |
+| L2b | census値 | census値 | census値 | census値 | census値 | admissible/blocked | 実行時のみ |
+| L7 | census値 | census値 | census値 | census値 | census値 | admissible/blocked | 実行時のみ |
 
 L4はparametric family gateの対象外なので、最大族サイズの期待値比較へ混ぜず、candidate数、Finding件数、family_gate、candidate_cap=100を別行で報告してください。
 
@@ -100,9 +117,17 @@ L4はparametric family gateの対象外なので、最大族サイズの期待�
 - 旧Runを変更していないこと
 - Description Databaseの絶対パスと新Run主要成果物の絶対パス
 
-Conformer生成失敗として正しく登録・除外されたterminal SKIPだけを理由にRunを停止しないでください。未知のエラー、schema不整合、全化合物不適格、または期待族サイズと異なる場合は、familyをさらに分割したり閾値を変更したりせず、入力差、eligibility差、実装差のどれによるものかをread-onlyで特定して停止してください。コード修正、R1-4、M-6、特徴量重複排除、性能最適化には進まないでください。
+Conformer生成失敗として正しく登録・除外されたterminal SKIPだけを理由にRunを停止しないでください。
+旧期待族サイズとの差も停止理由にしないでください。未知のエラー、schema不整合、全化合物不適格、
+統計・memory・時間予算超過は`work_census.json`に全件をまとめ、入力差、eligibility差、実装差、設計予算差へ分類してください。
+その場でfamilyを追加分割、閾値変更、B変更、コード修正して通過させないでください。
 ```
 
 ## 終了条件
 
-このcheckpointは、P01〜P03が完了し、L5/L1b/L2a/L2b/L7の最大族サイズとFinding件数が報告された時点で終了する。結果を設計・実装担当へ返し、R1-4へ進むかどうかの判断を待つ。
+このcheckpointは次のいずれかで正常に目的を達成する。
+
+1. censusにblockerがある場合: 全P03 Lensのcensusと全blockerを一括報告し、P03 workloadを開始せず終了する。
+2. 全Lensがadmissibleな場合: P03を完了し、最大族サイズとFinding件数を報告して終了する。
+
+一件ずつ問題を露出させる旧運用へ戻らない。結果を設計・実装担当へ返し、L5 M-5または次stageの判断を待つ。

@@ -83,6 +83,11 @@ runtime:
     node_wall_seconds: 3600
     run_wall_seconds: 21600
     peak_memory_bytes: 68719476736
+    # Minimum number of attainable BH rejections used to derive the
+    # per-Lens family limit from alpha and that Lens's permutation count.
+    k_min: 10
+    # Compatibility fallback for older estimators that do not emit the
+    # derived statistical-budget fields.
     family_size: 500
   progress:
     min_seconds: 5

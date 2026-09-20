@@ -72,6 +72,16 @@ def _run(args: argparse.Namespace) -> dict[str, str]:
             _artifact(output, "runtime_state", "runtime.sqlite", "runtime_state@0.2.1", None),
             _artifact(output, "runtime_summary", "runtime_summary.json", "runtime_summary@0.2.1", len(summary["nodes"])),
         ]
+        if (output / "work_census.json").is_file():
+            artifacts.append(
+                _artifact(
+                    output,
+                    "work_census",
+                    "work_census.json",
+                    "work_census@0.2.1",
+                    len(json.loads((output / "work_census.json").read_text(encoding="utf-8"))["nodes"]),
+                )
+            )
         manifest = {
             "schema_version": "0.2.1",
             "producer": {key: request["identity"][key] for key in ("run_id", "node_id", "attempt_id", "skill_name")},

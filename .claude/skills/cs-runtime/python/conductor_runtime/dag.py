@@ -137,6 +137,8 @@ class PipelineCoordinator:
         self._event_sequences: dict[tuple[str, str, str], int] = {}
         self._run_started_at = time.monotonic()
         self._admitted_estimated_seconds = 0.0
+        self._census_estimates: dict[str, WorkEstimate] = {}
+        self._census_complete = False
 
     def register(self) -> None:
         for node in self.plan.nodes:
@@ -316,13 +318,32 @@ class PipelineCoordinator:
         return estimate
 
     def _work_guard(
-        self, node: NodePlan, estimate: WorkEstimate
+        self,
+        node: NodePlan,
+        estimate: WorkEstimate,
+        *,
+        include_run_budget: bool = True,
     ) -> tuple[str | None, str]:
         budgets, _ = self._runtime_settings()
         family_gate = "exempt_parametric" if node.skill_name == "cs-lens-l4" else "applied"
-        if family_gate == "applied" and estimate.family_size > budgets["family_size"]:
+        statistical_budget = estimate.detail.get("statistical_budget_satisfied")
+        family_blocked = (
+            not statistical_budget
+            if isinstance(statistical_budget, bool)
+            else estimate.family_size > budgets["family_size"]
+        )
+        if family_gate == "applied" and family_blocked:
+            configured = estimate.detail.get("configured_final_permutations")
+            required = estimate.detail.get("required_final_permutations")
+            resolution = (
+                f"; configured_final_permutations={configured}, "
+                f"required_final_permutations>={required}"
+                if isinstance(configured, int) and isinstance(required, int)
+                else ""
+            )
             return (
-                f"family_size {estimate.family_size}>{int(budgets['family_size'])}",
+                f"family_size {estimate.family_size} exceeds the permutation/BH budget"
+                f"{resolution}",
                 family_gate,
             )
         if estimate.peak_memory_bytes > budgets["peak_memory_bytes"]:
@@ -335,6 +356,8 @@ class PipelineCoordinator:
                 f"estimated_seconds {estimate.estimated_seconds:.6g}>{budgets['node_wall_seconds']:.6g}",
                 family_gate,
             )
+        if not include_run_budget:
+            return None, family_gate
         elapsed_run_seconds = time.monotonic() - self._run_started_at
         projected_run_seconds = max(
             elapsed_run_seconds, self._admitted_estimated_seconds
@@ -345,6 +368,192 @@ class PipelineCoordinator:
                 family_gate,
             )
         return None, family_gate
+
+    @staticmethod
+    def _available_cpu_cores(workers: int) -> int:
+        if workers < 0:
+            raise ValueError("workers must be >= 0")
+        local_capacity = (
+            len(os.sched_getaffinity(0))
+            if hasattr(os, "sched_getaffinity")
+            else (os.cpu_count() or 1)
+        )
+        if workers > local_capacity:
+            raise ValueError(
+                f"Explicit workers={workers} exceed local CPU affinity={local_capacity}"
+            )
+        return workers if workers > 0 else max(1, local_capacity - 1)
+
+    def _collect_work_census(
+        self, nodes: list[NodePlan], *, workers: int
+    ) -> dict[str, Any]:
+        """Estimate every ready Lens before any Lens workload is admitted."""
+        available_cpu_cores = self._available_cpu_cores(workers)
+        census_root = self.run_directory / "work_census"
+        census_root.mkdir(parents=True, exist_ok=True)
+        environment = os.environ.copy()
+        environment["CONDUCTOR_AVAILABLE_CPU_CORES"] = str(available_cpu_cores)
+        environment["CONDUCTOR_NODE_CPU_CORES"] = str(available_cpu_cores)
+        entries: list[dict[str, Any]] = []
+        self._census_estimates = {}
+        for node in sorted(nodes, key=lambda item: item.node_id):
+            node_directory = census_root / node.node_id
+            node_directory.mkdir(parents=True, exist_ok=True)
+            synthetic_attempt = {
+                "attempt_id": "WORK-CENSUS",
+                "lease_token": "WORK-CENSUS",
+            }
+            try:
+                request_path = self._resolve_request(
+                    node,
+                    synthetic_attempt,
+                    node_directory,
+                    available_cpu_cores,
+                )
+                estimate = self._estimate_node_work(
+                    node,
+                    request_path,
+                    node_directory,
+                    node.output_directory / "WORK-CENSUS",
+                    environment,
+                    available_cpu_cores,
+                )
+                guard_reason, family_gate = self._work_guard(
+                    node, estimate, include_run_budget=False
+                )
+                self._census_estimates[node.node_id] = estimate
+                entries.append(
+                    {
+                        "node_id": node.node_id,
+                        "skill_name": node.skill_name,
+                        "status": "blocked" if guard_reason else "admissible",
+                        "estimate": estimate.to_dict(),
+                        "family_gate": family_gate,
+                        "guard_reason": guard_reason,
+                    }
+                )
+            except Exception as exc:
+                entries.append(
+                    {
+                        "node_id": node.node_id,
+                        "skill_name": node.skill_name,
+                        "status": "estimate_error",
+                        "estimate": None,
+                        "family_gate": "unknown",
+                        "guard_reason": str(exc),
+                    }
+                )
+        budgets, _ = self._runtime_settings()
+        estimated_seconds = sum(
+            float(entry["estimate"]["estimated_seconds"])
+            for entry in entries
+            if entry["estimate"] is not None
+        )
+        projected_run_seconds = (
+            time.monotonic() - self._run_started_at + estimated_seconds
+        )
+        batch_guard_reason = None
+        if projected_run_seconds > budgets["run_wall_seconds"]:
+            batch_guard_reason = (
+                f"projected_run_seconds {projected_run_seconds:.6g}>"
+                f"{budgets['run_wall_seconds']:.6g}"
+            )
+        payload = {
+            "schema_version": "0.2.1",
+            "run_id": self.plan.run_id,
+            "generated_at": _utc_now(),
+            "status": (
+                "blocked"
+                if batch_guard_reason
+                or any(entry["status"] != "admissible" for entry in entries)
+                else "admissible"
+            ),
+            "estimated_lens_seconds": estimated_seconds,
+            "projected_run_seconds": projected_run_seconds,
+            "run_budget_seconds": budgets["run_wall_seconds"],
+            "batch_guard_reason": batch_guard_reason,
+            "nodes": entries,
+        }
+        atomic_write_json(self.run_directory / "work_census.json", payload)
+        self._census_complete = True
+        return payload
+
+    def _record_census_stop(
+        self,
+        node: NodePlan,
+        entry: dict[str, Any],
+        *,
+        workers: int,
+        batch_guard_reason: str | None = None,
+    ) -> None:
+        """End one node at the census boundary without starting its workload."""
+        attempt = self.state.lease(node.node_id)
+        attempt_directory = self.attempts / node.node_id / attempt["attempt_id"]
+        attempt_directory.mkdir(parents=True, exist_ok=False)
+        self._event(node, attempt, "leased", {})
+        self._event(node, attempt, "started", {})
+        available_cpu_cores = self._available_cpu_cores(workers)
+        request_path = self._resolve_request(
+            node, attempt, attempt_directory, available_cpu_cores
+        )
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        output = node.output_directory / attempt["attempt_id"]
+        reason = batch_guard_reason or str(entry["guard_reason"])
+        estimate = self._census_estimates.get(node.node_id)
+        if estimate is not None:
+            atomic_write_json(
+                attempt_directory / "work_estimate.json", estimate.to_dict()
+            )
+            manifest_path = self._write_guard_manifest(
+                node,
+                attempt,
+                request,
+                output,
+                estimate,
+                reason,
+                str(entry["family_gate"]),
+            )
+        else:
+            output.mkdir(parents=True, exist_ok=False)
+            manifest = {
+                "schema_version": "0.2.1",
+                "producer": {
+                    key: request["identity"][key]
+                    for key in ("run_id", "node_id", "attempt_id", "skill_name")
+                },
+                "status": "needs_design_review",
+                "config_sha256": file_sha256(Path(request["config_path"])),
+                "input_artifacts": [
+                    {
+                        "role": item["role"],
+                        "path": item["path"],
+                        "sha256": item["sha256"],
+                    }
+                    for item in request.get("inputs", [])
+                ],
+                "artifacts": [],
+                "metrics": {
+                    "guard_decision": "needs_design_review",
+                    "work_census_status": "estimate_error",
+                },
+                "warnings": [f"R1 work census could not estimate the node: {reason}"],
+                "created_at": _utc_now(),
+            }
+            validate_instance(
+                manifest, self.schema_directory / "artifact_manifest.schema.json"
+            )
+            manifest_path = output / "artifact_manifest.json"
+            atomic_write_json(manifest_path, manifest)
+        self._event(
+            node,
+            attempt,
+            "needs_design_review",
+            {
+                "manifest_path": str(manifest_path),
+                "guard_reason": reason,
+                "work_census": str(self.run_directory / "work_census.json"),
+            },
+        )
 
     def _write_guard_manifest(
         self,
@@ -567,20 +776,7 @@ class PipelineCoordinator:
         self._event(node, attempt, "leased", {})
         self._event(node, attempt, "started", {})
         try:
-            if workers < 0:
-                raise ValueError("workers must be >= 0")
-            local_capacity = (
-                len(os.sched_getaffinity(0))
-                if hasattr(os, "sched_getaffinity")
-                else (os.cpu_count() or 1)
-            )
-            if workers > local_capacity:
-                raise ValueError(
-                    f"Explicit workers={workers} exceed local CPU affinity={local_capacity}"
-                )
-            available_cpu_cores = (
-                workers if workers > 0 else max(1, local_capacity - 1)
-            )
+            available_cpu_cores = self._available_cpu_cores(workers)
             request_path = self._resolve_request(
                 node, attempt, attempt_directory, available_cpu_cores
             )
@@ -592,14 +788,20 @@ class PipelineCoordinator:
             estimate: WorkEstimate | None = None
             family_gate = "not_applicable"
             if node.skill_name in self.LENS_SKILLS:
-                estimate = self._estimate_node_work(
-                    node,
-                    request_path,
-                    attempt_directory,
-                    output,
-                    environment,
-                    available_cpu_cores,
-                )
+                estimate = self._census_estimates.get(node.node_id)
+                if estimate is None:
+                    estimate = self._estimate_node_work(
+                        node,
+                        request_path,
+                        attempt_directory,
+                        output,
+                        environment,
+                        available_cpu_cores,
+                    )
+                else:
+                    atomic_write_json(
+                        attempt_directory / "work_estimate.json", estimate.to_dict()
+                    )
                 self._event(
                     node,
                     attempt,
@@ -689,6 +891,48 @@ class PipelineCoordinator:
             if states and all(value == "succeeded" for value in states.values()): status = "succeeded"; break
             ready = self.state.ready_nodes(self.plan.run_id)
             if not ready: status = "failed"; break
+            pending_lens_ids = {
+                row["node_id"]
+                for row in nodes
+                if row["skill_name"] in self.LENS_SKILLS
+                and row["state"] in {"pending", "retryable"}
+            }
+            ready_lens_ids = {
+                row["node_id"]
+                for row in ready
+                if row["skill_name"] in self.LENS_SKILLS
+            }
+            if (
+                not self._census_complete
+                and pending_lens_ids
+                and pending_lens_ids.issubset(ready_lens_ids)
+            ):
+                census_nodes = [self.by_id[node_id] for node_id in ready_lens_ids]
+                census = self._collect_work_census(census_nodes, workers=workers)
+                if census["status"] == "blocked":
+                    blocking_entries = [
+                        entry
+                        for entry in census["nodes"]
+                        if entry["status"] != "admissible"
+                    ]
+                    for entry in blocking_entries:
+                        self._record_census_stop(
+                            self.by_id[entry["node_id"]], entry, workers=workers
+                        )
+                    if census["batch_guard_reason"] and not blocking_entries:
+                        largest = max(
+                            census["nodes"],
+                            key=lambda entry: float(
+                                entry["estimate"]["estimated_seconds"]
+                            ),
+                        )
+                        self._record_census_stop(
+                            self.by_id[largest["node_id"]],
+                            largest,
+                            workers=workers,
+                            batch_guard_reason=str(census["batch_guard_reason"]),
+                        )
+                    continue
             for row in ready:
                 self.execute_node(self.by_id[row["node_id"]], lease_seconds=lease_seconds, workers=workers)
         final = self.state.list_nodes(self.plan.run_id)
@@ -710,5 +954,10 @@ class PipelineCoordinator:
             })
         return {
             "schema_version": "0.2.1", "run_id": self.plan.run_id, "status": status,
+            "work_census_path": (
+                str(self.run_directory / "work_census.json")
+                if (self.run_directory / "work_census.json").is_file()
+                else None
+            ),
             "nodes": summary_nodes,
         }

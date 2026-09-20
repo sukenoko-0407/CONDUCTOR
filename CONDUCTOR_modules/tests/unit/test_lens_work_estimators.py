@@ -145,4 +145,11 @@ def test_l5_estimate_is_exact_for_units_and_feature_dependent_for_memory(
     assert estimate_two.peak_memory_bytes > estimate_one.peak_memory_bytes
     assert estimate_one.detail["comparison_count"] == 2
     assert estimate_one.detail["feature_count"] == 1
-
+    assert estimate_one.detail["family_count"] == 1
+    assert estimate_one.detail["max_family_key"] == "L5|AX|correlation_sign_conflict"
+    assert estimate_one.detail["family_sizes"] == {
+        "L5|AX|correlation_sign_conflict": 2
+    }
+    assert estimate_one.detail["configured_final_permutations"] == 1000
+    assert estimate_one.detail["required_final_permutations"] == 3
+    assert estimate_one.detail["statistical_budget_satisfied"] is True

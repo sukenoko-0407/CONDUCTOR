@@ -14,11 +14,18 @@ def test_work_estimate_round_trip_and_rejects_extra_fields() -> None:
         family_size=52,
         peak_memory_bytes=4096,
         estimated_seconds=0.25,
-        detail={"permutations": 1000},
+        detail={
+            "permutations": 1000,
+            "max_family_key": "L5|AX|correlation_sign_conflict",
+            "family_sizes": {"L5|AX|correlation_sign_conflict": 52},
+            "statistical_budget_satisfied": True,
+        },
     )
     assert WorkEstimate.from_dict(estimate.to_dict()) == estimate
     with pytest.raises(ValueError, match="exactly"):
         WorkEstimate.from_dict({**estimate.to_dict(), "unexpected": 1})
+    with pytest.raises(ValueError, match="finite"):
+        WorkEstimate(1, 1, 1, 1.0, {"bad": float("nan")})
 
 
 @pytest.mark.parametrize(

@@ -13,7 +13,7 @@ import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 
 @dataclass(frozen=True)
@@ -22,7 +22,7 @@ class WorkEstimate:
     family_size: int
     peak_memory_bytes: int
     estimated_seconds: float
-    detail: dict[str, int]
+    detail: dict[str, Any]
 
     def __post_init__(self) -> None:
         for name in ("unit_count", "family_size", "peak_memory_bytes"):
@@ -41,8 +41,7 @@ class WorkEstimate:
         for key, value in self.detail.items():
             if not isinstance(key, str):
                 raise ValueError("detail keys must be strings")
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"detail[{key!r}] must be a non-negative integer")
+            _validate_json_value(value, f"detail[{key!r}]")
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -73,8 +72,29 @@ class WorkEstimate:
             estimated_seconds=_strict_float(
                 value["estimated_seconds"], "estimated_seconds"
             ),
-            detail={str(key): _strict_int(item, f"detail[{key!r}]") for key, item in detail.items()},
+            detail={str(key): item for key, item in detail.items()},
         )
+
+
+def _validate_json_value(value: object, name: str) -> None:
+    """Reject non-JSON and non-finite diagnostic detail values."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must be finite")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_json_value(item, f"{name}[{index}]")
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{name} keys must be strings")
+            _validate_json_value(item, f"{name}[{key!r}]")
+        return
+    raise ValueError(f"{name} must be JSON-compatible")
 
 
 def _strict_int(value: object, name: str) -> int:

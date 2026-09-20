@@ -56,13 +56,19 @@ def test_l1b_family_is_split_by_space(tmp_path) -> None:
         screen_permutations=1,
         final_permutations=1,
         screen_p_max=1.0,
-        report_q_max=0.05,
+        report_q_max=1.0,
         calibration_permutations=1,
     )
     assert set(result.tests["family_key"]) == {
         "L1b|D001|conditional_flatness",
         "L1b|D002|conditional_flatness",
     }
+    assert len(result.findings) == 2
+    assert len({finding["finding_key"] for finding in result.findings}) == 2
+    assert {
+        (finding["claim"]["subject_id"], finding["claim"]["condition_id"])
+        for finding in result.findings
+    } == {("D001", "CTX"), ("D002", "CTX")}
 
 
 def test_l1b_excludes_description_skips_per_space(tmp_path) -> None:
