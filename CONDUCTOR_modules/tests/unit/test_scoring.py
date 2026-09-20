@@ -79,3 +79,25 @@ def test_l5_adjusted_effect_is_recomputed_from_residualized_endpoint() -> None:
     assert abs(scored["triviality"]["adjusted_effect_size"]) < 1e-10
     assert scored["scores"]["non_triviality"] == 0.0
     assert scored["triviality"]["confounders_tested"] == ["MW", "cLogP", "TPSA", "scaffold_class"]
+
+
+def test_scoring_zero_findings_returns_schema_stable_empty_scores() -> None:
+    result = score_findings(
+        [],
+        pd.DataFrame(),
+        pd.DataFrame(
+            {
+                "endpoint_id": ["EP", "EP"],
+                "oriented_value": [0.0, 1.0],
+            }
+        ),
+        "EP",
+        run_seed=1,
+        bootstrap_iterations=10,
+        display_k=1,
+    )
+    assert result.findings == ()
+    assert result.scores.empty
+    assert {"finding_id", "finding_key", "passed_gate"}.issubset(result.scores.columns)
+    assert result.gate["candidate_count"] == 0
+    assert result.gate["status"] == "needs_design_review"

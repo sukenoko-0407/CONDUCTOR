@@ -12,7 +12,7 @@ from typing import Any, Iterable
 import numpy as np
 import pandas as pd
 
-from conductor_stat_core import ENTITY_KEYS, file_sha256, stable_id
+from conductor_stat_core import ENTITY_KEYS, file_sha256, read_csv_or_empty, stable_id
 
 
 NUMBER = re.compile(r"(?<![A-Za-z0-9_])[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?(?![A-Za-z0-9_])")
@@ -43,7 +43,7 @@ class EvidenceRegistry:
             if expected is None:raise CitationError(f"Evidence table is absent from supplied manifests: {name}")
             actual=file_sha256(path)
             if actual!=expected:raise CitationError(f"Evidence hash mismatch for {name}: expected {expected}, actual {actual}")
-            frame=pd.read_csv(path,dtype={"row_id":"string","test_id":"string","compound_id":"string","pair_id":"string"})
+            frame=read_csv_or_empty(path,empty_columns=("row_id",),dtype={"row_id":"string","test_id":"string","compound_id":"string","pair_id":"string"})
             if "row_id" not in frame or frame["row_id"].astype(str).duplicated().any():raise CitationError(f"Evidence table requires unique row_id: {name}")
             tables[name]=frame;paths[name]=path
         return cls(resolved_root,tables,paths,expected_hashes)

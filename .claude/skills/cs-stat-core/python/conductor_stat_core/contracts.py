@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import jsonschema
+import pandas as pd
 import yaml
 
 
@@ -117,3 +118,29 @@ def verify_request_inputs(request: Mapping[str, Any]) -> None:
                 f"Input artifact hash mismatch for role {artifact['role']}: "
                 f"expected {artifact['sha256']}, got {actual}"
             )
+
+
+def read_csv_or_empty(
+    path: Path,
+    *,
+    empty_columns: tuple[str, ...] = (),
+    **kwargs: Any,
+) -> pd.DataFrame:
+    """Read a CSV while preserving a legitimate zero-row artifact.
+
+    Pandas raises ``EmptyDataError`` for a file containing only a newline,
+    which is how ``DataFrame()`` is serialized.  Such an artifact represents
+    zero rows, not a malformed row.  Non-whitespace content that pandas cannot
+    parse remains an error.  Callers supply the minimum columns needed to keep
+    their downstream empty-table contract explicit.
+    """
+
+    resolved = path.resolve()
+    try:
+        return pd.read_csv(resolved, **kwargs)
+    except pd.errors.EmptyDataError:
+        if resolved.read_bytes().strip():
+            raise
+        return pd.DataFrame(
+            {column: pd.Series(dtype="string") for column in empty_columns}
+        )

@@ -14,6 +14,7 @@ from conductor_lens_l4 import (
     assemble_fragments,
     candidate_distance_matrix,
     generate_l4_candidates,
+    score_l4_candidates,
     select_l4_candidates,
 )
 from conductor_lens_l5 import run_l5
@@ -595,6 +596,36 @@ def test_l4_scale_cap_is_support_ranked_and_deterministic() -> None:
     assert plan.excluded_by_cap_count == 1
     assert plan.planned_description_cost_units == 18
     assert selected.audit.iloc[-1]["reason"] == "scale_cap"
+
+
+def test_l4_zero_candidates_keep_parseable_output_schemas() -> None:
+    result = score_l4_candidates(
+        pd.DataFrame(
+            [
+                {"compound_id": "A", "endpoint_id": "EP", "oriented_value": 0.0},
+                {"compound_id": "B", "endpoint_id": "EP", "oriented_value": 1.0},
+            ]
+        ),
+        L4GenerationResult(
+            pd.DataFrame(
+                columns=[
+                    "compound_id",
+                    "canonical_smiles",
+                    "source_compound_ids_json",
+                    "transformation_ids_json",
+                ]
+            ),
+            pd.DataFrame(columns=["row_id", "status", "reason"]),
+        ),
+        [],
+        "EP",
+    )
+    assert result.findings == ()
+    assert result.evidence.columns.tolist()[0] == "row_id"
+    assert result.tests.columns.tolist()[0] == "row_id"
+    assert {"finding_key", "row_id", "block_id"}.issubset(
+        result.score_observations.columns
+    )
 
 
 def test_l4_scale_guard_stops_before_description_work() -> None:

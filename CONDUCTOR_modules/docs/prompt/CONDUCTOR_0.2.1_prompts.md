@@ -363,6 +363,10 @@ Run root: <RUN_ROOT>
 
 ### 4.4 実装修正後のFailed Node限定再キュー
 
+P01〜P03成功後、P04 scoringがzero-row CSV互換性問題だけでfailedとなったR1.4本番Runは、
+`CONDUCTOR_0.2.1_R1_P04_P06_recovery_prompt.md`を使用する。同文書はread-only確認、P04一件の
+監査付き再キュー、同じRunでのP04〜P06再開を一続きで規定する。
+
 ```text
 CONDUCTOR 0.2.1の実装修正後復旧として、failed Nodeを1件だけ監査付きでretryableへ戻してください。
 

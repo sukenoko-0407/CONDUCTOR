@@ -138,7 +138,15 @@ class PipelineCoordinator:
         self._run_started_at = time.monotonic()
         self._admitted_estimated_seconds = 0.0
         self._census_estimates: dict[str, WorkEstimate] = {}
-        self._census_complete = False
+        census_path = self.run_directory / "work_census.json"
+        self._census_complete = census_path.is_file()
+        if self._census_complete:
+            prior_census = json.loads(census_path.read_text(encoding="utf-8"))
+            if str(prior_census.get("run_id")) != self.plan.run_id:
+                raise ValueError(
+                    "Existing work census belongs to a different Run: "
+                    f"{prior_census.get('run_id')} != {self.plan.run_id}"
+                )
 
     def register(self) -> None:
         for node in self.plan.nodes:
@@ -761,9 +769,14 @@ class PipelineCoordinator:
         metrics["family_gate"] = family_gate
         ratio = estimate.estimated_seconds / actual_seconds if actual_seconds > 0 else None
         metrics["estimate_actual_ratio"] = ratio
+        metrics["observed_units_per_second"] = (
+            estimate.unit_count / actual_seconds if actual_seconds > 0 else None
+        )
         warnings = manifest.setdefault("warnings", [])
         if ratio is not None and ratio >= 3:
             warnings.append(f"work estimate/actual ratio is {ratio:.3f} (>=3)")
+        elif ratio is not None and ratio <= 1 / 3:
+            warnings.append(f"work estimate/actual ratio is {ratio:.3f} (<=0.333)")
         if stalled:
             warnings.append("Runtime observed a stalled progress interval; process was not killed")
         atomic_write_json(manifest_path, manifest)
@@ -933,6 +946,17 @@ class PipelineCoordinator:
                             batch_guard_reason=str(census["batch_guard_reason"]),
                         )
                     continue
+            if not self._census_complete and pending_lens_ids:
+                # A Lens such as L4/L7 can become ready before context-dependent
+                # Lenses.  Hold every Lens workload until all pending P03 Lenses
+                # are simultaneously estimable, while allowing only upstream
+                # non-Lens nodes to advance the DAG.
+                ready = [
+                    row for row in ready if row["skill_name"] not in self.LENS_SKILLS
+                ]
+                if not ready:
+                    status = "failed"
+                    break
             for row in ready:
                 self.execute_node(self.by_id[row["node_id"]], lease_seconds=lease_seconds, workers=workers)
         final = self.state.list_nodes(self.plan.run_id)

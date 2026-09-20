@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 仕様概要書
 
-Status: **科学的仕様は確定。R1.3 L5行列化・統計予算実装済み、本番完走試験待ち。**
+Status: **科学的仕様は確定。R1.4 zero-row契約・全Lens census barrier実装済み、P04からの本番復旧試験待ち。**
 
 > **2026-09-19本番訂正:** 64コア・755 GiB RAMの専用機において、L5が実質1コアのまま8時間以上継続した。科学的なL5検定契約は維持するが、long-only membership、context-pair単位の相関再計算、未接続の`--workers`、checkpointを持たない長時間Nodeは本番規模に適合しない。実装判断の履歴、0.1.x Boolean matrixを再評価した理由、未実装の再設計案と受入条件は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
 
@@ -14,6 +14,10 @@ Status: **科学的仕様は確定。R1.3 L5行列化・統計予算実装済み
 > **2026-09-20 R1.3訂正:** 既知のL5統計予算不足を再確認するだけのcheckpoint運用を終了する。
 > L5相関をBLAS batchへ置換し、L5だけ`B=5000`とする。他Lensは`B=1000`を維持する。
 > 次の本番試験はcensusで終了せず、admissibleならPhase 1〜6を完走する。
+
+> **2026-09-20 R1.4訂正:** Finding 0件は有効な解析結果であり、空のLens artifactをP04〜P06が
+> parse errorとして扱ってはならない。全Lensのwork censusが完了する前にL4/L7を先行実行する
+> Runtime経路を禁止する。失敗済みP04は監査付きで一件だけ再キューし、成功済みP01〜P03を再利用する。
 
 ## 1. 文書の位置づけ
 
@@ -757,6 +761,14 @@ R1-20. **L5のfinal permutation数はLens固有に5000とする。** 最大族20
 R1-21. **L5は固定membership・finite mask・x側十分統計量をcompileし、Endpoint permutationをBLAS batchで評価する。** candidateごとのPython相関loopとnull配列保持を廃止し、finite/extreme counterだけを保持する。iteration seedと科学的検定は変更しない。
 
 R1-22. **R1.2 census取得後は、同じ既知blockerを再確認するだけのRunを行わない。** 実装と解決済みconfigを先に反映し、次の本番環境試験はPhase 1〜6の完走を目的とする。旧期待族サイズとの差だけでは停止しない。
+
+R1-23. **Finding 0件を有効なzero-row artifactとしてPhase間で伝播する。** CSV producerは0行でも列schemaを保持する。後方互換として空白だけの旧CSVも、対応するFindingが0件なら0行として受理する。Findingが存在するのに観測tableが空、非空の壊れたCSV、存在しないcitation rowは契約違反として停止する。
+
+R1-24. **P03の全Lensをbatch census barrierの後で起動する。** census未完了の間、Runtimeは非Lensの上流Nodeだけを進め、readyになったL4/L7を含むLens workloadを実行しない。全pending Lensがestimate可能になった時点で一括censusし、admissibleな場合だけworkloadへ進む。
+
+R1-25. **Work estimateの較正にはexactな実測telemetryを使う。** 各Lens manifestへ`estimate_actual_ratio`と`observed_units_per_second`を記録する。単一Runの丸めた比から`units_per_second`を自動変更せず、engine/version、unit_count、actual secondsをそろえた再現可能な測定に基づき別commitで変更する。
+
+R1-26. **実装修正でfailedになった単一Nodeは、監査付き限定再キューで同じRunを継続できる。** skill、状態、operator、理由を検証・記録し、成功済み上流Node、frozen config/plan/input、Description Databaseを変更しない。今回のP04修正ではP01〜P03を再実行しない。
 
 ---
 

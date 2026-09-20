@@ -226,3 +226,44 @@ def test_l2b_cli_writes_one_stdout_object_and_checkpoint(tmp_path) -> None:
     assert checkpoint["acceptance_gt_1_5"]
     assert checkpoint["series_count"] == 12
     assert len((output / "findings.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_scoring_accepts_zero_finding_lens_with_headerless_empty_observations(
+    tmp_path: Path,
+) -> None:
+    """A Lens with zero Findings is a valid input, including legacy 1-byte CSVs."""
+
+    config = _config(tmp_path)
+    lens_output = tmp_path / "l4"
+    lens_output.mkdir()
+    findings = lens_output / "findings.jsonl"
+    findings.write_text("", encoding="utf-8")
+    observations = lens_output / "score_observations.csv"
+    observations.write_text("\n", encoding="utf-8")
+    endpoints = tmp_path / "endpoints.csv"
+    pd.DataFrame(
+        [
+            {"compound_id": "A", "endpoint_id": "EP", "oriented_value": 1.0},
+            {"compound_id": "B", "endpoint_id": "EP", "oriented_value": 2.0},
+        ]
+    ).to_csv(endpoints, index=False)
+    request = _request(
+        tmp_path,
+        "cs-scoring",
+        "P04",
+        config,
+        [
+            ("findings", findings),
+            ("score_observations", observations),
+            ("endpoint_table", endpoints),
+        ],
+        "score",
+    )
+
+    output = tmp_path / "scoring"
+    response = _run("cs-scoring", request, output)
+
+    assert response["status"] == "needs_design_review"
+    scores = pd.read_csv(output / "scores.csv")
+    assert scores.empty
+    assert {"finding_id", "finding_key", "lens", "rank"}.issubset(scores.columns)

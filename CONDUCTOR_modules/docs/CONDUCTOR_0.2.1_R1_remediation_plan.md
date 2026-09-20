@@ -1,8 +1,8 @@
 # CONDUCTOR 0.2.1 R1 修正計画書
 
-Status: **R1.3実装済み。本番完走試験待ち。**
+Status: **R1.4実装済み。P04からの本番復旧試験待ち。**
 作成日: 2026-09-19
-改訂: **R1.3（2026-09-20）。M-21〜M-25を実装し、L5の本番統計予算と既存DBからの固定DAG完走経路を実行可能にした。**
+改訂: **R1.4（2026-09-20）。M-26〜M-29を実装し、0件Lens成果物、全Lens census barrier、実測速度記録、P04限定復旧を追加した。**
 
 > **R1.3実行順序訂正:** R1.2では、最大族2092に対してB=1000が不足すると既に判明していたにも
 > かかわらず、M-5未実装・B未変更のまま同じcensusを再実行させた。これは新しい情報を得ない停止であり、
@@ -894,3 +894,76 @@ schema/hash/identity不整合、未知の実装エラー、統計・memory・時
 
 これはlocal fixtureに対する実装受入である。本番データによるPhase 1〜6完走と成果物監査は未実施であり、
 文書状態の「本番完走試験待ち」は維持する。
+
+---
+
+## 13. R1.4 P04停止後の追加是正 M-26〜M-29
+
+### 13.1 本番で判明した事実
+
+- P01〜P03はすべて成功した。
+- L4はFinding 0件を正しく算出したが、空の`DataFrame()`をCSV化したため
+  `score_observations.csv`が改行だけの1 byte artifactになった。
+- P04 scoringは全Lensの`score_observations.csv`を無条件に`pandas.read_csv()`し、
+  `EmptyDataError: No columns to parse from file`で同じ失敗を2回再現した。
+- RuntimeはL4/L7が先にreadyになると、そのworkloadを実行してからcontext依存Lensのcensusへ
+  進んでいた。したがって「全Lens censusをworkloadより先に行う」というM-19を満たしていなかった。
+- 実時間は見積りより短かった。報告されたestimate/actual比はL5で約133、L1bで約21.7、
+  L2aで約714である。ただし丸めた比だけから`units_per_second`を自動変更してはならない。
+
+### 13.2 M-26: zero-row artifactを有効な0件として扱う
+
+Finding 0件は解析失敗ではない。producerは0行でも列schemaを保持し、consumerは旧実装が作った
+空白だけのCSVも0行として読めなければならない。
+
+- L4のgeneration audit、evidence、tests、score observationsは、0件でも固定列を持つCSVを出力する。
+- 共通`read_csv_or_empty()`は、内容が空白だけの場合に限り明示列を持つ0行tableを返す。
+  空白以外の壊れたCSVは従来どおり例外にする。
+- P04は、Findingも0件である同一Lensのheaderless empty observationsを読み飛ばす。
+  Findingが存在するLensのobservationsがheaderless emptyなら契約違反として停止する。
+- P04の全Findingが0件でも、schemaを持つ0行`scores.csv`とgate artifactを生成する。
+- P05は各Lensの0行observationsを安全に結合し、P06のcitation registryは0行evidenceを受理する。
+  存在しないrowへの引用は引き続きfail-closedとする。
+
+この変更はFindingを捏造せず、閾値も下げない。0件を「正常に評価された0件」として下流へ伝える
+artifact契約の修正である。
+
+### 13.3 M-27: 全Lens batch census barrier
+
+`work_census.json`が未作成の間、RuntimeはreadyになったLensを一件も実行しない。P01/P02など
+非Lensのready Nodeだけを進め、pending/retryableな全Lensが同時にestimate可能になった時点で
+一括censusを作る。censusがadmissibleな場合に限ってLens workloadを開始する。
+
+再開時に同じRun IDの`work_census.json`が存在する場合はcensus済みとして扱う。異なるRun IDの
+censusはfail-fastする。これにより、L4/L7先行実行とcensus停止の競合をなくす。
+
+### 13.4 M-28: 見積り較正用の実測telemetry
+
+Lens manifestへ次を記録する。
+
+- `estimate_actual_ratio = estimated_seconds / actual_wall_seconds`
+- `observed_units_per_second = unit_count / actual_wall_seconds`
+- ratioが3以上または1/3以下ならwarning
+
+`units_per_second`はguardへ影響するversioned既定値であるため、単一Runの丸めた比から自動更新しない。
+本番manifestのexact `unit_count`、`actual_seconds`、engine/versionを収集し、複数Runまたは再現fixtureで
+安定性を確認してから別commitで較正する。保守的な見積りはRunを不必要に停止しない限り正確性を
+損なわないが、過大見積りの監査と改訂候補化は必須とする。
+
+### 13.5 M-29: failed P04だけを再キューしてP04〜P06を継続する
+
+今回のRunではP01〜P03の成功artifactを再計算しない。監査付き管理コマンドでskillが
+`cs-scoring`であるfailed P04を一件だけ`retryable`へ戻し、同じRun ID、同じRun root、同じ
+coordinator requestで再開する。Runtimeは成功済みNodeを再実行せず、P04の新attemptからP05/P06へ
+進む。frozen config、plan、input、Description Database、P01〜P03 artifactは変更しない。
+
+専用手順は`docs/prompt/CONDUCTOR_0.2.1_R1_P04_P06_recovery_prompt.md`を正とする。
+
+### 13.6 R1.4受入条件
+
+- 本番再現fixture（L4 Finding 0件、1 byte observations）でP04がparse errorにならない。
+- L4の0候補経路が列schemaを持つ全CSVを生成する。
+- 0件scoringがschemaを持つ0行`scores.csv`を生成する。
+- context依存Lensがreadyになる前にreadyだったL4/L7をRuntimeが実行せず、全Lensを一括censusする。
+- 同じRunのP04だけを監査付きで再キューし、P01〜P03を再実行せずP04〜P06へ進める。
+- 壊れた非空CSV、Findingあり・observationsなし、存在しないcitation rowは引き続き停止する。

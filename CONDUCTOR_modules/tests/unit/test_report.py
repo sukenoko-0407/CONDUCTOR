@@ -57,6 +57,18 @@ def test_evidence_registry_rejects_hash_mismatch(tmp_path) -> None:
         EvidenceRegistry.load(tmp_path, [table], {"evidence.csv": "0" * 64})
 
 
+def test_evidence_registry_accepts_zero_row_lens_table(tmp_path) -> None:
+    table = tmp_path / "l4_evidence.csv"
+    table.write_text("\n", encoding="utf-8")
+    registry = EvidenceRegistry.load(
+        tmp_path,
+        [table],
+        {table.name: file_sha256(table)},
+    )
+    assert registry.tables[table.name].empty
+    assert registry.tables[table.name].columns.tolist() == ["row_id"]
+
+
 def test_pair_ids_require_the_run_pair_registry(tmp_path) -> None:
     finding = _finding("F000001", ["C1"])
     evidence = tmp_path / "evidence.csv"

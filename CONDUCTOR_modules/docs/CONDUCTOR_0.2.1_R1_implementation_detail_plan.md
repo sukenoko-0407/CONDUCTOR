@@ -2,7 +2,7 @@
 
 ## 0. 文書状態
 
-- 状態: **R1.3 M-21〜M-25実装・repository全133 test合格。本番完走試験待ち**
+- 状態: **R1.4 M-26〜M-29実装・P04からの本番復旧試験待ち**
 - 対象: `CONDUCTOR_0.2.1_R1_implementer_brief.md` が定義する R1.1
 - 作成日: 2026-09-19
 - R1-1〜R1-3およびM-17実装後の本番結果を反映している。
@@ -900,3 +900,96 @@ L5数値回帰、work estimator、config契約、production compiler integration
 2026-09-20の実装検証では、compiler integration 6件、L5/estimator/contract 52件、repository全体
 133件が合格した。全testで出たwarningは小規模E2E fixtureのほぼ同一値に対するSciPy precision-loss
 3件だけであり、failureはなかった。本番実機Runはこのlocal受入とは分離し、次の新規Runで実施する。
+
+## 13. R1.4 P04 zero-row契約・census barrier・限定復旧
+
+### 13.1 対象コード
+
+- `.claude/skills/cs-stat-core/python/conductor_stat_core/contracts.py`
+- `.claude/skills/cs-lens-l4/python/conductor_lens_l4/l4.py`
+- `.claude/skills/cs-scoring/scripts/run.py`
+- `.claude/skills/cs-scoring/python/conductor_scoring/scoring.py`
+- `.claude/skills/cs-deepdive/scripts/run.py`
+- `.claude/skills/cs-report/python/conductor_report/report.py`
+- `.claude/skills/cs-runtime/python/conductor_runtime/dag.py`
+- `CONDUCTOR_modules/tools/requeue_runtime_node.py`（既存の監査付き管理経路を使用し、仕様は拡張しない）
+
+### 13.2 zero-row CSV契約
+
+共通readerは次の契約とする。
+
+```python
+read_csv_or_empty(path, *, empty_columns=(), **read_csv_kwargs) -> DataFrame
+```
+
+1. 通常CSVは`pandas.read_csv()`の結果をそのまま返す。
+2. `EmptyDataError`の場合、file bytesが空白だけなら`empty_columns`を持つ0行tableを返す。
+3. 非空白内容がある場合は例外を再送出する。
+
+L4 producerは0候補・0検定・0Findingの各経路で、generation audit、evidence、tests、
+score observationsの固定列を明示する。P04はFinding pathとobservation pathを親directoryで対応付け、
+Finding 0件のheaderless emptyだけをskipする。Findingありの同一Lensでheaderless emptyなら
+`ValueError`とする。header付き0行tableは通常の0行tableとして結合する。
+
+`score_findings()`は0件でも`scores.csv`の固定列を返す。gateは既存規則を変えず、reportable数が
+`display_k`未満なら`needs_design_review`である。これはparse errorの解消であり、scoring gateの緩和ではない。
+
+P05はscore observation入力を共通readerで読み、列のない0行tableを結合対象から除外する。
+P06のEvidenceRegistryは0行tableへ`row_id`列を補い、table自体は登録する。citation解決時に該当rowが
+なければ従来どおり`CitationError`とする。
+
+### 13.3 census barrierの状態遷移
+
+Runtime loopは次の順に固定する。
+
+1. failed / needs_design_review / all succeededの終端判定。
+2. ready Node取得。
+3. pending/retryable Lens集合とready Lens集合を算出。
+4. census未完了かつ全pending Lensがreadyなら、全ready Lensを一括estimateしてcensusを確定。
+5. census未完了の間は、ready集合から全Lensを除外し、非Lens Nodeだけを実行。
+6. census完了後だけLens workloadを実行。
+
+coordinator生成時に`<RUN_ROOT>/work_census.json`があれば`run_id`を検証してcensus済みとする。
+これは同じRunのresumeでcensusを反復しないためであり、他Runのcensus再利用は許可しない。
+
+### 13.4 telemetryとrate較正
+
+work estimateを持つNodeのmanifestへ、exactな`actual_wall_seconds`、`estimate_actual_ratio`と
+`observed_units_per_second`を記録する。過大・過小の両方向（3倍以上または1/3以下）をwarningにする。
+
+本番報告の比率だけでは、各Lensの`unit_count`、計測区間、engine versionが不足するためdefaultsを
+変更しない。P04〜P06復旧後にP03 manifestとwork censusからexact値を回収する。次のrate変更は
+科学的結果を変えない独立commitとし、少なくとも次をfixtureにする。
+
+- 同一入力・同一engineでのunit_count一致。
+- `estimated_seconds = unit_count / units_per_second * safety_factor`の再現。
+- 新rateでも既知本番workloadがNode wall-time gateを不当に超過しない。
+- 実測より楽観的な見積りにならない安全余裕。
+
+### 13.5 本番再開
+
+現在の本番Runは作り直さない。`runtime.sqlite`をread-onlyで調べ、P01〜P03がsucceeded、P04が
+failed、P05/P06が未実行、同じRunのprocessがないことを確認する。`requeue_runtime_node.py`を
+まずdry-runし、Node IDと`cs-scoring`が一致するときだけ`--apply`する。その後、frozen
+`control/coordinator_request.json`を用いて同じRun rootをresumeする。
+
+成功済みNode、frozen config/plan/request、Description Database、既存artifactは変更しない。
+新しいcode versionでfailed Nodeを再実行した事実はadministrative_requeue event、operator、reason、
+旧/new attempt IDとともに監査対象にする。
+
+### 13.6 必須fixture
+
+- 共通reader: 改行1 byteを指定列付き0行tableとして読む。
+- L4: 0候補時の全tableがparse可能な固定schemaを持つ。
+- scoring: Finding 0件＋改行1 byte observationsがP04 CLIをparse errorにしない。
+- scoring: 0件でも`scores.csv`が固定列を持つ。
+- report: 改行1 byte evidenceを登録でき、存在しないrowの引用は失敗する。
+- Runtime: L4が先にreadyでも実行せず、上流完了後にL4/L5を同じcensusへ含める。
+- Runtime resume: 同じRun IDの既存censusを再利用し、異なるRun IDは拒否する。
+
+### 13.7 実装時の検証記録
+
+2026-09-20にproduction-run Pixi環境でrepository全testを実行し、**141件合格、failure 0件**を
+確認した。warningは既存の小規模E2E fixtureにおける、ほぼ同一値へのSciPy precision-loss 3件だけである。
+この中には本番障害を直接再現する「L4 Finding 0件＋改行1 byteのscore observationsをP04 CLIへ入力」
+するfixtureと、L4先行readyを全Lens censusまでholdするRuntime integration fixtureを含む。

@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 import yaml
 from conductor_deepdive import ArtifactRegistry,build_chemical_axes,run_deep_dive
-from conductor_stat_core import SchemaValidationError,atomic_write_json,call_local_jsonl,file_sha256,stable_id,validate_instance
+from conductor_stat_core import SchemaValidationError,atomic_write_json,call_local_jsonl,file_sha256,read_csv_or_empty,stable_id,validate_instance
 from conductor_stat_core.contracts import prepare_output_directory,verify_request_inputs
 ROOT=Path(__file__).resolve().parents[4];SKILL=Path(__file__).resolve().parents[1];SCHEMAS=ROOT/"CONDUCTOR_modules"/"schemas"
 def _inputs(request:dict[str,Any],role:str)->list[Path]:return [Path(item["path"]).resolve() for item in request["inputs"] if item["role"]==role]
@@ -17,7 +17,11 @@ def _one(request:dict[str,Any],role:str)->Path:
 def _optional_csv(request:dict[str,Any],role:str)->pd.DataFrame:
     values=_inputs(request,role)
     if len(values)>1:raise ValueError(f"At most one {role!r} input is allowed")
-    return pd.read_csv(values[0]) if values else pd.DataFrame()
+    return read_csv_or_empty(values[0]) if values else pd.DataFrame()
+def _csv_inputs(request:dict[str,Any],role:str)->pd.DataFrame:
+    frames=[read_csv_or_empty(path) for path in _inputs(request,role)]
+    usable=[frame for frame in frames if len(frame.columns)]
+    return pd.concat(usable,ignore_index=True) if usable else pd.DataFrame()
 def _read_jsonl(path:Path)->list[dict[str,Any]]:return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 def _write_jsonl(rows:tuple[dict[str,Any],...],path:Path)->None:
     fd,name=tempfile.mkstemp(prefix=f".{path.name}.",suffix=".tmp",dir=path.parent);os.close(fd);temporary=Path(name)
@@ -37,7 +41,7 @@ def execute(args:argparse.Namespace)->dict[str,str]:
     request=json.loads(Path(args.request).resolve().read_text(encoding="utf-8"));validate_instance(request,SCHEMAS/"execution_request.schema.json")
     if request["identity"]["skill_name"]!="cs-deepdive" or request["parameters"].get("operation")!="deep_dive":raise SchemaValidationError("Request must target cs-deepdive operation deep_dive")
     verify_request_inputs(request);config_path=Path(request["config_path"]).resolve();config=yaml.safe_load(config_path.read_text(encoding="utf-8"));llm=config["llm"];deep=config["deep_dive"]
-    findings=_read_jsonl(_one(request,"findings_scored"));observations=pd.concat([pd.read_csv(path) for path in _inputs(request,"score_observations")],ignore_index=True);compounds=pd.read_csv(_one(request,"compounds"),dtype={"compound_id":"string"});candidate_compounds=_optional_csv(request,"l4_candidates")
+    findings=_read_jsonl(_one(request,"findings_scored"));observations=_csv_inputs(request,"score_observations");compounds=pd.read_csv(_one(request,"compounds"),dtype={"compound_id":"string"});candidate_compounds=_optional_csv(request,"l4_candidates")
     if not candidate_compounds.empty:
         required={"compound_id","canonical_smiles"};missing=required-set(candidate_compounds)
         if missing:raise ValueError(f"l4_candidates is missing columns: {sorted(missing)}")

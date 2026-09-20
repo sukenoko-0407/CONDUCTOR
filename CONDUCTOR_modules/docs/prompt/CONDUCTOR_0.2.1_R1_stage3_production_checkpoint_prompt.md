@@ -1,5 +1,10 @@
 # CONDUCTOR 0.2.1 R1.3 本番完走用プロンプト
 
+> **R1.4復旧案内:** このプロンプトでP01〜P03が成功し、P04 scoringだけが
+> `No columns to parse from file`でfailedとなった既存Runは、新規Runを開始しない。
+> `CONDUCTOR_0.2.1_R1_P04_P06_recovery_prompt.md`を使い、P04一件だけを監査付きで
+> 再キューして同じRunをP04〜P06へ再開する。
+
 > ファイル名には履歴上`stage3_production_checkpoint`を残すが、このプロンプトは旧R1-3
 > checkpointの再実行用ではない。既知のL5統計予算不足を解消したR1.3コードで、既存の
 > Description Databaseを再利用し、Phase 1〜6を完走させるために使う。

@@ -53,6 +53,60 @@ DESCRIPTION_COST_WEIGHTS = {
     "very_high": 64,
 }
 
+L4_GENERATION_AUDIT_COLUMNS = [
+    "row_id",
+    "source_compound_id",
+    "transformation_id",
+    "candidate_id",
+    "candidate_smiles",
+    "status",
+    "reason",
+]
+L4_EVIDENCE_COLUMNS = [
+    "row_id",
+    "candidate_id",
+    "candidate_smiles",
+    "source_compound_ids_json",
+    "transformation_ids_json",
+    "space_count",
+    "neighbor_k",
+    "lower_confidence_limit",
+    "density_gap",
+    "reachability",
+    "region_score",
+    "conservative_p_value",
+    "region_definition",
+]
+L4_TEST_COLUMNS = [
+    "row_id",
+    "evidence_row_id",
+    "candidate_key",
+    "test_id",
+    "family_key",
+    "question",
+    "statistic",
+    "p_value",
+    "q_value",
+    "null_iterations",
+    "status",
+]
+L4_SCORE_OBSERVATION_COLUMNS = [
+    "finding_key",
+    "row_id",
+    "block_id",
+    "effect",
+    "compound_id",
+    "context_id",
+    "target_id",
+    "endpoint_value",
+    "actionability_level",
+    "candidate_id",
+    "region_score",
+    "density_gap",
+    "global_median",
+    "neighbor_k",
+]
+
 
 class L4ScaleGuardError(ValueError):
     def __init__(self, plan: L4ScalePlan):
@@ -184,7 +238,10 @@ def generate_l4_candidates(
             "source_compound_count", "transformation_pair_support",
         ],
     )
-    return L4GenerationResult(candidates, pd.DataFrame(audit))
+    return L4GenerationResult(
+        candidates,
+        pd.DataFrame(audit, columns=L4_GENERATION_AUDIT_COLUMNS),
+    )
 
 
 def select_l4_candidates(
@@ -371,7 +428,6 @@ def score_l4_candidates(
         raise ValueError("L4 requires finite selected Endpoint values")
     candidate_ids = generation.candidates["compound_id"].astype(str).tolist()
     if not candidate_ids:
-        empty = pd.DataFrame()
         metrics = {
             "attempt_count": int(
                 generation.audit.get("reason", pd.Series(dtype=str))
@@ -388,7 +444,14 @@ def score_l4_candidates(
             ) if not generation.audit.empty else 0,
             "candidate_distance_mode": "exact_description_cross_distance",
         }
-        return L4Result(empty, empty, generation.audit, empty, (), metrics)
+        return L4Result(
+            pd.DataFrame(columns=L4_EVIDENCE_COLUMNS),
+            pd.DataFrame(columns=L4_TEST_COLUMNS),
+            generation.audit,
+            pd.DataFrame(columns=L4_SCORE_OBSERVATION_COLUMNS),
+            (),
+            metrics,
+        )
     global_median = float(np.median(list(endpoint_values.values())))
     spaces = []
     for space in sorted((item for item in feature_spaces if int(item["tier"]) <= 2), key=lambda item: item["space_id"]):
@@ -468,7 +531,14 @@ def score_l4_candidates(
         .astype(str).ne("scale_cap")
     ]
     metrics = {"attempt_count": len(non_cap_audit), "accepted_unique_candidate_count": len(generation.candidates), "tested_candidate_count": len(candidate_records), "finding_count": len(provisional), "generation_failure_count": int(non_cap_audit["status"].eq("excluded").sum()) if not non_cap_audit.empty else 0, "candidate_distance_mode": "exact_description_cross_distance"}
-    return L4Result(pd.DataFrame(evidence_rows), pd.DataFrame(test_rows), generation.audit, pd.DataFrame(score_rows), assign_finding_ids(provisional), metrics)
+    return L4Result(
+        pd.DataFrame(evidence_rows, columns=L4_EVIDENCE_COLUMNS),
+        pd.DataFrame(test_rows, columns=L4_TEST_COLUMNS),
+        generation.audit,
+        pd.DataFrame(score_rows, columns=L4_SCORE_OBSERVATION_COLUMNS),
+        assign_finding_ids(provisional),
+        metrics,
+    )
 
 
 def run_l4(

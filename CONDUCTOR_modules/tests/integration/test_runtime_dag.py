@@ -306,6 +306,129 @@ def test_runtime_censuses_all_ready_lenses_before_any_workload(tmp_path: Path) -
     assert not (tmp_path / "L7").exists()
 
 
+def test_runtime_holds_early_ready_lens_until_full_census_batch(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("schema_version: '0.2.1'\n", encoding="utf-8")
+    upstream_launch = tmp_path / "upstream.py"
+    upstream_launch.write_text(
+        "import argparse,json\nfrom pathlib import Path\n"
+        "p=argparse.ArgumentParser();p.add_argument('--request');p.add_argument('--output-dir');p.add_argument('--workers');a=p.parse_args()\n"
+        "o=Path(a.output_dir);o.mkdir(parents=True);(o/'artifact_manifest.json').write_text(json.dumps({'status':'succeeded','artifacts':[]}))\n",
+        encoding="utf-8",
+    )
+    lens_launch = tmp_path / "lens.py"
+    lens_launch.write_text(
+        "import argparse,json\nfrom pathlib import Path\n"
+        "p=argparse.ArgumentParser();p.add_argument('--request');p.add_argument('--output-dir');p.add_argument('--workers');p.add_argument('--estimate-work',action='store_true');a=p.parse_args()\n"
+        "if a.estimate_work: print(json.dumps({'unit_count':10,'family_size':10,'peak_memory_bytes':1,'estimated_seconds':1.0,'detail':{}}))\n"
+        "else: o=Path(a.output_dir);o.mkdir(parents=True);(o/'artifact_manifest.json').write_text(json.dumps({'status':'succeeded','artifacts':[]}))\n",
+        encoding="utf-8",
+    )
+
+    nodes = []
+    for node_id, phase_id, skill_name, operation, dependencies, launcher in (
+        ("UPSTREAM", "P02", "cs-stat-core", "fixture", [], upstream_launch),
+        ("L4", "P03", "cs-lens-l4", "l4", [], lens_launch),
+        ("L5", "P03", "cs-lens-l5", "l5", ["UPSTREAM"], lens_launch),
+    ):
+        request = tmp_path / f"{node_id}.json"
+        request.write_text(
+            json.dumps(
+                {
+                    "schema_version": "0.2.1",
+                    "identity": {
+                        "project": "P",
+                        "run_id": "RUN",
+                        "phase_id": phase_id,
+                        "node_id": node_id,
+                        "attempt_id": "TEMPLATE",
+                        "skill_name": skill_name,
+                    },
+                    "endpoint_id": "EP",
+                    "config_path": str(config),
+                    "random_seed": 1,
+                    "inputs": [],
+                    "parameters": {"operation": operation},
+                    "resources": {"workers": 1, "memory_mb": 128},
+                }
+            ),
+            encoding="utf-8",
+        )
+        nodes.append(
+            {
+                "node_id": node_id,
+                "phase_id": phase_id,
+                "skill_name": skill_name,
+                "dependencies": dependencies,
+                "request_template": str(request),
+                "launch_path": str(launcher),
+                "output_directory": str(tmp_path / f"out-{node_id}"),
+            }
+        )
+
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps({"run_id": "RUN", "code_version": "0.2.1", "nodes": nodes}),
+        encoding="utf-8",
+    )
+    coordinator = PipelineCoordinator(
+        PipelinePlan.load(plan_path),
+        RuntimeStateStore(tmp_path / "run" / "runtime.sqlite"),
+        tmp_path / "run",
+        Path(__file__).resolve().parents[2] / "schemas",
+        config={"runtime": {"budgets": {"family_size": 500}}},
+    )
+    summary = coordinator.run(workers=1)
+    assert summary["status"] == "succeeded"
+    census = json.loads(
+        (tmp_path / "run" / "work_census.json").read_text(encoding="utf-8")
+    )
+    assert {entry["node_id"] for entry in census["nodes"]} == {"L4", "L5"}
+    l4_attempt = next((tmp_path / "out-L4").iterdir())
+    assert l4_attempt.is_dir()
+    assert next((tmp_path / "out-L5").iterdir()).is_dir()
+    l4_manifest = json.loads(
+        (l4_attempt / "artifact_manifest.json").read_text(encoding="utf-8")
+    )
+    assert l4_manifest["metrics"]["actual_wall_seconds"] > 0
+    assert l4_manifest["metrics"]["estimate_actual_ratio"] > 0
+    assert l4_manifest["metrics"]["observed_units_per_second"] > 0
+
+
+def test_runtime_resume_recognizes_same_run_work_census(tmp_path: Path) -> None:
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    (run_directory / "work_census.json").write_text(
+        json.dumps({"schema_version": "0.2.1", "run_id": "RUN", "nodes": []}),
+        encoding="utf-8",
+    )
+    coordinator = PipelineCoordinator(
+        PipelinePlan("RUN", "0.2.1", ()),
+        RuntimeStateStore(run_directory / "runtime.sqlite"),
+        run_directory,
+        Path(__file__).resolve().parents[2] / "schemas",
+        config={},
+    )
+    assert coordinator._census_complete
+
+
+def test_runtime_resume_rejects_foreign_work_census(tmp_path: Path) -> None:
+    run_directory = tmp_path / "run"
+    run_directory.mkdir()
+    (run_directory / "work_census.json").write_text(
+        json.dumps({"schema_version": "0.2.1", "run_id": "OTHER", "nodes": []}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="different Run"):
+        PipelineCoordinator(
+            PipelinePlan("RUN", "0.2.1", ()),
+            RuntimeStateStore(run_directory / "runtime.sqlite"),
+            run_directory,
+            Path(__file__).resolve().parents[2] / "schemas",
+            config={},
+        )
+
+
 def test_runtime_work_guard_boundaries_and_l4_family_exemption(tmp_path: Path) -> None:
     plan = PipelinePlan("RUN", "0.2.1", ())
     coordinator = PipelineCoordinator(

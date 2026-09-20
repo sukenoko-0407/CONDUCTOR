@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 import yaml
 from conductor_scoring import score_findings
-from conductor_stat_core import SchemaValidationError,atomic_write_json,file_sha256,stable_id,validate_instance
+from conductor_stat_core import SchemaValidationError,atomic_write_json,file_sha256,read_csv_or_empty,stable_id,validate_instance
 from conductor_stat_core.contracts import prepare_output_directory,verify_request_inputs
 ROOT=Path(__file__).resolve().parents[4];SCHEMAS=ROOT/"CONDUCTOR_modules"/"schemas"
 def _inputs(request:dict[str,Any],role:str)->list[Path]:return [Path(item["path"]).resolve() for item in request["inputs"] if item["role"]==role]
@@ -16,6 +16,16 @@ def _one(request:dict[str,Any],role:str)->Path:
     return values[0]
 def _jsonl_read(paths:list[Path])->list[dict[str,Any]]:
     return [json.loads(line) for path in paths for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+def _score_observations(finding_paths:list[Path],observation_paths:list[Path])->pd.DataFrame:
+    finding_directories={path.parent for path in finding_paths if any(line.strip() for line in path.read_text(encoding="utf-8").splitlines())}
+    frames=[]
+    for path in observation_paths:
+        frame=read_csv_or_empty(path)
+        if frame.empty and not len(frame.columns):
+            if path.parent in finding_directories:raise ValueError(f"Empty score_observations for a Lens with Findings: {path}")
+            continue
+        frames.append(frame)
+    return pd.concat(frames,ignore_index=True) if frames else pd.DataFrame()
 def _csv(frame:pd.DataFrame,path:Path)->None:
     fd,name=tempfile.mkstemp(prefix=f".{path.name}.",suffix=".tmp",dir=path.parent);os.close(fd);temporary=Path(name)
     try:frame.to_csv(temporary,index=False,lineterminator="\n");os.replace(temporary,path)
@@ -67,8 +77,8 @@ def execute(args:argparse.Namespace)->dict[str,str]:
     if request["identity"]["skill_name"]!="cs-scoring" or request["parameters"].get("operation")!="score":raise SchemaValidationError("Request must target cs-scoring operation score")
     verify_request_inputs(request);finding_paths=_inputs(request,"findings");observation_paths=_inputs(request,"score_observations")
     if not finding_paths or not observation_paths:raise ValueError("At least one findings and score_observations input is required")
-    config_path=Path(request["config_path"]).resolve();config=yaml.safe_load(config_path.read_text(encoding="utf-8"));observations=pd.concat([pd.read_csv(path) for path in observation_paths],ignore_index=True);scoring=config["scoring"]
-    result=score_findings(_jsonl_read(finding_paths),observations,pd.read_csv(_one(request,"endpoint_table")),request["endpoint_id"],run_seed=int(request["random_seed"]),confounders=_confounders(request),bootstrap_iterations=int(config["statistics"]["bootstrap_iterations"]),statistical_strength_min=float(scoring["statistical_strength_min"]),robustness_min=float(scoring["robustness_min"]),display_k=int(scoring["display_k"]))
+    config_path=Path(request["config_path"]).resolve();config=yaml.safe_load(config_path.read_text(encoding="utf-8"));findings=_jsonl_read(finding_paths);observations=_score_observations(finding_paths,observation_paths);scoring=config["scoring"]
+    result=score_findings(findings,observations,pd.read_csv(_one(request,"endpoint_table")),request["endpoint_id"],run_seed=int(request["random_seed"]),confounders=_confounders(request) if findings else None,bootstrap_iterations=int(config["statistics"]["bootstrap_iterations"]),statistical_strength_min=float(scoring["statistical_strength_min"]),robustness_min=float(scoring["robustness_min"]),display_k=int(scoring["display_k"]))
     output=prepare_output_directory(Path(args.output_dir),args.overwrite);_jsonl(result.findings,output/"findings_scored.jsonl");_csv(result.scores,output/"scores.csv");atomic_write_json(output/"scoring_gate.json",result.gate)
     for finding in result.findings:validate_instance(finding,SCHEMAS/"finding.schema.json")
     artifacts=[_artifact(output,"findings_scored","findings_scored.jsonl",len(result.findings)),_artifact(output,"scores","scores.csv",len(result.scores)),_artifact(output,"scoring_gate","scoring_gate.json",None)];status=result.gate["status"];manifest={"schema_version":"0.2.1","producer":{key:request["identity"][key] for key in ("run_id","node_id","attempt_id","skill_name")},"status":status,"config_sha256":file_sha256(config_path),"input_artifacts":[{"role":item["role"],"path":item["path"],"sha256":item["sha256"]} for item in request["inputs"]],"artifacts":artifacts,"metrics":result.gate,"warnings":[] if status=="succeeded" else ["Fewer than display_k Findings passed fixed scoring gates"],"created_at":datetime.now(timezone.utc).isoformat().replace("+00:00","Z")};atomic_write_json(output/"artifact_manifest.json",manifest);validate_instance(manifest,SCHEMAS/"artifact_manifest.schema.json");return {"status":status,"manifest":"artifact_manifest.json","primary":"findings_scored.jsonl"}

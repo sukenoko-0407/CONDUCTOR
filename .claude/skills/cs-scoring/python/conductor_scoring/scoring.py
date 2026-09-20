@@ -16,6 +16,22 @@ from conductor_stat_core import ENTITY_KEYS, assign_finding_ids, block_bootstrap
 
 
 ACTIONABILITY = {"exact": 1.0, "direction_only": 0.6, "descriptive": 0.2}
+SCORE_COLUMNS = [
+    "finding_id",
+    "finding_key",
+    "lens",
+    "primary_q",
+    "statistical_strength",
+    "robustness",
+    "non_triviality",
+    "actionability",
+    "frontier_relevance",
+    "composite",
+    "rank",
+    "passed_gate",
+    "pipeline_state",
+    "merged_into",
+]
 
 
 @dataclass(frozen=True)
@@ -197,4 +213,6 @@ def score_findings(findings: Iterable[dict[str, Any]],observations: pd.DataFrame
     score_by_key={row["finding_key"]:row for row in score_rows}
     for finding in result: score_by_key[finding["finding_key"]]["rank"]=finding["scores"]["rank"]; score_by_key[finding["finding_key"]]["pipeline_state"]=finding["state"]["pipeline"]; score_by_key[finding["finding_key"]]["merged_into"]=finding["merged_into"]
     gate={"statistical_strength_min":statistical_strength_min,"robustness_min":robustness_min,"display_k":display_k,"candidate_count":len(result),"gate_pass_count":sum(item["state"]["pipeline"] in {"reportable","merged"} for item in result),"reportable_count":len(ranked),"status":"succeeded" if len(ranked)>=display_k else "needs_design_review"}
-    return ScoringResult(tuple(result),pd.DataFrame(score_rows).sort_values(["passed_gate","composite","finding_key"],ascending=[False,False,True]).reset_index(drop=True),gate)
+    scores=pd.DataFrame(score_rows,columns=SCORE_COLUMNS)
+    if not scores.empty:scores=scores.sort_values(["passed_gate","composite","finding_key"],ascending=[False,False,True]).reset_index(drop=True)
+    return ScoringResult(tuple(result),scores,gate)

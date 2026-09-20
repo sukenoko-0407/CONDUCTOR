@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from conductor_stat_core import load_resolved_config, stable_id, validate_instance
+from conductor_stat_core import (
+    load_resolved_config,
+    read_csv_or_empty,
+    stable_id,
+    validate_instance,
+)
 
 
 MODULE_ROOT = Path(__file__).resolve().parents[2]
@@ -45,6 +50,14 @@ def test_config_deep_merge_preserves_defaults(tmp_path: Path) -> None:
         "max_candidate_description_rows": 900,
         "max_candidate_description_cost_units": 10000,
     }
+
+
+def test_zero_row_csv_is_read_as_an_explicit_empty_table(tmp_path: Path) -> None:
+    path = tmp_path / "empty.csv"
+    path.write_text("\n", encoding="utf-8")
+    frame = read_csv_or_empty(path, empty_columns=("row_id",))
+    assert frame.empty
+    assert frame.columns.tolist() == ["row_id"]
 
 
 def test_context_schema_accepts_complete_record() -> None:
