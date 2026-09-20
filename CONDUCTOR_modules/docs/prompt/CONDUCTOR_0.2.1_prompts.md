@@ -36,7 +36,7 @@ Status: **0.2.1 正式運用テンプレート。**
 | `<PROGRAM_NAME>` | Description Databaseを分離するProgram名 |
 | `<INTERRUPTED_RUN_ROOT>` | 回復対象としてread-only監査する中断Runの出力先 |
 | `<RUN_ROOT>` | 新規Runの出力先、または再開対象 |
-| `<RUN_SPEC>` | `run_spec.example.json`を複製して実値を記載した、3.2A/3.2B/3.3/3.4A共通の絶対path |
+| `<RUN_SPEC>` | 新規DBでは`run_spec.example.json`、既存DBでは`run_spec.existing_database.example.json`を複製して実値を記載した絶対path |
 | `<PREFLIGHT_DIR>` | 3件のhash付きPreflight receiptを保存する既存directoryの絶対path |
 | `<ENDPOINT_REGISTRY>` | Endpoint registry JSON。`../../schemas/endpoint_registry.example.json` を複製し、実データに合わせて編集する |
 | `<ENDPOINT_ID>` | 今回解析する単一Endpoint |
@@ -186,26 +186,30 @@ llm.commandが空でなくローカルで実行可能であることを確認し
 
 ### 3.4 既存Databaseを使う新規本番Run
 
+このプロンプトは、既存の互換Description Databaseを使う通常経路である。Run Specは
+`mode=existing_database`、`preflight_receipts=[]`とし、既知の互換性確認後は版管理された
+`cs-production-run`で固定DAGをcompileして開始する。
+
 ```text
 CONDUCTOR 0.2.1の新規本番Runを実行してください。
 
-Project root: <PROJECT_ROOT>
-入力CSV: <INPUT_CSV>
-Program名: <PROGRAM_NAME>
-Endpoint registry: <ENDPOINT_REGISTRY>
-Endpoint ID: <ENDPOINT_ID>
-設定: <CONFIG_PATH>
-compound ID列: <ID_COLUMN>
-SMILES列: <SMILES_COLUMN>
-Run root: <RUN_ROOT>
-workers: <WORKERS>
-memory_mb: <MEMORY_MB>
+Run Spec: <RUN_SPEC>
 
-最初にread-only Preflightを行い、安全上または契約上の阻害要因がなければ同じ依頼の範囲で開始してください。0.1.10/0.1.11で構築した data/description_database/<PROGRAM_NAME>/ を変換せず再利用し、calculation signatureが一致するrecordはcache hit、その他はmissとして必要分だけ計算・登録してください。初回の0.2.1書込み前に、writerが存在しないことを確認してSQLite backup APIによる復旧可能なバックアップを作成してください。
+Run Specがschema_version=0.2.1、mode=existing_database、preflight_receipts=[]であることを確認し、
+`cs-production-run`の`scripts/launch.py --run-spec <RUN_SPEC>`を実行してください。このSkillが開始直前に
+resolved config、provider config、CPU affinity、既存Program Databaseとdatabase_manifest.json、
+Program/Run lock、Run root不存在を確認します。
 
-0.1.xのRun成果物は入力にせず、0.2.1のExecution Request、Pipeline plan、DAGを新規作成してください。Phase 1 Description Nodeのlaunch_pathにはtracked `CONDUCTOR_modules/tools/description_node.py`だけを指定してください。Phase 1からPhase 6までをcs-runtimeのsingle-writer coordinator経由で実行し、各Skillのlaunch.pyをRuntime外から場当たり的に直列実行しないでください。Phase 5/6では設定済みoffline providerだけを使用し、fallback文章を生成しないでください。
+guardに合格したら追加の調査待ちにせず、固定`production_pipeline.v0.2.1.json`から全Execution Requestと
+Pipeline planを生成し、`cs-runtime`でPhase 1〜6を実行してください。request templateの自作、各Skill契約の
+再抽出、fixture plan探索、ad-hoc DAG/launcher作成、各SkillのRuntime外実行は行わないでください。
 
-needs_design_review、同一ID・異構造、schema/hash/citation不整合では停止し、閾値変更や成果物の自動修正を行わないでください。終了時にRun状態、Phase別状態、Description別hit/miss/registered件数、Finding件数、上位10件、LLM logical call失敗率、引用検証結果、主要成果物の絶対パスを報告してください。
+Description Databaseは変換せず、identityとcalculation signatureが一致するrecordをcache hit、その他を
+missとして必要分だけ計算・登録してください。旧Runのruntime state、run-scoped成果物、Finding、reportは
+流用しないでください。実際のneeds_design_review、同一ID・異構造、schema/hash/citation不整合では停止し、
+閾値や成果物を自動修正しないでください。終了時にRun状態、Phase別状態、Description別hit/miss/registered
+OK/terminal SKIP/failed件数、Finding件数、上位10件、LLM logical-call失敗率、引用検証結果、主要成果物の
+絶対pathを報告してください。
 ```
 
 ### 3.4A 事前確認済み・全Descriptionを新規構築する本番Run
@@ -482,3 +486,4 @@ parameter契約:
 - Phase 6の引用検証が不整合を自動修正せずfail-closedする。
 - 3.4Aでは3.2A/3.2B/3.3のhash付きreceiptが同一Run Spec、同一machine、同一実装へ結び付き、変更時に流用できない。
 - 3.4Aでは`cs-production-run`が固定Blueprintから13 Nodeを生成し、Agentがrequest templateやPipeline planを自作しない。
+- 3.4では`mode=existing_database`の`cs-production-run`が同じ固定13 Nodeを生成し、既存DBの互換recordだけを再利用する。

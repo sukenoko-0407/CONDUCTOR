@@ -2,7 +2,7 @@
 
 ## 0. 文書状態
 
-- 状態: **R1.3 M-5・L5統計予算実装済み。本番完走試験待ち**
+- 状態: **R1.3 M-21〜M-25実装・repository全133 test合格。本番完走試験待ち**
 - 対象: `CONDUCTOR_0.2.1_R1_implementer_brief.md` が定義する R1.1
 - 作成日: 2026-09-19
 - R1-1〜R1-3およびM-17実装後の本番結果を反映している。
@@ -835,3 +835,68 @@ permutation batch出力を含める。本番既知寸法では64 GiB gate内で�
 実機Runでは旧Runをresumeせず、Description Databaseだけを再利用する。R1.3はDescriptionの
 calculation version/signatureを変更しないため、互換recordの再計算は不要である。R1.2の
 `work_census.json`は比較資料としてread-only参照できるが、新RunのP01/P02/P03 artifactとして流用しない。
+
+### 12.6 existing_database Run Specの実装
+
+対象は次である。
+
+- `CONDUCTOR_modules/schemas/run_spec.schema.json`
+- `CONDUCTOR_modules/schemas/run_spec.existing_database.example.json`
+- `CONDUCTOR_modules/tools/production_run.py`
+- `.claude/skills/cs-production-run/SKILL.md`
+- `.claude/skills/cs-production-run/capability.json`
+
+schemaは`mode`を`new_database | existing_database`のenumとし、条件分岐でreceipt件数を固定する。
+new modeはexact 3件、existing modeはmax 0件とする。`validate_preflight_receipts()`はmodeごとの期待集合と
+実入力集合をexact比較するため、existing modeへreceiptを混在させられない。
+
+`_minimal_guards()`は共通してresolved configとprovider configをparseし、新規Run rootを要求する。
+Database条件だけをmode分岐し、new modeではProgram directory不存在、existing modeではdirectoryと
+`database_manifest.json`の存在を要求する。guard通過前にRun rootは作らない。
+
+`execute_run()`は両modeで同じ順序を使う。
+
+1. Program lockとRun lockを取得する。
+2. canonical blueprintからExecution Requestsと固定13 Node planをcompileする。
+3. config、provider config、Run Spec、blueprint、implementation hashをRun control directoryへfreezeする。
+4. `cs-runtime/scripts/launch.py`へcoordinator request、Run root、workersを渡す。
+5. coordinator stdout/stderrとruntime responseを保存する。
+
+### 12.7 既存DB再利用の境界
+
+existing modeは旧Runの再開機能ではない。再利用単位はDescription Database recordだけであり、
+`runtime.sqlite`、Execution Request、Pipeline plan、P01/P02のrun-scoped artifact、検定、Finding、reportは
+必ず新規生成する。Program名、compound ID、canonical SMILES、calculation version、calculation signature、
+必要なdataset signatureの一致条件はP01で従来どおり評価する。terminal SKIP recordも同じidentityが
+一致するときだけhitとなる。
+
+### 12.8 production completionプロンプト
+
+`docs/prompt/CONDUCTOR_0.2.1_R1_stage3_production_checkpoint_prompt.md`は、ファイル名だけを履歴互換で
+残し、R1.3のPhase 1〜6完走用へ全面改訂する。Run Spec以外の個別pathをプロンプトへ重複転記させず、
+次のversioned commandだけを実行起点にする。
+
+```text
+python <PROJECT_ROOT>/.claude/skills/cs-production-run/scripts/launch.py --run-spec <RUN_SPEC>
+```
+
+Agentの開始前作業はRun Specとcompiler guardの確認に限定する。契約再抽出、request自作、fixture探索、
+ad-hoc DAG作成は禁止する。censusがadmissibleなら停止せずP03 workloadとPhase 4〜6へ進む。
+
+### 12.9 追加fixtureと回帰条件
+
+integration fixtureは既存の本物のProgram Databaseへ依存せず、test固有Program directoryへ最小
+`database_manifest.json`を作り、終了時にそのexact directoryだけを削除する。次をassertする。
+
+- empty receiptでexisting modeをcompileできる。
+- planのNode数が13である。
+- compilation manifestのpreflight checkが空である。
+- frozen Run Specのmodeが`existing_database`である。
+- 既存Databaseまたはmanifestがないnegative caseはRun root作成前に失敗する。
+
+L5数値回帰、work estimator、config契約、production compiler integrationを通した後にrepository全testを
+実行する。実機は新規Run rootと既存Description Databaseを使い、Phase 1〜6のterminal状態を出口とする。
+
+2026-09-20の実装検証では、compiler integration 6件、L5/estimator/contract 52件、repository全体
+133件が合格した。全testで出たwarningは小規模E2E fixtureのほぼ同一値に対するSciPy precision-loss
+3件だけであり、failureはなかった。本番実機Runはこのlocal受入とは分離し、次の新規Runで実施する。

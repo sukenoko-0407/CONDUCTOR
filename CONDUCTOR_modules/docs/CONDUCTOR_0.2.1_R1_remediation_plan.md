@@ -2,7 +2,7 @@
 
 Status: **R1.3実装済み。本番完走試験待ち。**
 作成日: 2026-09-19
-改訂: **R1.3（2026-09-20）。M-5を実装し、L5の本番統計予算を実行可能にした。**
+改訂: **R1.3（2026-09-20）。M-21〜M-25を実装し、L5の本番統計予算と既存DBからの固定DAG完走経路を実行可能にした。**
 
 > **R1.3実行順序訂正:** R1.2では、最大族2092に対してB=1000が不足すると既に判明していたにも
 > かかわらず、M-5未実装・B未変更のまま同じcensusを再実行させた。これは新しい情報を得ない停止であり、
@@ -793,7 +793,7 @@ L5実測2092、`α=0.05`、`k_min=10`では必要なfinal permutationsは最低4
 3. L5はM-5を先に完了し、必要Bと実測時間が両方予算内になってからfull workloadを実行する。
 4. baseline差は観測値としてversioned記録し、exact一致を理由にRunを停止しない。
 
-## 12. R1.3 本番完走是正 M-21〜M-23
+## 12. R1.3 本番完走是正 M-21〜M-25
 
 ### 12.1 M-21: L5 M-5を実コードへ実装する
 
@@ -842,3 +842,55 @@ acceptance不成立だけである。安全条件を黙って無効化するの�
 - L5 estimatorがconfigured B=5000、required B=4183以下を報告し、family gateを通過する。
 - 64 core指定がL5 subprocessのBLAS thread上限へ伝播する。
 - 本番Phase 1〜6が完走し、全Node、Finding、LLM call、引用検証を監査できる。
+
+### 12.5 M-24: 既存Description Databaseをproduction compilerの正式modeにする
+
+旧R1-3プロンプトは、既存Databaseを使うcheckpointを`cs-production-run`の外で組み立てるよう
+Agentへ要求していた。そのため、request template、各Skill契約、manifest参照、fixture planをRunごとに
+再調査し、versioned blueprintが存在するにもかかわらずad-hocなExecution RequestとPipeline planを
+作る経路になっていた。これは40分以上の準備時間と実行差を生んだ。
+
+R1.3では`run_spec.schema.json`のmodeを次の二つに固定する。
+
+- `new_database`: 3.2A/3.2B/3.3のhash-bound receiptをexact 3件要求し、Program Database pathが
+  存在しないことをguardする。
+- `existing_database`: receiptを0件に限定し、既存Program Database directoryと
+  `database_manifest.json`の存在をguardする。
+
+両modeとも、resolved config/provider config、CPU affinity、Program/Run lock、存在しない新規Run rootを
+開始直前に確認する。その後は同じ`production_pipeline.v0.2.1.json`から固定13 NodeのPhase 1〜6 DAGを
+compileし、`cs-runtime` single-writer coordinatorへ委譲する。既存DB modeもDatabaseの互換性条件を
+緩めるものではなく、P01が通常どおりrecord単位でhit/miss/terminal SKIPを判定する。
+
+### 12.6 M-25: checkpointプロンプトを本番完走プロンプトへ置換する
+
+R1-3Cのcensusは完了したため、同じcensusで停止する旧プロンプトを廃止する。履歴上のファイル名は
+維持するが、内容は`run_spec.existing_database.example.json`を入力にversioned production launcherを
+一度だけ起動する完走用とする。開始前確認はcompilerが必要とする最小guardに限定し、下流Skill契約の
+再抽出、request templateの自作、fixture plan探索、ad-hoc plan/launcher作成を禁止する。
+
+旧期待族サイズとの差はwarningとして記録し、それだけでは停止しない。P03 censusは全Lens起動前の
+安全確認として残すが、admissibleなら同じRunでP03 workload、Phase 4〜6へ継続する。真の
+schema/hash/identity不整合、未知の実装エラー、統計・memory・時間予算超過、引用不整合だけを停止条件に
+残し、guardや閾値を実行中に変更して通過させない。
+
+### 12.7 M-24/M-25の追加受入条件
+
+- `mode=existing_database`かつ空receiptのRun Specがschema-validである。
+- 既存Program Databaseまたはmanifestがない場合、Run root作成前にfail-fastする。
+- existing modeのcompile-only fixtureが固定13 Nodeを生成し、frozen Run Specへmodeを保持する。
+- `cs-production-run`のSkill説明とcapability metadataが両modeを明記する。
+- 完走プロンプトが旧Runのresumeやrun-scoped artifact流用を要求せず、新規Run rootを要求する。
+
+### 12.8 実装時の検証記録
+
+2026-09-20にproduction-run Pixi環境で次を確認した。
+
+- production compiler integration: 6件合格。existing modeの13 Node compile、空receipt、missing DB・
+  missing manifestのRun root作成前fail-fastを含む。
+- L5数値回帰、work estimator、config/schema契約: 52件合格。
+- repository全体: 133件合格。小規模E2E fixtureのほぼ同一値に対するSciPy precision-loss warning
+  3件のみで、test failureは0件。
+
+これはlocal fixtureに対する実装受入である。本番データによるPhase 1〜6完走と成果物監査は未実施であり、
+文書状態の「本番完走試験待ち」は維持する。

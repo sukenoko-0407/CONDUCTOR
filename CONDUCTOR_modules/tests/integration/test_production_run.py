@@ -127,6 +127,44 @@ def test_production_run_compiles_existing_database_without_repeating_receipts(
         shutil.rmtree(database_root)
 
 
+def test_production_run_rejects_missing_existing_database_before_creating_run_root(
+    tmp_path: Path,
+) -> None:
+    spec_path, run_root = _fixture(tmp_path)
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    spec["mode"] = "existing_database"
+    spec["preflight_receipts"] = []
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="requires a Program Database directory"):
+        execute_run(spec_path, compile_only=True)
+
+    assert not run_root.exists()
+
+
+def test_production_run_rejects_missing_existing_database_manifest(
+    tmp_path: Path,
+) -> None:
+    spec_path, run_root = _fixture(tmp_path)
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    spec["mode"] = "existing_database"
+    spec["preflight_receipts"] = []
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    database_root = (
+        PROJECT_ROOT
+        / "data"
+        / "description_database"
+        / spec["program_name"]
+    )
+    database_root.mkdir(parents=True, exist_ok=False)
+    try:
+        with pytest.raises(FileNotFoundError, match="manifest is missing"):
+            execute_run(spec_path, compile_only=True)
+        assert not run_root.exists()
+    finally:
+        shutil.rmtree(database_root)
+
+
 def test_preflight_receipt_cli_is_dependency_free_and_hash_bound(tmp_path: Path) -> None:
     spec_path, _ = _fixture(tmp_path)
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
