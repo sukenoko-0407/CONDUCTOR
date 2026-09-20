@@ -108,7 +108,13 @@ def test_l5_estimate_is_exact_for_units_and_feature_dependent_for_memory(
     config = {
         "statistics": {"final_permutations": 1000},
         "contexts": {"min_endpoint_n": group_size},
-        "lenses": {"l5": {"min_abs_r": 0.0}},
+        "lenses": {
+            "l5": {
+                "min_abs_r": 0.0,
+                "final_permutations": 5000,
+                "permutation_batch_size": 8,
+            }
+        },
         "runtime": {"units_per_second": {"l5": 3_650_000}},
     }
     estimate_one = estimate_work(
@@ -140,7 +146,7 @@ def test_l5_estimate_is_exact_for_units_and_feature_dependent_for_memory(
         workers=1,
     )
 
-    assert estimate_one.unit_count == 1001 * 2
+    assert estimate_one.unit_count == 5001 * 2
     assert estimate_two.unit_count == estimate_one.unit_count * 2
     assert estimate_two.peak_memory_bytes > estimate_one.peak_memory_bytes
     assert estimate_one.detail["comparison_count"] == 2
@@ -150,6 +156,8 @@ def test_l5_estimate_is_exact_for_units_and_feature_dependent_for_memory(
     assert estimate_one.detail["family_sizes"] == {
         "L5|AX|correlation_sign_conflict": 2
     }
-    assert estimate_one.detail["configured_final_permutations"] == 1000
+    assert estimate_one.detail["configured_final_permutations"] == 5000
+    assert estimate_one.detail["permutation_batch_size"] == 8
+    assert estimate_one.detail["correlation_engine"] == "matrix_blas_v1"
     assert estimate_one.detail["required_final_permutations"] == 3
     assert estimate_one.detail["statistical_budget_satisfied"] is True

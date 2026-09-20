@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 仕様概要書
 
-Status: **科学的仕様は確定。L5の本番障害と全Lensの性能未受入を受け、実行方式と長時間Node管理を再評価中。**
+Status: **科学的仕様は確定。R1.3 L5行列化・統計予算実装済み、本番完走試験待ち。**
 
 > **2026-09-19本番訂正:** 64コア・755 GiB RAMの専用機において、L5が実質1コアのまま8時間以上継続した。科学的なL5検定契約は維持するが、long-only membership、context-pair単位の相関再計算、未接続の`--workers`、checkpointを持たない長時間Nodeは本番規模に適合しない。実装判断の履歴、0.1.x Boolean matrixを再評価した理由、未実装の再設計案と受入条件は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
 
@@ -10,6 +10,10 @@ Status: **科学的仕様は確定。L5の本番障害と全Lensの性能未受�
 > 最大族サイズではなかった。本番censusの最大は2092である。L1b 84、L2a 117もexact baselineではない。
 > 旧値との差だけでは停止せず、全Lensのwork censusをworkload前に一括取得する。停止判定は
 > 入力・契約不整合、estimate error、資源予算、`n ≤ α(B+1)k_min`違反に限定する。
+
+> **2026-09-20 R1.3訂正:** 既知のL5統計予算不足を再確認するだけのcheckpoint運用を終了する。
+> L5相関をBLAS batchへ置換し、L5だけ`B=5000`とする。他Lensは`B=1000`を維持する。
+> 次の本番試験はcensusで終了せず、admissibleならPhase 1〜6を完走する。
 
 ## 1. 文書の位置づけ
 
@@ -747,6 +751,12 @@ R1-17. **L4 の候補 cap を 100 から 250,000 へ引き上げる（R1-10 と 
 R1-18. **Findingの`support_n`は統計量へ実際に使用した一意な観測単位数とする。** L5では特徴量とEndpointがともにfiniteな化合物だけを数え、focal contextとaxis内補集合の有限観測和集合を`support_n`とする。R1-2の両群は排他的なので`shared_n=0`、`support_n=n_a+n_b`でなければならない。この不変条件は置換計算の開始前に検証する。生のContext共通所属数を特徴量別の`n_a/n_b`から減算してはならない。
 
 R1-19. **固定条件でのConformer生成不能はCapability単位のterminal SKIPとしてnegative cacheへ登録し、Runを継続する。** Description Skillは入力行を欠落させず`description_error`と`conformer_generation_failed`を記録し、Databaseは同じcalculation signatureのactive recordを`outcome_status=skipped`として保存する。SKIPは次回cache hitとするが、未知の実装例外や資源障害をnegative cacheへ登録してはならない。run-scoped payloadは全入力行を保持し、distance metadataが空間別eligible集合と非適格理由を明示する。ContextおよびLensはSKIP行を補完値による仮想観測として使用しない。
+
+R1-20. **L5のfinal permutation数はLens固有に5000とする。** 最大族2092に対する必要最小値4183を上回り、`k_min=10`の統計予算を満たす。他Lensのglobal値1000は変更しない。
+
+R1-21. **L5は固定membership・finite mask・x側十分統計量をcompileし、Endpoint permutationをBLAS batchで評価する。** candidateごとのPython相関loopとnull配列保持を廃止し、finite/extreme counterだけを保持する。iteration seedと科学的検定は変更しない。
+
+R1-22. **R1.2 census取得後は、同じ既知blockerを再確認するだけのRunを行わない。** 実装と解決済みconfigを先に反映し、次の本番環境試験はPhase 1〜6の完走を目的とする。旧期待族サイズとの差だけでは停止しない。
 
 ---
 

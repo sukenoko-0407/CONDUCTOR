@@ -2,7 +2,7 @@
 
 ## 0. 文書状態
 
-- 状態: **R1.2本番census是正を実装中**
+- 状態: **R1.3 M-5・L5統計予算実装済み。本番完走試験待ち**
 - 対象: `CONDUCTOR_0.2.1_R1_implementer_brief.md` が定義する R1.1
 - 作成日: 2026-09-19
 - R1-1〜R1-3およびM-17実装後の本番結果を反映している。
@@ -38,6 +38,7 @@ R1.1 は、単なる速度改善ではない。まず統計的 family を意味�
 - `.claude/skills/cs-lens-l4/scripts/run.py`
 - `.claude/skills/cs-lens-l5/python/conductor_lens_l5/l5.py`
 - `.claude/skills/cs-lens-l5/scripts/run.py`
+- `.claude/skills/cs-lens-l5/scripts/launch.py`
 - `.claude/skills/cs-lens-l7/scripts/run.py`（estimate と node-level heartbeat のみ）
 - 各 Lens の `launch.py`（estimate mode の引数透過に必要な最小変更）
 - `CONDUCTOR_modules/config/defaults.yaml`
@@ -773,3 +774,64 @@ Context clusteringはeligible部分行列だけをcluster化する。L1bは各sp
 4. distance metadataのeligible集合が成功2件だけで、SKIP行・列は非finiteとなる。
 5. Context、L1b、L4がSKIP化合物を当該spaceの観測として使用しない。
 6. 未知の実装例外はnegative cacheへ登録されない。
+
+## 12. R1.3 production completion実装
+
+### 12.1 前回停止の評価
+
+R1.2 Runはbatch censusの実装確認には成功したが、最大族2092と必要B=4183はその前から既知だった。
+M-5未実装かつconfigured B=1000のまま再実行したため、予見済みの同一blockerで停止した。
+これは安全guardの誤作動ではなく実行stageの順序不良である。以後はcensusを独立した終了目的にしない。
+
+### 12.2 L5 matrix engine
+
+`run_l5()`は二段のcompiled engineを使用する。
+
+1. `_CorrelationTableEngine`
+   - 入力: `2C × N`のfocal/complement maskと`N × F` feature matrix。
+   - compile: finite mask、zero-filled feature、`n/Sx/Sxx`。
+   - iteration: `Sy/Syy/Sxy`を行列積で求め、`2C × F` Pearson表を返す。
+   - 用途: observed相関とcalibration反復。
+2. `_CandidateCorrelationEngine`
+   - 入力: observed sign-conflict候補`K`のcomparison/feature index。
+   - compile: 左右support、support内中心化x、x norm。shapeは`2K × N`。
+   - iteration batch: `N × P`のEndpoint permutation batchに対し、numerator、Sy、SyyをBLASで計算する。
+   - 用途: screen残余反復とscreen survivorのfinal反復。
+
+candidateごとのnull配列は作らない。`valid_counts[K]`と`extreme_counts[K]`だけを更新し、経験p値を
+`(1+extreme)/(1+finite)`から得る。calibration反復で得たcandidate nullはscreen countへ同時加算する。
+permutation seedは`derive_seed(run_seed, "L5", iteration)`のままである。
+
+### 12.3 L5固有Bとconfig解決
+
+```text
+global statistics.final_permutations = 1000
+lenses.l5.final_permutations         = 5000
+lenses.l5.permutation_batch_size     = 64
+```
+
+runnerとestimatorはL5固有値を優先し、未指定の場合だけglobal値へfallbackする。
+`_permutation_census`はLens IDを受け取り、各Lensのconfigured Bでrequired Bと比較する。
+これによりL1b/L2a/L2b/L7の計算量を増やさず、L5最大族2092の必要最小B=4183を満たす。
+
+### 12.4 CPU・memory契約
+
+L5 `launch.py`はRuntimeが渡す`CONDUCTOR_NODE_CPU_CORES`、次に
+`CONDUCTOR_AVAILABLE_CPU_CORES`、最後にCLI `--workers`をthread上限として解決し、
+`OMP_NUM_THREADS`、`OPENBLAS_NUM_THREADS`、`MKL_NUM_THREADS`、`NUMEXPR_NUM_THREADS`、
+`VECLIB_MAXIMUM_THREADS`へ設定してからPixi Pythonを起動する。process poolを重ねない。
+
+L5 memory estimateにはfull correlation tableに加え、candidate左右のcentered-x/support行列と
+permutation batch出力を含める。本番既知寸法では64 GiB gate内でなければならず、超過時は従来どおり停止する。
+
+### 12.5 テストと実機出口
+
+- random NaN fixtureでmatrix Pearsonとscalar `np.corrcoef`の差`<=1e-9`。
+- batch size 1と64で`l5_tests`とFindingがexact一致。
+- estimator fixtureでL5-only B=5000がunit count、census、memoryへ反映される。
+- defaults/resolved exampleがL5 B=5000、batch=64を含む。
+- 全repository testを通した後、新規Run rootでPhase 1〜6を完走する。
+
+実機Runでは旧Runをresumeせず、Description Databaseだけを再利用する。R1.3はDescriptionの
+calculation version/signatureを変更しないため、互換recordの再計算は不要である。R1.2の
+`work_census.json`は比較資料としてread-only参照できるが、新RunのP01/P02/P03 artifactとして流用しない。

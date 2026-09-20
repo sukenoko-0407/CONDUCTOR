@@ -17,8 +17,51 @@ from conductor_lens_l4 import (
     select_l4_candidates,
 )
 from conductor_lens_l5 import run_l5
+from conductor_lens_l5.l5 import _CandidateCorrelationEngine, _CorrelationTableEngine
 from conductor_lens_l7 import run_l7
 from rdkit import Chem
+
+
+def test_l5_matrix_engines_match_scalar_pairwise_pearson() -> None:
+    rng = np.random.default_rng(20260920)
+    values = rng.normal(size=(31, 7))
+    values[rng.random(values.shape) < 0.18] = np.nan
+    endpoint = rng.normal(size=31)
+    masks = rng.random((6, 31)) < 0.55
+
+    table = _CorrelationTableEngine.compile(masks, values)
+    observed = table.correlate(endpoint)
+    expected = np.full_like(observed, np.nan)
+    for row in range(masks.shape[0]):
+        for column in range(values.shape[1]):
+            selected = masks[row] & np.isfinite(values[:, column])
+            if selected.sum() >= 3:
+                expected[row, column] = np.corrcoef(
+                    values[selected, column], endpoint[selected]
+                )[0, 1]
+    assert np.nanmax(np.abs(observed - expected)) <= 1e-9
+
+    comparison_indices = np.array([0, 1, 2], dtype=np.int64)
+    feature_indices = np.array([0, 1, 2], dtype=np.int64)
+    paired_masks = np.vstack((masks[:3], masks[3:]))
+    candidates = _CandidateCorrelationEngine.compile(
+        paired_masks, values, comparison_indices, feature_indices
+    )
+    batch = np.column_stack((endpoint, endpoint[::-1]))
+    left, right = candidates.correlate_batch(batch)
+    for candidate, (comparison, feature) in enumerate(
+        zip(comparison_indices, feature_indices, strict=True)
+    ):
+        for batch_index in range(batch.shape[1]):
+            for actual, mask in (
+                (left[candidate, batch_index], paired_masks[comparison]),
+                (right[candidate, batch_index], paired_masks[comparison + 3]),
+            ):
+                selected = mask & np.isfinite(values[:, feature])
+                expected_value = np.corrcoef(
+                    values[selected, feature], batch[selected, batch_index]
+                )[0, 1]
+                assert actual == pytest.approx(expected_value, rel=1e-9, abs=1e-12)
 
 
 def test_l1b_flatness_excludes_self_and_requires_full_neighbor_count() -> None:
@@ -167,6 +210,23 @@ def test_l5_detects_planted_same_axis_sign_reversal(tmp_path) -> None:
     assert set(result.tests["family_key"]) == {"L5|AX|correlation_sign_conflict"}
     assert result.evidence.loc[result.evidence["context_a"].eq("A"), "r_a"].iloc[0] > 0.99
     assert result.evidence.loc[result.evidence["context_a"].eq("A"), "r_b"].iloc[0] < -0.99
+    single_batch = run_l5(
+        pd.DataFrame({"compound_id": identifiers, "canonical_smiles": ["CCc1ccccc1"] * 20}),
+        pd.DataFrame({"compound_id": identifiers, "endpoint_id": ["EP"] * 20, "oriented_value": endpoint}),
+        contexts,
+        membership,
+        [{"space_id": "D001", "tier": 1, "path": str(feature_path)}],
+        "EP",
+        run_seed=7,
+        screen_permutations=99,
+        final_permutations=199,
+        screen_p_max=0.20,
+        report_q_max=0.20,
+        calibration_permutations=20,
+        permutation_batch_size=1,
+    )
+    pd.testing.assert_frame_equal(result.tests, single_batch.tests, check_exact=True)
+    assert result.findings == single_batch.findings
 
 
 def test_l5_complement_is_axis_local_and_skips_an_insufficient_axis(tmp_path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -93,6 +94,37 @@ def test_production_run_rejects_changed_input_before_creating_run_root(tmp_path:
     with pytest.raises(ValueError, match="hash mismatch"):
         execute_run(spec_path, compile_only=True)
     assert not run_root.exists()
+
+
+def test_production_run_compiles_existing_database_without_repeating_receipts(
+    tmp_path: Path,
+) -> None:
+    spec_path, run_root = _fixture(tmp_path)
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    spec["mode"] = "existing_database"
+    spec["preflight_receipts"] = []
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    database_root = (
+        PROJECT_ROOT
+        / "data"
+        / "description_database"
+        / spec["program_name"]
+    )
+    database_root.mkdir(parents=True, exist_ok=False)
+    (database_root / "database_manifest.json").write_text(
+        '{"schema_version":"0.2.1"}\n', encoding="utf-8"
+    )
+    try:
+        result = execute_run(spec_path, compile_only=True)
+        assert result["status"] == "compiled"
+        assert result["node_count"] == 13
+        assert result["preflight_checks"] == []
+        frozen_spec = json.loads(
+            (run_root / "control" / "run_spec.json").read_text(encoding="utf-8")
+        )
+        assert frozen_spec["mode"] == "existing_database"
+    finally:
+        shutil.rmtree(database_root)
 
 
 def test_preflight_receipt_cli_is_dependency_free_and_hash_bound(tmp_path: Path) -> None:

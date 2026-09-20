@@ -25,16 +25,23 @@
     "run_root": {"type": "string", "minLength": 1},
     "workers": {"type": "integer", "minimum": 1},
     "memory_mb": {"type": "integer", "minimum": 1},
-    "mode": {"const": "new_database"},
+    "mode": {"enum": ["new_database", "existing_database"]},
     "random_seed": {"type": "integer", "minimum": 0},
     "run_id": {"type": "string", "pattern": "^RUN-[A-Za-z0-9._-]+$"},
     "description_parameters": {"type": "object"},
     "preflight_receipts": {
       "type": "array",
-      "minItems": 3,
+      "minItems": 0,
       "maxItems": 3,
       "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"mode": {"const": "new_database"}}},
+      "then": {"properties": {"preflight_receipts": {"minItems": 3, "maxItems": 3}}},
+      "else": {"properties": {"preflight_receipts": {"maxItems": 0}}}
+    }
+  ]
 }

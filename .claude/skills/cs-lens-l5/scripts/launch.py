@@ -24,6 +24,28 @@ def main() -> int:
         path.mkdir(parents=True, exist_ok=True)
         env[name] = str(path.resolve())
     env["PIXI_NO_CONFIG"] = "1"
+    raw_threads = env.get("CONDUCTOR_NODE_CPU_CORES") or env.get(
+        "CONDUCTOR_AVAILABLE_CPU_CORES"
+    )
+    if raw_threads is None and "--workers" in sys.argv:
+        worker_index = sys.argv.index("--workers")
+        if worker_index + 1 < len(sys.argv):
+            raw_threads = sys.argv[worker_index + 1]
+    raw_threads = raw_threads or "1"
+    try:
+        threads = max(1, int(raw_threads))
+    except ValueError as exc:
+        raise ValueError("CONDUCTOR CPU core budget must be an integer") from exc
+    for name in (
+        "OMP_NUM_THREADS",
+        "OPENBLAS_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+        "VECLIB_MAXIMUM_THREADS",
+    ):
+        env[name] = str(threads)
+    env["OMP_DYNAMIC"] = "FALSE"
+    env["MKL_DYNAMIC"] = "FALSE"
     command = [str(Path(pixi).resolve()), "run", "--manifest-path", str(skill / "env" / "pixi.toml"), "--locked", "python", str(skill / "scripts" / "run.py"), *sys.argv[1:]]
     return subprocess.run(command, env=env, check=False).returncode
 

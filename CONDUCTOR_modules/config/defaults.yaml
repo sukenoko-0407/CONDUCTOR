@@ -53,6 +53,12 @@ lenses:
     enrichment_thresholds: [2.0, 3.0, 4.0]
   l5:
     min_abs_r: 0.30
+    # L5's production maximum family size is 2,092.  B=5,000 satisfies
+    # n <= alpha * (B+1) * k_min without multiplying every other Lens's cost.
+    final_permutations: 5000
+    # Permutations are generated with fixed per-iteration seeds and evaluated
+    # in BLAS batches; changing this affects performance, not results.
+    permutation_batch_size: 64
   l7:
     min_common_r_groups: 5
     min_abs_spearman_rho: 0.50

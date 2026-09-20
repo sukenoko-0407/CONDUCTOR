@@ -60,7 +60,9 @@ def _family_census(tests: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def _permutation_census(config: dict[str, Any], tests: pd.DataFrame) -> dict[str, Any]:
+def _permutation_census(
+    config: dict[str, Any], tests: pd.DataFrame, lens: str
+) -> dict[str, Any]:
     census = _family_census(tests)
     alpha = float(config["statistics"].get("report_q_max", 0.05))
     if not 0 < alpha <= 1:
@@ -70,7 +72,7 @@ def _permutation_census(config: dict[str, Any], tests: pd.DataFrame) -> dict[str
         raise ValueError("runtime.budgets.k_min must be positive")
     family_size = max(census["family_sizes"].values(), default=0)
     required = max(1, int(math.ceil(family_size / (alpha * k_min)) - 1))
-    configured = _permutations(config)
+    configured = _permutations(config, lens)
     return {
         **census,
         "report_q_max": alpha,
@@ -93,8 +95,13 @@ def _peak(value: int | float) -> int:
     return int(math.ceil(max(0.0, float(value)) * SAFETY_FACTOR))
 
 
-def _permutations(config: dict[str, Any]) -> int:
-    return int(config["statistics"]["final_permutations"])
+def _permutations(config: dict[str, Any], lens: str) -> int:
+    lens_config = ((config.get("lenses") or {}).get(lens) or {})
+    return int(
+        lens_config.get(
+            "final_permutations", config["statistics"]["final_permutations"]
+        )
+    )
 
 
 def estimate_work(
@@ -145,7 +152,7 @@ def _estimate_l1b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
     member_work = int(metrics["member_work_count"])
     neighbor_k = int(contexts["neighbor_k"])
     maximum = int(metrics["max_context_members"])
-    b1 = _permutations(config) + 1
+    b1 = _permutations(config, "l1b") + 1
     units = b1 * member_work
     memory = 8 * (
         spaces * n * n
@@ -154,7 +161,7 @@ def _estimate_l1b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
         + 2 * n
         + 2 * maximum * maximum
     )
-    census = _permutation_census(config, result.tests)
+    census = _permutation_census(config, result.tests, "l1b")
     return WorkEstimate(
         units,
         max(census["family_sizes"].values(), default=0),
@@ -167,7 +174,7 @@ def _estimate_l1b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
             "member_work_count": member_work,
             "neighbor_k": neighbor_k,
             "max_context_members": maximum,
-            "permutations": _permutations(config),
+            "permutations": _permutations(config, "l1b"),
         },
     )
 
@@ -205,7 +212,7 @@ def _estimate_l2a(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
     metrics = result.metrics
     pair_count = int(metrics["eligible_pair_count"])
     question_count = int(metrics["test_count"])
-    b1 = _permutations(config) + 1
+    b1 = _permutations(config, "l2a") + 1
     units = b1 * pair_count
     memory = 8 * (
         int(metrics["finite_endpoint_count"])
@@ -213,7 +220,7 @@ def _estimate_l2a(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
         + int(metrics["series_member_count"])
         + 3 * question_count
     )
-    census = _permutation_census(config, result.tests)
+    census = _permutation_census(config, result.tests, "l2a")
     return WorkEstimate(
         units,
         max(census["family_sizes"].values(), default=0),
@@ -226,7 +233,7 @@ def _estimate_l2a(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
             "class_count": int(metrics["class_count"]),
             "series_member_count": int(metrics["series_member_count"]),
             "test_count": question_count,
-            "permutations": _permutations(config),
+            "permutations": _permutations(config, "l2a"),
         },
     )
 
@@ -250,10 +257,10 @@ def _estimate_l2b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
     )
     observations_work = int(result.metrics["observation_work_count"])
     tests = int(result.metrics["test_count"])
-    b1 = _permutations(config) + 1
+    b1 = _permutations(config, "l2b") + 1
     units = b1 * observations_work
     memory = 8 * (12 * len(observations) + 8 * observations_work + tests * (b1 + 10))
-    census = _permutation_census(config, result.tests)
+    census = _permutation_census(config, result.tests, "l2b")
     return WorkEstimate(
         units,
         max(census["family_sizes"].values(), default=0),
@@ -264,7 +271,7 @@ def _estimate_l2b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
             "observation_count": observations_work,
             "series_count": int(result.metrics["series_count"]),
             "test_count": tests,
-            "permutations": _permutations(config),
+            "permutations": _permutations(config, "l2b"),
         },
     )
 
@@ -393,16 +400,21 @@ def _estimate_l5(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
     comparisons = int(metrics["comparison_count"])
     features = int(metrics["feature_count"])
     blocks = int(metrics["block_count"])
-    b1 = _permutations(config) + 1
+    final_permutations = _permutations(config, "l5")
+    b1 = final_permutations + 1
     units = b1 * comparisons * features
+    candidates = int(metrics["screen_candidate_count"])
+    batch_size = int(config["lenses"]["l5"].get("permutation_batch_size", 64))
     memory = 8 * (
         4 * n * features
-        + comparisons * n
-        + 8 * comparisons * features
+        + 2 * comparisons * n
+        + 12 * comparisons * features
+        + 4 * candidates * n
+        + 12 * candidates * batch_size
         + 2 * features
         + 2 * blocks
     )
-    census = _permutation_census(config, result.tests)
+    census = _permutation_census(config, result.tests, "l5")
     return WorkEstimate(
         units,
         max(census["family_sizes"].values(), default=0),
@@ -413,8 +425,11 @@ def _estimate_l5(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
             "compound_count": n,
             "comparison_count": comparisons,
             "feature_count": features,
+            "candidate_count": candidates,
             "block_count": blocks,
-            "permutations": _permutations(config),
+            "permutations": final_permutations,
+            "permutation_batch_size": batch_size,
+            "correlation_engine": "matrix_blas_v1",
         },
     )
 
@@ -437,10 +452,10 @@ def _estimate_l7(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
     )
     candidates = int(result.metrics["series_pair_count"])
     tests = int(result.metrics["test_count"])
-    b1 = _permutations(config) + 1
+    b1 = _permutations(config, "l7") + 1
     units = b1 * candidates * 2
     memory = 8 * (12 * len(observations) + candidates * 2 * (b1 + 8))
-    census = _permutation_census(config, result.tests)
+    census = _permutation_census(config, result.tests, "l7")
     return WorkEstimate(
         units,
         max(census["family_sizes"].values(), default=0),
@@ -451,6 +466,6 @@ def _estimate_l7(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
             "candidate_count": candidates,
             "question_count": 2,
             "test_count": tests,
-            "permutations": _permutations(config),
+            "permutations": _permutations(config, "l7"),
         },
     )

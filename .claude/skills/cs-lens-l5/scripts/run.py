@@ -74,8 +74,12 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
     config_path = Path(request["config_path"]).resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     registry = json.loads(_input(request, "feature_spaces").read_text(encoding="utf-8"))
+    l5_config = config["lenses"]["l5"]
+    final_permutations = int(
+        l5_config.get("final_permutations", config["statistics"]["final_permutations"])
+    )
     progress = ProgressReporter.from_environment(
-        int(config["statistics"]["final_permutations"]),
+        final_permutations,
         min_seconds=float(((config.get("runtime") or {}).get("progress") or {}).get("min_seconds", 5)),
         min_fraction=float(((config.get("runtime") or {}).get("progress") or {}).get("min_fraction", 0.01)),
     )
@@ -84,10 +88,11 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         pd.read_csv(_input(request, "endpoint_table"), dtype={"compound_id": "string"}),
         pd.read_csv(_input(request, "context_catalog")), pd.read_csv(_input(request, "context_membership"), dtype={"compound_id": "string"}),
         registry["spaces"], request["endpoint_id"], run_seed=int(request["random_seed"]),
-        min_endpoint_n=int(config["contexts"]["min_endpoint_n"]), min_abs_r=float(config["lenses"]["l5"]["min_abs_r"]),
-        screen_permutations=int(config["statistics"]["screen_permutations"]), final_permutations=int(config["statistics"]["final_permutations"]),
+        min_endpoint_n=int(config["contexts"]["min_endpoint_n"]), min_abs_r=float(l5_config["min_abs_r"]),
+        screen_permutations=int(config["statistics"]["screen_permutations"]), final_permutations=final_permutations,
         screen_p_max=float(config["statistics"]["screen_p_max"]), report_q_max=float(config["statistics"]["report_q_max"]),
         calibration_permutations=int(config["statistics"]["calibration_permutations"]),
+        permutation_batch_size=int(l5_config.get("permutation_batch_size", 64)),
         progress_callback=lambda completed, total: progress.update(completed),
     )
     progress.finish()

@@ -1,6 +1,7 @@
 """Compile and execute the canonical CONDUCTOR 0.2.1 production DAG.
 
-This module is the only supported compiler for the 3.4A new-Database route.
+This module is the supported compiler for both new-Database and compatible
+existing-Database production routes.
 It intentionally consumes a small Run Spec instead of discovering Skill
 contracts or asking an agent to author Execution Requests at run time.
 """
@@ -237,9 +238,10 @@ def validate_preflight_receipts(
         if int(receipt["machine"]["cpu_affinity"]) < int(spec["workers"]):
             raise ValueError(f"Preflight CPU affinity is insufficient: {check_id}")
         receipts.append(receipt)
-    if seen != EXPECTED_RECEIPTS:
+    expected_receipts = EXPECTED_RECEIPTS if spec["mode"] == "new_database" else set()
+    if seen != expected_receipts:
         raise ValueError(
-            f"Required preflight receipts are {sorted(EXPECTED_RECEIPTS)}; got {sorted(seen)}"
+            f"Required preflight receipts are {sorted(expected_receipts)}; got {sorted(seen)}"
         )
     if int(spec["workers"]) > affinity:
         raise ValueError(
@@ -512,10 +514,21 @@ def _minimal_guards(spec: dict[str, Any], paths: dict[str, Path]) -> None:
         / "description_database"
         / str(spec["program_name"])
     )
-    if database_root.exists():
-        raise FileExistsError(
-            f"New-Database mode requires an absent Program Database path: {database_root}"
-        )
+    if spec["mode"] == "new_database":
+        if database_root.exists():
+            raise FileExistsError(
+                f"New-Database mode requires an absent Program Database path: {database_root}"
+            )
+    else:
+        if not database_root.is_dir():
+            raise FileNotFoundError(
+                f"Existing-Database mode requires a Program Database directory: {database_root}"
+            )
+        manifest = database_root / "database_manifest.json"
+        if not manifest.is_file():
+            raise FileNotFoundError(
+                f"Existing Program Database manifest is missing: {manifest}"
+            )
     if paths["run_root"].exists():
         raise FileExistsError(f"Run root already exists: {paths['run_root']}")
 

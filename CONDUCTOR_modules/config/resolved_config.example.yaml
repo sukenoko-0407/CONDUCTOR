@@ -57,6 +57,9 @@ lenses:
     enrichment_thresholds: [2.0, 3.0, 4.0]
   l5:
     min_abs_r: 0.30
+    # L5-only statistical budget for the observed maximum family size 2,092.
+    final_permutations: 5000
+    permutation_batch_size: 64
   l7:
     min_common_r_groups: 5
     min_abs_spearman_rho: 0.50

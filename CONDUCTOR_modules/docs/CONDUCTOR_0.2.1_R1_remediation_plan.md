@@ -1,8 +1,13 @@
 # CONDUCTOR 0.2.1 R1 修正計画書
 
-Status: **協議中。未承認。**
+Status: **R1.3実装済み。本番完走試験待ち。**
 作成日: 2026-09-19
-改訂: **R1.2（2026-09-20）。本番 census で判明した基準値欠陥とL1b identity欠陥を是正。**
+改訂: **R1.3（2026-09-20）。M-5を実装し、L5の本番統計予算を実行可能にした。**
+
+> **R1.3実行順序訂正:** R1.2では、最大族2092に対してB=1000が不足すると既に判明していたにも
+> かかわらず、M-5未実装・B未変更のまま同じcensusを再実行させた。これは新しい情報を得ない停止であり、
+> 本番試験を前進させない誤った段取りだった。R1.3では先にM-5を実装し、L5だけをB=5000へ設定する。
+> 他LensはB=1000を維持する。次の実機Runはcensus取得を目的とせず、Phase 1〜6の完走を目的とする。
 
 > **R1.2 緊急訂正:** R1.1 の L5「52」は `10,227 tests / 196 axes` の平均であり、
 > 最大族サイズではなかった。L1b 84、L2a 117も較正標本からの見込み値であり、
@@ -787,3 +792,53 @@ L5実測2092、`α=0.05`、`k_min=10`では必要なfinal permutationsは最低4
 2. R1-3F: identity/contract欠陥を修正し、統計・時間予算に適合したLensだけを実行する。
 3. L5はM-5を先に完了し、必要Bと実測時間が両方予算内になってからfull workloadを実行する。
 4. baseline差は観測値としてversioned記録し、exact一致を理由にRunを停止しない。
+
+## 12. R1.3 本番完走是正 M-21〜M-23
+
+### 12.1 M-21: L5 M-5を実コードへ実装する
+
+R1.2時点の`l5.py`は、計画書にM-5が記載されていた一方で、依然として
+`permutation × candidate × 2 correlations`をPython loopで処理していた。R1.3では次へ置換した。
+
+- focal/complement membership、feature finite mask、x側十分統計量を一度だけcompileする。
+- calibrationは全`comparison × feature`相関表をBLASで計算する。
+- screen/finalは観測候補の固定supportと中心化xをcompileし、permutationをbatch化して行列積で評価する。
+- calibrationで計算した候補nullをscreenへ再利用する。
+- null statistic全体を保持せず、finite countとextreme countだけを保持する。
+- `global_r`をfeatureごとに一度だけ計算する。
+- `launch.py`が`CONDUCTOR_NODE_CPU_CORES`をBLAS thread上限へ伝播する。process並列は使わない。
+
+乱数seedは従来どおりiteration単位で導出する。batch sizeは計算結果を変えない性能設定とする。
+
+### 12.2 M-22: L5だけの統計予算
+
+全Lens共通の`statistics.final_permutations=1000`は維持し、L5に限り次を設定する。
+
+```yaml
+lenses:
+  l5:
+    min_abs_r: 0.30
+    final_permutations: 5000
+    permutation_batch_size: 64
+```
+
+最大族2092、`alpha=0.05`、`k_min=10`の必要最小値は4183である。5000はこれを満たす丸めた
+運用値であり、閾値やfamilyを緩めたものではない。estimator、Runtime census、progress total、
+`null_iterations`はすべてこのL5固有値を使用する。他Lensの計算量は増やさない。
+
+### 12.3 M-23: checkpointから完走試験へ移行する
+
+R1-3Cの情報取得は完了した。以後、同じcensusだけを目的とするRunを繰り返さない。
+新しいRunは既存Description Databaseを再利用し、最小preflight後にPhase 1〜6を実行する。
+旧期待族サイズとの差は引き続きwarningであり停止条件ではない。停止を許すのは、入力・hash・schema・
+identity不整合、未知の実装エラー、統計予算不足、実測されたresource予算超過、明示された科学的
+acceptance不成立だけである。安全条件を黙って無効化するのではなく、既知のL5 blockerを実装と設定で
+解消した状態から本番完走を試す。
+
+### 12.4 受入条件
+
+- 欠測を含むmatrix相関とscalar Pearsonの差が`1e-9`以内。
+- permutation batch size 1/64でtest行、p/q値、Findingが完全一致。
+- L5 estimatorがconfigured B=5000、required B=4183以下を報告し、family gateを通過する。
+- 64 core指定がL5 subprocessのBLAS thread上限へ伝播する。
+- 本番Phase 1〜6が完走し、全Node、Finding、LLM call、引用検証を監査できる。
