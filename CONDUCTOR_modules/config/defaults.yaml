@@ -102,9 +102,14 @@ runtime:
     stall_min_seconds: 60
     stall_max_seconds: 600
   units_per_second:
-    l5: 3650000
-    l1b: 29800000
-    l2a: 7230000
+    # R1.3 provisional production calibration. These values deliberately
+    # retain headroom relative to RUN-71F880902191A1AA99F4.
+    l5: 50000000
+    l1b: 100000
+    l2a: 8000
     l4: 31700
     l2b: 50858
     l7: 6004
+  # L4 has a material fixed/preparation cost that is not represented by
+  # candidate_count * space_count or descriptor cost units.
+  l4_fixed_overhead_seconds: 720

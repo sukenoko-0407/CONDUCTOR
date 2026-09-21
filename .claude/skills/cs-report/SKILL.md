@@ -9,4 +9,10 @@ Build connected components from shared typed entities and ask the configured off
 
 Before publishing, independently verify every narrative number within 1% against its cited rows, every table hash and unique row ID, every referenced compound, every cited pair against the optional `mmp_database` Run registry, and every Finding test statistic/p/q against test artifacts. If cited evidence contains pair IDs, `mmp_database` is required. Preserve invalid drafts for diagnosis and fail Phase 6 on the first or any accumulated citation error. Never rewrite unsupported text automatically.
 
+Publish the same validated content as `report.json`, `report.md`, and a self-contained
+`report.html`. The HTML must not load remote scripts, styles, fonts, images, or other
+network resources. Escape every value originating in Run artifacts before placing it
+in HTML. `report.html` is the human-facing primary artifact; JSON/JSONL artifacts and
+their manifests remain the machine-auditable source of truth.
+
 The governing contract is `CONDUCTOR_modules/docs/CONDUCTOR_0.2.1_implementation_detail_spec.md`, section 7.10.

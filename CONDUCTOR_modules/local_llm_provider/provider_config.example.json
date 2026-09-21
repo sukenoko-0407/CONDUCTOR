@@ -1,6 +1,6 @@
 {
   "schema_version": "0.2.1",
-  "provider_version": "0.2.1.2",
+  "provider_version": "0.2.1.3",
   "backend": "vllm",
   "backend_version": "REPLACE_WITH_VLLM_VERSION",
   "endpoint": "http://REPLACE_WITH_VLLM_HOST:REPLACE_WITH_VLLM_PORT/v1/chat/completions",
@@ -12,7 +12,7 @@
   "model": "REPLACE_WITH_VLLM_SERVED_MODEL_NAME",
   "model_revision": "REPLACE_WITH_MODEL_OR_DEPLOYMENT_REVISION",
   "quantization": "REPLACE_WITH_SERVER_MODEL_QUANTIZATION",
-  "prompt_version": "0.2.1",
+  "prompt_version": "0.2.1.1",
   "temperature": 0.7,
   "top_p": 0.8,
   "top_k": 20,

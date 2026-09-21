@@ -10,6 +10,10 @@
 
 > **2026-09-19追補:** R-01〜R-08是正後のRunで新たにR-09を確認した。L5はCPU予算64を受け取るが`--workers`を計算kernelへ接続せず、context pairごとに同じ相関を再計算するため、専用64コア・755 GiB RAM機で実質1コアのまま8時間以上継続した。R-03はCPU予算の伝播だけを保証し、実消費を保証していなかった。L5と長時間Node管理は未是正であり、本報告の「限定受入後は本番再開可能」という結論を再度保留する。詳細は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
 
+> **2026-09-21終結:** R1.5までの後続是正後、Run `RUN-71F880902191A1AA99F4`は全13 Nodeが
+> `succeeded`となり、read-only監査で正式受入可能と判定された。本書の障害・保留記録は履歴として残し、
+> 最終状態は[`CONDUCTOR_0.2.1_R1_production_acceptance_report.md`](CONDUCTOR_0.2.1_R1_production_acceptance_report.md)を正とする。
+
 ## 2. 原因と修正
 
 | ID | 原因 | 修正 | 受入条件 |
@@ -64,3 +68,9 @@ L4はone-step候補を次のstable順で並べる。
 - Ubuntu本番機固有のPixi環境、Linux CPU affinity、64コア予算、実データ規模については、本番開始前の限定fixtureと3.2Aで確認する。
 
 R-01〜R-08については「修正実装と自動回帰は合格」である。しかし、2026-09-19にR-09が判明したため、文書全体としての状態は「L5/Runtime再設計・実装・本番規模受入待ち」へ戻す。R-09の受入条件を満たすまで3.4A/3.4Bの本番Runを再開してはならない。再開判断と移行方法は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を正とする。
+## 2026-09-21 正式受入後のR1.6
+
+受入済みRunは不変のまま、人間向け静的HTMLの標準生成と旧Run向け外部exporterを実装した。
+次回RunではP06が各Lensのwork-estimate telemetryを自動評価し、JSON/HTMLへ記録する。
+本番実測で危険側だったL1b/L2a/L4を是正し、L5の過大見積りを安全余裕付きで緩和した。
+Local LLM prompt/provider version更新後は、次回Run前に3.3 probeを再実行する。

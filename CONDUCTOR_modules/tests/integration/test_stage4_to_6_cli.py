@@ -328,6 +328,21 @@ def test_report_drops_persistently_invalid_narrative_without_weakening_citations
     manifest.write_text(
         json.dumps(
             {
+                "producer": {"node_id": "P03-L5"},
+                "metrics": {
+                    "work_estimate": {
+                        "unit_count": 100,
+                        "estimated_seconds": 2.0,
+                        "detail": {
+                            "engine": "matrix_blas_v1",
+                            "cost_model_version": "r1.3",
+                            "configured_units_per_second": 50_000_000,
+                        },
+                    },
+                    "actual_wall_seconds": 4.0,
+                    "estimate_actual_ratio": 0.5,
+                    "observed_units_per_second": 25.0,
+                },
                 "artifacts": [
                     {"path": evidence.name, "sha256": _sha256(evidence)},
                     {"path": tests.name, "sha256": _sha256(tests)},
@@ -360,14 +375,33 @@ def test_report_drops_persistently_invalid_narrative_without_weakening_citations
     response = _run("cs-report", request, output)
 
     assert response["status"] == "succeeded"
+    assert response["primary"] == "report.html"
+    assert (output / "report.html").read_text(encoding="utf-8").startswith("<!doctype html>")
     report = json.loads((output / "report.json").read_text(encoding="utf-8"))
     assert report["components"][0]["narrative"] is None
+    assert report["lens_telemetry"] == [
+        {
+            "node_id": "P03-L5",
+            "lens": "L5",
+            "engine": "matrix_blas_v1",
+            "cost_model_version": "r1.3",
+            "unit_count": 100,
+            "estimated_seconds": 2.0,
+            "actual_wall_seconds": 4.0,
+            "estimate_actual_ratio": 0.5,
+            "observed_units_per_second": 25.0,
+            "configured_units_per_second": 50_000_000,
+            "evaluation": "unsafe_underestimate",
+        }
+    ]
     validation = json.loads((output / "citation_validation.json").read_text(encoding="utf-8"))
     assert validation["errors"] == []
     assert validation["failed_logical_calls"] == 1
     failures = [json.loads(line) for line in (output / "llm_narrative_failures.jsonl").read_text(encoding="utf-8").splitlines()]
     assert len(failures) == 2
     assert {item["stage"] for item in failures} == {"citation_validation"}
+    output_manifest = json.loads((output / "artifact_manifest.json").read_text(encoding="utf-8"))
+    assert [item["media_type"] for item in output_manifest["artifacts"] if item["role"] == "report_html"] == ["text/html"]
 
 
 def test_deep_dive_writes_logical_call_failure_ledger(tmp_path: Path) -> None:

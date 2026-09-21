@@ -2,7 +2,7 @@
 
 ## 0. 文書状態
 
-- 状態: **R1.5 M-30〜M-32実装・P06限定復旧試験待ち**
+- 状態: **R1.5本番13/13 Node成功・正式受入済み。R1.6実装・149件回帰合格、次回本番検証待ち**
 - 対象: `CONDUCTOR_0.2.1_R1_implementer_brief.md` が定義する R1.1
 - 作成日: 2026-09-19
 - R1-1〜R1-3およびM-17実装後の本番結果を反映している。
@@ -179,7 +179,7 @@ M-3/M-4/M-10b/M-11b を一つの統計契約変更として同一 stage で適�
 unit_count = B1 * C * F
 family_size = H5
 peak_memory_bytes = 8 * (4*N*F + C*N + 8*C*F + 2*F + 2*K)
-estimated_seconds = unit_count / 3_650_000 * 1.25
+estimated_seconds = unit_count / 50_000_000 * 1.25
 ```
 
 `detail` は `compound_count, comparison_count, feature_count, block_count, permutations` を持つ。null distribution 全体を保持せず exceedance counter を更新する設計を前提とする。Python object/ID table 用の安全係数は上式へ 1.25 を掛け、ceil した値を最終 `peak_memory_bytes` とする。
@@ -201,7 +201,7 @@ estimated_seconds = unit_count / 3_650_000 * 1.25
 unit_count = B1 * T
 family_size = H1
 peak_memory_bytes = 8 * (S*N*N + T*K + 2*T + 2*N + 2*Mmax*Mmax)
-estimated_seconds = unit_count / 29_800_000 * 1.25
+estimated_seconds = unit_count / 100_000 * 1.25
 ```
 
 float32 distance artifact も guard では float64 相当で保守的に数える。M-10a は各 `(space, context)` の文脈部分行列だけを一度 stable sort し、選ばれた target/neighbor index を連結する。`2*Mmax^2` は部分距離行列と整列添字の一時領域であり、全体順位表 `S*N*N*4` は作らない。M-6 は L1b へ適用せず、既存 distance artifact と context catalog をそのまま使う。
@@ -222,7 +222,7 @@ float32 distance artifact も guard では float64 相当で保守的に数え�
 unit_count = B1 * P
 family_size = H2
 peak_memory_bytes = 8 * (N + 6*P + G + 3*Q)
-estimated_seconds = unit_count / 7_230_000 * 1.25
+estimated_seconds = unit_count / 8_000 * 1.25
 ```
 
 `detail` は `pair_count, transformation_count, class_count, series_member_count, test_count, permutations` を持つ。
@@ -243,7 +243,7 @@ M-12 前の現行アルゴリズムを guard する式:
 unit_count = C4 * S4
 family_size = C4  # L4 は family_size gate の例外
 peak_memory_bytes = 8 * (C4*N*Fmax + C4*Fmax + N*Fmax)
-estimated_seconds = ((C4*S4)/31_700 + W*0.00804/available_workers) * 1.25
+estimated_seconds = ((C4*S4)/31_700 + W*0.00804/available_workers + 720) * 1.25
 ```
 
 M-12a 後の式:
@@ -252,7 +252,7 @@ M-12a 後の式:
 unit_count = C4 * S4
 family_size = C4
 peak_memory_bytes = 8 * (C4*N + C4*Fmax + N*Fmax + 4*C4)
-estimated_seconds = ((C4*S4)/31_700 + W*0.00804/available_workers) * 1.25
+estimated_seconds = ((C4*S4)/31_700 + W*0.00804/available_workers + 720) * 1.25
 ```
 
 `detail` は `candidate_count, space_count, observation_count, max_feature_count, description_cost_units, available_workers` を持つ。複合コストは L4 estimator 内だけで秒へ換算され、Runtime に Lens 固有の例外式を置かない。L4 manifest は `family_gate="exempt_parametric"` を記録する。
@@ -520,12 +520,13 @@ runtime:
     stall_min_seconds: 60
     stall_max_seconds: 600
   units_per_second:
-    l5: 3650000
-    l1b: 29800000
-    l2a: 7230000
+    l5: 50000000
+    l1b: 100000
+    l2a: 8000
     l4: 31700
     l2b: 50858
     l7: 6004
+  l4_fixed_overhead_seconds: 720
   l4:
     candidate_cap: 100
 ```
@@ -1065,7 +1066,9 @@ P06はfailed attemptの部分出力をpromoteしていないため、P06内のco
 
 ### 14.5 Work estimate rateの扱い
 
-本番報告のL5約1/133、L2a約1/714、L1b約1/22は、rate改訂候補を示す診断値である。
+実測に対する比は、L5では`actual/estimate ≈ 1/133`、L1bでは`estimate/actual ≈ 0.046`、
+L2aでは`estimate/actual ≈ 0.0014`である。L1b/L2aは見積りが保守的なのではなく、実時間を
+大幅に過小評価している。L4も`estimate/actual ≈ 0.0022`で同じ方向である。
 exact `unit_count`、`actual_wall_seconds`、engine/versionが揃う複数Runを収集するまでdefaultsを変更しない。
 rate較正は科学計算・P06復旧から分離した別commitにする。
 
@@ -1082,3 +1085,51 @@ rate較正は科学計算・P06復旧から分離した別commitにする。
 2026-09-21にreport/deep-dive unitとPhase 4〜6 integrationの対象18件を実行し、**18件合格、failure 0件**を
 確認した。続いてrepository全体を実行し、**146件合格、failure 0件**を確認した。warningは既存の
 小規模E2E fixtureでほぼ同一値を扱う際のSciPy precision-loss 3件だけである。
+
+### 14.8 本番受入記録
+
+Run `RUN-71F880902191A1AA99F4`（Git commit `458131e`）は全13 Nodeが`succeeded`となった。
+P06はcomponent 1、semantic retry 0、failed logical call 0、null narrative 0で、citation validationは
+`succeeded`、error 0だった。続くread-only監査は正式受入可能と判定した。
+
+P05は3470 logical call中213件が失敗し、failure fractionは`0.06138328530259366`だった。これは既存上限
+0.20以内だが、旧P05 attemptにはM-31の行単位内訳がないため品質注記として残す。受入値とtelemetryの
+正本は`CONDUCTOR_0.2.1_R1_production_acceptance_report.md`とする。
+
+## 15. R1.6 HTML report・telemetry集約・R1.3 cost model
+
+### 15.1 実装対象
+
+- `.claude/skills/cs-report/python/conductor_report/html_report.py`
+- `.claude/skills/cs-report/scripts/run.py`
+- `.claude/skills/cs-report/capability.json`
+- `CONDUCTOR_modules/tools/export_validated_report_html.py`
+- `CONDUCTOR_modules/local_llm_provider/prompts.json`
+- `CONDUCTOR_modules/local_llm_provider/provider.py`
+- `CONDUCTOR_modules/tools/lens_work_estimators.py`
+- `CONDUCTOR_modules/config/defaults.yaml`
+
+### 15.2 HTML renderer
+
+rendererは`report.json`、`final_findings.jsonl`、`citation_validation.json`相当のin-memory objectだけを
+受け取り、外部resourceや実行scriptを含まないUTF-8 HTMLを返す。Run由来値は`html.escape(..., quote=True)`を
+通す。引用markerは内部anchorへ変換し、Finding表はrank、Lens、state、claim、support、p/q、scoreを示す。
+JSON/JSONLを監査正本とし、HTMLは表示層に限定する。
+
+### 15.3 telemetry自動評価
+
+P06へ渡されたmanifestのうち`metrics.work_estimate`を持つものをLens telemetryとして集約する。
+`actual_wall_seconds`等が旧artifactにない場合は`not_measured`とし、推測しない。新estimatorはdetailへ
+`engine`、`cost_model_version=r1.3`、`configured_units_per_second`を必ず記録する。
+
+### 15.4 暫定rateの回帰基準
+
+正式受入Runに対する再計算値は概ねL1b 1548秒以上、L2a 1560秒以上、L4 900秒以上とし、各実時間
+1126.58秒、1247.3秒、719秒を下回らない。L5は約234秒となり、実時間24.056秒に対して十分安全側を
+保ちながら従来の3210.7秒より不要な停止を減らす。次回Runのexact telemetryはP06が自動収集し、
+`unsafe_underestimate`があれば設定変更を自動適用せず人間へ提示する。
+
+### 15.5 provider版移行
+
+`prompts.json`は`prompt_version=0.2.1.1`、providerは`0.2.1.3`とする。実provider configを更新後、
+select/summarize/composeの三task probeを実行する。旧受入Runのfrozen configやprovider metadataは変更しない。

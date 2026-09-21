@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from conductor_report import CitationError, EvidenceRegistry, build_entity_components, validate_component_narrative, validate_component_response, validate_finding_tests
+from conductor_report import CitationError, EvidenceRegistry, build_entity_components, render_html_report, validate_component_narrative, validate_component_response, validate_finding_tests
 from conductor_stat_core import base_finding, file_sha256, stable_id
 
 
@@ -107,3 +107,40 @@ def test_pair_ids_require_the_run_pair_registry(tmp_path) -> None:
     with pytest.raises(CitationError, match="no mmp_database"):
         validate_finding_tests([finding], registry, {"C1"})
     validate_finding_tests([finding], registry, {"C1"}, {"PAIR|known"})
+
+
+def test_html_report_is_self_contained_and_escapes_artifact_values() -> None:
+    finding = _finding("F000001", ["C1"])
+    finding["claim"]["subject_id"] = "<script>alert('x')</script>"
+    finding["scores"] = {"rank": 1, "composite": 0.75}
+    report = {
+        "status": "succeeded",
+        "endpoint_id": "EP<&>",
+        "components": [
+            {
+                "component_id": "COMPONENT|fixture",
+                "finding_ids": ["F000001"],
+                "narrative": "関連を示す。[[CIT-F000001]]",
+                "citations": ["CIT-F000001"],
+                "citation_refs": [
+                    {
+                        "citation_id": "CIT-F000001",
+                        "table_ref": "evidence.csv#row_id=E-F000001",
+                    }
+                ],
+            }
+        ],
+    }
+    rendered = render_html_report(
+        report,
+        [finding],
+        {"status": "succeeded", "errors": [], "failure_fraction": 0.0},
+        run_id="RUN|fixture",
+        created_at="2026-09-21T00:00:00Z",
+    )
+
+    assert "<!doctype html>" in rendered
+    assert "<script" not in rendered
+    assert "&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;" in rendered
+    assert "https://" not in rendered and "http://" not in rendered
+    assert 'href="#citation-1"' in rendered

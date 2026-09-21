@@ -53,7 +53,7 @@ class LocalProviderContractTest(unittest.TestCase):
                     json.dumps(
                         {
                             "schema_version": "0.2.1",
-                            "provider_version": "0.2.1.2",
+                            "provider_version": "0.2.1.3",
                             "backend": "vllm",
                             "backend_version": "fixture-build",
                             "endpoint": f"http://127.0.0.1:{server.server_port}/v1/chat/completions",
@@ -65,7 +65,7 @@ class LocalProviderContractTest(unittest.TestCase):
                             "model": "fixture-model",
                             "model_revision": "fixture-revision",
                             "quantization": "fixture",
-                            "prompt_version": "0.2.1",
+                            "prompt_version": "0.2.1.1",
                             "temperature": 0.7,
                             "top_p": 0.8,
                             "top_k": 20,

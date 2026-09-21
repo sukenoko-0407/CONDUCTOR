@@ -15,9 +15,9 @@ from work_contract import WorkEstimate
 
 
 RATES = {
-    "l5": 3_650_000,
-    "l1b": 29_800_000,
-    "l2a": 7_230_000,
+    "l5": 50_000_000,
+    "l1b": 100_000,
+    "l2a": 8_000,
     "l4": 31_700,
     "l2b": 50_858,
     "l7": 6_004,
@@ -175,6 +175,9 @@ def _estimate_l1b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
             "neighbor_k": neighbor_k,
             "max_context_members": maximum,
             "permutations": _permutations(config, "l1b"),
+            "engine": "neighbor_permutation_v1",
+            "cost_model_version": "r1.3",
+            "configured_units_per_second": _rate(config, "l1b"),
         },
     )
 
@@ -234,6 +237,9 @@ def _estimate_l2a(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
             "series_member_count": int(metrics["series_member_count"]),
             "test_count": question_count,
             "permutations": _permutations(config, "l2a"),
+            "engine": "mmp_permutation_v1",
+            "cost_model_version": "r1.3",
+            "configured_units_per_second": _rate(config, "l2a"),
         },
     )
 
@@ -272,6 +278,9 @@ def _estimate_l2b(request: dict[str, Any], config: dict[str, Any]) -> WorkEstima
             "series_count": int(result.metrics["series_count"]),
             "test_count": tests,
             "permutations": _permutations(config, "l2b"),
+            "engine": "fragment_enrichment_v1",
+            "cost_model_version": "r1.3",
+            "configured_units_per_second": _rate(config, "l2b"),
         },
     )
 
@@ -355,9 +364,15 @@ def _estimate_l4(
         + candidate_count * maximum_features
         + observation_count * maximum_features
     )
+    fixed_overhead = float(
+        (config.get("runtime") or {}).get("l4_fixed_overhead_seconds", 720)
+    )
+    if not math.isfinite(fixed_overhead) or fixed_overhead < 0:
+        raise ValueError("runtime.l4_fixed_overhead_seconds must be non-negative")
     seconds = (
         units / _rate(config, "l4")
         + description_cost * 0.00804 / workers
+        + fixed_overhead
     ) * SAFETY_FACTOR
     return WorkEstimate(
         units,
@@ -371,6 +386,10 @@ def _estimate_l4(
             "max_feature_count": maximum_features,
             "description_cost_units": description_cost,
             "available_workers": workers,
+            "fixed_overhead_seconds": fixed_overhead,
+            "engine": "candidate_descriptor_v1",
+            "cost_model_version": "r1.3",
+            "configured_units_per_second": _rate(config, "l4"),
         },
     )
 
@@ -430,6 +449,9 @@ def _estimate_l5(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
             "permutations": final_permutations,
             "permutation_batch_size": batch_size,
             "correlation_engine": "matrix_blas_v1",
+            "engine": "matrix_blas_v1",
+            "cost_model_version": "r1.3",
+            "configured_units_per_second": _rate(config, "l5"),
         },
     )
 
@@ -467,5 +489,8 @@ def _estimate_l7(request: dict[str, Any], config: dict[str, Any]) -> WorkEstimat
             "question_count": 2,
             "test_count": tests,
             "permutations": _permutations(config, "l7"),
+            "engine": "series_pair_permutation_v1",
+            "cost_model_version": "r1.3",
+            "configured_units_per_second": _rate(config, "l7"),
         },
     )

@@ -1,8 +1,8 @@
 # CONDUCTOR 0.2.1 R1 修正計画書
 
-Status: **R1.5実装済み。P06限定復旧試験待ち。**
+Status: **R1.5本番正式受入済み。R1.6 M-33〜M-35実装・149件回帰合格、次回本番検証待ち。**
 作成日: 2026-09-19
-改訂: **R1.5（2026-09-21）。M-30〜M-32を実装し、P06叙述のsemantic retry、P05失敗台帳、P06限定復旧を追加した。**
+改訂: **R1.5（2026-09-21）。M-30〜M-32を実装し、Run `RUN-71F880902191A1AA99F4`を正式受入した。**
 
 > **R1.3実行順序訂正:** R1.2では、最大族2092に対してB=1000が不足すると既に判明していたにも
 > かかわらず、M-5未実装・B未変更のまま同じcensusを再実行させた。これは新しい情報を得ない停止であり、
@@ -892,8 +892,8 @@ schema/hash/identity不整合、未知の実装エラー、統計・memory・時
 - repository全体: 133件合格。小規模E2E fixtureのほぼ同一値に対するSciPy precision-loss warning
   3件のみで、test failureは0件。
 
-これはlocal fixtureに対する実装受入である。本番データによるPhase 1〜6完走と成果物監査は未実施であり、
-文書状態の「本番完走試験待ち」は維持する。
+これは2026-09-20時点のlocal fixtureに対する実装受入記録である。この時点では本番データによる
+Phase 1〜6完走と成果物監査が未実施だったが、後続のR1.5正式受入で完了した。
 
 ---
 
@@ -908,8 +908,9 @@ schema/hash/identity不整合、未知の実装エラー、統計・memory・時
   `EmptyDataError: No columns to parse from file`で同じ失敗を2回再現した。
 - RuntimeはL4/L7が先にreadyになると、そのworkloadを実行してからcontext依存Lensのcensusへ
   進んでいた。したがって「全Lens censusをworkloadより先に行う」というM-19を満たしていなかった。
-- 実時間は見積りより短かった。報告されたestimate/actual比はL5で約133、L1bで約21.7、
-  L2aで約714である。ただし丸めた比だけから`units_per_second`を自動変更してはならない。
+- 見積り誤差の方向はLensごとに異なる。後の正式受入値ではestimate/actual比がL5で約133だった一方、
+  L1bは約0.046、L2aは約0.0014であり、後二者は実時間をそれぞれ約22倍、約725倍過小評価した。
+  単一Runの値だけから`units_per_second`を自動変更してはならないが、過小評価はguard上の要較正事項である。
 
 ### 13.2 M-26: zero-row artifactを有効な0件として扱う
 
@@ -947,8 +948,8 @@ Lens manifestへ次を記録する。
 
 `units_per_second`はguardへ影響するversioned既定値であるため、単一Runの丸めた比から自動更新しない。
 本番manifestのexact `unit_count`、`actual_seconds`、engine/versionを収集し、複数Runまたは再現fixtureで
-安定性を確認してから別commitで較正する。保守的な見積りはRunを不必要に停止しない限り正確性を
-損なわないが、過大見積りの監査と改訂候補化は必須とする。
+安定性を確認してから別commitで較正する。実時間の過大見積りは不要な停止を生み、過小見積りは将来の
+大規模入力でtime guardをすり抜けさせるため、方向を分けて監査する。
 
 ### 13.5 M-29: failed P04だけを再キューしてP04〜P06を継続する
 
@@ -977,8 +978,9 @@ coordinator requestで再開する。Runtimeは成功済みNodeを再実行せ�
   `INCONCLUSIVE`または`null`へfail-closed変換して成功したが、旧実装は失敗内訳をartifactへ残さなかった。
 - P06はreport生成まで完了したが、1成分の叙述に`1連結成分`というevidence外の構造数値が入り、
   strict citation validationが正しく拒否した。他成分は通過していた。
-- Work estimateはL5で約133倍、L2aで約714倍、L1bで約22倍保守的だった。ただし、丸めた単一Runの
-  比率からversioned rateを変更する根拠にはしない。
+- Work estimateはL5で実測の約133倍と保守的だった。一方、L1b、L2a、L4は実時間をそれぞれ
+  約22倍、約725倍、約452倍過小評価した。今回のNodeは全て60分以内で完了したが、将来入力に対する
+  time guardの安全性を確認するためrate較正が必要である。
 
 ### 14.2 M-30: P06叙述を受理前にsemantic validationする
 
@@ -1025,3 +1027,56 @@ Run操作に混在させない。
 - P06限定復旧でP01〜P05のattempt IDとartifact hashが変化しない。
 - 今後のP05が`llm_call_failures.jsonl`とtask/error type別集計を出す。
 - 単一Runの概算比だけではversioned rateを変更しない。
+
+### 14.7 正式受入結果
+
+2026-09-21、Git commit `458131e`を使用したRun `RUN-71F880902191A1AA99F4`について、全13 Nodeが
+`succeeded`となり、3.8相当のread-only監査で正式受入可能と判定された。
+
+- P06: component 1、logical call 1、semantic retry 0、failed call 0、null narrative 0。
+- citation validation: `succeeded`、error 0。
+- P05: logical call 3470、failed call 213、failure fraction `0.06138328530259366`。
+- repository fixture: 146件合格、failure 0。
+
+正式受入の記録値とLens telemetryは
+[`CONDUCTOR_0.2.1_R1_production_acceptance_report.md`](CONDUCTOR_0.2.1_R1_production_acceptance_report.md)
+を正とする。rate較正は正式受入と分離した後続作業であり、今回の成功成果物を再実行しない。
+
+## 15. R1.6 人間向けHTML・prompt版更新・暫定rate是正 M-33〜M-35
+
+### 15.1 M-33: P06自己完結型HTML
+
+P06は監査正本のJSON/JSONLに加えて`report.html`を生成し、これを人間向けprimary artifactとする。
+HTMLは外部resourceを参照せず、Run由来の文字列を全てescapeし、概要、統合叙述、全Finding、Lens
+telemetry、引用レジストリ、検証状態を一つのファイルへ収録する。manifestへ`report_html`として登録する。
+
+HTML実装前に受入済みのRunは変更しない。`export_validated_report_html.py`が成功済みP06 manifest、
+`report.json`、`final_findings.jsonl`、`citation_validation.json`のhash/statusを検証し、Run root外の
+新規パスへだけHTMLを出力する。
+
+### 15.2 M-34: Local LLM promptの恒久修正
+
+`compose_component_narrative`から数詞を含む目的文を除き、報告構造上の個数・序数を禁止して
+`この連結成分`を要求する。prompt versionを`0.2.1.1`、provider versionを`0.2.1.3`へ更新する。
+CPU側のsemantic validationは防御境界として維持する。次回Run前に実provider configも両versionへ更新し、
+3.3の三task probeを再実行する。
+
+### 15.3 M-35: R1.3暫定cost model
+
+利用者は複数Runを待たず、正式受入Runのexact値から危険側見積りを直ちに是正することを明示した。
+この人間判断に基づき、L1b=`100000`、L2a=`8000`、matrix BLAS L5=`50000000 units/s`とする。
+L4はrateだけで固定準備時間を表せないため、既存複合式へ`720秒`を安全係数適用前に加える。
+L2b/L7は既定値を維持する。全estimatorはengine、cost model version、設定rateをdetailへ記録する。
+
+P06は全入力manifestからLens telemetryを自動集約し、`estimate/actual < 1`を
+`unsafe_underestimate`、1〜3を`within_band`、3超を`conservative`としてJSON/HTMLへ記録する。
+これはEndpoint/Datasetごとに自動実行する評価であり、設定値そのものは自動変更しない。
+
+### 15.4 受入条件
+
+- HTMLに外部resourceがなく、artifact由来HTML/scriptがescapeされる。
+- P06 manifestが`report_html`と正しいhashを持ち、primaryが`report.html`である。
+- 旧Run向けexporterが入力hash不一致、failed status、既存出力の上書きを拒否する。
+- 次回P06のreport JSON/HTMLにLens telemetryと評価区分が含まれる。
+- 次回3.3 probeはprompt `0.2.1.1` / provider `0.2.1.3`で合格する。
+- 暫定rateによるestimateが正式受入Runのexact実時間に対して危険側にならないことを回帰fixtureで確認する。

@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 仕様概要書
 
-Status: **科学的仕様は確定。R1.5 P06叙述検証・P05失敗台帳実装済み、P06限定復旧試験待ち。**
+Status: **科学的仕様は確定。R1.5本番Run全13 Node成功、read-only監査合格、正式受入済み。**
 
 > **2026-09-19本番訂正:** 64コア・755 GiB RAMの専用機において、L5が実質1コアのまま8時間以上継続した。科学的なL5検定契約は維持するが、long-only membership、context-pair単位の相関再計算、未接続の`--workers`、checkpointを持たない長時間Nodeは本番規模に適合しない。実装判断の履歴、0.1.x Boolean matrixを再評価した理由、未実装の再設計案と受入条件は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
 
@@ -772,6 +772,10 @@ R1-24. **P03の全Lensをbatch census barrierの後で起動する。** census�
 
 R1-25. **Work estimateの較正にはexactな実測telemetryを使う。** 各Lens manifestへ`estimate_actual_ratio`と`observed_units_per_second`を記録する。単一Runの丸めた比から`units_per_second`を自動変更せず、engine/version、unit_count、actual secondsをそろえた再現可能な測定に基づき別commitで変更する。
 
+R1-32. **正式受入Runのexact実測と人間の明示判断に基づくR1.3暫定rateを使用する。** `RUN-71F880902191A1AA99F4`で危険側だったL1b/L2aはそれぞれ`100000`/`8000 units/s`、L4は既存複合式へ`720秒`の固定オーバーヘッドを加える。matrix BLAS実装のL5は`50000000 units/s`とする。これは自動較正ではなくversionedな設計変更であり、次回Runのexact telemetryで再評価する。P06は入力されたLens manifestからengine、cost model version、unit count、見積り、実時間、observed rateと評価区分を自動集約する。
+
+R1-33. **P06の人間向け正規成果物として自己完結型`report.html`を生成する。** 外部script、CSS、font、画像、network resourceを参照せず、Run由来文字列をHTML escapeする。JSON/JSONLとmanifestを監査正本として維持する。HTML実装前の受入Runには、P06 manifestと成果物hashを検証し、Run root外へだけ書き出すread-only exporterを使用する。
+
 R1-26. **実装修正でfailedになった単一Nodeは、監査付き限定再キューで同じRunを継続できる。** skill、状態、operator、理由を検証・記録し、成功済み上流Node、frozen config/plan/input、Description Databaseを変更しない。今回のP04修正ではP01〜P03を再実行しない。
 
 R1-27. **P06はLLM叙述を成分単位で受理前検証する。** evidence外の数値、未知citation、marker/配列不一致、報告構造由来の数値表現を拒否し、理由付きで再生成する。再生成後も不適合なら当該成分だけ`narrative=null`とするが、logical-call failureとして既存上限へ算入する。決定論的evidence/hash/test不整合はnullへ変換せず停止する。
@@ -830,17 +834,26 @@ R1-29. **Work estimate rateは単一Runの概算比から変更しない。** ex
 
 いずれも 0.2.1 の設計を変更せずに載せられるよう、拡張点を確保してある。
 
-## 16. 正式受入前の残件
+## 16. 正式受入結果と後続運用
 
-### 【R1 2026-09-19】本章の受入値は R1 で差し替える
+### 【R1 2026-09-21】本番受入結果へ差し替え済み
 
-本章の受入値は `fast` 設定（6空間・十数特徴量）の較正で定めたものであり、**本番設定（9空間・2,111特徴量）に対して未検証である**（決定事項 R1-7）。
-R1 適用後に本番設定で較正を取り直し、そこで得た値を正式な受入値とする（修正計画書 M-8、段階R1-7）。
+旧受入値は `fast` 設定（6空間・十数特徴量）の較正値であり、本番設定（9空間・2,111特徴量）に
+そのまま適用できなかった（決定事項 R1-7）。R1適用後の本番Runと監査結果を正式な受入記録へ差し替えた。
 R1 で追加される受入条件（統計予算・計算量・worker 間の同一性）は [`CONDUCTOR_0.2.1_R1_remediation_plan.md`](CONDUCTOR_0.2.1_R1_remediation_plan.md) 6章を正とする。
 
-実装を阻害する未決placeholderは解消済みである。正式受入には次の外部入力を伴う確認が残る。
+実装を阻害する未決placeholderは解消済みである。次の外部入力を伴う確認は2026-09-21に完了した。
 
-1. 較正961化合物の実データでL2b、L5、L1b、全lens、K=10を再現し、8章相当の受入値を確認する。
-2. `llm.command`へ実際のoffline providerを設定し、3種類のLLM taskをprobeした後、Phase 5〜6をend-to-endで実行する。
+1. 961化合物の本番データで全Lens、scoring、deep dive、reportを含む13 Nodeを完走した。
+2. 実際のoffline providerを使用してPhase 5〜6をend-to-endで実行し、citation validationに合格した。
 
-プロジェクト固有SMARTSは任意追加軸であり、提供されなくても0.2.1の本番Runを開始できる。残件の完了条件と報告項目は [`CONDUCTOR_0.2.1_stage11_implementation_report.md`](CONDUCTOR_0.2.1_stage11_implementation_report.md) および [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) を正とする。
+正式受入Runは`RUN-71F880902191A1AA99F4`、Git commitは`458131e`である。全13 Nodeが
+`succeeded`となり、read-only監査は受入可能と判定した。詳細は
+[`CONDUCTOR_0.2.1_R1_production_acceptance_report.md`](CONDUCTOR_0.2.1_R1_production_acceptance_report.md)
+を正とする。
+
+後続課題はwork-estimate rateの較正である。これは今回の科学的成果物と受入判定を変更せず、複数Runの
+exact telemetryとengine/versionを得た後の独立変更として扱う。
+
+プロジェクト固有SMARTSは任意追加軸であり、提供されなくても0.2.1の本番Runを開始できる。運用プロンプトと
+監査項目は[`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md)を正とする。

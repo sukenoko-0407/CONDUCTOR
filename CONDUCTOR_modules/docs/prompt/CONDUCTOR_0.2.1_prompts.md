@@ -316,7 +316,7 @@ CONDUCTOR 0.2.1 Runをread-onlyで監査してください。
 Project root: <PROJECT_ROOT>
 Run root: <RUN_ROOT>
 
-runtime state、全artifact manifest、input/config/code hash、Finding schema、test値、entity ID、table_ref、row_id、narrative内の[[citation_id]]、数値と引用行の一致を検証してください。Description Database、Run state、report、Findingを変更せず、Runが正式受入可能かを判定してください。
+runtime state、全artifact manifest、input/config/code hash、Finding schema、test値、entity ID、table_ref、row_id、narrative内の[[citation_id]]、数値と引用行の一致を検証してください。P06のreport.htmlがmanifestに登録され、外部resourceを参照せず、report.json/final_findings/citation_validationと整合することも確認してください。Description Database、Run state、report、Findingを変更せず、Runが正式受入可能かを判定してください。
 
 失敗時は、Node、artifact、Findingまたはcomponent、期待値、実値を特定してください。文章や数値を自動修正せず、再実行が必要な最小範囲だけを示してください。
 ```
@@ -468,7 +468,7 @@ parameter契約:
 ### 5.5 `compose_component_narrative`
 
 ```text
-目的: entity共有グラフの1連結成分に属するFindingを、引用付きの1段落へ統合する。
+目的: entity共有グラフの連結成分に属するFindingを、引用付きの段落へ統合する。
 
 規則:
 - findingsとciteable_rowsだけを使う。
@@ -476,12 +476,13 @@ parameter契約:
 - 共通entityによる接続、各Findingの意味、反証後にも残った範囲、データから直接導ける次の検証候補を簡潔に記述する。
 - 全ての事実主張に[[citation_id]]を付ける。
 - 本文中の全数値は、citations配列が指すrow内に同じ値が存在する場合だけ使う。章番号、箇条書き番号、概数を新たに書かない。
+- 連結成分の個数・序数など、citeable_rowsに存在しない報告構造上の数値を書かない。対象を指す場合は「この連結成分」と書く。
 - citations配列は本文で実際に使ったIDだけを本文出現順で返す。
 - 引用だけでは安全な統合文を書けない場合はnarrativeをnullとする。
 - selectionsは必ず空配列とする。
 
 出力:
-{"schema_version":"0.2.1","request_id":"<入力値>","selections":[],"narrative":"<引用marker付きの日本語1段落>","citations":["<使用したcitation_id>"]}
+{"schema_version":"0.2.1","request_id":"<入力値>","selections":[],"narrative":"<引用marker付きの日本語段落>","citations":["<使用したcitation_id>"]}
 ```
 
 ## 6. 受入条件

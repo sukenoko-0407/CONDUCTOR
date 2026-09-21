@@ -9,6 +9,10 @@
 
 > **全Lens横断追補:** L1b、L2a、L2b、L7もworker未接続である。L4は候補DescriptionへCPU予算を伝播しD016/D019を明示並列化するが、generation/scoreとspace間は逐次である。L5以外に本番遅延が発生したとは未確認だが、本書の全Lens性能・並列化受入判断は撤回する。科学的fixture合格は維持し、性能、resource safety、checkpoint、KILL復旧を別途再受入する。
 
+> **2026-09-21 R1.5受入:** 後続是正を反映したRun `RUN-71F880902191A1AA99F4`は全13 Nodeが
+> `succeeded`となり、read-only監査で正式受入可能と判定された。本書の過去の保留判断は履歴として残す。
+> 最終受入値は[`CONDUCTOR_0.2.1_R1_production_acceptance_report.md`](CONDUCTOR_0.2.1_R1_production_acceptance_report.md)を正とする。
+
 ## 結論
 
 段階7〜11の Skill、公開契約、合成データ回帰、Runtime の基本経路まで実装した。catalog の checkpoint は `stage11_runtime` で、Description 18件と pipeline 12件を収録する。
@@ -66,3 +70,9 @@ L7 の系列平均差は R 基 label 並べ替えでは不変になるため、�
 5. worker数1/Nの byte-identical 比較と Phase 1→6 小規模E2Eを追加した。
 
 したがって、次の工程は上記外部入力2項目を用いた本番相当実行である。閾値は変更せず、生 Artifact と監査情報を保持して較正結果を評価する。
+## 2026-09-21 R1.6 follow-up
+
+正式受入後の人間向け出力として、P06へ自己完結型`report.html`、Lens telemetryの自動集約、
+旧受入Run向けread-only HTML exporterを追加した。Local LLM prompt/provider versionを
+`0.2.1.1`/`0.2.1.3`へ更新し、R1.3暫定cost modelを導入した。Skill packageを明示した
+repository回帰試験は149件合格、既知のSciPy precision-loss warning 3件、failure 0件だった。

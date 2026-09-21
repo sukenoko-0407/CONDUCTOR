@@ -5,8 +5,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
-from lens_work_estimators import estimate_work
+from lens_work_estimators import RATES, SAFETY_FACTOR, estimate_work
 
 
 def _write_csv(path: Path, frame: pd.DataFrame) -> str:
@@ -161,3 +162,23 @@ def test_l5_estimate_is_exact_for_units_and_feature_dependent_for_memory(
     assert estimate_one.detail["correlation_engine"] == "matrix_blas_v1"
     assert estimate_one.detail["required_final_permutations"] == 3
     assert estimate_one.detail["statistical_budget_satisfied"] is True
+
+
+def test_r13_production_cost_model_is_not_unsafe_for_acceptance_run() -> None:
+    defaults = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "config" / "defaults.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    configured = defaults["runtime"]["units_per_second"]
+    assert configured["l1b"] == RATES["l1b"] == 100_000
+    assert configured["l2a"] == RATES["l2a"] == 8_000
+    assert configured["l5"] == RATES["l5"] == 50_000_000
+
+    assert 123_877_540 / RATES["l1b"] * SAFETY_FACTOR >= 1126.58
+    assert 9_985_976 / RATES["l2a"] * SAFETY_FACTOR >= 1247.3
+    assert 9_375_294_684 / RATES["l5"] * SAFETY_FACTOR >= 24.056
+    l4_seconds = (
+        900 / RATES["l4"] + defaults["runtime"]["l4_fixed_overhead_seconds"]
+    ) * SAFETY_FACTOR
+    assert l4_seconds >= 719

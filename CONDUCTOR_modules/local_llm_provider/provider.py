@@ -23,7 +23,7 @@ from typing import Any
 
 
 SCHEMA_VERSION = "0.2.1"
-PROVIDER_VERSION = "0.2.1.2"
+PROVIDER_VERSION = "0.2.1.3"
 TASKS = {"select_deep_dive", "summarize_deep_dive", "compose_component_narrative"}
 TEMPLATES = {f"T{number:02d}" for number in range(1, 11)}
 REQUEST_KEYS = {
