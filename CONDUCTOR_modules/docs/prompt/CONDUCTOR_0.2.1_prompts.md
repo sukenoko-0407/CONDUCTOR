@@ -321,6 +321,12 @@ runtime state、全artifact manifest、input/config/code hash、Finding schema�
 失敗時は、Node、artifact、Findingまたはcomponent、期待値、実値を特定してください。文章や数値を自動修正せず、再実行が必要な最小範囲だけを示してください。
 ```
 
+### 3.9 正式受入サマリーの取得
+
+3.8の監査で正式受入可能と判定された後は、
+`CONDUCTOR_0.2.1_R1_acceptance_summary_prompt.md`を使用する。同文書はRunを変更せず、
+受入記録と将来のwork-estimate rate較正に必要な最小値だけを短い表で取得する。
+
 ## 4. 特別対応プロンプト
 
 ### 4.1 Failed Nodeの診断
