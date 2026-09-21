@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 仕様概要書
 
-Status: **科学的仕様は確定。R1.4 zero-row契約・全Lens census barrier実装済み、P04からの本番復旧試験待ち。**
+Status: **科学的仕様は確定。R1.5 P06叙述検証・P05失敗台帳実装済み、P06限定復旧試験待ち。**
 
 > **2026-09-19本番訂正:** 64コア・755 GiB RAMの専用機において、L5が実質1コアのまま8時間以上継続した。科学的なL5検定契約は維持するが、long-only membership、context-pair単位の相関再計算、未接続の`--workers`、checkpointを持たない長時間Nodeは本番規模に適合しない。実装判断の履歴、0.1.x Boolean matrixを再評価した理由、未実装の再設計案と受入条件は[`CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`](CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md)を参照する。
 
@@ -18,6 +18,10 @@ Status: **科学的仕様は確定。R1.4 zero-row契約・全Lens census barrie
 > **2026-09-20 R1.4訂正:** Finding 0件は有効な解析結果であり、空のLens artifactをP04〜P06が
 > parse errorとして扱ってはならない。全Lensのwork censusが完了する前にL4/L7を先行実行する
 > Runtime経路を禁止する。失敗済みP04は監査付きで一件だけ再キューし、成功済みP01〜P03を再利用する。
+
+> **2026-09-21 R1.5訂正:** P06のLLM叙述はreportへ採用する前に引用・数値を成分単位で検証する。
+> `1連結成分`等の報告構造由来の数値は禁止し、再生成でも適合しない成分だけをnullへfail-closed変換する。
+> 引用検証器と失敗率上限は緩めない。P05のlogical-call失敗は次回以降、行単位の監査台帳へ記録する。
 
 ## 1. 文書の位置づけ
 
@@ -769,6 +773,12 @@ R1-24. **P03の全Lensをbatch census barrierの後で起動する。** census�
 R1-25. **Work estimateの較正にはexactな実測telemetryを使う。** 各Lens manifestへ`estimate_actual_ratio`と`observed_units_per_second`を記録する。単一Runの丸めた比から`units_per_second`を自動変更せず、engine/version、unit_count、actual secondsをそろえた再現可能な測定に基づき別commitで変更する。
 
 R1-26. **実装修正でfailedになった単一Nodeは、監査付き限定再キューで同じRunを継続できる。** skill、状態、operator、理由を検証・記録し、成功済み上流Node、frozen config/plan/input、Description Databaseを変更しない。今回のP04修正ではP01〜P03を再実行しない。
+
+R1-27. **P06はLLM叙述を成分単位で受理前検証する。** evidence外の数値、未知citation、marker/配列不一致、報告構造由来の数値表現を拒否し、理由付きで再生成する。再生成後も不適合なら当該成分だけ`narrative=null`とするが、logical-call failureとして既存上限へ算入する。決定論的evidence/hash/test不整合はnullへ変換せず停止する。
+
+R1-28. **P05/P06のLLM failureは監査可能な行単位artifactへ残す。** task、対象Findingまたはcomponent、error type、retry情報を記録し、集計だけで原因を失わない。既に失われた旧attemptの内訳取得だけを目的とする再実行は行わない。
+
+R1-29. **Work estimate rateは単一Runの概算比から変更しない。** exactなunit_count、実時間、engine/versionを複数Runで確認し、安全係数を含む別commitとして較正する。
 
 ---
 

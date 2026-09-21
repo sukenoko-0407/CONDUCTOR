@@ -1,5 +1,9 @@
 # CONDUCTOR 0.2.1 R1.3 本番完走用プロンプト
 
+> **R1.5復旧案内:** P01〜P05が成功し、P06だけが構造数値を含む叙述のcitation validationで
+> failedとなった既存Runは、新規Runを開始しない。修正後codeをpullして
+> `CONDUCTOR_0.2.1_R1_P06_recovery_prompt.md`を使用する。
+
 > **R1.4復旧案内:** このプロンプトでP01〜P03が成功し、P04 scoringだけが
 > `No columns to parse from file`でfailedとなった既存Runは、新規Runを開始しない。
 > `CONDUCTOR_0.2.1_R1_P04_P06_recovery_prompt.md`を使い、P04一件だけを監査付きで
@@ -89,7 +93,8 @@ candidate cap、guardをRun中に変更して通過させないでください�
 - Description別hit/miss/registered OK/terminal SKIP/failed件数
 - 全Lensの最大family key・最大族サイズ・configured/required B・Finding件数
 - L5のcorrelation_engine、permutation batch size、CPU thread上限、work estimateと実時間
-- Phase 4〜6の成果物、LLM logical-call失敗率、引用検証結果
+- Phase 4〜6の成果物、P05 LLM logical-call失敗率とtask/error type別内訳、P06 semantic retry・
+  fail-closed null件数、引用検証結果
 - runtime_summary.json、work_census.json、主要artifact manifest、最終reportの絶対path
 ```
 

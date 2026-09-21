@@ -61,6 +61,24 @@ def test_deep_dive_budget_and_deterministic_state_are_separate_from_selector() -
     assert result.updated_findings[0]["state"]["deep_dive"] == "SURVIVED"
 
 
+def test_deep_dive_records_logical_call_failure_details() -> None:
+    finding = _finding(); registry = _registry(finding)
+    def selector(_finding, _allowed, _tree):
+        raise RuntimeError("fixture provider failure")
+    def summarizer(_finding, _tree):
+        raise ValueError("fixture summary failure")
+    result = run_deep_dive([finding], registry, selector, summarizer)
+    assert result.logical_calls == 2
+    assert result.failed_logical_calls == 2
+    assert [item["task"] for item in result.logical_call_failures] == [
+        "select_deep_dive",
+        "summarize_deep_dive",
+    ]
+    assert result.logical_call_failures[0]["error_type"] == "RuntimeError"
+    assert result.updated_findings[0]["state"]["deep_dive"] == "INCONCLUSIVE"
+    assert result.updated_findings[0]["narrative"] is None
+
+
 def test_t01_chemical_axis_library_is_machine_generated(tmp_path) -> None:
     table = tmp_path / "hammett.tsv"
     table.write_text("version\tsubstituent\tsmarts\tsigma_meta\tsigma_para\tsource\tlicense\n0.2.1\tF\t[F]\t0.3\t0.1\ts\tfactual-data\n", encoding="utf-8")

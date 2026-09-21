@@ -17,6 +17,7 @@ from conductor_stat_core import ENTITY_KEYS, file_sha256, read_csv_or_empty, sta
 
 NUMBER = re.compile(r"(?<![A-Za-z0-9_])[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?(?![A-Za-z0-9_])")
 MARKER = re.compile(r"\[\[([^\]]+)\]\]")
+STRUCTURAL_NUMBER = re.compile(r"(?:[0-9０-９]+\s*連結成分|第\s*[0-9０-９]+(?:成分|章|節|項)?)")
 
 
 class CitationError(ValueError):
@@ -101,6 +102,41 @@ def validate_component_narrative(narrative_id: str,text: str,citation_ids: list[
             refs=[available[value] for value in citation_ids]
             raise CitationError(f"{narrative_id}: numeric token {token} does not match cited rows {refs} within relative tolerance {relative_tolerance}")
     return sorted(set(citation_ids)-set(markers))
+
+
+def validate_component_response(
+    narrative_id: str,
+    response: dict[str, Any],
+    available: dict[str, str],
+    registry: EvidenceRegistry,
+) -> list[str]:
+    """Enforce the compose-task contract before accepting a narrative."""
+
+    if response.get("selections") != []:
+        raise CitationError(f"{narrative_id}: compose response must use empty selections")
+    text = response.get("narrative")
+    citations = response.get("citations")
+    if not isinstance(citations, list):
+        raise CitationError(f"{narrative_id}: compose response citations must be an array")
+    if text is None:
+        if citations:
+            raise CitationError(f"{narrative_id}: null narrative must not carry citations")
+        return []
+    if not isinstance(text, str) or not text.strip():
+        raise CitationError(f"{narrative_id}: narrative must be a non-empty string or null")
+    structural = STRUCTURAL_NUMBER.search(text)
+    if structural is not None:
+        raise CitationError(
+            f"{narrative_id}: structural numeric expression {structural.group(0)!r} is forbidden; "
+            "use a number-free phrase such as 'この連結成分'"
+        )
+    return validate_component_narrative(
+        narrative_id,
+        text,
+        citations,
+        available,
+        registry,
+    )
 
 
 def _registered_values(frame: pd.DataFrame, kind: str) -> set[str]:

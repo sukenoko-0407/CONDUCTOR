@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from conductor_stat_core import base_finding, stable_id
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MODULE_ROOT = PROJECT_ROOT / "CONDUCTOR_modules"
@@ -267,3 +269,182 @@ def test_scoring_accepts_zero_finding_lens_with_headerless_empty_observations(
     scores = pd.read_csv(output / "scores.csv")
     assert scores.empty
     assert {"finding_id", "finding_key", "lens", "rank"}.issubset(scores.columns)
+
+
+def test_report_drops_persistently_invalid_narrative_without_weakening_citations(
+    tmp_path: Path,
+) -> None:
+    provider = tmp_path / "invalid_narrative_provider.py"
+    provider.write_text(
+        "import json,sys\n"
+        "request=json.loads(sys.stdin.readline())\n"
+        "print(json.dumps({'schema_version':'0.2.1','request_id':request['request_id'],'selections':[],'narrative':'この1連結成分は関連を示す。[[CIT-1]]','citations':['CIT-1']}))\n",
+        encoding="utf-8",
+    )
+    config = _config(tmp_path)
+    config_value = yaml.safe_load(config.read_text(encoding="utf-8"))
+    config_value["llm"]["command"] = f'"{sys.executable}" "{provider}"'
+    config_value["llm"]["schema_retries"] = 1
+    config_value["llm"]["max_failure_fraction"] = 1.0
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    test_id = stable_id("TEST", {"fixture": "report"})
+    finding = base_finding(
+        lens="L5",
+        endpoint_id="EP",
+        subject_type="feature",
+        subject_id="D001::signal",
+        condition_id="CTX",
+        effect_direction="positive",
+        effect_size=2.0,
+        effect_unit="unit",
+        support_n=3,
+        tests=[
+            {
+                "test_id": test_id,
+                "question": "fixture",
+                "method": "fixture",
+                "statistic": 2.0,
+                "p_value": 0.01,
+                "q_value": 0.02,
+                "null_iterations": 100,
+            }
+        ],
+        falsification_type="fixture",
+        falsification_parameters={},
+        falsification_rule="fixture",
+        entities={"compound_ids": ["C1"], "context_ids": ["CTX"]},
+        citations=[{"citation_id": "CIT-1", "table_ref": "evidence.csv#row_id=E1"}],
+    )
+    finding["finding_id"] = "F000001"
+    finding["state"]["pipeline"] = "reportable"
+    findings = tmp_path / "findings.jsonl"
+    findings.write_text(json.dumps(finding) + "\n", encoding="utf-8")
+    evidence = tmp_path / "evidence.csv"
+    pd.DataFrame([{"row_id": "E1", "compound_id": "C1", "effect": 2.0}]).to_csv(evidence, index=False)
+    tests = tmp_path / "tests.csv"
+    pd.DataFrame([{"row_id": "T1", "test_id": test_id, "statistic": 2.0, "p_value": 0.01, "q_value": 0.02}]).to_csv(tests, index=False)
+    manifest = tmp_path / "source_manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {"path": evidence.name, "sha256": _sha256(evidence)},
+                    {"path": tests.name, "sha256": _sha256(tests)},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    compounds = tmp_path / "compounds.csv"
+    pd.DataFrame([{"compound_id": "C1", "canonical_smiles": "CC"}]).to_csv(compounds, index=False)
+    request = _request(
+        tmp_path,
+        "cs-report",
+        "P06",
+        config,
+        [
+            ("findings_deep_dived", findings),
+            ("evidence_table", evidence),
+            ("evidence_table", tests),
+            ("artifact_manifest", manifest),
+            ("compounds", compounds),
+        ],
+        "report",
+    )
+    request_value = json.loads(request.read_text(encoding="utf-8"))
+    request_value["parameters"]["run_root"] = str(tmp_path.resolve())
+    request.write_text(json.dumps(request_value), encoding="utf-8")
+
+    output = tmp_path / "report"
+    response = _run("cs-report", request, output)
+
+    assert response["status"] == "succeeded"
+    report = json.loads((output / "report.json").read_text(encoding="utf-8"))
+    assert report["components"][0]["narrative"] is None
+    validation = json.loads((output / "citation_validation.json").read_text(encoding="utf-8"))
+    assert validation["errors"] == []
+    assert validation["failed_logical_calls"] == 1
+    failures = [json.loads(line) for line in (output / "llm_narrative_failures.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(failures) == 2
+    assert {item["stage"] for item in failures} == {"citation_validation"}
+
+
+def test_deep_dive_writes_logical_call_failure_ledger(tmp_path: Path) -> None:
+    provider = tmp_path / "failing_provider.py"
+    provider.write_text(
+        "import sys\n"
+        "sys.stderr.write('fixture provider failure\\n')\n"
+        "raise SystemExit(7)\n",
+        encoding="utf-8",
+    )
+    config = _config(tmp_path)
+    config_value = yaml.safe_load(config.read_text(encoding="utf-8"))
+    config_value["llm"]["command"] = f'"{sys.executable}" "{provider}"'
+    config_value["llm"]["schema_retries"] = 1
+    config_value["llm"]["max_failure_fraction"] = 1.0
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    finding = base_finding(
+        lens="L5",
+        endpoint_id="EP",
+        subject_type="feature",
+        subject_id="D001::signal",
+        condition_id="CTX",
+        effect_direction="positive",
+        effect_size=2.0,
+        effect_unit="unit",
+        support_n=3,
+        tests=[
+            {
+                "test_id": stable_id("TEST", {"fixture": "deep-dive"}),
+                "question": "fixture",
+                "method": "fixture",
+                "statistic": 2.0,
+                "p_value": 0.01,
+                "q_value": 0.02,
+                "null_iterations": 100,
+            }
+        ],
+        falsification_type="fixture",
+        falsification_parameters={},
+        falsification_rule="fixture",
+        entities={"compound_ids": ["C1"], "context_ids": ["CTX"]},
+    )
+    finding["finding_id"] = "F000001"
+    findings = tmp_path / "findings_scored.jsonl"
+    findings.write_text(json.dumps(finding) + "\n", encoding="utf-8")
+    observations = tmp_path / "score_observations.csv"
+    pd.DataFrame(columns=["row_id", "finding_key", "effect"]).to_csv(observations, index=False)
+    compounds = tmp_path / "compounds.csv"
+    pd.DataFrame([{"compound_id": "C1", "canonical_smiles": "CC"}]).to_csv(compounds, index=False)
+    request = _request(
+        tmp_path,
+        "cs-deepdive",
+        "P05",
+        config,
+        [
+            ("findings_scored", findings),
+            ("score_observations", observations),
+            ("compounds", compounds),
+        ],
+        "deep_dive",
+    )
+
+    output = tmp_path / "deep-dive"
+    response = _run("cs-deepdive", request, output)
+
+    assert response["status"] == "succeeded"
+    failures = [
+        json.loads(line)
+        for line in (output / "llm_call_failures.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [item["task"] for item in failures] == ["select_deep_dive", "summarize_deep_dive"]
+    assert {item["error_type"] for item in failures} == {"LogicalCallFailure"}
+    assert all(item["attempts"] == 2 for item in failures)
+    manifest = json.loads((output / "artifact_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["metrics"]["failure_by_task"] == {
+        "select_deep_dive": 1,
+        "summarize_deep_dive": 1,
+    }
+    assert manifest["metrics"]["failure_by_error_type"] == {"LogicalCallFailure": 2}

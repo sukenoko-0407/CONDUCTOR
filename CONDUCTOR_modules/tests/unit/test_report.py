@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from conductor_report import CitationError, EvidenceRegistry, build_entity_components, validate_component_narrative, validate_finding_tests
+from conductor_report import CitationError, EvidenceRegistry, build_entity_components, validate_component_narrative, validate_component_response, validate_finding_tests
 from conductor_stat_core import base_finding, file_sha256, stable_id
 
 
@@ -48,6 +48,34 @@ def test_citation_numeric_tolerance_and_test_reconciliation(tmp_path) -> None:
     assert warnings == []
     with pytest.raises(CitationError, match="numeric token"):
         validate_component_narrative("N1", "Effect 2.0 [[CIT-F000001]]", ["CIT-F000001"], {"CIT-F000001": "evidence.csv#row_id=E-F000001"}, registry)
+
+
+def test_compose_response_rejects_uncited_structural_number(tmp_path) -> None:
+    finding = _finding("F000001", ["C1"])
+    registry = _registry(tmp_path, [finding])
+    available = {"CIT-F000001": "evidence.csv#row_id=E-F000001"}
+    with pytest.raises(CitationError, match="structural numeric expression"):
+        validate_component_response(
+            "N1",
+            {
+                "selections": [],
+                "narrative": "この1連結成分は関連を示す。[[CIT-F000001]]",
+                "citations": ["CIT-F000001"],
+            },
+            available,
+            registry,
+        )
+
+
+def test_compose_response_accepts_fail_closed_null(tmp_path) -> None:
+    finding = _finding("F000001", ["C1"])
+    registry = _registry(tmp_path, [finding])
+    assert validate_component_response(
+        "N1",
+        {"selections": [], "narrative": None, "citations": []},
+        {"CIT-F000001": "evidence.csv#row_id=E-F000001"},
+        registry,
+    ) == []
 
 
 def test_evidence_registry_rejects_hash_mismatch(tmp_path) -> None:

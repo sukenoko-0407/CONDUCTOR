@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 import pandas as pd
 import yaml
-from conductor_report import CitationError,EvidenceRegistry,build_entity_components,validate_component_narrative,validate_finding_tests
+from conductor_report import CitationError,EvidenceRegistry,build_entity_components,validate_component_response,validate_finding_tests
 from conductor_report.report import component_id
 from conductor_stat_core import SchemaValidationError,atomic_write_json,call_local_jsonl,file_sha256,stable_id,validate_instance
 from conductor_stat_core.contracts import prepare_output_directory,verify_request_inputs
@@ -37,7 +37,7 @@ def execute(args:argparse.Namespace)->dict[str,str]:
     validation_errors=[]
     try:validate_finding_tests(findings,registry,entity_ids,pair_ids)
     except CitationError as exc:validation_errors.append(str(exc))
-    by_id={item["finding_id"]:item for item in findings};components=build_entity_components(findings);drafts=[];logical_calls=0;failed_calls=0;warnings=[]
+    by_id={item["finding_id"]:item for item in findings};components=build_entity_components(findings);drafts=[];logical_calls=0;failed_calls=0;warnings=[];narrative_failures=[];semantic_retry_count=0;provider_attempt_count=0
     for identifiers in components:
         component_findings=[by_id[value] for value in identifiers];available={citation["citation_id"]:citation["table_ref"] for finding in component_findings for citation in finding["citations"]}
         test_ids={test["test_id"] for finding in component_findings for test in finding["tests"]}
@@ -45,24 +45,31 @@ def execute(args:argparse.Namespace)->dict[str,str]:
             if "test_id" not in frame:continue
             for row in frame.loc[frame["test_id"].astype(str).isin(test_ids)].to_dict(orient="records"):
                 citation_id=stable_id("CIT",{"table":name,"row_id":str(row["row_id"])});available[citation_id]=f"{name}#row_id={row['row_id']}"
-        evidence=[{"citation_id":citation_id,"table_ref":reference,"row":registry.row(reference)} for citation_id,reference in sorted(available.items())];identifier=component_id(identifiers);payload={"schema_version":"0.2.1","request_id":stable_id("LLMREQ",{"task":"compose_component_narrative","component":identifier}),"task":"compose_component_narrative","finding_ids":identifiers,"allowed_templates":[],"evidence":[{"findings":component_findings,"citeable_rows":evidence}],"output_schema":{"type":"object"}}
-        try:
-            response,_=call_local_jsonl(str(llm["command"] or ""),payload,timeout_seconds=int(llm["timeout_seconds"]),schema_retries=int(llm["schema_retries"]),response_schema=SCHEMAS/"llm_response.schema.json");logical_calls+=1;text=response["narrative"];citations=response["citations"]
-        except Exception as exc:
-            logical_calls+=1;failed_calls+=1;text=None;citations=[];warnings.append(f"{identifier}: Local LLM failed: {exc}")
-        draft={"component_id":identifier,"finding_ids":identifiers,"narrative":text,"citations":citations};drafts.append(draft)
-        if text is not None:
-            try:warnings.extend(f"{identifier}: unused citation {value}" for value in validate_component_narrative(identifier,text,citations,available,registry))
-            except CitationError as exc:validation_errors.append(str(exc))
+        evidence=[{"citation_id":citation_id,"table_ref":reference,"row":registry.row(reference)} for citation_id,reference in sorted(available.items())];identifier=component_id(identifiers);logical_calls+=1;text=None;citations=[];accepted=False;feedback=None
+        for semantic_attempt in range(1,int(llm["schema_retries"])+2):
+            request_evidence=[{"findings":component_findings,"citeable_rows":evidence},{"generation_constraints":{"uncited_numeric_tokens":"forbidden","connected_component_phrase":"この連結成分","forbidden_examples":["1連結成分","一つ目","第1"]}}]
+            if feedback is not None:request_evidence.append({"validation_feedback":{"previous_response_rejected":True,"reason":feedback,"required_action":"引用行に存在しない数値を全て除く。安全に書けなければnarrativeをnull、citationsを空配列にする。"}})
+            payload={"schema_version":"0.2.1","request_id":stable_id("LLMREQ",{"task":"compose_component_narrative","component":identifier,"semantic_attempt":semantic_attempt}),"task":"compose_component_narrative","finding_ids":identifiers,"allowed_templates":[],"evidence":request_evidence,"output_schema":{"type":"object"}}
+            try:
+                response,provider_attempts=call_local_jsonl(str(llm["command"] or ""),payload,timeout_seconds=int(llm["timeout_seconds"]),schema_retries=int(llm["schema_retries"]),response_schema=SCHEMAS/"llm_response.schema.json");provider_attempt_count+=provider_attempts
+                unused=validate_component_response(identifier,response,available,registry);text=response["narrative"];citations=response["citations"];warnings.extend(f"{identifier}: unused citation {value}" for value in unused);accepted=True;break
+            except CitationError as exc:
+                feedback=str(exc);semantic_retry_count+=1;narrative_failures.append({"component_id":identifier,"finding_ids":identifiers,"task":"compose_component_narrative","stage":"citation_validation","semantic_attempt":semantic_attempt,"error_type":type(exc).__name__,"error":str(exc),"final":semantic_attempt==int(llm["schema_retries"])+1});warnings.append(f"{identifier}: rejected narrative attempt {semantic_attempt}: {exc}")
+            except Exception as exc:
+                attempts=int(getattr(exc,"attempts",1));provider_attempt_count+=attempts;narrative_failures.append({"component_id":identifier,"finding_ids":identifiers,"task":"compose_component_narrative","stage":"provider_or_schema","semantic_attempt":semantic_attempt,"error_type":type(exc).__name__,"error":str(exc),"attempt_errors":list(getattr(exc,"errors",())),"final":True});warnings.append(f"{identifier}: Local LLM failed: {exc}");break
+        if not accepted:
+            failed_calls+=1;text=None;citations=[];warnings.append(f"{identifier}: narrative was replaced by fail-closed null")
+        drafts.append({"component_id":identifier,"finding_ids":identifiers,"narrative":text,"citations":citations})
     failure_fraction=failed_calls/logical_calls if logical_calls else 0.0
     if failure_fraction>float(llm["max_failure_fraction"]):validation_errors.append(f"Local LLM logical-call failure fraction {failure_fraction:.6f} exceeds {llm['max_failure_fraction']}")
-    status="failed" if validation_errors else "succeeded";report={"schema_version":"0.2.1","status":status,"endpoint_id":request["endpoint_id"],"components":drafts,"finding_count":len(findings)};validation={"status":status,"errors":validation_errors,"warnings":warnings,"logical_calls":logical_calls,"failed_logical_calls":failed_calls,"failure_fraction":failure_fraction}
-    output=prepare_output_directory(Path(args.output_dir),args.overwrite);_write_jsonl(findings,output/"final_findings.jsonl");_write_jsonl(drafts,output/"narrative_drafts.jsonl");atomic_write_json(output/"citation_validation.json",validation);atomic_write_json(output/"report.json",report)
+    rejected_narrative_count=sum(item["stage"]=="citation_validation" for item in narrative_failures);provider_failure_event_count=sum(item["stage"]=="provider_or_schema" for item in narrative_failures)
+    status="failed" if validation_errors else "succeeded";report={"schema_version":"0.2.1","status":status,"endpoint_id":request["endpoint_id"],"components":drafts,"finding_count":len(findings)};validation={"status":status,"errors":validation_errors,"warnings":warnings,"logical_calls":logical_calls,"failed_logical_calls":failed_calls,"failure_fraction":failure_fraction,"semantic_retry_count":semantic_retry_count,"rejected_narrative_count":rejected_narrative_count,"provider_failure_event_count":provider_failure_event_count}
+    output=prepare_output_directory(Path(args.output_dir),args.overwrite);_write_jsonl(findings,output/"final_findings.jsonl");_write_jsonl(drafts,output/"narrative_drafts.jsonl");_write_jsonl(narrative_failures,output/"llm_narrative_failures.jsonl");atomic_write_json(output/"citation_validation.json",validation);atomic_write_json(output/"report.json",report)
     markdown=["# CONDUCTOR 0.2.1 Report",""]
     for draft in drafts:
         if draft["narrative"] is not None:markdown.extend([f"## {draft['component_id']}","",str(draft["narrative"]),""])
     (output/"report.md").write_text("\n".join(markdown),encoding="utf-8",newline="\n")
-    files=[("final_findings","final_findings.jsonl",len(findings)),("narrative_drafts","narrative_drafts.jsonl",len(drafts)),("citation_validation","citation_validation.json",None),("report_json","report.json",None),("report_markdown","report.md",None)];artifacts=[_artifact(output,*item) for item in files];metrics={"finding_count":len(findings),"component_count":len(components),"citation_error_count":len(validation_errors),"logical_calls":logical_calls,"failed_logical_calls":failed_calls};manifest={"schema_version":"0.2.1","producer":{key:request["identity"][key] for key in ("run_id","node_id","attempt_id","skill_name")},"status":status,"config_sha256":file_sha256(config_path),"input_artifacts":[{"role":item["role"],"path":item["path"],"sha256":item["sha256"]} for item in request["inputs"]],"artifacts":artifacts,"metrics":metrics,"warnings":warnings,"created_at":datetime.now(timezone.utc).isoformat().replace("+00:00","Z")};atomic_write_json(output/"artifact_manifest.json",manifest);validate_instance(manifest,SCHEMAS/"artifact_manifest.schema.json");return {"status":status,"manifest":"artifact_manifest.json","primary":"report.md"}
+    files=[("final_findings","final_findings.jsonl",len(findings)),("narrative_drafts","narrative_drafts.jsonl",len(drafts)),("llm_narrative_failures","llm_narrative_failures.jsonl",len(narrative_failures)),("citation_validation","citation_validation.json",None),("report_json","report.json",None),("report_markdown","report.md",None)];artifacts=[_artifact(output,*item) for item in files];metrics={"finding_count":len(findings),"component_count":len(components),"citation_error_count":len(validation_errors),"logical_calls":logical_calls,"failed_logical_calls":failed_calls,"failure_fraction":failure_fraction,"semantic_retry_count":semantic_retry_count,"rejected_narrative_count":rejected_narrative_count,"provider_failure_event_count":provider_failure_event_count,"provider_attempt_count":provider_attempt_count};manifest={"schema_version":"0.2.1","producer":{key:request["identity"][key] for key in ("run_id","node_id","attempt_id","skill_name")},"status":status,"config_sha256":file_sha256(config_path),"input_artifacts":[{"role":item["role"],"path":item["path"],"sha256":item["sha256"]} for item in request["inputs"]],"artifacts":artifacts,"metrics":metrics,"warnings":warnings,"created_at":datetime.now(timezone.utc).isoformat().replace("+00:00","Z")};atomic_write_json(output/"artifact_manifest.json",manifest);validate_instance(manifest,SCHEMAS/"artifact_manifest.schema.json");return {"status":status,"manifest":"artifact_manifest.json","primary":"report.md"}
 def main()->int:
     parser=argparse.ArgumentParser(description="CONDUCTOR 0.2.1 report");parser.add_argument("--request",required=True);parser.add_argument("--output-dir",required=True);parser.add_argument("--workers",type=int,default=0);parser.add_argument("--overwrite",action="store_true");args=parser.parse_args()
     try:response=execute(args)

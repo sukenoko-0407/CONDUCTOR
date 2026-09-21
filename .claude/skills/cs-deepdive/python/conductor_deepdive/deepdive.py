@@ -45,6 +45,34 @@ class DeepDiveResult:
     updated_findings: tuple[dict[str, Any], ...]
     logical_calls: int
     failed_logical_calls: int
+    logical_call_failures: tuple[dict[str, Any], ...]
+
+
+def _logical_call_failure(
+    finding_id: str,
+    task: str,
+    exc: Exception,
+) -> dict[str, Any]:
+    attempts = int(getattr(exc, "attempts", 1))
+    attempt_errors = list(getattr(exc, "errors", ()))
+    error_type = type(exc).__name__
+    return {
+        "failure_id": stable_id(
+            "LLMFAIL",
+            {
+                "finding_id": finding_id,
+                "task": task,
+                "error_type": error_type,
+                "error": str(exc),
+            },
+        ),
+        "finding_id": finding_id,
+        "task": task,
+        "error_type": error_type,
+        "error": str(exc),
+        "attempts": attempts,
+        "attempt_errors": attempt_errors,
+    }
 
 
 def _effect_test(values: np.ndarray) -> tuple[float, float]:
@@ -369,14 +397,15 @@ def judge_state(template_id: str,result: Mapping[str,Any],parent_effect: float) 
 
 
 def run_deep_dive(findings:list[dict[str,Any]],registry:ArtifactRegistry,selector:Callable[[dict[str,Any],list[str],list[dict[str,Any]]],list[dict[str,Any]]],summarizer:Callable[[dict[str,Any],list[dict[str,Any]]],dict[str,Any]]|None=None,*,max_depth:int=3,max_children:int=3,max_tests_per_finding:int=15,stop_after_consecutive_inconclusive:int=2)->DeepDiveResult:
-    nodes=[];summaries=[];updated=[];logical_calls=0;failed_calls=0
+    nodes=[];summaries=[];updated=[];logical_calls=0;failed_calls=0;logical_call_failures=[]
     for source in findings:
         finding=json.loads(json.dumps(source));root_id=stable_id("DDROOT",{"finding":finding["finding_id"]});root={"node_id":root_id,"parent_node_id":None,"finding_id":finding["finding_id"],"depth":0,"template_id":"ROOT","parameters":{},"parameter_hash":content_hash({}),"execution_status":"not_run","state":"not_dived","result":None,"citations":[]};tree=[root];queue=deque([(root,[],0)]);budget=0
         while queue and budget<max_tests_per_finding:
             parent,path,inconclusive=queue.popleft();allowed=list(TEMPLATES)
             try:selections=selector(finding,allowed,tree);logical_calls+=1
-            except Exception:selections=[];logical_calls+=1;failed_calls+=1
-            if not isinstance(selections,list):selections=[];failed_calls+=1
+            except Exception as exc:selections=[];logical_calls+=1;failed_calls+=1;logical_call_failures.append(_logical_call_failure(finding["finding_id"],"select_deep_dive",exc))
+            if not isinstance(selections,list):
+                exc=TypeError("select_deep_dive did not return a selections array");selections=[];failed_calls+=1;logical_call_failures.append(_logical_call_failure(finding["finding_id"],"select_deep_dive",exc))
             for selection in selections[:max_children]:
                 if budget>=max_tests_per_finding:break
                 budget+=1;template_id=str(selection.get("template_id",""));parameters=selection.get("parameters",{});signature=f"{template_id}|{canonical_json(parameters)}"
@@ -390,8 +419,8 @@ def run_deep_dive(findings:list[dict[str,Any]],registry:ArtifactRegistry,selecto
         if finding["state"]["deep_dive"]=="REFUTED":finding["state"]["pipeline"]="refuted"
         if summarizer is not None:
             try:summary=summarizer(finding,tree);logical_calls+=1
-            except Exception:summary={"narrative":None,"citations":[]};logical_calls+=1;failed_calls+=1
+            except Exception as exc:summary={"narrative":None,"citations":[]};logical_calls+=1;failed_calls+=1;logical_call_failures.append(_logical_call_failure(finding["finding_id"],"summarize_deep_dive",exc))
         else:summary={"narrative":None,"citations":[]}
         finding["narrative"] = summary.get("narrative")
         summaries.append({"finding_id":finding["finding_id"],**summary});nodes.extend(tree);updated.append(finding)
-    return DeepDiveResult(tuple(nodes),tuple(summaries),tuple(updated),logical_calls,failed_calls)
+    return DeepDiveResult(tuple(nodes),tuple(summaries),tuple(updated),logical_calls,failed_calls,tuple(logical_call_failures))

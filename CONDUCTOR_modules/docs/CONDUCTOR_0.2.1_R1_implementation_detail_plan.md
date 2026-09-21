@@ -2,7 +2,7 @@
 
 ## 0. 文書状態
 
-- 状態: **R1.4 M-26〜M-29実装・P04からの本番復旧試験待ち**
+- 状態: **R1.5 M-30〜M-32実装・P06限定復旧試験待ち**
 - 対象: `CONDUCTOR_0.2.1_R1_implementer_brief.md` が定義する R1.1
 - 作成日: 2026-09-19
 - R1-1〜R1-3およびM-17実装後の本番結果を反映している。
@@ -993,3 +993,92 @@ failed、P05/P06が未実行、同じRunのprocessがないことを確認する
 確認した。warningは既存の小規模E2E fixtureにおける、ほぼ同一値へのSciPy precision-loss 3件だけである。
 この中には本番障害を直接再現する「L4 Finding 0件＋改行1 byteのscore observationsをP04 CLIへ入力」
 するfixtureと、L4先行readyを全Lens censusまでholdするRuntime integration fixtureを含む。
+
+## 14. R1.5 P06 narrative validation・P05 failure ledger・限定復旧
+
+### 14.1 対象コード
+
+- `.claude/skills/cs-report/python/conductor_report/report.py`
+- `.claude/skills/cs-report/python/conductor_report/__init__.py`
+- `.claude/skills/cs-report/scripts/run.py`
+- `.claude/skills/cs-deepdive/python/conductor_deepdive/deepdive.py`
+- `.claude/skills/cs-deepdive/scripts/run.py`
+- `CONDUCTOR_modules/tests/unit/test_report.py`
+- `CONDUCTOR_modules/tests/unit/test_deepdive.py`
+- `CONDUCTOR_modules/tests/integration/test_stage4_to_6_cli.py`
+- `CONDUCTOR_modules/tools/requeue_runtime_node.py`（既存の限定再キュー機能をそのまま使用）
+
+### 14.2 P06 component state machine
+
+1 componentを1 logical callと数え、内部のprovider retryとsemantic retryを別に記録する。
+
+```text
+compose request
+  -> provider/schema validation
+  -> component response validation
+       -> valid: accept
+       -> CitationError: feedback付きsemantic retry
+       -> retries exhausted: narrative=null, citations=[]
+```
+
+request evidenceへ、無引用数値禁止、`この連結成分`の使用、`1連結成分`・`第1`等の禁止例を追加する。
+応答は`validate_component_response()`で、`selections=[]`、null整合、引用marker、引用行、数値を検証する。
+報告構造由来の数値表現は、たまたま引用行に同じ数値が存在しても受理しない。
+
+既存Runのprovider configとprompt hashを凍結したまま復旧するため、R1.5では
+`local_llm_provider/prompts.json`のprompt versionを黙って書き換えない。今回の禁止規則はP06 requestの
+`generation_constraints`として明示し、CPU側の受理前検証を最終境界とする。共通prompt本文を変更する場合は、
+現Run完走後にprompt/provider versionを更新する別変更として扱う。
+
+semantic retry上限は新設定を増やさず`llm.schema_retries`を使う。全attempt不適合時は成分をnull化し、
+`failed_logical_calls`を1増やす。最終failure fractionが`llm.max_failure_fraction`以下ならreportを成功させ、
+超過なら失敗させる。決定論層のCitationErrorはこのfallback対象外である。
+
+`llm_narrative_failures.jsonl`の各行はcomponent ID、Finding ID群、stage、semantic attempt、error type、
+error、final flag、provider attempt errorを持つ。citation validationとmanifestには次を記録する。
+
+- `logical_calls`
+- `failed_logical_calls`
+- `failure_fraction`
+- `semantic_retry_count`
+- `rejected_narrative_count`
+- `provider_failure_event_count`
+- `provider_attempt_count`
+
+### 14.3 P05 failure ledger
+
+`DeepDiveResult`へ`logical_call_failures`を追加する。selectorとsummarizerの例外、およびselection配列契約違反を
+stable failure ID付きで保存する。P05 outputへ`llm_call_failures.jsonl`を追加し、manifest metricsへ
+`failure_by_task`と`failure_by_error_type`を記録する。
+
+従来の意味論は維持する。selector失敗は空selection、summarizer失敗はnull narrativeとなり、全体の
+failure fractionが設定上限を超えた場合だけNodeをfailedにする。
+
+### 14.4 既存Runの復旧境界
+
+read-only確認でP01〜P05がsucceeded、`cs-report`のP06だけがfailed、同Runのprocessがないことを確認する。
+`requeue_runtime_node.py`をdry-runし、exact Node ID、state、skillを照合した後にだけ`--apply`する。
+production compilerは再実行せず、`control/coordinator_request.json`から同じRunをresumeする。
+
+P05の旧213 failureの内訳は旧artifactに存在しないため復元不能である。P05を内訳採取目的で再キューしない。
+P06はfailed attemptの部分出力をpromoteしていないため、P06内のcomponent callは新attemptで再実行する。
+
+### 14.5 Work estimate rateの扱い
+
+本番報告のL5約1/133、L2a約1/714、L1b約1/22は、rate改訂候補を示す診断値である。
+exact `unit_count`、`actual_wall_seconds`、engine/versionが揃う複数Runを収集するまでdefaultsを変更しない。
+rate較正は科学計算・P06復旧から分離した別commitにする。
+
+### 14.6 必須fixture
+
+- `1連結成分`を含む応答は、引用行に同じ数値があってもstructural numberとして拒否される。
+- null narrative＋空citationsは正当なfail-closed応答として受理される。
+- providerが同じ不適合応答を返し続ける場合、設定回数だけ再試行し、その成分をnull化してP06を継続する。
+- 上記のP06成功時もcitation validation error配列は空で、失敗履歴は別artifactへ残る。
+- P05 selector/summarizer失敗がFinding/task/error type/attempt情報付きで記録される。
+
+### 14.7 実装時の検証記録
+
+2026-09-21にreport/deep-dive unitとPhase 4〜6 integrationの対象18件を実行し、**18件合格、failure 0件**を
+確認した。続いてrepository全体を実行し、**146件合格、failure 0件**を確認した。warningは既存の
+小規模E2E fixtureでほぼ同一値を扱う際のSciPy precision-loss 3件だけである。

@@ -1,8 +1,8 @@
 # CONDUCTOR 0.2.1 R1 修正計画書
 
-Status: **R1.4実装済み。P04からの本番復旧試験待ち。**
+Status: **R1.5実装済み。P06限定復旧試験待ち。**
 作成日: 2026-09-19
-改訂: **R1.4（2026-09-20）。M-26〜M-29を実装し、0件Lens成果物、全Lens census barrier、実測速度記録、P04限定復旧を追加した。**
+改訂: **R1.5（2026-09-21）。M-30〜M-32を実装し、P06叙述のsemantic retry、P05失敗台帳、P06限定復旧を追加した。**
 
 > **R1.3実行順序訂正:** R1.2では、最大族2092に対してB=1000が不足すると既に判明していたにも
 > かかわらず、M-5未実装・B未変更のまま同じcensusを再実行させた。これは新しい情報を得ない停止であり、
@@ -967,3 +967,61 @@ coordinator requestで再開する。Runtimeは成功済みNodeを再実行せ�
 - context依存Lensがreadyになる前にreadyだったL4/L7をRuntimeが実行せず、全Lensを一括censusする。
 - 同じRunのP04だけを監査付きで再キューし、P01〜P03を再実行せずP04〜P06へ進める。
 - 壊れた非空CSV、Findingあり・observationsなし、存在しないcitation rowは引き続き停止する。
+
+## 14. R1.5 P06引用停止後の追加是正 M-30〜M-32
+
+### 14.1 本番で判明した事実
+
+- P01〜P04は成功し、P04はL4の0件を含む計1714 Findingを正常に処理した。
+- P05は3470 logical call中213件が失敗し、failure fractionは0.0614だった。設定上限0.20以内のため
+  `INCONCLUSIVE`または`null`へfail-closed変換して成功したが、旧実装は失敗内訳をartifactへ残さなかった。
+- P06はreport生成まで完了したが、1成分の叙述に`1連結成分`というevidence外の構造数値が入り、
+  strict citation validationが正しく拒否した。他成分は通過していた。
+- Work estimateはL5で約133倍、L2aで約714倍、L1bで約22倍保守的だった。ただし、丸めた単一Runの
+  比率からversioned rateを変更する根拠にはしない。
+
+### 14.2 M-30: P06叙述を受理前にsemantic validationする
+
+引用検証器を緩めない。`compose_component_narrative`の応答を成分ごとに受理前検証し、次を適用する。
+
+1. `selections=[]`、`narrative`/`citations`のnull整合、marker、citation ID、引用行hash、数値一致を検証する。
+2. `1連結成分`や`第1`のような報告構造由来の数値表現を不許可とし、`この連結成分`のような無数字表現を要求する。
+3. semantic violation時は理由をevidenceへ追加し、設定済み`schema_retries`の範囲で再生成する。
+4. 再生成後も不適合なら、その成分だけ`narrative=null`、`citations=[]`へfail-closed変換する。
+5. fail-closed成分はlogical-call failureとして数え、既存の`llm.max_failure_fraction`を超えればP06を失敗させる。
+6. Finding/evidence/hash/test reconciliation自体の不整合は局所nullへ変換せず、従来どおりP06を失敗させる。
+
+各拒否・provider/schema failureは`llm_narrative_failures.jsonl`へ記録し、semantic retry数、最終failed
+logical call数、failure fractionをcitation validationとmanifestへ記録する。
+
+### 14.3 M-31: P05 logical-call失敗内訳をartifact化する
+
+P05はselector/summarizer例外を握りつぶさず、Finding ID、task、error type、message、provider attempt数、
+retryごとのerrorを`llm_call_failures.jsonl`へ記録する。manifestへtask別・error type別件数を出す。
+科学的なfail-closed規則と0.20の停止閾値は変更しない。
+
+既に成功済みの今回のP05は旧codeで実行されているため、213件の詳細を後から復元できない。内訳取得だけを
+目的に3470 callを再実行せず、今回の6.14%を既知の品質低下として最終報告へ明記する。新台帳は次回以降の
+P05 attemptから有効になる。
+
+### 14.4 M-32: P06だけを監査付きで復旧する
+
+今回のRunではP01〜P05を再実行しない。skillが`cs-report`でstateが`failed`のP06一件だけを監査付きで
+`retryable`へ戻し、同じRun ID、Run root、frozen config/plan/requestで再開する。P06のfailed attempt内に
+生成された未promote叙述は再利用せず、新attemptで全component narrativeを生成・検証する。
+
+専用手順は`docs/prompt/CONDUCTOR_0.2.1_R1_P06_recovery_prompt.md`を正とする。
+
+### 14.5 rate較正は別commitに分離する
+
+M-28で追加したexact telemetryを、同一engine/version・同一unit定義で複数Run収集する。中央値、分散、
+安全係数を評価するまでdefaultsの`units_per_second`は変更しない。P06復旧とrate較正を同じcommit・同じ
+Run操作に混在させない。
+
+### 14.6 R1.5受入条件
+
+- evidence外の`1連結成分`を含む応答が受理されず、再試行後も不適合なら当該成分だけnullになる。
+- strict citation validator、Finding/test/hash照合、failure fraction上限は緩和されない。
+- P06限定復旧でP01〜P05のattempt IDとartifact hashが変化しない。
+- 今後のP05が`llm_call_failures.jsonl`とtask/error type別集計を出す。
+- 単一Runの概算比だけではversioned rateを変更しない。

@@ -382,6 +382,13 @@ operator: <OPERATOR_NAME>
 succeeded、needs_design_review、leased、running、pending、既にretryableのNodeは変更しないでください。他Node、成果物、Description Databaseを変更せず、この依頼ではcoordinatorの再開まで行わないでください。
 ```
 
+### 4.5 P06 narrative citation停止からの限定復旧
+
+P01〜P05成功後、P06だけがLLM叙述中のevidence外構造数値（例: `1連結成分`）によりfailedとなった
+R1.5本番Runは、`CONDUCTOR_0.2.1_R1_P06_recovery_prompt.md`を使用する。同文書はP06一件だけの
+監査付き再キューと、同じRunでのreport再生成・引用再検証を規定する。P05の旧失敗内訳を得るために
+P05を再実行してはならない。
+
 ## 5. Local LLM内部プロンプト契約
 
 ### 5.1 providerの役割
