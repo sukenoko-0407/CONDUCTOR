@@ -5,7 +5,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from conductor_report import CitationError, EvidenceRegistry, build_entity_components, render_html_report, validate_component_narrative, validate_component_response, validate_finding_tests
+from conductor_report import CitationError, EvidenceRegistry, build_entity_components, render_finding_html, render_html_report, validate_component_narrative, validate_component_response, validate_finding_tests
+from conductor_report.visualizations import render_lens_visual
 from conductor_stat_core import base_finding, file_sha256, stable_id
 
 
@@ -137,6 +138,21 @@ def test_html_report_is_self_contained_and_escapes_artifact_values() -> None:
         {"status": "succeeded", "errors": [], "failure_fraction": 0.0},
         run_id="RUN|fixture",
         created_at="2026-09-21T00:00:00Z",
+        evidence_by_ref={
+            "evidence.csv#row_id=E-F000001": {
+                "row_id": "E-F000001",
+                "feature_id": "D001::signal",
+                "r_a": 0.6,
+                "r_b": -0.5,
+            }
+        },
+        observations_by_finding={
+            finding["finding_key"]: [
+                {"feature_value": -1.0, "endpoint_value": 1.0, "context_role": "focal", "compound_id": "C1"},
+                {"feature_value": 1.0, "endpoint_value": 2.0, "context_role": "focal", "compound_id": "C2"},
+            ]
+        },
+        finding_report_paths={"F000001": "finding_reports/F000001.html"},
     )
 
     assert "<!doctype html>" in rendered
@@ -144,3 +160,210 @@ def test_html_report_is_self_contained_and_escapes_artifact_values() -> None:
     assert "&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;" in rendered
     assert "https://" not in rendered and "http://" not in rendered
     assert 'href="#citation-1"' in rendered
+    assert "重要な知見" in rendered
+    assert "詳しい個別レポート" in rendered
+    assert "監査用付録：全Finding一覧" in rendered
+
+
+def test_individual_finding_report_explains_claim_and_evidence() -> None:
+    finding = _finding("F000001", ["C1"])
+    finding["scores"] = {
+        "rank": 1,
+        "statistical_strength": 0.9,
+        "robustness": 0.8,
+        "non_triviality": 0.7,
+        "actionability": 0.6,
+        "frontier_relevance": 0.5,
+        "composite": 0.21,
+    }
+    rendered = render_finding_html(
+        finding,
+        {"status": "succeeded", "errors": []},
+        run_id="RUN|fixture",
+        endpoint_id="EP",
+        created_at="2026-09-22T00:00:00Z",
+        evidence_by_ref={
+            "evidence.csv#row_id=E-F000001": {
+                "row_id": "E-F000001",
+                "feature_id": "D001::signal",
+                "r_a": "0.6",
+                "r_b": "-0.5",
+                "n_a": "20",
+                "n_b": "30",
+            }
+        },
+        observations_by_finding={
+            finding["finding_key"]: [
+                {"feature_value": -1.0, "endpoint_value": 1.0, "context_role": "focal", "compound_id": "C1"},
+                {"feature_value": 1.0, "endpoint_value": 2.0, "context_role": "focal", "compound_id": "C2"},
+            ]
+        },
+        overview_href="../report.html",
+    )
+
+    assert rendered.startswith("<!doctype html>")
+    assert "この知見が意味すること" in rendered
+    assert "統計的根拠" in rendered
+    assert "反証条件" in rendered
+    assert "D001::signal" in rendered
+    assert "../report.html" in rendered
+
+
+def test_l2a_individual_report_contains_real_mmp_structures_and_effect_plot() -> None:
+    finding = _finding("F000002", ["C1", "C2"])
+    finding["lens"] = "L2a"
+    finding["finding_key"] = "FND|0123456789abcdef"
+    finding["claim"].update(
+        {
+            "subject_type": "transformation",
+            "subject_id": "TR|fixture",
+            "effect_direction": "positive",
+            "effect_size": 1.1,
+            "effect_unit": "oriented_endpoint_shift",
+        }
+    )
+    finding["entities"]["transformation_ids"] = ["TR|fixture"]
+    evidence_ref = "l2a_evidence.csv#row_id=E-F000002"
+    finding["citations"] = [{"citation_id": "CIT-F000002", "table_ref": evidence_ref}]
+    rendered = render_finding_html(
+        finding,
+        {"status": "succeeded", "errors": []},
+        run_id="RUN|fixture",
+        endpoint_id="EP",
+        created_at="2026-09-22T00:00:00Z",
+        evidence_by_ref={
+            evidence_ref: {
+                "row_id": "E-F000002",
+                "variable_from": "[*:1]C",
+                "variable_to": "[*:1]O",
+                "n_in": 2,
+                "n_out": 2,
+                "median_in": 1.1,
+                "median_out": 0.0,
+                "median_shift": 1.1,
+            }
+        },
+        observations_by_finding={
+            finding["finding_key"]: [
+                {
+                    "comparison_group": "inside",
+                    "effect": 1.0,
+                    "pair_from_compound_id": "C1",
+                    "pair_to_compound_id": "C2",
+                },
+                {"comparison_group": "inside", "effect": 1.2},
+                {"comparison_group": "outside", "effect": -0.1},
+                {"comparison_group": "outside", "effect": 0.1},
+            ]
+        },
+        compound_smiles={"C1": "CC", "C2": "CO"},
+    )
+
+    assert "MMP変換の構造と効果" in rendered
+    assert "代表的な実測MMPペア" in rendered
+    assert rendered.count("<svg") >= 4
+    assert "対象文脈内" in rendered and "文脈外" in rendered
+    assert "http://" not in rendered and "<script" not in rendered
+
+
+@pytest.mark.parametrize(
+    ("lens", "evidence", "observations", "entities", "expected"),
+    [
+        (
+            "L1b",
+            {"space_id": "D001", "context_id": "CTX", "lambda": 0.8},
+            [
+                {"compound_id": "C1", "endpoint_value": 1.0, "effect": 0.5, "neighbor_order_compound_ids_json": '["C2","C3","C4"]'},
+                {"compound_id": "C2", "endpoint_value": 2.0, "effect": 0.3, "neighbor_order_compound_ids_json": '["C1","C3","C4"]'},
+            ],
+            {"compound_ids": ["C1", "C2"]},
+            "局所SARの可視化",
+        ),
+        (
+            "L2b",
+            {"fragment_smiles": "[*:1]C", "series_count": 2},
+            [
+                {"context_id": "SERIES-A", "effect": -0.2},
+                {"context_id": "SERIES-B", "effect": 0.4},
+            ],
+            {"compound_ids": ["C1", "C2"]},
+            "系列ごとの残差寄与",
+        ),
+        (
+            "L4",
+            {"candidate_smiles": "CO", "region_score": 0.7},
+            [
+                {"block_id": "D001", "compound_id": "C1", "endpoint_value": 1.0},
+                {"block_id": "D001", "compound_id": "C2", "endpoint_value": 2.0},
+            ],
+            {"compound_ids": ["C1"]},
+            "未探索候補の構造と到達経路",
+        ),
+        (
+            "L5",
+            {"feature_id": "D001::signal", "r_a": 0.8, "r_b": -0.7},
+            [
+                {"compound_id": "C1", "feature_value": -1.0, "endpoint_value": 1.0, "context_role": "focal"},
+                {"compound_id": "C2", "feature_value": 1.0, "endpoint_value": 2.0, "context_role": "focal"},
+                {"compound_id": "C3", "feature_value": -1.0, "endpoint_value": 2.0, "context_role": "complement"},
+                {"compound_id": "C4", "feature_value": 1.0, "endpoint_value": 1.0, "context_role": "complement"},
+            ],
+            {},
+            "相関方向反転の実測図",
+        ),
+        (
+            "L7",
+            {"constant_a": "[*:1]C", "constant_b": "[*:1]N", "spearman_rho": -0.8},
+            [
+                {"target_id": "FRAG-A", "effect": 1.0, "endpoint_left_value": 1.0, "endpoint_value": 2.0, "compound_ids_a_json": '["C1"]', "compound_ids_b_json": '["C2"]'},
+                {"target_id": "FRAG-B", "effect": -1.0, "endpoint_left_value": 2.0, "endpoint_value": 1.0, "compound_ids_a_json": '["C3"]', "compound_ids_b_json": '["C4"]'},
+            ],
+            {},
+            "系列coreとSAR移植性",
+        ),
+    ],
+)
+def test_each_lens_has_a_specific_data_visual(
+    lens: str,
+    evidence: dict,
+    observations: list[dict],
+    entities: dict,
+    expected: str,
+) -> None:
+    rendered = render_lens_visual(
+        {"lens": lens, "entities": entities},
+        evidence,
+        observations,
+        {"C1": "CC", "C2": "CCC", "C3": "CO", "C4": "CN"},
+        {"FRAG-A": "[*:1]C", "FRAG-B": "[*:1]O"},
+    )
+    assert expected in rendered
+    assert "<svg" in rendered
+    assert "http://" not in rendered and "<script" not in rendered
+    if lens == "L1b":
+        assert "同一文脈内近傍" in rendered
+        assert rendered.count("2D chemical structure") == 4
+    if lens == "L7":
+        assert "共通R基（効果差の大きい代表例）" in rendered
+        assert "同じR基を持つ代表実測化合物" in rendered
+        assert rendered.count("2D chemical structure") >= 6
+
+
+def test_l7_visual_fails_closed_when_common_r_group_structure_is_missing() -> None:
+    with pytest.raises(ValueError, match="common R-group structure is missing"):
+        render_lens_visual(
+            {"lens": "L7", "entities": {}},
+            {"constant_a": "[*:1]C", "constant_b": "[*:1]N"},
+            [
+                {
+                    "target_id": "FRAG-A",
+                    "effect": 1.0,
+                    "endpoint_left_value": 1.0,
+                    "endpoint_value": 2.0,
+                    "compound_ids_a_json": '["C1"]',
+                    "compound_ids_b_json": '["C2"]',
+                }
+            ],
+            {"C1": "CC", "C2": "CN"},
+            {},
+        )

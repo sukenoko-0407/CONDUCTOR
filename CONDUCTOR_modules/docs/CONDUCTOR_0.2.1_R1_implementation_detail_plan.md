@@ -1111,10 +1111,22 @@ P05は3470 logical call中213件が失敗し、failure fractionは`0.06138328530
 
 ### 15.2 HTML renderer
 
-rendererは`report.json`、`final_findings.jsonl`、`citation_validation.json`相当のin-memory objectだけを
-受け取り、外部resourceや実行scriptを含まないUTF-8 HTMLを返す。Run由来値は`html.escape(..., quote=True)`を
-通す。引用markerは内部anchorへ変換し、Finding表はrank、Lens、state、claim、support、p/q、scoreを示す。
+rendererは`report.json`、`final_findings.jsonl`、`citation_validation.json`と検証済みEvidence row相当の
+in-memory objectを受け取り、外部resourceや実行scriptを含まないUTF-8 HTMLを返す。Run由来値は
+`html.escape(..., quote=True)`を通す。全体HTMLは`scoring.display_k`件の主要Findingについて、人間が
+対象・条件・効果・統計的根拠・deep-dive結果を把握できるカードを先に表示する。全Finding表は監査付録へ置く。
 JSON/JSONLを監査正本とし、HTMLは表示層に限定する。
+
+### 15.2.1 Finding別renderer
+
+`render_finding_html`はFinding 1件について、Lensの解析目的、claim、全test、score 5軸とcomposite、
+triviality、deep-dive、falsification、translation、entity、引用Evidence rowを章別に表示する。
+P06はreportable Findingをrank順に並べた先頭`display_k`件を`finding_reports/<finding_id>.html`へ書き、
+各ファイルを`finding_report_html` artifactとしてhash登録する。全体HTMLから相対linkで参照する。
+
+旧Run用exporterはP06の`input_artifacts`にある`evidence_table`もhash検証し、標準出力時は全体HTMLと
+上位個別HTMLを、`--finding-id`指定時は任意のFinding 1件をRun root外へ出力する。どちらもLLM、Lens、
+scoringを再実行しない。存在する出力は上書きしない。
 
 ### 15.3 telemetry自動評価
 
@@ -1133,3 +1145,61 @@ P06へ渡されたmanifestのうち`metrics.work_estimate`を持つものをLens
 
 `prompts.json`は`prompt_version=0.2.1.1`、providerは`0.2.1.3`とする。実provider configを更新後、
 select/summarize/composeの三task probeを実行する。旧受入Runのfrozen configやprovider metadataは変更しない。
+
+### 15.6 M-36検証
+
+- renderer unitで主要知見、個別page link、監査付録、artifact由来HTML escapeを確認する。
+- 個別renderer unitで意味、test、score、反証条件、Evidence、overview linkを確認する。
+- P06 integrationで`finding_reports/Fxxxxxx.html`生成、manifest role/hash、件数metricを確認する。
+- exporter unitで任意Finding ID出力とEvidence input hash検証を確認する。
+- 受入済み旧Runへの適用時は新しいRun rootを作らず、Run root外の新規出力pathを使用する。
+
+2026-09-22の実装後検証ではrepository test 151件が合格し、failure 0件だった。warning 3件は既知の
+小規模E2E fixtureに対するSciPy precision-lossである。
+
+### 15.7 M-37 Lens固有visual実装
+
+#### 入力契約
+
+将来のproduction pipelineはP06へ各P03 Lensの`score_observations`を明示入力する。P06は
+`verify_request_inputs`でhashを検証後、`finding_key`単位に行を索引する。compound 2D構造はP01の
+`compounds.canonical_smiles`を正とする。旧受入Run exporterは、P06 manifestに記録済みのP03
+`artifact_manifest`をhash検証し、そのmanifestに登録された`score_observations`だけを使用する。L7の
+`fragment_id`は、hash検証済み`mmp_database.fragmentations`の`class`と`variable_smiles`から0.2.1の
+`stable_id("FRAG", ...)`を再構成してR基構造へ対応付ける。
+
+#### 構造描画
+
+`conductor_report.visualizations.molecule_svg`はlocked cs-report Pixi環境のRDKit `2026.3.4`を使用し、
+canonical SMILESまたはMMP fragment SMILESを2D SVGへ変換する。L2aは変換fragmentと代表full-molecule
+pair、L2bはfragmentとsubstructure highlight、L4はsource/candidate、L7はseries coreを描く。
+L1bは最大改善点と保存済み距離順近傍をfull-molecule構造として描き、L7はcoreに加えて代表common R-groupと
+同一R-groupを持つ両系列の実測full-molecule pairを描く。
+SVGはHTMLへinline化し、XML/namespace宣言を除いてnetwork参照を持たせない。SMILES parse不能は停止する。
+
+#### 数値図
+
+chartもinline SVGとし、次の観測単位を変えない。
+
+- L1b: 1 compoundを1点とした`endpoint_value`対`effect`。構造panelの近傍順は
+  `neighbor_order_compound_ids_json`をそのまま使用し、report層で再探索しない。
+- L2a: 1 MMP pairを1点とした`effect`、inside/outside別。
+- L2b: 1 seriesを1行としたresidual `effect`。30系列を超える場合は範囲を保存する決定論的分位代表表示。
+- L4: 1 neighbor/feature-spaceを1点とした`endpoint_value`。
+- L5: 1 finite compoundを1点とした`feature_value`対`endpoint_value`、focal/complement別回帰線。
+- L7: 1 common R-groupを1点とした`endpoint_left_value`対`endpoint_value`、等値線付き。絶対効果差上位の
+  common R-groupと、`compound_ids_a_json`/`compound_ids_b_json`から選ぶ代表実測pairを併記する。
+
+図は説明用表示であり、検定・effect・p/qの再計算には使わない。数値正本はFinding、Evidence、test、
+score_observationsである。主要FindingにEvidenceまたはscore observationがなければfail closedとする。
+
+#### M-37試験
+
+- 6 Lensそれぞれについて固有見出し、inline SVG、外部URL/script不在をunit testする。
+- L2aはfragment前後、実測full-molecule pair、inside/outside分布をfixtureで確認する。
+- P06 integrationでscore observationが個別HTMLのL5散布図へ到達することを確認する。
+- 旧Run exporterがP03 manifest経由でscore observationをhash検証して取得することを確認する。
+- production pipeline contractが6個の`score_observations` refを解決できることを確認する。
+
+2026-09-22実績: repository test 159件合格、failure 0件、既知のSciPy precision-loss warning 3件。
+L2a/L7の完成HTMLをChrome headlessで描画し、structure panel、chart、caption、代表pairのレイアウトを目視確認した。

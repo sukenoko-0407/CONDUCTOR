@@ -320,6 +320,15 @@ def test_report_drops_persistently_invalid_narrative_without_weakening_citations
     finding["state"]["pipeline"] = "reportable"
     findings = tmp_path / "findings.jsonl"
     findings.write_text(json.dumps(finding) + "\n", encoding="utf-8")
+    score_observations = tmp_path / "score_observations.csv"
+    pd.DataFrame(
+        [
+            {"finding_key": finding["finding_key"], "feature_value": -1.0, "endpoint_value": 1.0, "context_role": "focal"},
+            {"finding_key": finding["finding_key"], "feature_value": 1.0, "endpoint_value": 2.0, "context_role": "focal"},
+            {"finding_key": finding["finding_key"], "feature_value": -1.0, "endpoint_value": 2.0, "context_role": "complement"},
+            {"finding_key": finding["finding_key"], "feature_value": 1.0, "endpoint_value": 1.0, "context_role": "complement"},
+        ]
+    ).to_csv(score_observations, index=False)
     evidence = tmp_path / "evidence.csv"
     pd.DataFrame([{"row_id": "E1", "compound_id": "C1", "effect": 2.0}]).to_csv(evidence, index=False)
     tests = tmp_path / "tests.csv"
@@ -362,6 +371,7 @@ def test_report_drops_persistently_invalid_narrative_without_weakening_citations
             ("findings_deep_dived", findings),
             ("evidence_table", evidence),
             ("evidence_table", tests),
+            ("score_observations", score_observations),
             ("artifact_manifest", manifest),
             ("compounds", compounds),
         ],
@@ -377,8 +387,19 @@ def test_report_drops_persistently_invalid_narrative_without_weakening_citations
     assert response["status"] == "succeeded"
     assert response["primary"] == "report.html"
     assert (output / "report.html").read_text(encoding="utf-8").startswith("<!doctype html>")
+    finding_html = (output / "finding_reports" / "F000001.html").read_text(encoding="utf-8")
+    assert finding_html.startswith("<!doctype html>")
+    assert "相関方向反転の実測図" in finding_html
+    assert "対象文脈" in finding_html and "同軸補集合" in finding_html
     report = json.loads((output / "report.json").read_text(encoding="utf-8"))
     assert report["components"][0]["narrative"] is None
+    assert report["visualization"] == {
+        "version": "lens_svg_v1",
+        "structure_engine": "rdkit-2026.3.4",
+        "score_observation_count": 4,
+        "compound_structure_count": 1,
+        "fragment_structure_count": 0,
+    }
     assert report["lens_telemetry"] == [
         {
             "node_id": "P03-L5",
@@ -402,6 +423,10 @@ def test_report_drops_persistently_invalid_narrative_without_weakening_citations
     assert {item["stage"] for item in failures} == {"citation_validation"}
     output_manifest = json.loads((output / "artifact_manifest.json").read_text(encoding="utf-8"))
     assert [item["media_type"] for item in output_manifest["artifacts"] if item["role"] == "report_html"] == ["text/html"]
+    assert [item["media_type"] for item in output_manifest["artifacts"] if item["role"] == "finding_report_html"] == ["text/html"]
+    assert output_manifest["metrics"]["finding_report_count"] == 1
+    assert output_manifest["metrics"]["finding_visual_count"] == 1
+    assert output_manifest["metrics"]["visualization_version"] == "lens_svg_v1"
 
 
 def test_deep_dive_writes_logical_call_failure_ledger(tmp_path: Path) -> None:

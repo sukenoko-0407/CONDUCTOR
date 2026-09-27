@@ -1,6 +1,6 @@
 # CONDUCTOR 0.2.1 R1 修正計画書
 
-Status: **R1.5本番正式受入済み。R1.6 M-33〜M-35実装・149件回帰合格、次回本番検証待ち。**
+Status: **R1.5本番正式受入済み。R1.6 M-33〜M-37実装・回帰検証完了。既存受入RunのHTML再出力待ち。**
 作成日: 2026-09-19
 改訂: **R1.5（2026-09-21）。M-30〜M-32を実装し、Run `RUN-71F880902191A1AA99F4`を正式受入した。**
 
@@ -1042,13 +1042,14 @@ Run操作に混在させない。
 [`CONDUCTOR_0.2.1_R1_production_acceptance_report.md`](CONDUCTOR_0.2.1_R1_production_acceptance_report.md)
 を正とする。rate較正は正式受入と分離した後続作業であり、今回の成功成果物を再実行しない。
 
-## 15. R1.6 人間向けHTML・prompt版更新・暫定rate是正 M-33〜M-35
+## 15. R1.6 人間向けHTML・prompt版更新・暫定rate是正 M-33〜M-37
 
 ### 15.1 M-33: P06自己完結型HTML
 
 P06は監査正本のJSON/JSONLに加えて`report.html`を生成し、これを人間向けprimary artifactとする。
-HTMLは外部resourceを参照せず、Run由来の文字列を全てescapeし、概要、統合叙述、全Finding、Lens
-telemetry、引用レジストリ、検証状態を一つのファイルへ収録する。manifestへ`report_html`として登録する。
+HTMLは外部resourceを参照せず、Run由来の文字列を全てescapeする。全体HTMLは重要なFindingの
+具体的な意味を先に示し、全Finding表、telemetry、引用レジストリは監査付録とする。
+manifestへ`report_html`として登録する。
 
 HTML実装前に受入済みのRunは変更しない。`export_validated_report_html.py`が成功済みP06 manifest、
 `report.json`、`final_findings.jsonl`、`citation_validation.json`のhash/statusを検証し、Run root外の
@@ -1080,3 +1081,54 @@ P06は全入力manifestからLens telemetryを自動集約し、`estimate/actual
 - 次回P06のreport JSON/HTMLにLens telemetryと評価区分が含まれる。
 - 次回3.3 probeはprompt `0.2.1.1` / provider `0.2.1.3`で合格する。
 - 暫定rateによるestimateが正式受入Runのexact実時間に対して危険側にならないことを回帰fixtureで確認する。
+
+### 15.5 M-36: Finding別の詳細HTML
+
+一覧表だけでは解析知見を人間へ伝達できないため、P06は`scoring.display_k`で指定された重要Findingごとに
+`finding_reports/<finding_id>.html`を生成し、manifestへ`finding_report_html`として登録する。個別ページは
+Lensの問い、具体的claim、効果量とsupport、全testのp/q、score内訳、交絡・自明性評価、deep-dive状態、
+反証条件、entity、引用Evidenceを分けて示す。説明は検証済みartifactの決定論的整形に限定し、追加LLM call、
+外部知識による機序推定、新規解析を行わない。
+
+標準件数を超えるFindingは、人間がFinding IDを指定したときだけread-only exporterでRun root外へ追加出力する。
+この経路もP06 manifest、正本artifact、引用Evidenceのhashを検証し、既存ファイルを上書きしない。
+
+追加受入条件:
+
+- 全体HTMLの主要知見から対応する個別HTMLへ移動できる。
+- 個別HTMLがFindingのtest、score、deep dive、falsification、引用行を表示する。
+- 標準生成数が`min(scoring.display_k, reportable Finding数)`と一致する。
+- 任意の既存Finding IDを指定して、解析やLLMを再実行せず個別HTMLを追加生成できる。
+
+2026-09-22、repository全体の回帰試験151件が合格した。warningは既知の小規模E2E fixtureにおける
+SciPy precision-loss 3件であり、failureは0件だった。
+
+### 15.6 M-37: Lens固有の科学図
+
+M-36初版は文章、数値、表を中心としており、知見の科学的内容を一目で理解する品質に達していなかった。
+個別HTMLと全体HTMLの主要知見cardへ、Lensごとに次の正規visualを追加する。
+
+- L1b: 文脈内のEndpoint対局所誤差改善散布図と、改善最大の注目化合物および解析時に固定された距離順近傍の2D構造。
+- L2a: `variable_from`と`variable_to`の2D構造、文脈内外の実測効果分布、代表MMPペアの変換前後構造。
+- L2b: フラグメント2D構造、系列別残差寄与、フラグメント一致部を強調した代表化合物。
+- L4: 未観測候補2D構造、既知sourceから候補への一段階到達例、空間別近傍Endpoint分布。
+- L5: focal contextとaxis complementを色分けしたfeature–Endpoint散布図と群別回帰線。
+- L7: 両系列core、効果差の大きい共通R基、同一R基を持つ代表実測化合物pairの2D構造と、共通R基ごとの系列A対系列B Endpoint対応図。
+
+化学構造はRDKitでinline SVGとして描画し、chartはhash検証済み`score_observations`から決定論的に生成する。
+外部画像、JavaScript、network resourceを使用しない。将来RunではP06 requestへ6 Lensの
+`score_observations`を明示入力する。HTML実装前の受入Runでは、P06が入力として保持した各P03 manifestを
+hash検証し、そこから`score_observations`を解決する。L7のfragment IDからR基構造への対応は、hash検証済み
+`mmp_database.fragmentations`から0.2.1の決定論的ID式で復元する。図の入力不足、SMILES parse不能、構造描画不能は
+prose-onlyへ黙って縮退させずreporting contract errorとする。
+
+追加受入条件:
+
+- L2a個別HTMLに変換前後の実構造SVGと少なくとも1件の実測MMP pairがある。
+- L2b/L4/L7個別HTMLに対象構造、L1b/L5/L7に観測値に基づく図がある。L1bは固定近傍、L7は共通R基と代表実測pairまで描画する。
+- 全図が外部resourceを参照せず、Run artifact由来labelをHTML escapeする。
+- P06および旧Run exporterがvisual入力のhashを検証し、不足時にfail closedする。
+
+2026-09-22のM-37最終検証ではrepository test 159件が合格し、failure 0件だった。warning 3件は既知の
+小規模E2E fixtureに対するSciPy precision-lossである。さらにChrome headlessでL2a/L7個別HTMLを実描画し、
+MMP fragment、実測MMP pair、系列core、common R-group、同一R-group実測pair、data chartの可読性を目視確認した。

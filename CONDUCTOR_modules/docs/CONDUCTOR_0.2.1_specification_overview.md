@@ -774,7 +774,11 @@ R1-25. **Work estimateの較正にはexactな実測telemetryを使う。** 各Le
 
 R1-32. **正式受入Runのexact実測と人間の明示判断に基づくR1.3暫定rateを使用する。** `RUN-71F880902191A1AA99F4`で危険側だったL1b/L2aはそれぞれ`100000`/`8000 units/s`、L4は既存複合式へ`720秒`の固定オーバーヘッドを加える。matrix BLAS実装のL5は`50000000 units/s`とする。これは自動較正ではなくversionedな設計変更であり、次回Runのexact telemetryで再評価する。P06は入力されたLens manifestからengine、cost model version、unit count、見積り、実時間、observed rateと評価区分を自動集約する。
 
-R1-33. **P06の人間向け正規成果物として自己完結型`report.html`を生成する。** 外部script、CSS、font、画像、network resourceを参照せず、Run由来文字列をHTML escapeする。JSON/JSONLとmanifestを監査正本として維持する。HTML実装前の受入Runには、P06 manifestと成果物hashを検証し、Run root外へだけ書き出すread-only exporterを使用する。
+R1-33. **P06の人間向け正規成果物として自己完結型`report.html`を生成する。** 外部script、CSS、font、画像、network resourceを参照せず、Run由来文字列をHTML escapeする。全体HTMLは重要Findingの具体的内容を先に示し、全Finding表は監査付録とする。JSON/JSONLとmanifestを監査正本として維持する。HTML実装前の受入Runには、P06 manifestと成果物hashを検証し、Run root外へだけ書き出すread-only exporterを使用する。
+
+R1-34. **P06は重要Findingの個別HTMLを生成し、人間の指定で追加生成できる。** 標準ではreportable Findingのうち`scoring.display_k`件を`finding_reports/<finding_id>.html`へ出力し、Lensの問い、claim、効果、support、全test、score根拠、交絡評価、deep-dive、反証条件、entity、引用Evidenceを表示する。標準件数外は人間がFinding IDを指定した場合に限り、受入済みartifactからRun root外へ追加出力する。いずれも追加LLM call、新規解析、外部知識による事実追加を行わない。
+
+R1-35. **個別HTMLはprose-onlyを許容せず、Lens固有の科学図を必須とする。** L2aはMMP fragmentと代表実測pairの変換前後2D構造、L2bはfragmentと系列別寄与、L4は候補構造と到達source、L5は文脈別相関散布図、L7は系列core、共通R基、同一R基を持つ代表実測pairと共通置換基対応図、L1bは局所SAR散布図と解析時に固定された距離順近傍構造を示す。化学構造はRDKit、数値図はhash検証済み`score_observations`からinline SVGとして決定論的に生成する。visual入力不足や構造描画不能時に文章だけへ縮退してはならず、reporting contract errorとして停止する。
 
 R1-26. **実装修正でfailedになった単一Nodeは、監査付き限定再キューで同じRunを継続できる。** skill、状態、operator、理由を検証・記録し、成功済み上流Node、frozen config/plan/input、Description Databaseを変更しない。今回のP04修正ではP01〜P03を再実行しない。
 

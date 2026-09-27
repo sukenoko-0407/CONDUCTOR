@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 import pandas as pd
 import yaml
-from conductor_report import CitationError,EvidenceRegistry,build_entity_components,render_html_report,validate_component_response,validate_finding_tests
+from conductor_report import CitationError,EvidenceRegistry,build_entity_components,render_finding_html,render_html_report,validate_component_response,validate_finding_tests
 from conductor_report.report import component_id
 from conductor_stat_core import SchemaValidationError,atomic_write_json,call_local_jsonl,file_sha256,stable_id,validate_instance
 from conductor_stat_core.contracts import prepare_output_directory,verify_request_inputs
@@ -24,6 +24,25 @@ def _write_jsonl(rows:list[dict[str,Any]],path:Path)->None:
             handle.flush();os.fsync(handle.fileno())
         os.replace(temporary,path)
     except Exception:temporary.unlink(missing_ok=True);raise
+def _score_observations(paths:list[Path])->dict[str,list[dict[str,Any]]]:
+    result:dict[str,list[dict[str,Any]]]={}
+    for path in paths:
+        try:frame=pd.read_csv(path)
+        except pd.errors.EmptyDataError:continue
+        if frame.empty:continue
+        if "finding_key" not in frame.columns:raise ValueError(f"score_observations is missing finding_key: {path}")
+        for row in frame.to_dict(orient="records"):result.setdefault(str(row["finding_key"]),[]).append(row)
+    return result
+def _fragment_smiles(connection:sqlite3.Connection)->dict[str,str]:
+    result:dict[str,str]={}
+    for transform_class,variable_smiles in connection.execute(
+        'SELECT DISTINCT "class",variable_smiles FROM fragmentations '
+        "WHERE status='accepted' ORDER BY \"class\",variable_smiles"
+    ):
+        fragment_id=stable_id("FRAG",{"schema_version":"0.2.1","class":str(transform_class),"variable_smiles":str(variable_smiles)})
+        previous=result.setdefault(fragment_id,str(variable_smiles))
+        if previous!=str(variable_smiles):raise ValueError(f"Conflicting fragment structure for {fragment_id}")
+    return result
 def _artifact(output:Path,role:str,name:str,rows:int|None)->dict[str,Any]:
     digest=file_sha256(output/name);media="text/html" if name.endswith(".html") else "text/markdown" if name.endswith(".md") else "application/x-ndjson" if name.endswith(".jsonl") else "application/json";return {"artifact_id":stable_id("ART",{"role":role,"sha256":digest}),"role":role,"path":name,"media_type":media,"schema":f"{role}@0.2.1","rows":rows,"sha256":digest}
 def _lens_telemetry(manifests:list[dict[str,Any]])->list[dict[str,Any]]:
@@ -40,11 +59,12 @@ def _lens_telemetry(manifests:list[dict[str,Any]])->list[dict[str,Any]]:
 def execute(args:argparse.Namespace)->dict[str,str]:
     request=json.loads(Path(args.request).resolve().read_text(encoding="utf-8"));validate_instance(request,SCHEMAS/"execution_request.schema.json")
     if request["identity"]["skill_name"]!="cs-report" or request["parameters"].get("operation")!="report":raise SchemaValidationError("Request must target cs-report operation report")
-    verify_request_inputs(request);config_path=Path(request["config_path"]).resolve();config=yaml.safe_load(config_path.read_text(encoding="utf-8"));llm=config["llm"];findings=_read_jsonl(_one(request,"findings_deep_dived"));table_paths=_inputs(request,"evidence_table");manifests=[json.loads(path.read_text(encoding="utf-8")) for path in _inputs(request,"artifact_manifest")];hashes={Path(item["path"]).name:str(item["sha256"]) for manifest in manifests for item in manifest.get("artifacts",[])};run_root=Path(request["parameters"].get("run_root",ROOT)).resolve();registry=EvidenceRegistry.load(run_root,table_paths,hashes);compounds=pd.read_csv(_one(request,"compounds"),dtype={"compound_id":"string"});entity_ids=set(compounds["compound_id"].astype(str));database_inputs=_inputs(request,"mmp_database")
+    verify_request_inputs(request);config_path=Path(request["config_path"]).resolve();config=yaml.safe_load(config_path.read_text(encoding="utf-8"));llm=config["llm"];findings=_read_jsonl(_one(request,"findings_deep_dived"));table_paths=_inputs(request,"evidence_table");manifests=[json.loads(path.read_text(encoding="utf-8")) for path in _inputs(request,"artifact_manifest")];hashes={Path(item["path"]).name:str(item["sha256"]) for manifest in manifests for item in manifest.get("artifacts",[])};run_root=Path(request["parameters"].get("run_root",ROOT)).resolve();registry=EvidenceRegistry.load(run_root,table_paths,hashes);compounds=pd.read_csv(_one(request,"compounds"),dtype={"compound_id":"string"});entity_ids=set(compounds["compound_id"].astype(str));compound_smiles=dict(zip(compounds["compound_id"].astype(str),compounds["canonical_smiles"].astype(str),strict=True));observations_by_finding=_score_observations(_inputs(request,"score_observations"));database_inputs=_inputs(request,"mmp_database")
     if len(database_inputs)>1:raise ValueError("At most one mmp_database input is allowed")
-    pair_ids=None
+    pair_ids=None;fragment_smiles={}
     if database_inputs:
-        with sqlite3.connect(f"file:{database_inputs[0].as_posix()}?mode=ro",uri=True) as connection:pair_ids={str(row[0]) for row in connection.execute("SELECT pair_id FROM pairs")}
+        with sqlite3.connect(f"file:{database_inputs[0].as_posix()}?mode=ro",uri=True) as connection:
+            pair_ids={str(row[0]) for row in connection.execute("SELECT pair_id FROM pairs")};fragment_smiles=_fragment_smiles(connection)
     validation_errors=[]
     try:validate_finding_tests(findings,registry,entity_ids,pair_ids)
     except CitationError as exc:validation_errors.append(str(exc))
@@ -74,14 +94,26 @@ def execute(args:argparse.Namespace)->dict[str,str]:
     failure_fraction=failed_calls/logical_calls if logical_calls else 0.0
     if failure_fraction>float(llm["max_failure_fraction"]):validation_errors.append(f"Local LLM logical-call failure fraction {failure_fraction:.6f} exceeds {llm['max_failure_fraction']}")
     rejected_narrative_count=sum(item["stage"]=="citation_validation" for item in narrative_failures);provider_failure_event_count=sum(item["stage"]=="provider_or_schema" for item in narrative_failures)
-    status="failed" if validation_errors else "succeeded";created_at=datetime.now(timezone.utc).isoformat().replace("+00:00","Z");telemetry=_lens_telemetry(manifests);report={"schema_version":"0.2.1","status":status,"run_id":request["identity"]["run_id"],"endpoint_id":request["endpoint_id"],"created_at":created_at,"components":drafts,"finding_count":len(findings),"lens_telemetry":telemetry};validation={"status":status,"errors":validation_errors,"warnings":warnings,"logical_calls":logical_calls,"failed_logical_calls":failed_calls,"failure_fraction":failure_fraction,"semantic_retry_count":semantic_retry_count,"rejected_narrative_count":rejected_narrative_count,"provider_failure_event_count":provider_failure_event_count}
+    status="failed" if validation_errors else "succeeded";created_at=datetime.now(timezone.utc).isoformat().replace("+00:00","Z");telemetry=_lens_telemetry(manifests);display_k=int((config.get("scoring") or {}).get("display_k",10));visualization={"version":"lens_svg_v1","structure_engine":"rdkit-2026.3.4","score_observation_count":sum(len(rows) for rows in observations_by_finding.values()),"compound_structure_count":len(compound_smiles),"fragment_structure_count":len(fragment_smiles)};report={"schema_version":"0.2.1","status":status,"run_id":request["identity"]["run_id"],"endpoint_id":request["endpoint_id"],"created_at":created_at,"components":drafts,"finding_count":len(findings),"display_k":display_k,"lens_telemetry":telemetry,"visualization":visualization};validation={"status":status,"errors":validation_errors,"warnings":warnings,"logical_calls":logical_calls,"failed_logical_calls":failed_calls,"failure_fraction":failure_fraction,"semantic_retry_count":semantic_retry_count,"rejected_narrative_count":rejected_narrative_count,"provider_failure_event_count":provider_failure_event_count}
     output=prepare_output_directory(Path(args.output_dir),args.overwrite);_write_jsonl(findings,output/"final_findings.jsonl");_write_jsonl(drafts,output/"narrative_drafts.jsonl");_write_jsonl(narrative_failures,output/"llm_narrative_failures.jsonl");atomic_write_json(output/"citation_validation.json",validation);atomic_write_json(output/"report.json",report)
     markdown=["# CONDUCTOR 0.2.1 Report",""]
     for draft in drafts:
         if draft["narrative"] is not None:markdown.extend([f"## {draft['component_id']}","",str(draft["narrative"]),""])
     (output/"report.md").write_text("\n".join(markdown),encoding="utf-8",newline="\n")
-    (output/"report.html").write_text(render_html_report(report,findings,validation,run_id=request["identity"]["run_id"],created_at=created_at),encoding="utf-8",newline="\n")
-    files=[("final_findings","final_findings.jsonl",len(findings)),("narrative_drafts","narrative_drafts.jsonl",len(drafts)),("llm_narrative_failures","llm_narrative_failures.jsonl",len(narrative_failures)),("citation_validation","citation_validation.json",None),("report_json","report.json",None),("report_markdown","report.md",None),("report_html","report.html",None)];artifacts=[_artifact(output,*item) for item in files];metrics={"finding_count":len(findings),"component_count":len(components),"citation_error_count":len(validation_errors),"logical_calls":logical_calls,"failed_logical_calls":failed_calls,"failure_fraction":failure_fraction,"semantic_retry_count":semantic_retry_count,"rejected_narrative_count":rejected_narrative_count,"provider_failure_event_count":provider_failure_event_count,"provider_attempt_count":provider_attempt_count,"lens_telemetry_count":len(telemetry),"unsafe_underestimate_count":sum(item["evaluation"]=="unsafe_underestimate" for item in telemetry)};manifest={"schema_version":"0.2.1","producer":{key:request["identity"][key] for key in ("run_id","node_id","attempt_id","skill_name")},"status":status,"config_sha256":file_sha256(config_path),"input_artifacts":[{"role":item["role"],"path":item["path"],"sha256":item["sha256"]} for item in request["inputs"]],"artifacts":artifacts,"metrics":metrics,"warnings":warnings,"created_at":created_at};atomic_write_json(output/"artifact_manifest.json",manifest);validate_instance(manifest,SCHEMAS/"artifact_manifest.schema.json");return {"status":status,"manifest":"artifact_manifest.json","primary":"report.html"}
+    reportable=sorted((item for item in findings if (item.get("state") or {}).get("pipeline")=="reportable"),key=lambda item:(int((item.get("scores") or {}).get("rank") or 2**31-1),-float((item.get("scores") or {}).get("composite") or 0.0),str(item.get("finding_id",""))))
+    important=reportable[:max(0,display_k)];evidence_by_ref={}
+    for finding in important:
+        for citation in finding.get("citations") or []:
+            reference=str(citation.get("table_ref",""))
+            if reference and reference not in evidence_by_ref:evidence_by_ref[reference]=registry.row(reference)
+    detail_dir=output/"finding_reports";detail_dir.mkdir(parents=True,exist_ok=True);detail_paths={}
+    for finding in important:
+        finding_id=str(finding["finding_id"])
+        if not finding_id or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for character in finding_id):raise ValueError(f"Unsafe finding_id for HTML path: {finding_id!r}")
+        relative=f"finding_reports/{finding_id}.html";detail_paths[finding_id]=relative
+        (output/relative).write_text(render_finding_html(finding,validation,run_id=request["identity"]["run_id"],endpoint_id=request["endpoint_id"],created_at=created_at,evidence_by_ref=evidence_by_ref,observations_by_finding=observations_by_finding,compound_smiles=compound_smiles,fragment_smiles=fragment_smiles,overview_href="../report.html"),encoding="utf-8",newline="\n")
+    (output/"report.html").write_text(render_html_report(report,findings,validation,run_id=request["identity"]["run_id"],created_at=created_at,evidence_by_ref=evidence_by_ref,observations_by_finding=observations_by_finding,compound_smiles=compound_smiles,fragment_smiles=fragment_smiles,finding_report_paths=detail_paths),encoding="utf-8",newline="\n")
+    files=[("final_findings","final_findings.jsonl",len(findings)),("narrative_drafts","narrative_drafts.jsonl",len(drafts)),("llm_narrative_failures","llm_narrative_failures.jsonl",len(narrative_failures)),("citation_validation","citation_validation.json",None),("report_json","report.json",None),("report_markdown","report.md",None),("report_html","report.html",None)]+[("finding_report_html",detail_paths[str(finding["finding_id"])],None) for finding in important];artifacts=[_artifact(output,*item) for item in files];metrics={"finding_count":len(findings),"finding_report_count":len(important),"finding_visual_count":len(important),"visualization_version":"lens_svg_v1","component_count":len(components),"citation_error_count":len(validation_errors),"logical_calls":logical_calls,"failed_logical_calls":failed_calls,"failure_fraction":failure_fraction,"semantic_retry_count":semantic_retry_count,"rejected_narrative_count":rejected_narrative_count,"provider_failure_event_count":provider_failure_event_count,"provider_attempt_count":provider_attempt_count,"lens_telemetry_count":len(telemetry),"unsafe_underestimate_count":sum(item["evaluation"]=="unsafe_underestimate" for item in telemetry)};manifest={"schema_version":"0.2.1","producer":{key:request["identity"][key] for key in ("run_id","node_id","attempt_id","skill_name")},"status":status,"config_sha256":file_sha256(config_path),"input_artifacts":[{"role":item["role"],"path":item["path"],"sha256":item["sha256"]} for item in request["inputs"]],"artifacts":artifacts,"metrics":metrics,"warnings":warnings,"created_at":created_at};atomic_write_json(output/"artifact_manifest.json",manifest);validate_instance(manifest,SCHEMAS/"artifact_manifest.schema.json");return {"status":status,"manifest":"artifact_manifest.json","primary":"report.html"}
 def main()->int:
     parser=argparse.ArgumentParser(description="CONDUCTOR 0.2.1 report");parser.add_argument("--request",required=True);parser.add_argument("--output-dir",required=True);parser.add_argument("--workers",type=int,default=0);parser.add_argument("--overwrite",action="store_true");args=parser.parse_args()
     try:response=execute(args)

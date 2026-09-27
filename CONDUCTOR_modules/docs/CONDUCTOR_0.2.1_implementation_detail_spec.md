@@ -894,6 +894,23 @@ if any validation fails: fail Phase 6, keep invalid draft for diagnosis
 
 自動修正しない。不一致には narrative ID、token、citation ID、table_ref、expected/actual を含める。
 
+P06は機械監査用JSON/JSONLに加えて、自己完結型`report.html`と、`scoring.display_k`件の重要Findingを
+対象とする`finding_reports/<finding_id>.html`を生成する。個別HTMLは文章・表だけでは受入不可とし、
+次のLens固有visualをinline SVGで必須とする。
+
+- L1b: compound単位のEndpoint対局所誤差改善図、最大改善compoundと保存済み距離順近傍の2D構造。
+- L2a: MMP fragmentの変換前後2D構造、文脈内外のpair効果分布、代表実測full-molecule pair。
+- L2b: fragment構造、series単位の残差寄与、fragment一致部を強調した代表compound。
+- L4: 未観測candidate構造、sourceからcandidateへの一段階到達例、feature-space別neighbor Endpoint分布。
+- L5: focal contextと同軸補集合を区別したfeature対Endpoint散布図および群別回帰線。
+- L7: 両series core、common R-group、同一R-groupの代表実測pair、common R-group単位の系列間Endpoint対応図。
+
+化学構造はlocked cs-report環境のRDKit、数値図はhash検証済み`score_observations`を使用する。L7の
+fragment構造はhash検証済み`mmp_database.fragmentations`から決定論的IDで解決する。表示層は統計値を
+再計算せず、Finding、Evidence、test、score observationを正本とする。外部画像、script、font、network
+resourceは使用しない。必要なEvidence、観測行、SMILESまたはID対応が欠ける場合はprose-onlyへ縮退せず、
+reporting contract errorとしてfail closedする。
+
 ### 7.11 段階11: Runtime
 
 Runtime は SQLite WAL の single writer。worker は State DB を直接更新せず、attempt directory に execution event を atomic writeし、Runtime coordinatorだけが transactionで取り込む。

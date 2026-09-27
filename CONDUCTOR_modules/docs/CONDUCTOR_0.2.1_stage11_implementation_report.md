@@ -76,3 +76,20 @@ L7 の系列平均差は R 基 label 並べ替えでは不変になるため、�
 旧受入Run向けread-only HTML exporterを追加した。Local LLM prompt/provider versionを
 `0.2.1.1`/`0.2.1.3`へ更新し、R1.3暫定cost modelを導入した。Skill packageを明示した
 repository回帰試験は149件合格、既知のSciPy precision-loss warning 3件、failure 0件だった。
+
+## 2026-09-22 R1.6 human report follow-up
+
+最初の`report.html`が監査一覧中心で知見の中身を伝えられなかったため、M-36として表示層を改訂した。
+全体HTMLは上位Findingの具体的な内容を先に示し、全Finding表を監査付録へ移した。新規P06は標準上位件数の
+個別HTMLを生成し、旧Runを含む受入済みP06 manifestからはFinding ID指定で任意の個別HTMLをRun root外へ
+追加生成できる。いずれも検証済みartifactの決定論的整形であり、LLMや解析は再実行しない。
+repository回帰試験は151件合格、既知のSciPy precision-loss warning 3件、failure 0件だった。
+
+## 2026-09-22 R1.6 scientific visualization follow-up
+
+M-36初版の個別HTMLが文章・表中心であった問題をM-37として是正した。6 Lensへ固有のinline SVGを実装し、
+L2a/L2b/L4/L7はRDKit 2D構造、L1b/L2a/L2b/L4/L5/L7は各Lensの最小観測単位に対応するdata chartを
+表示する。将来P06にはP03 `score_observations`を明示入力し、旧受入Run exporterはP06が既にhash固定した
+P03 manifestから同artifactを解決する。L1bは固定距離順近傍、L7はseries core、common R-group、同一R-groupの
+代表実測pairまで構造表示する。入力不足時のprose-only fallbackは禁止した。repository回帰試験159件が合格し、
+failure 0件、既知warning 3件だった。L2a/L7の完成HTMLはChrome headlessで実描画して目視確認した。

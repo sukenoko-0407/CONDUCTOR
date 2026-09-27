@@ -1,0 +1,1660 @@
+{
+  "notice": "Approval mock only. Statistical values and analysis outcomes are fictional.",
+  "run_id": "RUN-JAK2-FINAL-REPORT-MOCK",
+  "endpoint_id": "JAK2_pIC50",
+  "findings": [
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-001",
+      "finding_key": "FND|JAK2|MOCK|001",
+      "lens": "L1b",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "feature_space",
+        "subject_id": "D012::Morgan_2048_Tanimoto",
+        "condition_id": "CTX::aminopyrazole-cyclohexyl-series",
+        "effect_direction": "flat",
+        "effect_size": 0.731,
+        "effect_unit": "local_flatness_lambda",
+        "support_n": 42
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-001-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "context-preserving permutation",
+          "statistic": 4.18,
+          "p_value": 0.00042,
+          "q_value": 0.0031,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-001"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-001-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "context-preserving permutation sensitivity",
+          "statistic": 3.8038,
+          "p_value": 0.000714,
+          "q_value": 0.004495,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-001"
+        }
+      ],
+      "falsification": {
+        "type": "neighbor_stability",
+        "parameters": {
+          "neighbor_k": [
+            3,
+            5,
+            8
+          ],
+          "spaces": [
+            "D012",
+            "D014"
+          ]
+        },
+        "decision_rule": "近傍kと特徴空間を変更したとき、lambdaが事前設定下限を下回れば反証とする。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3639983",
+          "CHEMBL3640018",
+          "CHEMBL3647725",
+          "CHEMBL3647726",
+          "CHEMBL3647730",
+          "CHEMBL3647736",
+          "CHEMBL3647738",
+          "CHEMBL3647739",
+          "CHEMBL3647740",
+          "CHEMBL3647743",
+          "CHEMBL3647744",
+          "CHEMBL3647747"
+        ],
+        "context_ids": [
+          "CTX::aminopyrazole-cyclohexyl-series"
+        ],
+        "feature_ids": [
+          "D012::Morgan_2048_Tanimoto"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-001",
+          "table_ref": "mock_l1b_evidence.csv#row_id=E-L1B-001"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": 0.731,
+        "adjusted_effect_size": 0.62866,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "medium",
+        "actionability": "design_review",
+        "suggested_action": "局所近傍を優先して同系列内の次化合物を設計し、系列外への一般化は別途検証する。"
+      },
+      "scores": {
+        "rank": 4,
+        "statistical_strength": 0.8400000000000001,
+        "robustness": 0.77,
+        "non_triviality": 0.7300000000000001,
+        "actionability": 0.79,
+        "frontier_relevance": 0.75,
+        "composite": 0.81
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "SURVIVED"
+      },
+      "narrative": "同一系列内では、近傍化合物のEndpointを用いた局所予測が全体平均より安定しました。分子量等の調整後も局所性は維持されました。[[CIT-JAK-MOCK-001]]"
+    },
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-002",
+      "finding_key": "FND|JAK2|MOCK|002",
+      "lens": "L2a",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "transformation",
+        "subject_id": "TRF::CO2H-to-CONHCH2CF3",
+        "condition_id": "CTX::tert-alkyl-aminopyrazole",
+        "effect_direction": "positive",
+        "effect_size": 1.18,
+        "effect_unit": "oriented_endpoint_shift",
+        "support_n": 20
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-002-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "stratified permutation of MMP effects",
+          "statistic": 4.91,
+          "p_value": 8e-05,
+          "q_value": 0.0012,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-002"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-002-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "stratified permutation of MMP effects sensitivity",
+          "statistic": 4.468100000000001,
+          "p_value": 0.000136,
+          "q_value": 0.0017399999999999998,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-002"
+        }
+      ],
+      "falsification": {
+        "type": "context_swap",
+        "parameters": {
+          "iterations": 5000,
+          "minimum_pairs_per_group": 8
+        },
+        "decision_rule": "文脈ラベルを保持した再標本化で中央値差の符号が維持されなければ反証とする。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3699554",
+          "CHEMBL3699558"
+        ],
+        "context_ids": [
+          "CTX::tert-alkyl-aminopyrazole"
+        ],
+        "transformation_ids": [
+          "TRF::CO2H-to-CONHCH2CF3"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-002",
+          "table_ref": "mock_l2a_evidence.csv#row_id=E-L2A-001"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": 1.18,
+        "adjusted_effect_size": 1.0148,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "high",
+        "actionability": "direct",
+        "suggested_action": "対象系列で酸／アミド対を追加合成し、文脈外系列を負の対照として同一assayで測定する。"
+      },
+      "scores": {
+        "rank": 1,
+        "statistical_strength": 0.97,
+        "robustness": 0.8999999999999999,
+        "non_triviality": 0.86,
+        "actionability": 0.9199999999999999,
+        "frontier_relevance": 0.8799999999999999,
+        "composite": 0.94
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "SURVIVED"
+      },
+      "narrative": "カルボン酸からトリフルオロエチルアミドへの置換は対象文脈内で大きい正方向シフトを示し、文脈外では効果がほぼ消失しました。[[CIT-JAK-MOCK-002]]"
+    },
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-003",
+      "finding_key": "FND|JAK2|MOCK|003",
+      "lens": "L2b",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "fragment",
+        "subject_id": "FRAG::aryl-SO2CF3",
+        "condition_id": "across_series",
+        "effect_direction": "positive",
+        "effect_size": 0.46,
+        "effect_unit": "oriented_endpoint_residual",
+        "support_n": 47
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-003-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "series-adjusted residual meta-analysis",
+          "statistic": 3.72,
+          "p_value": 0.00031,
+          "q_value": 0.0048,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-003"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-003-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "series-adjusted residual meta-analysis sensitivity",
+          "statistic": 3.3852,
+          "p_value": 0.000527,
+          "q_value": 0.006959999999999999,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-003"
+        }
+      ],
+      "falsification": {
+        "type": "leave_one_series_out",
+        "parameters": {
+          "minimum_series": 4
+        },
+        "decision_rule": "いずれか一系列の除外で統合効果の符号が反転した場合は反証とする。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3647725",
+          "CHEMBL3647726",
+          "CHEMBL3647730",
+          "CHEMBL3647736"
+        ],
+        "fragment_ids": [
+          "FRAG::aryl-SO2CF3"
+        ],
+        "context_ids": [
+          "SERIES-A",
+          "SERIES-B",
+          "SERIES-C",
+          "SERIES-D",
+          "SERIES-E"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-003",
+          "table_ref": "mock_l2b_evidence.csv#row_id=E-L2B-001"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": 0.46,
+        "adjusted_effect_size": 0.3956,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "high",
+        "actionability": "design_review",
+        "suggested_action": "独立系列で同フラグメントを持つ対照化合物を追加し、系列調整後寄与を再確認する。"
+      },
+      "scores": {
+        "rank": 3,
+        "statistical_strength": 0.89,
+        "robustness": 0.82,
+        "non_triviality": 0.78,
+        "actionability": 0.84,
+        "frontier_relevance": 0.8,
+        "composite": 0.86
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "WEAKENED"
+      },
+      "narrative": "系列効果を除いた後もフラグメントの正方向寄与は残りましたが、leave-one-series-out解析で効果量は小さくなりました。[[CIT-JAK-MOCK-003]]"
+    },
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-004",
+      "finding_key": "FND|JAK2|MOCK|004",
+      "lens": "L2b",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "fragment",
+        "subject_id": "FRAG::aryl-Cl",
+        "condition_id": "across_series",
+        "effect_direction": "mixed",
+        "effect_size": 0.548,
+        "effect_unit": "oriented_endpoint_variance",
+        "support_n": 61
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-004-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "series residual heterogeneity test",
+          "statistic": 3.19,
+          "p_value": 0.0014,
+          "q_value": 0.012,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-004"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-004-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "series residual heterogeneity test sensitivity",
+          "statistic": 2.9029000000000003,
+          "p_value": 0.0023799999999999997,
+          "q_value": 0.0174,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-004"
+        }
+      ],
+      "falsification": {
+        "type": "heterogeneity_collapse",
+        "parameters": {
+          "background_variance": 0.18
+        },
+        "decision_rule": "系列別残差分散が事前設定した背景分散以下になれば反証とする。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3647783",
+          "CHEMBL3647794",
+          "CHEMBL3647795",
+          "CHEMBL3647797"
+        ],
+        "fragment_ids": [
+          "FRAG::aryl-Cl"
+        ],
+        "context_ids": [
+          "SERIES-A",
+          "SERIES-B",
+          "SERIES-C",
+          "SERIES-D",
+          "SERIES-E",
+          "SERIES-F"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-004",
+          "table_ref": "mock_l2b_evidence.csv#row_id=E-L2B-002"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": 0.548,
+        "adjusted_effect_size": 0.47128000000000003,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "medium",
+        "actionability": "design_review",
+        "suggested_action": "aryl-Clを一律に最適化指針とせず、系列別に対照MMPを置いて寄与方向を確認する。"
+      },
+      "scores": {
+        "rank": 6,
+        "statistical_strength": 0.78,
+        "robustness": 0.71,
+        "non_triviality": 0.67,
+        "actionability": 0.73,
+        "frontier_relevance": 0.69,
+        "composite": 0.75
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "SURVIVED"
+      },
+      "narrative": "平均寄与は小さい一方、系列ごとの寄与は正負に分かれました。系列を入れ替える深掘りでも不均一性は維持されました。[[CIT-JAK-MOCK-004]]"
+    },
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-005",
+      "finding_key": "FND|JAK2|MOCK|005",
+      "lens": "L4",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "virtual_candidate",
+        "subject_id": "VIRTUAL-JAK2-001",
+        "condition_id": "reachable_in_one_transformation",
+        "effect_direction": "positive",
+        "effect_size": 0.86,
+        "effect_unit": "region_score",
+        "support_n": 36
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-005-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "multi-space frontier permutation",
+          "statistic": 2.51,
+          "p_value": 0.012,
+          "q_value": 0.031,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-005"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-005-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "multi-space frontier permutation sensitivity",
+          "statistic": 2.2841,
+          "p_value": 0.0204,
+          "q_value": 0.04495,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-005"
+        }
+      ],
+      "falsification": {
+        "type": "nearest_neighbor_counterexample",
+        "parameters": {
+          "spaces": 4,
+          "neighbor_k": 12,
+          "minimum_lcl": 7.2
+        },
+        "decision_rule": "いずれかの必須空間で低活性の近接反例が閾値以内に存在すれば候補を棄却する。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3647725",
+          "CHEMBL3647736",
+          "CHEMBL3647739"
+        ],
+        "candidate_ids": [
+          "VIRTUAL-JAK2-001"
+        ],
+        "feature_ids": [
+          "D012",
+          "D013",
+          "D014",
+          "D019"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-005",
+          "table_ref": "mock_l4_evidence.csv#row_id=E-L4-001"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": 0.86,
+        "adjusted_effect_size": 0.7395999999999999,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "medium",
+        "actionability": "direct",
+        "suggested_action": "合成前に3D整合性と物性制約を確認し、最小の類縁体セットで予測領域を実測する。"
+      },
+      "scores": {
+        "rank": 5,
+        "statistical_strength": 0.81,
+        "robustness": 0.74,
+        "non_triviality": 0.7000000000000001,
+        "actionability": 0.76,
+        "frontier_relevance": 0.72,
+        "composite": 0.78
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "INCONCLUSIVE"
+      },
+      "narrative": "候補は複数特徴空間で高活性近傍に接していますが、外挿領域にあるため追加検証は結論不能でした。[[CIT-JAK-MOCK-005]]"
+    },
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-006",
+      "finding_key": "FND|JAK2|MOCK|006",
+      "lens": "L5",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "feature_context_interaction",
+        "subject_id": "D001::MolLogP|AXIS::aryl-SO2CF3",
+        "condition_id": "AXIS::aryl-SO2CF3|present",
+        "effect_direction": "mixed",
+        "effect_size": 1.33,
+        "effect_unit": "correlation_difference",
+        "support_n": 28
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-006-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "Fisher z difference with permutation",
+          "statistic": 4.07,
+          "p_value": 0.00019,
+          "q_value": 0.0029,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-006"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-006-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "Fisher z difference with permutation sensitivity",
+          "statistic": 3.7037000000000004,
+          "p_value": 0.000323,
+          "q_value": 0.0042049999999999995,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-006"
+        }
+      ],
+      "falsification": {
+        "type": "axis_stratified_bootstrap",
+        "parameters": {
+          "iterations": 5000,
+          "minimum_n_per_group": 12
+        },
+        "decision_rule": "両群の相関差のbootstrap区間が0をまたぐ、または符号反転が消失すれば反証とする。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3639983",
+          "CHEMBL3640018",
+          "CHEMBL3647725",
+          "CHEMBL3647726",
+          "CHEMBL3647730",
+          "CHEMBL3647736",
+          "CHEMBL3647738",
+          "CHEMBL3647739",
+          "CHEMBL3647740",
+          "CHEMBL3647743",
+          "CHEMBL3647744",
+          "CHEMBL3647747",
+          "CHEMBL3647748",
+          "CHEMBL3647761",
+          "CHEMBL3647762",
+          "CHEMBL3647777",
+          "CHEMBL3647783",
+          "CHEMBL3647788",
+          "CHEMBL3647794",
+          "CHEMBL3647795",
+          "CHEMBL3647797",
+          "CHEMBL3647798",
+          "CHEMBL3647801",
+          "CHEMBL3647804",
+          "CHEMBL3647807",
+          "CHEMBL3647809",
+          "CHEMBL3647810",
+          "CHEMBL3647811"
+        ],
+        "context_ids": [
+          "AXIS::aryl-SO2CF3|present",
+          "AXIS::aryl-SO2CF3|complement"
+        ],
+        "feature_ids": [
+          "D001::MolLogP"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-006",
+          "table_ref": "mock_l5_evidence.csv#row_id=E-L5-001"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": 1.33,
+        "adjusted_effect_size": 1.1438000000000001,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "high",
+        "actionability": "design_review",
+        "suggested_action": "全体QSARの単一係数を用いず、aryl-SO2CF3文脈で分けた物性最適化方針を比較する。"
+      },
+      "scores": {
+        "rank": 2,
+        "statistical_strength": 0.9400000000000001,
+        "robustness": 0.87,
+        "non_triviality": 0.8300000000000001,
+        "actionability": 0.89,
+        "frontier_relevance": 0.8500000000000001,
+        "composite": 0.91
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "SURVIVED"
+      },
+      "narrative": "MolLogPとJAK2 pIC50の関係は対象文脈で正、同軸補集合で負となり、全体相関では相殺されました。[[CIT-JAK-MOCK-006]]"
+    },
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-007",
+      "finding_key": "FND|JAK2|MOCK|007",
+      "lens": "L7",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "series_pair",
+        "subject_id": "SERIES-A::aminopyrazole|SERIES-B::aminopyrimidine",
+        "condition_id": "matched_common_R_groups",
+        "effect_direction": "mixed",
+        "effect_size": -0.82,
+        "effect_unit": "spearman_rho",
+        "support_n": 4
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-007-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "exact Spearman permutation",
+          "statistic": -0.82,
+          "p_value": 0.0061,
+          "q_value": 0.024,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-007"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-007-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "exact Spearman permutation sensitivity",
+          "statistic": -0.7462,
+          "p_value": 0.01037,
+          "q_value": 0.0348,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-007"
+        }
+      ],
+      "falsification": {
+        "type": "common_R_leave_one_out",
+        "parameters": {
+          "minimum_common_r": 4
+        },
+        "decision_rule": "共通R基を1つずつ除外した順位相関の過半数が負でなくなれば反証とする。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3639983",
+          "CHEMBL3640018",
+          "CHEMBL3647783",
+          "CHEMBL3647794",
+          "CHEMBL3647761",
+          "CHEMBL3647762",
+          "CHEMBL3647725",
+          "CHEMBL3647736"
+        ],
+        "series_ids": [
+          "SERIES-A::aminopyrazole",
+          "SERIES-B::aminopyrimidine"
+        ],
+        "fragment_ids": [
+          "R-F",
+          "R-Cl",
+          "R-CF3",
+          "R-SO2CF3"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-007",
+          "table_ref": "mock_l7_evidence.csv#row_id=E-L7-001"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": -0.82,
+        "adjusted_effect_size": -0.7051999999999999,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "medium",
+        "actionability": "direct",
+        "suggested_action": "系列間で置換基順位をそのまま移植せず、両coreに同じR基を導入した対応ペアを追加測定する。"
+      },
+      "scores": {
+        "rank": 7,
+        "statistical_strength": 0.75,
+        "robustness": 0.6799999999999999,
+        "non_triviality": 0.64,
+        "actionability": 0.7,
+        "frontier_relevance": 0.6599999999999999,
+        "composite": 0.72
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "SURVIVED"
+      },
+      "narrative": "共通R基をそろえると両系列の活性順位は逆転し、片方の系列で有利な置換基が他方では不利でした。[[CIT-JAK-MOCK-007]]"
+    },
+    {
+      "schema_version": "0.2.1",
+      "finding_id": "F-JAK-MOCK-008",
+      "finding_key": "FND|JAK2|MOCK|008",
+      "lens": "L7",
+      "endpoint_id": "JAK2_pIC50",
+      "claim": {
+        "subject_type": "series_pair",
+        "subject_id": "SERIES-C::neutral-linker|SERIES-D::basic-linker",
+        "condition_id": "matched_common_R_groups",
+        "effect_direction": "positive",
+        "effect_size": 0.74,
+        "effect_unit": "oriented_endpoint_mean_difference",
+        "support_n": 4
+      },
+      "tests": [
+        {
+          "test_id": "TEST-F-JAK-MOCK-008-PRIMARY",
+          "question": "主要効果は帰無分布から区別できるか",
+          "method": "paired common-R permutation",
+          "statistic": 4.22,
+          "p_value": 0.0038,
+          "q_value": 0.019,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-008"
+        },
+        {
+          "test_id": "TEST-F-JAK-MOCK-008-SENSITIVITY",
+          "question": "感度解析でも方向と有意性が保たれるか",
+          "method": "paired common-R permutation sensitivity",
+          "statistic": 3.8402,
+          "p_value": 0.00646,
+          "q_value": 0.027549999999999998,
+          "null_iterations": 1000,
+          "multiplicity_family": "FAMILY-F-JAK-MOCK-008"
+        }
+      ],
+      "falsification": {
+        "type": "paired_series_shift",
+        "parameters": {
+          "minimum_shift": 0.5,
+          "minimum_common_r": 4
+        },
+        "decision_rule": "対応R基差の中央値が事前設定最小差を下回る、または符号が不安定なら反証とする。"
+      },
+      "entities": {
+        "compound_ids": [
+          "CHEMBL3647743",
+          "CHEMBL3647744",
+          "CHEMBL3647788",
+          "CHEMBL3647795",
+          "CHEMBL3647777",
+          "CHEMBL3647801",
+          "CHEMBL3647730",
+          "CHEMBL3647738"
+        ],
+        "series_ids": [
+          "SERIES-C::neutral-linker",
+          "SERIES-D::basic-linker"
+        ],
+        "fragment_ids": [
+          "R-F",
+          "R-Cl",
+          "R-CF3",
+          "R-SO2CF3"
+        ]
+      },
+      "citations": [
+        {
+          "citation_id": "CIT-JAK-MOCK-008",
+          "table_ref": "mock_l7_evidence.csv#row_id=E-L7-002"
+        }
+      ],
+      "triviality": {
+        "raw_effect_size": 0.74,
+        "adjusted_effect_size": 0.6364,
+        "confounders_tested": [
+          "MW",
+          "cLogP",
+          "TPSA"
+        ],
+        "verdict": "non_trivial"
+      },
+      "translation": {
+        "priority": "medium",
+        "actionability": "direct",
+        "suggested_action": "順位の移植可能性と系列主効果を分離し、core変更による基礎活性上昇を対応ペアで再確認する。"
+      },
+      "scores": {
+        "rank": 8,
+        "statistical_strength": 0.72,
+        "robustness": 0.6499999999999999,
+        "non_triviality": 0.61,
+        "actionability": 0.6699999999999999,
+        "frontier_relevance": 0.6299999999999999,
+        "composite": 0.69
+      },
+      "state": {
+        "pipeline": "reportable",
+        "deep_dive": "WEAKENED"
+      },
+      "narrative": "置換基順位は系列間でおおむね保持されましたが、basic-linker系列は共通R基全体で高いEndpoint水準を示しました。[[CIT-JAK-MOCK-008]]"
+    }
+  ],
+  "evidence_by_ref": {
+    "mock_l1b_evidence.csv#row_id=E-L1B-001": {
+      "row_id": "E-L1B-001",
+      "space_id": "D012::Morgan_2048_Tanimoto",
+      "context_id": "CTX::aminopyrazole-cyclohexyl-series",
+      "endpoint_n": 42,
+      "neighbor_k": 5,
+      "lambda": 0.731,
+      "global_variance": 0.684
+    },
+    "mock_l2a_evidence.csv#row_id=E-L2A-001": {
+      "row_id": "E-L2A-001",
+      "transform_class": "amide_vs_carboxylate",
+      "variable_from": "[*:1]C(=O)O",
+      "variable_to": "[*:1]C(=O)NCC(F)(F)F",
+      "n_in": 8,
+      "n_out": 12,
+      "median_in": 1.215,
+      "median_out": 0.035,
+      "median_shift": 1.18,
+      "variance_ratio": 3.42
+    },
+    "mock_l2b_evidence.csv#row_id=E-L2B-001": {
+      "row_id": "E-L2B-001",
+      "fragment_smiles": "c1ccc(S(=O)(=O)C(F)(F)F)cc1",
+      "transform_class": "aryl-SO2CF3",
+      "series_count": 5,
+      "residual_mean": 0.46,
+      "residual_sd": 0.12,
+      "residual_variance": 0.0144
+    },
+    "mock_l2b_evidence.csv#row_id=E-L2B-002": {
+      "row_id": "E-L2B-002",
+      "fragment_smiles": "c1ccc(Cl)cc1",
+      "transform_class": "aryl-Cl",
+      "series_count": 6,
+      "residual_mean": 0.08,
+      "residual_sd": 0.74,
+      "residual_variance": 0.548
+    },
+    "mock_l4_evidence.csv#row_id=E-L4-001": {
+      "row_id": "E-L4-001",
+      "candidate_smiles": "N#C[C@H]1C[C@@H](NCC(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+      "space_count": 4,
+      "neighbor_k": 12,
+      "lower_confidence_limit": 7.45,
+      "density_gap": 0.63,
+      "region_score": 0.86,
+      "conservative_p_value": 0.012
+    },
+    "mock_l5_evidence.csv#row_id=E-L5-001": {
+      "row_id": "E-L5-001",
+      "axis_id": "AXIS::aryl-SO2CF3",
+      "context_a": "present",
+      "feature_id": "D001::MolLogP",
+      "r_a": 0.72,
+      "r_b": -0.61,
+      "global_r": 0.08,
+      "n_a": 14,
+      "n_b": 14,
+      "fisher_z_difference": 4.07
+    },
+    "mock_l7_evidence.csv#row_id=E-L7-001": {
+      "row_id": "E-L7-001",
+      "series_a": "SERIES-A::aminopyrazole",
+      "series_b": "SERIES-B::aminopyrimidine",
+      "constant_a": "[*:1]c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+      "constant_b": "[*:1]c1ccc(Nc2ncc(C(N)=O)n2[C@H]2CCCC[C@@H]2C#N)cc1",
+      "common_r_count": 4,
+      "spearman_rho": -0.82,
+      "mean_difference": 0.18
+    },
+    "mock_l7_evidence.csv#row_id=E-L7-002": {
+      "row_id": "E-L7-002",
+      "series_a": "SERIES-C::neutral-linker",
+      "series_b": "SERIES-D::basic-linker",
+      "constant_a": "[*:1]c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+      "constant_b": "[*:1]c1ccc(Nc2ncc(C(N)=O)n2[C@H]2CCCC[C@@H]2C#N)cc1",
+      "common_r_count": 4,
+      "spearman_rho": 0.91,
+      "mean_difference": 0.74
+    }
+  },
+  "observations_by_finding": {
+    "FND|JAK2|MOCK|001": [
+      {
+        "compound_id": "CHEMBL3639983",
+        "endpoint_value": 8.15,
+        "effect": 0.88,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3640018\", \"CHEMBL3647725\", \"CHEMBL3647726\"]"
+      },
+      {
+        "compound_id": "CHEMBL3640018",
+        "endpoint_value": 7.6,
+        "effect": 0.835,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3647725\", \"CHEMBL3647726\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647725",
+        "endpoint_value": 8.4,
+        "effect": 0.79,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647726\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647726",
+        "endpoint_value": 7.77,
+        "effect": 0.745,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647730",
+        "endpoint_value": 7.89,
+        "effect": 0.7,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647736",
+        "endpoint_value": 9.0,
+        "effect": 0.655,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647738",
+        "endpoint_value": 8.4,
+        "effect": 0.61,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647739",
+        "endpoint_value": 7.26,
+        "effect": 0.565,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647740",
+        "endpoint_value": 7.09,
+        "effect": 0.52,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647743",
+        "endpoint_value": 6.75,
+        "effect": 0.47500000000000003,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647744",
+        "endpoint_value": 7.51,
+        "effect": 0.43000000000000005,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      },
+      {
+        "compound_id": "CHEMBL3647747",
+        "endpoint_value": 8.1,
+        "effect": 0.385,
+        "neighbor_order_compound_ids_json": "[\"CHEMBL3639983\", \"CHEMBL3640018\", \"CHEMBL3647725\"]"
+      }
+    ],
+    "FND|JAK2|MOCK|002": [
+      {
+        "comparison_group": "inside",
+        "effect": 2.04,
+        "pair_from_compound_id": "CHEMBL3699554",
+        "pair_to_compound_id": "CHEMBL3699558"
+      },
+      {
+        "comparison_group": "inside",
+        "effect": 1.76
+      },
+      {
+        "comparison_group": "inside",
+        "effect": 1.54
+      },
+      {
+        "comparison_group": "inside",
+        "effect": 1.31
+      },
+      {
+        "comparison_group": "inside",
+        "effect": 1.12
+      },
+      {
+        "comparison_group": "inside",
+        "effect": 1.02
+      },
+      {
+        "comparison_group": "inside",
+        "effect": 0.94
+      },
+      {
+        "comparison_group": "inside",
+        "effect": 0.88
+      },
+      {
+        "comparison_group": "outside",
+        "effect": -0.18
+      },
+      {
+        "comparison_group": "outside",
+        "effect": -0.12
+      },
+      {
+        "comparison_group": "outside",
+        "effect": -0.07
+      },
+      {
+        "comparison_group": "outside",
+        "effect": -0.04
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.0
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.02
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.05
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.08
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.11
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.15
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.19
+      },
+      {
+        "comparison_group": "outside",
+        "effect": 0.24
+      }
+    ],
+    "FND|JAK2|MOCK|003": [
+      {
+        "context_id": "SERIES-A",
+        "effect": 0.31
+      },
+      {
+        "context_id": "SERIES-B",
+        "effect": 0.42
+      },
+      {
+        "context_id": "SERIES-C",
+        "effect": 0.47
+      },
+      {
+        "context_id": "SERIES-D",
+        "effect": 0.53
+      },
+      {
+        "context_id": "SERIES-E",
+        "effect": 0.57
+      }
+    ],
+    "FND|JAK2|MOCK|004": [
+      {
+        "context_id": "SERIES-A",
+        "effect": -0.88
+      },
+      {
+        "context_id": "SERIES-B",
+        "effect": -0.46
+      },
+      {
+        "context_id": "SERIES-C",
+        "effect": -0.12
+      },
+      {
+        "context_id": "SERIES-D",
+        "effect": 0.35
+      },
+      {
+        "context_id": "SERIES-E",
+        "effect": 0.61
+      },
+      {
+        "context_id": "SERIES-F",
+        "effect": 0.97
+      }
+    ],
+    "FND|JAK2|MOCK|005": [
+      {
+        "block_id": "D012",
+        "compound_id": "CHEMBL3647725",
+        "endpoint_value": 8.4
+      },
+      {
+        "block_id": "D012",
+        "compound_id": "CHEMBL3647736",
+        "endpoint_value": 9.0
+      },
+      {
+        "block_id": "D012",
+        "compound_id": "CHEMBL3647739",
+        "endpoint_value": 7.26
+      },
+      {
+        "block_id": "D013",
+        "compound_id": "CHEMBL3647725",
+        "endpoint_value": 8.4
+      },
+      {
+        "block_id": "D013",
+        "compound_id": "CHEMBL3647736",
+        "endpoint_value": 9.0
+      },
+      {
+        "block_id": "D013",
+        "compound_id": "CHEMBL3647739",
+        "endpoint_value": 7.26
+      },
+      {
+        "block_id": "D014",
+        "compound_id": "CHEMBL3647725",
+        "endpoint_value": 8.4
+      },
+      {
+        "block_id": "D014",
+        "compound_id": "CHEMBL3647736",
+        "endpoint_value": 9.0
+      },
+      {
+        "block_id": "D014",
+        "compound_id": "CHEMBL3647739",
+        "endpoint_value": 7.26
+      },
+      {
+        "block_id": "D019",
+        "compound_id": "CHEMBL3647725",
+        "endpoint_value": 8.4
+      },
+      {
+        "block_id": "D019",
+        "compound_id": "CHEMBL3647736",
+        "endpoint_value": 9.0
+      },
+      {
+        "block_id": "D019",
+        "compound_id": "CHEMBL3647739",
+        "endpoint_value": 7.26
+      }
+    ],
+    "FND|JAK2|MOCK|006": [
+      {
+        "compound_id": "CHEMBL3639983",
+        "feature_value": 0.6500000000000004,
+        "endpoint_value": 8.15,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3640018",
+        "feature_value": 0.17999999999999966,
+        "endpoint_value": 7.6,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647725",
+        "feature_value": 1.0600000000000003,
+        "endpoint_value": 8.4,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647726",
+        "feature_value": 0.2699999999999996,
+        "endpoint_value": 7.77,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647730",
+        "feature_value": 0.4699999999999997,
+        "endpoint_value": 7.89,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647736",
+        "feature_value": 1.66,
+        "endpoint_value": 9.0,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647738",
+        "feature_value": 0.9000000000000004,
+        "endpoint_value": 8.4,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647739",
+        "feature_value": -0.1600000000000002,
+        "endpoint_value": 7.26,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647740",
+        "feature_value": -0.2500000000000001,
+        "endpoint_value": 7.09,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647743",
+        "feature_value": -0.75,
+        "endpoint_value": 6.75,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647744",
+        "feature_value": 0.08999999999999979,
+        "endpoint_value": 7.51,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647747",
+        "feature_value": 0.7599999999999997,
+        "endpoint_value": 8.1,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647748",
+        "feature_value": 0.21999999999999975,
+        "endpoint_value": 7.72,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647761",
+        "feature_value": 0.42999999999999966,
+        "endpoint_value": 7.85,
+        "context_role": "focal"
+      },
+      {
+        "compound_id": "CHEMBL3647762",
+        "feature_value": -0.019999999999999712,
+        "endpoint_value": 7.68,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647777",
+        "feature_value": -0.08000000000000007,
+        "endpoint_value": 7.58,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647783",
+        "feature_value": 0.19000000000000034,
+        "endpoint_value": 7.39,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647788",
+        "feature_value": 0.11000000000000018,
+        "endpoint_value": 7.55,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647794",
+        "feature_value": 0.1200000000000001,
+        "endpoint_value": 7.38,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647795",
+        "feature_value": 0.2099999999999999,
+        "endpoint_value": 7.37,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647797",
+        "feature_value": 0.19000000000000025,
+        "endpoint_value": 7.47,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647798",
+        "feature_value": 0.20999999999999996,
+        "endpoint_value": 7.29,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647801",
+        "feature_value": 0.25999999999999973,
+        "endpoint_value": 7.32,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647804",
+        "feature_value": 0.8900000000000005,
+        "endpoint_value": 6.77,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647807",
+        "feature_value": 0.2999999999999998,
+        "endpoint_value": 7.2,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647809",
+        "feature_value": -0.05999999999999968,
+        "endpoint_value": 7.64,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647810",
+        "feature_value": 0.20999999999999983,
+        "endpoint_value": 7.45,
+        "context_role": "complement"
+      },
+      {
+        "compound_id": "CHEMBL3647811",
+        "feature_value": -0.20000000000000018,
+        "endpoint_value": 7.7,
+        "context_role": "complement"
+      }
+    ],
+    "FND|JAK2|MOCK|007": [
+      {
+        "target_id": "R-F",
+        "effect": -1.299999999999999,
+        "endpoint_left_value": 8.7,
+        "endpoint_value": 7.4,
+        "compound_ids_a_json": "[\"CHEMBL3639983\"]",
+        "compound_ids_b_json": "[\"CHEMBL3640018\"]"
+      },
+      {
+        "target_id": "R-Cl",
+        "effect": -0.29999999999999893,
+        "endpoint_left_value": 8.2,
+        "endpoint_value": 7.9,
+        "compound_ids_a_json": "[\"CHEMBL3647783\"]",
+        "compound_ids_b_json": "[\"CHEMBL3647794\"]"
+      },
+      {
+        "target_id": "R-CF3",
+        "effect": 0.7000000000000011,
+        "endpoint_left_value": 7.6,
+        "endpoint_value": 8.3,
+        "compound_ids_a_json": "[\"CHEMBL3647761\"]",
+        "compound_ids_b_json": "[\"CHEMBL3647762\"]"
+      },
+      {
+        "target_id": "R-SO2CF3",
+        "effect": 1.6000000000000005,
+        "endpoint_left_value": 7.2,
+        "endpoint_value": 8.8,
+        "compound_ids_a_json": "[\"CHEMBL3647725\"]",
+        "compound_ids_b_json": "[\"CHEMBL3647736\"]"
+      }
+    ],
+    "FND|JAK2|MOCK|008": [
+      {
+        "target_id": "R-F",
+        "effect": 0.7000000000000002,
+        "endpoint_left_value": 7.1,
+        "endpoint_value": 7.8,
+        "compound_ids_a_json": "[\"CHEMBL3647743\"]",
+        "compound_ids_b_json": "[\"CHEMBL3647744\"]"
+      },
+      {
+        "target_id": "R-Cl",
+        "effect": 0.6999999999999993,
+        "endpoint_left_value": 7.4,
+        "endpoint_value": 8.1,
+        "compound_ids_a_json": "[\"CHEMBL3647788\"]",
+        "compound_ids_b_json": "[\"CHEMBL3647795\"]"
+      },
+      {
+        "target_id": "R-CF3",
+        "effect": 0.7999999999999998,
+        "endpoint_left_value": 7.7,
+        "endpoint_value": 8.5,
+        "compound_ids_a_json": "[\"CHEMBL3647777\"]",
+        "compound_ids_b_json": "[\"CHEMBL3647801\"]"
+      },
+      {
+        "target_id": "R-SO2CF3",
+        "effect": 0.8000000000000007,
+        "endpoint_left_value": 8.0,
+        "endpoint_value": 8.8,
+        "compound_ids_a_json": "[\"CHEMBL3647730\"]",
+        "compound_ids_b_json": "[\"CHEMBL3647738\"]"
+      }
+    ]
+  },
+  "compound_smiles": {
+    "CHEMBL3639983": "CNC(=O)c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3640018": "CN[C@@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647725": "CS(=O)(=O)CCNC1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647726": "COCCN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647730": "CN(C)S(=O)(=O)CCNC1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647736": "N#C[C@H]1CC(NCC(=O)O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647738": "N#C[C@H]1C[C@@H](NCC(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647739": "N#C[C@H]1C[C@@H](NCCC(F)(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647740": "N#C[C@H]1C[C@H](NCCC(F)(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647743": "CN(CCC(F)(F)F)[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647744": "CN(CCC(F)(F)F)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647747": "CC(C)N[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647748": "CC(C)N[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647761": "CN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647762": "CN(C)[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647777": "CC(C)(C)N[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647783": "CC(C)(CO)N[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647788": "CC(C)(C)N[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccccc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647794": "CC(C)(O)CN[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647795": "COCC(C)(C)N[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647797": "N#C[C@H]1C[C@@H](NCC(F)(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3647798": "N#C[C@H]1C[C@H](NCC(F)(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3647801": "COC(C)(C)CN[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647804": "COCC(C)(C)N[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccccc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647807": "COCC(C)(C)N(C)[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647809": "COCCN[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647810": "COCC(C)N[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647811": "COCCN(C)[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647812": "COCC(C)N(C)[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647813": "N#C[C@H]1C[C@@H](N)CCC1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3647819": "CC(C)CN[C@H]1CC[C@@H](n2cc(C(N)=O)c(Nc3ccc(C(F)(F)F)cc3)n2)[C@H](C#N)C1",
+    "CHEMBL3647834": "CC(C)(c1ccc(Nc2nn([C@H]3CC[C@@](C)(O)C[C@@H]3C#N)cc2C(N)=O)cc1)C(O)C(F)(F)F",
+    "CHEMBL3647835": "CC(C)(c1ccc(Nc2nn([C@H]3CC[C@](C)(O)C[C@@H]3C#N)cc2C(N)=O)cc1)C(O)C(F)(F)F",
+    "CHEMBL3647836": "C=C[C@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647837": "C[C@@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)c(F)c3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647838": "C[C@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc([C@](C)(O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647839": "C[C@@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc([C@](C)(O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647840": "C[C@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647841": "C[C@@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc([C@@](C)(O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647843": "C[C@@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647845": "C[C@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc([C@@](C)(O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647846": "C=C[C@@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647847": "C[C@]1(O)CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)c(F)c3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647848": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(OC(F)(F)F)cc2)n1",
+    "CHEMBL3647849": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3647850": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)c(F)c2)n1",
+    "CHEMBL3647851": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(C(F)(F)F)cc2)n1",
+    "CHEMBL3647852": "N#Cc1ccc(Nc2nn([C@H]3CC[C@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3647853": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(OC(F)F)cc2)n1",
+    "CHEMBL3647856": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc([C@H](O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647857": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc([C@@H](O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647858": "C[C@](O)(c1ccc(Nc2nn([C@H]3CC[C@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1)C(F)(F)F",
+    "CHEMBL3647859": "C[C@@](O)(c1ccc(Nc2nn([C@H]3CC[C@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1)C(F)(F)F",
+    "CHEMBL3647861": "CC(C)(c1ccc(Nc2nn([C@H]3CC[C@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1)C(O)C(F)(F)F",
+    "CHEMBL3647864": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)c(Cl)c2)n1",
+    "CHEMBL3647865": "CC(C)(CF)c1ccc(Nc2nn([C@H]3CC[C@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3647869": "CC(C)NC(=O)O[C@@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647871": "CNC(=O)O[C@@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647872": "CCNC(=O)O[C@@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647873": "CC(C)NC(=O)O[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647874": "CNC(=O)O[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647883": "N#C[C@@H]1C[C@H](C(=O)NCC(F)(F)F)CCC1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3647895": "N#C[C@H]1C[C@@H](C(=O)NCC(F)(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3647908": "CC(C)(C)NC(=O)[C@@H]1CC[C@@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@H](C#N)C1",
+    "CHEMBL3647911": "[C-]#[N+][C@H]1C[C@@H](C(C)(C)O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3647913": "CS(=O)(=O)N[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647914": "CS(=O)(=O)N[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647915": "CS(=O)(=O)N[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3647916": "CN([C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1)S(C)(=O)=O",
+    "CHEMBL3647917": "CN([C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1)S(C)(=O)=O",
+    "CHEMBL3647918": "[C-]#[N+][C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(/C=N/OC)cc2)n1",
+    "CHEMBL3647919": "[C-]#[N+][C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(/C(C)=N/OC)cc2)n1",
+    "CHEMBL3647920": "[C-]#[N+][C@H]1C[C@H](OC(C)=O)[C@@H](O)C[C@@H]1n1cc(C(N)=O)c(Nc2ccc(C(F)(F)F)cc2)n1",
+    "CHEMBL3647921": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647922": "N#C[C@@H]1CCCC[C@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)F)cc2)n1",
+    "CHEMBL3647923": "N#C[C@@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)CC(F)(F)F)cc2)n1",
+    "CHEMBL3647924": "N#C[C@H]1C[C@H](O)CCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647925": "CC(C)(C)OC(=O)N[C@@H]1CC[C@H](C#N)C(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)C1",
+    "CHEMBL3647928": "[C-]#[N+][C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(CC(=O)O)cc2)n1",
+    "CHEMBL3647930": "CC1(C)CC[C@H](C#N)[C@@H](n2cc(C(N)=O)c(Nc3ccccc3)n2)C1",
+    "CHEMBL3647932": "N#C[C@@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3647933": "C[C@]1(C#N)CC[C@H](F)C[C@@H]1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3650673": "N#C[C@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3650674": "CN(C)[C@@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3650677": "CS(=O)(=O)N[C@@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@H](C#N)C1",
+    "CHEMBL3650678": "CS(=O)(=O)c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3650679": "CS(=O)(=O)c1ccc(Nc2nn([C@H]3CCCC[C@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3650680": "N#C[C@@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3650683": "CS(=O)(=O)c1ccc(Nc2nn([C@@H]3CCCC[C@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3650684": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3699460": "N#C[C@@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3699463": "[C-]#[N+][C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3699464": "N#C[C@H]1C[C@H](O)CCC1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3699468": "N#C[C@H]1CCC[C@@H](O)C1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3699469": "N#C[C@H]1CCC[C@H](O)C1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3699470": "N#C[C@H]1C(n2cc(C(N)=O)c(Nc3ccccc3)n2)CCC[C@H]1O",
+    "CHEMBL3699471": "N#C[C@@H]1C(n2cc(C(N)=O)c(Nc3ccccc3)n2)CCC[C@H]1O",
+    "CHEMBL3699472": "N#C[C@H]1C(n2cc(C(N)=O)c(Nc3ccccc3)n2)CCC[C@@H]1O",
+    "CHEMBL3699473": "N#C[C@@H]1C(n2cc(C(N)=O)c(Nc3ccccc3)n2)CCC[C@@H]1O",
+    "CHEMBL3699474": "N#C[C@H]1CC[C@H](O)CC1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3699475": "N#C[C@H]1CC[C@@H](O)CC1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3699476": "CS(=O)(=O)c1ccc(Nc2nn(C3CCCC[C@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699477": "CS(=O)(=O)c1ccc(Nc2nn(C3CCCCC3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699478": "[C-]#[N+][C@@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(CC(=O)O)cc2)n1",
+    "CHEMBL3699479": "N#C[C@H]1C[C@H](O)CCC1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3699480": "N#C[C@H]1C[C@@H](O)CCC1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3699486": "CC(C)(C)OC(=O)[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3699487": "COC(=O)[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3699488": "N#C[C@@H]1CC(CO)CCC1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3699489": "N#C[C@@H]1CC(CN)CCC1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3699490": "CN(C)CC1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@H](C#N)C1",
+    "CHEMBL3699491": "CC1(C)CC[C@@H](C#N)[C@@H](n2cc(C(N)=O)c(Nc3ccccc3)n2)C1",
+    "CHEMBL3699492": "CC(C)(C)OC(=O)NC1CC[C@H](C#N)C(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)C1",
+    "CHEMBL3699493": "CC(C)(C)OC(=O)NC1CC[C@@H](C#N)C(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)C1",
+    "CHEMBL3699494": "CC1CCC(C#N)C(n2cc(C(N)=O)c(Nc3ccccc3)n2)C1",
+    "CHEMBL3699497": "CC(C)(C)OC(=O)NCC1CC[C@H](C#N)[C@@H](n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)C1",
+    "CHEMBL3699498": "CC(C)(C)OC(=O)C1CC[C@H](C#N)C(n2cc(C(N)=O)c(Nc3ccccc3)n2)C1",
+    "CHEMBL3699499": "N#C[C@H]1C[C@@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3699500": "N#C[C@H]1C[C@H](O)CCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)F)cc2)n1",
+    "CHEMBL3699502": "N#C[C@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3699504": "CC(C)(C)OC(=O)C1CCC(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)C(C#N)C1",
+    "CHEMBL3699506": "N#Cc1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699509": "CS(=O)(=O)c1ccc(Nc2nn(C3CCCC[C@@H]3C#N)cc2C(N)=O)cc1F",
+    "CHEMBL3699510": "N#C[C@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)F)cc2)n1",
+    "CHEMBL3699511": "CCS(=O)(=O)c1ccc(Nc2nn(C3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699513": "N#C[C@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)CC(F)(F)F)cc2)n1",
+    "CHEMBL3699515": "CNC(=O)c1ccc(Nc2nn([C@H]3CCCC[C@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699516": "N#C[C@@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3699517": "N#Cc1ccc(Nc2nn([C@H]3CCCC[C@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699518": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)c(CO)c2)n1",
+    "CHEMBL3699519": "N#C[C@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3699526": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(C=O)cc2)n1",
+    "CHEMBL3699527": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Br)cc2)n1",
+    "CHEMBL3699528": "CC(=O)c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699529": "CC(C)(c1ccc(Nc2nn([C@@H]3CCCC[C@H]3C#N)cc2C(N)=O)cc1)[C@H](O)C(F)(F)F",
+    "CHEMBL3699530": "CC(C)(c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1)[C@H](O)C(F)(F)F",
+    "CHEMBL3699531": "CC(C)(c1ccc(Nc2nn([C@@H]3CCCC[C@H]3C#N)cc2C(N)=O)cc1)[C@@H](O)C(F)(F)F",
+    "CHEMBL3699532": "CC(C)(c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1)[C@@H](O)C(F)(F)F",
+    "CHEMBL3699533": "CC(C)(c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1F)[C@H](O)C(F)(F)F",
+    "CHEMBL3699534": "CC(C)(c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1F)[C@@H](O)C(F)(F)F",
+    "CHEMBL3699537": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc([C@@H](O)C(F)(F)F)cc2)n1",
+    "CHEMBL3699541": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3699544": "CC(C)(C(=O)O)c1ccc(Nc2nn([C@@H]3CCCC[C@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699546": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(CN)cc2)n1",
+    "CHEMBL3699550": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)c(Cl)c2)n1",
+    "CHEMBL3699552": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2cc(F)cc(Cl)c2)n1",
+    "CHEMBL3699553": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)c(F)c2)n1",
+    "CHEMBL3699554": "CC(C)(C(=O)O)c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699556": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2cc(Cl)cc(Cl)c2)n1",
+    "CHEMBL3699558": "CC(C)(C(=O)NCC(F)(F)F)c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3699559": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(F)c(Cl)c2)n1",
+    "CHEMBL3702885": "N#C[C@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)F)c(CO)c2)n1",
+    "CHEMBL3702886": "N#C[C@H]1CCCCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)CF)cc2)n1",
+    "CHEMBL3702914": "CC(C)NS(=O)(=O)c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3702919": "COCCNS(=O)(=O)c1ccc(Nc2nn([C@H]3CCCC[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3702921": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(F)c(F)c2)n1",
+    "CHEMBL3702924": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(OC(F)F)cc2)n1",
+    "CHEMBL3702925": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)cc2)n1",
+    "CHEMBL3702926": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(C(F)(F)F)cc2)n1",
+    "CHEMBL3702927": "N#C[C@H]1CCCC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(OC(F)(F)F)cc2)n1",
+    "CHEMBL3702928": "C[C@]1(C#N)CC[C@H](O)C[C@@H]1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3702929": "C[C@]1(C#N)CC[C@@H](F)C[C@@H]1n1cc(C(N)=O)c(Nc2ccc(F)cc2)n1",
+    "CHEMBL3702934": "N#C[C@H]1CC(F)CCC1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3702935": "N#C[C@H]1CCCC(F)[C@@H]1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3702936": "N#C[C@@H]1CCCC(F)[C@@H]1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3702937": "[C-]#[N+][C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(OC(F)(F)F)cc2)n1",
+    "CHEMBL3702940": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)c(F)c2)n1",
+    "CHEMBL3702941": "N#Cc1ccc(Nc2nn([C@H]3CC[C@@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3702942": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(C(F)(F)F)cc2)n1",
+    "CHEMBL3702943": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)c(Cl)c2)n1",
+    "CHEMBL3702944": "C[C@](O)(c1ccc(Nc2nn([C@H]3CC[C@@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1)C(F)(F)F",
+    "CHEMBL3702945": "CC(C)(CF)c1ccc(Nc2nn([C@H]3CC[C@@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3702947": "COC(C)(C)c1ccc(Nc2nn([C@H]3CC[C@@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3702949": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc([C@H](O)C(F)(F)F)cc2)n1",
+    "CHEMBL3702951": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc([C@@H](O)C(F)(F)F)cc2)n1",
+    "CHEMBL3702953": "C[C@@](O)(c1ccc(Nc2nn([C@H]3CC[C@@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1)C(F)(F)F",
+    "CHEMBL3702955": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(C(F)(F)F)c(F)c2)n1",
+    "CHEMBL3702956": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(OC(F)F)cc2)n1",
+    "CHEMBL3702957": "CS(=O)(=O)c1ccc(Nc2nn([C@H]3CC[C@@H](O)C[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3702958": "N#C[C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccccc2)n1",
+    "CHEMBL3702970": "CN(C)[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3702971": "CN[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3702972": "CCNC1CCC(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3702973": "CNC1CCC(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3702974": "CN[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3702976": "N#C[C@H]1C[C@@H](NCC(F)(F)F)CCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3702977": "N#C[C@H]1C[C@@H](NCC(F)(F)F)CCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)F)cc2)n1",
+    "CHEMBL3702979": "N#C[C@H]1C[C@@H](NCC(F)F)CCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3702980": "N#C[C@H]1CC(NCCO)CCC1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3702981": "COCCN[C@H]1CCC(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3702985": "CC(C)(C)N[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3702986": "CN([C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1)C(C)(C)C",
+    "CHEMBL3703017": "CN(C)[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)c(F)c3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703018": "CN[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)c(F)c3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703019": "CN[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703020": "CN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)c(F)c3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703021": "CN[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703022": "CN[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)c(F)c3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703030": "CC(C)(C)N[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc([C@H](O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703032": "CN(C)[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(OC(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703039": "N#C[C@H]1C[C@@H](NCC(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(F)c(Cl)c2)n1",
+    "CHEMBL3703057": "CN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(OC(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703061": "N#C[C@H]1C[C@@H](NCC(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(Cl)c(F)c2)n1",
+    "CHEMBL3703065": "CN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703066": "CN(C)[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(OC(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703073": "CN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(OC(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703076": "N#C[C@H]1C[C@@H](NCC(F)(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)(F)F)cc2)n1",
+    "CHEMBL3703082": "CN(CC(F)F)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)(F)F)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703084": "N#Cc1ccc(Nc2nn([C@H]3CC[C@H](NCC(F)F)C[C@@H]3C#N)cc2C(N)=O)cc1",
+    "CHEMBL3703085": "CN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703089": "N#C[C@H]1CC(NCC(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)F)cc2)n1",
+    "CHEMBL3703092": "CN(C)[C@@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccc(Cl)cc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3703093": "N#C[C@H]1C[C@@H](NCC(F)F)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(S(=O)(=O)C(F)F)cc2)n1",
+    "CHEMBL3703100": "CN(C)[C@H]1CC[C@H](n2cc(C(N)=O)c(Nc3ccccc3)n2)[C@@H](C#N)C1",
+    "CHEMBL3894605": "COCCNC1CCC(CC#N)(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)CC1",
+    "CHEMBL3909552": "N#CCC1(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)CCC(NCCF)CC1",
+    "CHEMBL3911561": "CS(=O)(=O)c1ccc(Nc2nn(C3(CC#N)CCCCC3)cc2C(N)=O)cc1",
+    "CHEMBL3911564": "CNC1CCC(CC#N)(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)CC1",
+    "CHEMBL3912624": "CC(C)(C)OC(=O)NC1CCC(CC#N)(n2cc(C(N)=O)c(Nc3ccccc3)n2)CC1",
+    "CHEMBL3917223": "N#CC[C@]1(n2cc(C(N)=O)c(Nc3ccccc3)n2)CC[C@H](C(=O)NCC(F)(F)F)CC1",
+    "CHEMBL3922061": "N#CC[C@]1(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)F)cc3)n2)CC[C@@H](N)CC1",
+    "CHEMBL3922614": "CN(CCS(C)(=O)=O)C1CCC(CC#N)(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)CC1",
+    "CHEMBL3923655": "N#CCC1(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)CCC(NCC(F)(F)F)CC1",
+    "CHEMBL3929898": "N#CCC1(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)CCC(NCCO)CC1",
+    "CHEMBL3936267": "N#CCC1(n2cc(C(N)=O)c(Nc3ccc(F)cc3)n2)CCC(NCC(F)F)CC1",
+    "CHEMBL3939566": "CC(C)(C)OC(=O)C1CCC(CC#N)(n2cc(C(N)=O)c(Nc3ccccc3)n2)CC1",
+    "CHEMBL3940414": "N#CCC1(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)F)cc3)n2)CCC(NCC(F)F)CC1",
+    "CHEMBL3947540": "N#CCC1(n2cc(C(N)=O)c(Nc3ccc(S(=O)(=O)C(F)F)cc3)n2)CCC(NCC(F)(F)F)CC1",
+    "CHEMBL3967827": "N#CCC1(n2cc(C(N)=O)c(Nc3ccccc3)n2)CCCCC1",
+    "CHEMBL3983711": "N#CC[C@]1(n2cc(C(N)=O)c(Nc3ccccc3)n2)CC[C@@H](C(=O)NCC(F)(F)F)CC1",
+    "CHEMBL5950030": "[C-]#[N+][C@H]1C[C@H](O)CC[C@@H]1n1cc(C(N)=O)c(Nc2ccc(C(F)(F)F)cc2)n1"
+  },
+  "fragment_smiles": {
+    "R-F": "[*:1]F",
+    "R-Cl": "[*:1]Cl",
+    "R-CF3": "[*:1]C(F)(F)F",
+    "R-SO2CF3": "[*:1]S(=O)(=O)C(F)(F)F"
+  }
+}
