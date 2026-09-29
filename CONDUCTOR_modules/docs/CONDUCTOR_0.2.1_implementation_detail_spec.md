@@ -247,6 +247,9 @@ scoring:
   statistical_strength_min: 0.50
   robustness_min: 0.70
   display_k: 10
+report:
+  finding_page_k: 20
+  overview_detail_k: 10
 deep_dive:
   max_depth: 3
   max_children: 3
@@ -894,8 +897,10 @@ if any validation fails: fail Phase 6, keep invalid draft for diagnosis
 
 自動修正しない。不一致には narrative ID、token、citation ID、table_ref、expected/actual を含める。
 
-P06は機械監査用JSON/JSONLに加えて、自己完結型`report.html`と、`scoring.display_k`件の重要Findingを
-対象とする`finding_reports/<finding_id>.html`を生成する。個別HTMLは文章・表だけでは受入不可とし、
+P06は機械監査用JSON/JSONLに加えて、自己完結型`report.html`と、上位`report.finding_page_k=20`件の
+`finding_reports/<finding_id>.html`を生成する。表紙では上位`report.overview_detail_k=10`件を図と説明付きで
+詳述し、11～20位はタイトルと個別HTMLへのlinkだけを示す。`scoring.display_k=10`はscoring受入gateであり、
+レポート生成数とは分離する。個別HTMLは文章・表だけでは受入不可とし、
 次のLens固有visualをinline SVGで必須とする。
 
 - L1b: compound単位のEndpoint対局所誤差改善図、最大改善compoundと保存済み距離順近傍の2D構造。

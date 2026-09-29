@@ -1084,11 +1084,15 @@ P06は全入力manifestからLens telemetryを自動集約し、`estimate/actual
 
 ### 15.5 M-36: Finding別の詳細HTML
 
-一覧表だけでは解析知見を人間へ伝達できないため、P06は`scoring.display_k`で指定された重要Findingごとに
+一覧表だけでは解析知見を人間へ伝達できないため、P06は上位`report.finding_page_k=20`件の重要Findingごとに
 `finding_reports/<finding_id>.html`を生成し、manifestへ`finding_report_html`として登録する。個別ページは
 Lensの問い、具体的claim、効果量とsupport、全testのp/q、score内訳、交絡・自明性評価、deep-dive状態、
 反証条件、entity、引用Evidenceを分けて示す。説明は検証済みartifactの決定論的整形に限定し、追加LLM call、
 外部知識による機序推定、新規解析を行わない。
+
+全体`report.html`では上位`report.overview_detail_k=10`件を図と説明付きで詳述し、11～20位はタイトルと
+個別HTMLへのlinkだけを示す。`scoring.display_k=10`はScoring Nodeの最低reportable件数gateとして維持し、
+レポート生成数と混同しない。
 
 標準件数を超えるFindingは、人間がFinding IDを指定したときだけread-only exporterでRun root外へ追加出力する。
 この経路もP06 manifest、正本artifact、引用Evidenceのhashを検証し、既存ファイルを上書きしない。
@@ -1097,7 +1101,8 @@ Lensの問い、具体的claim、効果量とsupport、全testのp/q、score内�
 
 - 全体HTMLの主要知見から対応する個別HTMLへ移動できる。
 - 個別HTMLがFindingのtest、score、deep dive、falsification、引用行を表示する。
-- 標準生成数が`min(scoring.display_k, reportable Finding数)`と一致する。
+- 標準生成数が`min(report.finding_page_k, reportable Finding数)`と一致する。
+- 全体HTMLの詳細card数が`min(report.overview_detail_k, reportable Finding数)`と一致し、残る11～20位はタイトルだけを表示する。
 - 任意の既存Finding IDを指定して、解析やLLMを再実行せず個別HTMLを追加生成できる。
 
 2026-09-22、repository全体の回帰試験151件が合格した。warningは既知の小規模E2E fixtureにおける

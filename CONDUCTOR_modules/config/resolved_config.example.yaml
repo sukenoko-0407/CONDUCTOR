@@ -69,6 +69,10 @@ scoring:
   robustness_min: 0.70
   display_k: 10
 
+report:
+  finding_page_k: 20
+  overview_detail_k: 10
+
 deep_dive:
   max_depth: 3
   max_children: 3

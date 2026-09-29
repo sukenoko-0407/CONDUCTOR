@@ -24,7 +24,7 @@ Status: **0.2.1 正式運用テンプレート。**
 - 既存Run rootを上書きしない。再開時だけ、同じRun IDと同じRun rootを使用する。
 - `workers`はRuntimeと全子processが使用できる論理CPUコア数の**上限**であり、全工程が常時その数を占有する指定ではない。重いDescriptionは上限内で並列化し、軽量処理や直列契約の処理は必要なコアだけを使う。
 - Phase 5/6を実行するRunでは、`llm.command` が設定済みであることを開始前に確認する。fallback文章は生成しない。
-- 新規RunのP06は、知見を先に示す`report.html`と上位`scoring.display_k`件の`finding_reports/<finding_id>.html`を標準成果物として生成し、artifact manifestへ登録する。個別HTMLにはLens固有の科学図を必須とし、図の入力不足を文章だけで代替しない。
+- 新規RunのP06は、知見を先に示す`report.html`と上位20件の`finding_reports/<finding_id>.html`を標準成果物として生成し、artifact manifestへ登録する。表紙では1～10位を図と説明付きで詳述し、11～20位はタイトルと個別HTMLへのlinkだけを示す。個別HTMLにはLens固有の科学図を必須とし、図の入力不足を文章だけで代替しない。
 - CONDUCTORと全決定論的計算はUbuntu CPU機で実行し、LLM推論だけを承認済みの別GPU機上の`vllm serve`へ依頼する。`CONDUCTOR_modules/local_llm_provider/provider.py`はCPU機上で動作する。開発機上のfixture testは通信契約の確認だけであり、実modelの3タスクprobeを代替しない。
 - Evidenceを承認済みの内部vLLM endpoint以外へ送らない。外部APIやWeb検索を使用しない。
 
@@ -273,7 +273,7 @@ memory_mb: <MEMORY_MB>
 
 同じProgramのDescription Databaseを再利用し、同一compound ID・異canonical SMILESはfail-fastとしてください。構造依存資産は契約とhashが一致するときだけ再利用し、Endpoint依存のEndpoint table、検定、score、deep dive、reportは新規に計算してください。旧RunのFinding、p/q値、narrativeを流用しないでください。
 
-P06では`report.html`と上位`scoring.display_k`件の個別HTMLを標準出力してください。完了時に再利用した資産、再計算した資産、Description別hit/miss、Run状態、引用検証結果、全体HTMLと個別HTML directoryの絶対pathおよび個別HTML件数を報告してください。
+P06では`report.html`と上位20件の個別HTMLを標準出力し、表紙では1～10位だけを詳述してください。完了時に再利用した資産、再計算した資産、Description別hit/miss、Run状態、引用検証結果、全体HTMLと個別HTML directoryの絶対pathおよび個別HTML件数を報告してください。
 ```
 
 ### 3.6 較正データでの正式受入Run
@@ -293,7 +293,7 @@ memory_mb: <MEMORY_MB>
 
 既存Description Databaseは互換recordだけを再利用してください。閾値を較正結果へ合わせるために変更せず、現行設定のままL2b、L5、L1b、全lens、scoring K=10、deep dive、report、引用検証まで実行してください。
 
-P06では`report.html`と上位`scoring.display_k`件の個別HTMLを標準出力してください。実装計画書8章の受入基準と比較し、L2b/L5/L1b enrichment、変換3クラスのpair数、文脈数、翻訳AUC、Finding件数、LLM call失敗率を表で報告してください。全体HTMLと個別HTML directoryの絶対pathおよび個別HTML件数も報告してください。基準を外れた場合は実装不良とデータ差の可能性を分けて診断し、閾値を自動調整しないでください。
+P06では`report.html`と上位20件の個別HTMLを標準出力し、表紙では1～10位だけを詳述してください。実装計画書8章の受入基準と比較し、L2b/L5/L1b enrichment、変換3クラスのpair数、文脈数、翻訳AUC、Finding件数、LLM call失敗率を表で報告してください。全体HTMLと個別HTML directoryの絶対pathおよび個別HTML件数も報告してください。基準を外れた場合は実装不良とデータ差の可能性を分けて診断し、閾値を自動調整しないでください。
 ```
 
 ### 3.7 中断Runの安全な再開
@@ -317,7 +317,7 @@ CONDUCTOR 0.2.1 Runをread-onlyで監査してください。
 Project root: <PROJECT_ROOT>
 Run root: <RUN_ROOT>
 
-runtime state、全artifact manifest、input/config/code hash、Finding schema、test値、entity ID、table_ref、row_id、narrative内の[[citation_id]]、数値と引用行の一致を検証してください。P06のreport.htmlと標準件数のfinding_reports/*.htmlがmanifestに登録され、report.json/final_findings/citation_validationと整合することも確認してください。
+runtime state、全artifact manifest、input/config/code hash、Finding schema、test値、entity ID、table_ref、row_id、narrative内の[[citation_id]]、数値と引用行の一致を検証してください。P06のreport.htmlと上位20件（reportable Findingが20件未満なら全件）のfinding_reports/*.htmlがmanifestに登録され、表紙では1～10位だけが詳述され、11～20位がタイトルと個別page linkだけであること、report.json/final_findings/citation_validationと整合することも確認してください。
 
 個別HTMLについては、文章や表の存在だけで合格にしないでください。各主要FindingにLens固有のinline SVGがあり、L1bは局所近傍、L2aはMMP fragmentと代表実測pairの変換前後2D構造、L2bはfragmentと系列別寄与、L4は候補構造・source・近傍分布、L5は文脈内外の散布図、L7は両core・共通R基・代表実測化合物pair・系列間対応図を含むことを確認してください。構造図がRDKit実構造であること、図の`score_observations`・compounds・mmp_databaseがP06 manifestのhash検証済み入力へ遡れること、外部画像・script・network resourceがないことも確認してください。図が必要な個別HTMLがprose-onlyの場合は正式受入不可としてください。
 
@@ -336,7 +336,7 @@ Description Database、Run state、report、Findingを変更せず、Runが正�
 
 既に3.8で正式受入済みだが、P06実行時点ではLens別の個別HTMLが未実装だったRunには、
 `CONDUCTOR_0.2.1_R1_HTML_report_export_prompt.md`を1回だけ使用する。P06、解析、LLM callは再実行せず、
-Runtimeとhashで検証した既存成果物からRun root外へ全体HTMLと標準件数の個別HTMLを出力する。
+Runtimeとhashで検証した既存成果物からRun root外へ全体HTMLと上位20件の個別HTMLを出力する。
 今後の新規RunではP06が同等のHTMLを標準生成するため、この追加手順は不要である。
 
 ## 4. 特別対応プロンプト

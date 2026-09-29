@@ -1,50 +1,83 @@
-# CONDUCTOR documentation
+# CONDUCTOR 0.2.1 文書案内
 
-CONDUCTOR 0.2.1 の設計・実装文書です。段階11と実装適合性残件まで完了し、正式較正と offline provider を用いた本番相当確認が残っています。現在地は [`CONDUCTOR_0.2.1_stage11_implementation_report.md`](CONDUCTOR_0.2.1_stage11_implementation_report.md) を参照してください。
+このdirectoryには、現行仕様、運用手順、設計根拠、実装・受入履歴が同居しています。
+古いcheckpointや質問記録を現行運用指示として使わないよう、以下の区分で参照してください。
 
-まず [`CONDUCTOR_0.2.1_specification_overview.md`](CONDUCTOR_0.2.1_specification_overview.md) を読んでください。全体像と決定事項はそこにあります。
+## まず読む
 
-実行前に用意する Endpoint registry は [`../schemas/endpoint_registry.example.json`](../schemas/endpoint_registry.example.json) を複製して実データに合わせて編集してください。全 JSON Schema と具体例の区別、利用者が用意するもの、Runtime が生成するものは [`../schemas/README.md`](../schemas/README.md) にまとめています。
+| 読者 | 文書 | 目的 |
+|---|---|---|
+| 利用者 | [利用者ガイド](CONDUCTOR_0.2.1_user_guide.md) | 入力準備から受入・レポート確認まで |
+| 全員 | [仕様概要書](CONDUCTOR_0.2.1_specification_overview.md) | CONDUCTORが保証すること／しないこと |
+| 運用担当 | [運用プロンプト集](prompt/CONDUCTOR_0.2.1_prompts.md) | Preflight、本番Run、再開、監査 |
+| 結果利用者 | [HTMLレポートガイド](CONDUCTOR_0.2.1_reporting_guide.md) | Finding順位、図、Evidenceの読み方 |
+| 実装担当 | [実装詳細仕様書](CONDUCTOR_0.2.1_implementation_detail_spec.md) | artifact、Runtime、各Phaseの契約 |
 
-**実装を担当する方**は [`CONDUCTOR_0.2.1_implementer_brief.md`](CONDUCTOR_0.2.1_implementer_brief.md) から読んでください。読む順序、着手前に作る文書、守るべき制約がまとまっています。
+## システムを短時間で説明する資料
 
-## 各論
+- [処理プロセス図](images/CONDUCTOR_0.2.1_process_overview.png)
+- [説明スライド](CONDUCTOR_0.2.1_overview_slides.pptx)
+- [全Lens HTML例](report_examples/JAK2_all_lens_final_mock/index.html)
+
+HTML例の数値はレイアウト確認用mockです。本番Findingではありません。
+
+## 現行の正本文書
+
+| 文書 | 位置づけ |
+|---|---|
+| [仕様概要書](CONDUCTOR_0.2.1_specification_overview.md) | 最上位の決定事項 |
+| [実装計画書](CONDUCTOR_0.2.1_implementation_plan.md) | 0.2.1実装の工程と受入基準 |
+| [実装詳細仕様書](CONDUCTOR_0.2.1_implementation_detail_spec.md) | 現行コード契約 |
+| [R1修正計画書](CONDUCTOR_0.2.1_R1_remediation_plan.md) | 本番試験で確定した修正事項 |
+| [R1実装詳細計画](CONDUCTOR_0.2.1_R1_implementation_detail_plan.md) | R1修正の実装単位と試験 |
+| [本番正式受入報告](CONDUCTOR_0.2.1_R1_production_acceptance_report.md) | 受入済みRunの実測結果 |
+
+正本文書間で矛盾がある場合は、仕様概要書の最新決定事項、R1修正計画、実装詳細仕様の順に確認し、
+それでも決まらない事項は独断で補完せず質問文書へ記録します。
+
+## 設計解説
 
 | 文書 | 内容 |
 |---|---|
-| [`design/calibration_results.md`](design/calibration_results.md) | **実データ較正結果。全パラメータの根拠** |
-| [`design/endpoint_model.md`](design/endpoint_model.md) | Endpoint レジストリ、欠測パターン診断、MPO 拡張点、許容性 |
-| [`design/feature_space_roles.md`](design/feature_space_roles.md) | 特徴量空間の二役割、局所平坦性、条件付き平坦性、文脈の翻訳 |
-| [`design/discovery_lenses.md`](design/discovery_lenses.md) | 6つの発見レンズ（L1〜L6）の詳細仕様 |
-| [`design/finding_model.md`](design/finding_model.md) | Finding スキーマ、型、反証条件、状態、ラベル、引用規則 |
-| [`design/candidate_generation.md`](design/candidate_generation.md) | 条件の語彙、探索深度、段階A/B/C、スコアリング |
-| [`design/deep_dive_protocol.md`](design/deep_dive_protocol.md) | 深堀エンジン、テンプレート集合、予算、実行例 |
-| [`design/llm_operating_contract.md`](design/llm_operating_contract.md) | Local LLM の分業線、引用強制、タスク分解 |
-| [`prompt/CONDUCTOR_0.2.1_prompts.md`](prompt/CONDUCTOR_0.2.1_prompts.md) | **本番運用プロンプト、Database再利用手順、Local LLM内部プロンプト** |
-| [`design/open_questions.md`](design/open_questions.md) | 未決事項。**Chemist の知識が必要な項目を A 群に集約** |
+| [Endpoint model](design/endpoint_model.md) | 向き、transform、欠測、MPO拡張点 |
+| [Feature-space roles](design/feature_space_roles.md) | Description、距離、文脈条件付け |
+| [Discovery lenses](design/discovery_lenses.md) | L1b/L2a/L2b/L4/L5/L7 |
+| [Finding model](design/finding_model.md) | claim、test、state、反証、引用 |
+| [Candidate generation](design/candidate_generation.md) | 未探索候補とscoring |
+| [Deep-dive protocol](design/deep_dive_protocol.md) | 固定templateによる反証 |
+| [LLM operating contract](design/llm_operating_contract.md) | 決定論コードとLocal LLMの境界 |
+| [Calibration results](design/calibration_results.md) | 閾値・rateの根拠 |
 
-## 設計テーゼ
+## 運用文書
 
-> 条件付けによって初めて現れる構造を、網羅的な試行によって発見する。
+- [運用プロンプト集](prompt/CONDUCTOR_0.2.1_prompts.md): 通常使用する入口。
+- [既存Run HTML export](prompt/CONDUCTOR_0.2.1_R1_HTML_report_export_prompt.md): HTML実装前の受入済みRun専用。
+- `R1_P04_P06_recovery`、`R1_P06_recovery`、`R1_stage3_production_checkpoint`:
+  特定障害・検証段階の記録用。通常の新規Runには使わない。
+- `performance_redesign_independent_review_prompt`: R1設計レビュー時の履歴資料。
 
-Global なデータが単純な関係性で記述できることは現実にはほぼ無い。しかしある局所に条件付けると有用な関係性が現れることがある。条件の探索空間は人間には広すぎるが、機械には可能である。
+## 履歴・監査資料
 
-Local LLM に求めるのは「賢いこと」ではなく「倦まず大量にこなすこと」である。1回の深い洞察ではなく、1000回の浅い作業の集積で深さに到達する。
+次は意思決定の追跡に残す文書であり、通常運用の手順書ではありません。
 
-## 0.1.x のドキュメント
+- `*_implementation_questions.md`
+- `*_implementer_brief.md`
+- `*_stage*_checkpoint.md`
+- `CONDUCTOR_0.2.1_implementation_history_and_l5_redesign.md`
+- `CONDUCTOR_0.2.1_independent_performance_review.md`
+- `CONDUCTOR_0.2.1_scale_measurement_report.md`
+- `CONDUCTOR_0.2.1_spec_conformance_audit.md`
+- `CONDUCTOR_0.2.1_production_remediation_report.md`
+- `CONDUCTOR_0.2.1_stage11_implementation_report.md`
 
-`archive_0.1.x/` へ退避しました（Git 管理対象外）。0.2.1 は思想もコードも 0.1.x を引き継ぎません。技術的に流用する資産は仕様概要書 第11章に列挙しています。
+これらは削除せず、なぜ現行仕様になったかを説明する監査証跡として保存します。
 
-## 工程
+## Schemaと設定
 
-```text
-① 仕様概要書の最終化      完了
-② 実装計画書の作成・最終化  完了
-③ 段階1〜11の初回実装       完了
-④ 実装適合性確認             完了
-⑤ 正式較正・本番相当確認     ← 現在地
-```
+- Schemaとexampleの区別: [`../schemas/README.md`](../schemas/README.md)
+- 既定設定: [`../config/defaults.yaml`](../config/defaults.yaml)
+- resolved config例: [`../config/resolved_config.example.yaml`](../config/resolved_config.example.yaml)
+- 固定production DAG: [`../pipeline/production_pipeline.v0.2.1.json`](../pipeline/production_pipeline.v0.2.1.json)
 
-閾値類は `CONDUCTOR_modules/diagnosis/` の診断モジュールを実データへ適用して確定済みです。結果は [`design/calibration_results.md`](design/calibration_results.md)。
-
-診断モジュールを本解析パイプラインへ組み込む（診断 → パラメータ自動設定 → 本解析）のは **0.2.2** で行います。0.2.1 では独立した計測ツールとして維持します。
+`resolved_config.yaml`、`provider_config.json`、Run Specは本番環境固有値を含むため、exampleを複製して
+本番解析directory側で管理します。

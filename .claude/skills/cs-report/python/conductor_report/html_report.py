@@ -308,6 +308,7 @@ main{max-width:1240px;margin:0 auto;padding:34px} h1,h2,h3{line-height:1.3} h1{m
 a{color:var(--accent)} code{overflow-wrap:anywhere}.meta,.muted{color:var(--muted)}.lede{max-width:850px;font-size:1.05rem}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:24px 0}.card,.component,.panel,.insight{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:18px}.card strong{display:block;font-size:1.45rem}
 .status-succeeded{color:var(--ok)}.status-failed{color:var(--bad)}.component,.insight{margin:14px 0}.insight{border-left:5px solid var(--accent)}.insight-head{display:flex;gap:15px;align-items:flex-start}.rank{display:grid;place-items:center;min-width:52px;height:38px;border-radius:20px;background:var(--accent);color:white;font-weight:700}.lens{font-weight:700;color:var(--accent)}
+.title-list{display:grid;gap:8px;margin:14px 0}.title-only{display:flex;gap:12px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:10px 14px}.title-only .rank{min-width:44px;height:30px;font-size:.9rem}.title-only a{font-weight:700;text-decoration:none}.title-only a:hover{text-decoration:underline}
 .metric-strip{display:flex;flex-wrap:wrap;gap:8px;margin:13px 0}.metric-strip span{background:var(--accent-wash);border-radius:16px;padding:4px 10px}.interpretation{font-size:1.02rem}.detail-link{display:inline-block;margin-top:6px;padding:7px 12px;background:var(--accent);color:white;border-radius:6px;text-decoration:none;font-weight:700}
 .evidence-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px;margin:14px 0}.evidence-grid div{background:#f7f9fa;border:1px solid var(--line);padding:8px 10px;border-radius:6px}.evidence-grid dt{font-size:.8rem;color:var(--muted)}.evidence-grid dd{margin:2px 0;font-weight:650;overflow-wrap:anywhere}
 .lens-visual{margin:28px 0}.structure-sequence{display:flex;align-items:center;justify-content:center;gap:15px;flex-wrap:wrap;margin:16px 0}.molecule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}.molecule-panel{margin:0;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px;text-align:center}.molecule-panel svg{display:block;max-width:100%;height:auto;margin:auto}.molecule-panel figcaption{display:grid;gap:3px}.molecule-panel code{font-size:.75rem;color:var(--muted)}.chem-arrow{font-size:1.05rem;font-weight:750;color:var(--accent);max-width:130px;text-align:center}.representative-pair{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:9px}.data-figure{margin:18px 0}.chart{display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:10px;background:#fff}.chart text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--ink)}.chart-title{font-size:16px;font-weight:700}.axis-label{font-size:13px;font-weight:650}.tick{font-size:11px;fill:var(--muted)}.chart-legend{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}.chart-legend span{display:inline-flex;align-items:center;gap:5px}.chart-legend i{display:inline-block;width:11px;height:11px;border-radius:50%}.figure-note,.data-figure figcaption{color:var(--muted);font-size:.88rem}.visual-missing{padding:14px;background:#fff8e8;border-left:4px solid #d59422}
@@ -468,8 +469,13 @@ def render_html_report(
         [item for item in findings if (item.get("state") or {}).get("pipeline") == "reportable"],
         key=_rank_key,
     )
-    display_k = max(0, int(report.get("display_k", 10)))
-    important = reportable[:display_k]
+    finding_page_k = max(0, int(report.get("finding_page_k", 20)))
+    overview_detail_k = max(
+        0, min(finding_page_k, int(report.get("overview_detail_k", 10)))
+    )
+    paged = reportable[:finding_page_k]
+    important = paged[:overview_detail_k]
+    title_only = paged[overview_detail_k:]
     citation_refs, citation_indexes = _citation_maps(findings, components)
 
     component_html: list[str] = []
@@ -498,6 +504,17 @@ def render_html_report(
         )
         for finding in important
     )
+    title_only_html = "".join(
+        '<div class="title-only">'
+        f'<span class="rank">#{_escape((finding.get("scores") or {}).get("rank", "—"))}</span>'
+        + (
+            f'<a href="{_escape(finding_report_paths[str(finding.get("finding_id", ""))])}">{_escape(_finding_statement(finding))}</a>'
+            if str(finding.get("finding_id", "")) in finding_report_paths
+            else f'<span>{_escape(_finding_statement(finding))}</span>'
+        )
+        + "</div>"
+        for finding in title_only
+    )
     lens_counts: dict[str, int] = {}
     for finding in reportable:
         lens = str(finding.get("lens", "unknown"))
@@ -524,8 +541,9 @@ def render_html_report(
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CONDUCTOR report — {_escape(report.get('endpoint_id', ''))}</title><style>{_page_style()}</style></head>
 <body><main><header><h1>CONDUCTOR 0.2.1 解析レポート</h1><p class="lede">今回得られた知見のうち、設定済みの重要度評価で優先されたものを、人が内容を理解できる形で示します。</p><p class="meta">Run: <code>{_escape(run_id)}</code> ／ Endpoint: <code>{_escape(report.get('endpoint_id', ''))}</code> ／ 生成時刻: {_escape(created_at)}</p></header>
-<section class="cards" aria-label="概要"><div class="card"><span>監査状態</span><strong class="status-{_escape(status)}">{_escape(status)}</strong></div><div class="card"><span>全Finding</span><strong>{len(findings)}</strong></div><div class="card"><span>重要度評価対象</span><strong>{len(reportable)}</strong></div><div class="card"><span>このレポートで詳述</span><strong>{len(important)}</strong></div><div class="card"><span>LLM失敗率</span><strong>{_number(failure_fraction)}</strong></div></section>
-<section><h2>重要な知見</h2><p>以下は単なるFinding一覧ではなく、対象、条件、効果、統計的根拠、deep dive結果、Evidenceをまとめた要約です。各「個別レポート」では反証条件まで確認できます。</p><p class="muted">順位はp値の昇順ではありません。統計的強度と頑健性のgateを通過後、非自明性・実行可能性・探索価値の総合スコアで評価し、q値は同点時の判定に使います。</p>{important_html or '<p class="muted">詳述対象のreportable Findingはありません。</p>'}</section>
+<section class="cards" aria-label="概要"><div class="card"><span>監査状態</span><strong class="status-{_escape(status)}">{_escape(status)}</strong></div><div class="card"><span>全Finding</span><strong>{len(findings)}</strong></div><div class="card"><span>重要度評価対象</span><strong>{len(reportable)}</strong></div><div class="card"><span>表紙で詳述</span><strong>{len(important)}</strong></div><div class="card"><span>個別レポート</span><strong>{len(paged)}</strong></div><div class="card"><span>LLM失敗率</span><strong>{_number(failure_fraction)}</strong></div></section>
+<section><h2>重要な知見：1～{overview_detail_k}位</h2><p>以下は単なるFinding一覧ではなく、対象、条件、効果、統計的根拠、deep dive結果、Evidenceをまとめた要約です。各「個別レポート」では反証条件まで確認できます。</p><p class="muted">順位はp値の昇順ではありません。統計的強度と頑健性のgateを通過後、非自明性・実行可能性・探索価値の総合スコアで評価し、q値は同点時の判定に使います。</p>{important_html or '<p class="muted">詳述対象のreportable Findingはありません。</p>'}</section>
+<section><h2>{overview_detail_k + 1}～{finding_page_k}位</h2><p class="muted">表紙ではタイトルだけを示します。各タイトルから図・統計・Evidenceを含む個別レポートを開けます。</p><div class="title-list">{title_only_html or '<p class="muted">該当するFindingはありません。</p>'}</div></section>
 <section><h2>Lens別の知見数</h2><div class="cards">{lens_summary or '<p class="muted">対象なし</p>'}</div></section>
 <section><h2>知見間のつながり</h2>{''.join(component_html) or '<p class="muted">対象となる連結成分はありません。</p>'}</section>
 <details><summary>監査用付録：全Finding一覧</summary><div class="table-wrap"><table><thead><tr><th>順位</th><th>ID</th><th>Lens</th><th>状態</th><th>対象</th><th>条件</th><th>効果</th><th>support_n</th><th>p</th><th>q</th><th>score</th></tr></thead><tbody>{finding_rows}</tbody></table></div></details>

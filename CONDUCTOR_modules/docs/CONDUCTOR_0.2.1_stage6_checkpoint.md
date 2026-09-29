@@ -1,5 +1,7 @@
 # CONDUCTOR 0.2.1 段階6停止報告
 
+> 文書区分: **中間checkpoint履歴**。現行仕様・運用には使用しません。
+
 > **履歴文書。** 2026-09-17 に段階7以降への明示承認を受けたため、現在の実装状況は [`CONDUCTOR_0.2.1_stage11_implementation_report.md`](CONDUCTOR_0.2.1_stage11_implementation_report.md) を参照する。本書の「段階7へ進まない」は停止時点の記録として残す。
 
 実施日: 2026-09-17  

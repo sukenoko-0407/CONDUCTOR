@@ -68,6 +68,13 @@ scoring:
   robustness_min: 0.70
   display_k: 10
 
+report:
+  # Keep the scoring acceptance gate (display_k) separate from report coverage.
+  # P06 writes one Lens-native individual page for each of the top 20 Findings.
+  finding_page_k: 20
+  # The overview explains the top 10 in full and lists ranks 11-20 by title only.
+  overview_detail_k: 10
+
 deep_dive:
   max_depth: 3
   max_children: 3

@@ -209,6 +209,16 @@ def main() -> int:
         "--finding-id",
         help="Render one requested Finding instead of the overview and standard top pages",
     )
+    parser.add_argument(
+        "--finding-page-k",
+        type=int,
+        help="Override the number of ranked individual pages (default: report value or 20)",
+    )
+    parser.add_argument(
+        "--overview-detail-k",
+        type=int,
+        help="Override fully explained overview entries (default: report value or 10)",
+    )
     args = parser.parse_args()
 
     manifest_path = Path(args.artifact_manifest).resolve()
@@ -234,6 +244,29 @@ def main() -> int:
     validation = json.loads(validation_path.read_text(encoding="utf-8"))
     if report.get("status") != "succeeded" or validation.get("status") != "succeeded":
         raise ValueError("Report and citation validation must both be succeeded")
+
+    finding_page_k = max(
+        0,
+        int(
+            args.finding_page_k
+            if args.finding_page_k is not None
+            else report.get("finding_page_k", 20)
+        ),
+    )
+    overview_detail_k = max(
+        0,
+        min(
+            finding_page_k,
+            int(
+                args.overview_detail_k
+                if args.overview_detail_k is not None
+                else report.get("overview_detail_k", 10)
+            ),
+        ),
+    )
+    report["finding_page_k"] = finding_page_k
+    report["overview_detail_k"] = overview_detail_k
+    report["report_layout_version"] = "ranked_pages_v1"
 
     evidence_by_ref = _evidence_rows(manifest, base)
     observations_by_finding, compound_smiles, fragment_smiles = _visual_inputs(
@@ -269,7 +302,7 @@ def main() -> int:
             ],
             key=_finding_sort_key,
         )
-        important = reportable[: max(0, int(report.get("display_k", 10)))]
+        important = reportable[:finding_page_k]
         detail_directory = output_path.parent / f"{output_path.stem}_findings"
         if important and detail_directory.exists():
             raise FileExistsError(
@@ -323,6 +356,10 @@ def main() -> int:
                 "sha256": _sha256(output_path),
                 "generated_files": [str(path) for path in generated],
                 "finding_report_count": max(0, len(generated) - (0 if args.finding_id else 1)),
+                "overview_detail_count": 0 if args.finding_id else min(
+                    overview_detail_k, max(0, len(generated) - 1)
+                ),
+                "report_layout_version": "ranked_pages_v1",
                 "source_manifest": str(manifest_path),
                 "run_root_modified": False,
             },

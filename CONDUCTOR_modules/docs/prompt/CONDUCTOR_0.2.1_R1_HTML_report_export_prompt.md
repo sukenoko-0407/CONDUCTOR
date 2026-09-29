@@ -24,12 +24,15 @@ P03 artifact_manifestをhash検証して辿る既存exporter経路を使用し�
 新しい入力として捏造したり、入力hashを省略したりしないでください。
 
 全体HTMLには重要なFindingの具体的な内容を先に示し、監査用の全Finding表は付録にしてください。
-設定済み`scoring.display_k`件について、効果、p/q値、support、score、deep dive、反証条件、
+上位20件について、効果、p/q値、support、score、deep dive、反証条件、
 引用Evidenceを説明する個別HTMLも作成してください。各個別HTMLにLens固有の科学図があることを確認し、
 L1bでは注目化合物と固定距離順近傍、L2aではMMP変換前後と代表実測pair、L2bではfragmentと代表化合物、
 L4では候補とsource、L5では文脈内外の実測散布図、L7では両core・共通R基・同一R基の代表実測pairが
 表示されることを確認してください。
 文章だけの個別HTMLを成功として扱わないでください。新しい解析やLLM callは行わないでください。
+
+全体HTMLでは1～10位だけを図と説明付きで詳述し、11～20位はタイトルと個別HTMLへのlinkだけを
+表示してください。11～20位の個別HTML自体は省略せず、1～20位の全件を作成してください。
 
 受入済みRun root、Description Database、既存成果物、Runtime stateは変更しないでください。
 P06を再実行せず、Node stateやattemptを追加しないでください。出力先はRun root外の新規ファイルとし、
@@ -49,7 +52,7 @@ Agentが上記手順で`<P06_ARTIFACT_MANIFEST>`を特定した後の直接実�
   --output <HTML_OUTPUT_PATH>
 ```
 
-今後の新規RunではP06が`report.html`と上位`scoring.display_k`件の個別HTMLを標準成果物として
+今後の新規RunではP06が`report.html`と上位20件の個別HTMLを標準成果物として
 Run root内へ生成し、artifact manifestへ登録する。この全体出力経路を新規Runで別途実行しない。
 後述のFinding ID指定経路は、新旧どちらの受入Runでも人間が追加指定したFindingだけに使用できる。
 

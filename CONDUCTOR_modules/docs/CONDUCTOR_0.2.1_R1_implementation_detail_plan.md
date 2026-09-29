@@ -1113,15 +1113,16 @@ P05は3470 logical call中213件が失敗し、failure fractionは`0.06138328530
 
 rendererは`report.json`、`final_findings.jsonl`、`citation_validation.json`と検証済みEvidence row相当の
 in-memory objectを受け取り、外部resourceや実行scriptを含まないUTF-8 HTMLを返す。Run由来値は
-`html.escape(..., quote=True)`を通す。全体HTMLは`scoring.display_k`件の主要Findingについて、人間が
-対象・条件・効果・統計的根拠・deep-dive結果を把握できるカードを先に表示する。全Finding表は監査付録へ置く。
+`html.escape(..., quote=True)`を通す。全体HTMLは上位`report.overview_detail_k=10`件について、人間が
+対象・条件・効果・統計的根拠・deep-dive結果を把握できるカードを先に表示し、11～20位はタイトルと
+個別pageへのlinkだけを表示する。全Finding表は監査付録へ置く。
 JSON/JSONLを監査正本とし、HTMLは表示層に限定する。
 
 ### 15.2.1 Finding別renderer
 
 `render_finding_html`はFinding 1件について、Lensの解析目的、claim、全test、score 5軸とcomposite、
 triviality、deep-dive、falsification、translation、entity、引用Evidence rowを章別に表示する。
-P06はreportable Findingをrank順に並べた先頭`display_k`件を`finding_reports/<finding_id>.html`へ書き、
+P06はreportable Findingをrank順に並べた先頭`report.finding_page_k=20`件を`finding_reports/<finding_id>.html`へ書き、
 各ファイルを`finding_report_html` artifactとしてhash登録する。全体HTMLから相対linkで参照する。
 
 旧Run用exporterはP06の`input_artifacts`にある`evidence_table`もhash検証し、標準出力時は全体HTMLと

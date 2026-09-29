@@ -11,8 +11,10 @@ Before publishing, independently verify every narrative number within 1% against
 
 Publish the validated content as `report.json`, `report.md`, a self-contained overview
 `report.html`, and detailed `finding_reports/<finding_id>.html` pages for the configured
-top `scoring.display_k` reportable Findings. The overview must lead with the substantive
-meaning of important Findings; keep the complete Finding table as an audit appendix.
+top `report.finding_page_k` reportable Findings (default 20). The overview must fully
+explain only the first `report.overview_detail_k` Findings (default 10), then list ranks
+11-20 by title with links to their full individual pages. Keep the complete Finding table
+as an audit appendix.
 Each detailed page must explain the Lens question, claim, effect, support, all tests,
 score basis, triviality/confounder assessment, deep-dive state, falsification contract,
 entities, and cited Evidence without adding external knowledge or new inference.

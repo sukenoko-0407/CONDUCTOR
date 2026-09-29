@@ -165,6 +165,56 @@ def test_html_report_is_self_contained_and_escapes_artifact_values() -> None:
     assert "監査用付録：全Finding一覧" in rendered
 
 
+def test_overview_explains_top_ten_and_lists_titles_for_ranks_eleven_to_twenty() -> None:
+    findings = []
+    report_paths = {}
+    evidence_by_ref = {}
+    observations_by_finding = {}
+    for rank in range(1, 21):
+        finding = _finding(f"F{rank:06d}", [f"C{rank}"])
+        finding["claim"]["subject_id"] = f"SUBJECT-{rank:02d}"
+        finding["scores"] = {"rank": rank, "composite": 1.0 - rank / 100.0}
+        findings.append(finding)
+        report_paths[finding["finding_id"]] = f"finding_reports/{finding['finding_id']}.html"
+        evidence_by_ref[f"evidence.csv#row_id=E-{finding['finding_id']}"] = {
+            "row_id": f"E-{finding['finding_id']}",
+            "feature_id": f"SUBJECT-{rank:02d}",
+            "r_a": 0.6,
+            "r_b": -0.5,
+        }
+        observations_by_finding[finding["finding_key"]] = [
+            {"feature_value": -1.0, "endpoint_value": 1.0, "context_role": "focal"},
+            {"feature_value": 1.0, "endpoint_value": 2.0, "context_role": "focal"},
+            {"feature_value": -1.0, "endpoint_value": 2.0, "context_role": "complement"},
+            {"feature_value": 1.0, "endpoint_value": 1.0, "context_role": "complement"},
+        ]
+
+    rendered = render_html_report(
+        {
+            "status": "succeeded",
+            "endpoint_id": "EP",
+            "components": [],
+            "finding_page_k": 20,
+            "overview_detail_k": 10,
+        },
+        findings,
+        {"status": "succeeded", "errors": [], "failure_fraction": 0.0},
+        run_id="RUN|fixture",
+        created_at="2026-09-29T00:00:00Z",
+        evidence_by_ref=evidence_by_ref,
+        observations_by_finding=observations_by_finding,
+        finding_report_paths=report_paths,
+    )
+
+    assert rendered.count('class="insight"') == 10
+    assert rendered.count('class="title-only"') == 10
+    assert "重要な知見：1～10位" in rendered
+    assert "11～20位" in rendered
+    assert 'href="finding_reports/F000011.html"' in rendered
+    assert 'href="finding_reports/F000020.html"' in rendered
+    assert "個別レポート</span><strong>20</strong>" in rendered
+
+
 def test_individual_finding_report_explains_claim_and_evidence() -> None:
     finding = _finding("F000001", ["C1"])
     finding["scores"] = {
