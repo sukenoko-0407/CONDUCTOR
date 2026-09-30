@@ -1,0 +1,7 @@
+interface:
+  display_name: "Standalone MMP Database & Report"
+  short_description: "Build MMP databases and render compound reports"
+  default_prompt: "Use $matched-molecular-pair-report to build a standalone MMP database from CSV or render an interactive report for explicit compound IDs."
+
+policy:
+  allow_implicit_invocation: true
